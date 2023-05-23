@@ -8,9 +8,10 @@
     "sourceMap": true,
     "strict": true,
     "target": "esnext",
-    "outDir": "./dist",
+    "outDir": "../../dist/client",
+    "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules", "src/client"]
+  "include": ["./**/*"],
+  "exclude": ["dist", "node_modules"]
 }

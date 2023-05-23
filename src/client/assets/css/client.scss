@@ -1,0 +1,40 @@
+.pp-dev-info {
+  position: fixed;
+  z-index: 10000;
+  min-width: 800px;
+  width: fit-content;
+  height: 30px;
+  top: calc(100% - 30px);
+  right: 0;
+  text-align: center;
+  padding: 5px 20px;
+  background-color: #f0f0f0;
+  border-radius: 3px 0 0 0;
+  color: #333;
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+
+  .sync-button {
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+
+    &.syncing {
+      cursor: not-allowed;
+      pointer-events: none;
+
+      svg {
+        animation: rotation 2s linear infinite;
+      }
+    }
+  }
+
+  @keyframes rotation {
+    0% {
+      transform: rotate(0deg) matrix(1, 0, 0, -1, 0, 0);
+    }
+    100% {
+      transform: rotate(360deg) matrix(1, 0, 0, -1, 0, 0);
+    }
+  }
+}

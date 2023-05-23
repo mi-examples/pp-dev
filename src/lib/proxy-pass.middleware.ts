@@ -1,7 +1,4 @@
-import {
-  createProxyMiddleware,
-  responseInterceptor,
-} from 'http-proxy-middleware';
+import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import { urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
 import { ViteDevServer } from 'vite';
 
@@ -78,10 +75,7 @@ export function initProxy(opts: ProxyOpts) {
         );
 
         if (host && referer && typeof referer === 'string') {
-          proxyReq.setHeader(
-            'referer',
-            referer.replace(new RegExp(`https?://${host}`), baseURL),
-          );
+          proxyReq.setHeader('referer', referer.replace(new RegExp(`https?://${host}`), baseURL));
         }
 
         req.socket.on('close', () => {
@@ -94,46 +88,35 @@ export function initProxy(opts: ProxyOpts) {
 
         return proxyReq;
       },
-      onProxyRes: responseInterceptor(
-        async (responseBuffer, proxyRes, req, res) => {
-          const type = await (
-            await fileType
-          ).fileTypeFromBuffer(responseBuffer);
+      onProxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+        const type = await (await fileType).fileTypeFromBuffer(responseBuffer);
 
-          if (type) {
-            return responseBuffer;
-          } else {
-            let response = responseBuffer.toString('utf8'); // convert buffer to string
+        if (type) {
+          return responseBuffer;
+        } else {
+          let response = responseBuffer.toString('utf8'); // convert buffer to string
 
-            try {
-              const reqUrl = new URL(req.url ?? '', `http://${host}`);
+          try {
+            const reqUrl = new URL(req.url ?? '', `http://${host}`);
 
-              if (
-                reqUrl.searchParams &&
-                reqUrl.searchParams.has('proxyRedirect')
-              ) {
-                response +=
-                  '<script>' +
-                  'const params = new URLSearchParams(window.location.search);' +
-                  "if (params.has('proxyRedirect')) {" +
-                  " setTimeout(() => { window.location = params.get('proxyRedirect'); }, 50);" +
-                  '}' +
-                  '</script>';
-              }
-            } catch {
-              //
+            if (reqUrl.searchParams && reqUrl.searchParams.has('proxyRedirect')) {
+              response +=
+                '<script>' +
+                'const params = new URLSearchParams(window.location.search);' +
+                "if (params.has('proxyRedirect')) {" +
+                " setTimeout(() => { window.location = params.get('proxyRedirect'); }, 50);" +
+                '}' +
+                '</script>';
             }
-
-            const reqHost = req.headers.host ?? '';
-
-            return urlPathReplacer(
-              '/auth/saml/login',
-              '/login',
-              urlReplacer(host, reqHost, response),
-            ); // manipulate response and return the result
+          } catch {
+            //
           }
-        },
-      ),
+
+          const reqHost = req.headers.host ?? '';
+
+          return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response)); // manipulate response and return the result
+        }
+      }),
     },
   );
 }

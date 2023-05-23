@@ -6,6 +6,8 @@ import zipPack from 'vite-plugin-zip-pack';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'url';
 import { PP_WATCH_CONFIG_NAMES, PP_DEV_CONFIG_NAMES } from './constants.js';
+import { clientInjectionPlugin } from './plugins/client-injection-plugin.js';
+import header from './banner/header.js';
 
 export type PPDevConfig = Omit<VitePPDevOptions, 'templateName'>;
 export type PPWatchConfig = { baseURL: string; portalPageId: number };
@@ -29,9 +31,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
 
   const { text: code } = result.outputFiles[0];
 
-  const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random()
-    .toString(16)
-    .slice(2)}`;
+  const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const fileNameTmp = `${fileBase}.js`;
   const fileUrl = pathToFileURL(path.resolve(cwd, fileNameTmp)).toString();
@@ -61,10 +61,7 @@ async function loadJSONConfig<T extends object>(filePath: string) {
   return JSON.parse(readFileSync(filePath, { encoding: 'utf-8' })) as T;
 }
 
-async function loadConfig<T extends object>(
-  dirFiles: string[],
-  configNames: string[],
-) {
+async function loadConfig<T extends object>(dirFiles: string[], configNames: string[]) {
   for (const configName of configNames) {
     if (dirFiles.includes(configName)) {
       if (configName.endsWith('.ts')) {
@@ -90,10 +87,7 @@ export async function getConfig() {
   let config: PPDevConfig = {};
   let configFound = false;
 
-  const newConfig = await loadConfig<PPDevConfig>(
-    dirContent,
-    PP_DEV_CONFIG_NAMES as never as string[],
-  );
+  const newConfig = await loadConfig<PPDevConfig>(dirContent, PP_DEV_CONFIG_NAMES as never as string[]);
 
   if (newConfig) {
     config = newConfig;
@@ -102,10 +96,7 @@ export async function getConfig() {
 
   if (dirContent.length) {
     if (!configFound) {
-      const watchConfig = await loadConfig<PPWatchConfig>(
-        dirContent,
-        PP_WATCH_CONFIG_NAMES as never as string[],
-      );
+      const watchConfig = await loadConfig<PPWatchConfig>(dirContent, PP_WATCH_CONFIG_NAMES as never as string[]);
 
       if (watchConfig) {
         config = {
@@ -150,12 +141,18 @@ export async function getViteConfig(mode: string) {
       },
       build: {
         minify: false,
+        rollupOptions: {
+          output: {
+            banner: header,
+          },
+        },
       },
       plugins: [
         vitePPDev({
           templateName,
           ...(await getConfig()),
         }),
+        clientInjectionPlugin(),
         zipPack({
           outFileName: `${templateName}.zip`,
         }),

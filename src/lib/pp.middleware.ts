@@ -38,9 +38,7 @@ export class MiAPI {
   #clearHeaders(headers: Headers) {
     const obj = Object.assign({}, headers, { host: undefined });
 
-    Object.keys(obj).forEach(
-      (key) => obj[key] === undefined && delete obj[key],
-    );
+    Object.keys(obj).forEach((key) => obj[key] === undefined && delete obj[key]);
 
     return obj;
   }
@@ -60,9 +58,7 @@ export class MiAPI {
       })
       .then((response) => response.data);
 
-    let page = pageList.pages.find(
-      (p) => p.name === '[DEV PAGE. DO NOT DELETE]',
-    );
+    let page = pageList.pages.find((p) => p.name === '[DEV PAGE. DO NOT DELETE]');
 
     if (!page) {
       page = await this.#axios
@@ -103,16 +99,13 @@ export class MiAPI {
     this.#pageTemplate = await this.getPageTemplate(headers);
 
     return await this.#axios
-      .get<{ page: { name: string; tags: string; template?: string } }>(
-        `/api/page/id/${pageId}`,
-        {
-          withCredentials: true,
-          headers: Object.assign(this.#clearHeaders(headers), {
-            accept: 'application/json',
-            'content-type': 'application/json',
-          }),
-        },
-      )
+      .get<{ page: { name: string; tags: string; template?: string } }>(`/api/page/id/${pageId}`, {
+        withCredentials: true,
+        headers: Object.assign(this.#clearHeaders(headers), {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        }),
+      })
       .then((response) => {
         const {
           page: { tags, name, template },
@@ -134,9 +127,7 @@ export class MiAPI {
       })
       .catch((reason) => {
         if (reason.response?.status === 404) {
-          throw new Error(
-            `Portal Page with id "${pageId}" not found on instance ${this.#axios.getUri()}`,
-          );
+          throw new Error(`Portal Page with id "${pageId}" not found on instance ${this.#axios.getUri()}`);
         }
 
         throw reason;
@@ -144,8 +135,7 @@ export class MiAPI {
   }
 
   buildPage(content: string | Buffer, miHudLess = false) {
-    let result =
-      typeof content === 'string' ? content : content.toString('utf-8');
+    let result = typeof content === 'string' ? content : content.toString('utf-8');
 
     for (const v of this.#pageVars) {
       result = result.replace(new RegExp(`\\[${v.name}\\]`, 'g'), v.value);
@@ -183,9 +173,6 @@ export class MiAPI {
 
     const serializedDom = dom.serialize();
 
-    return serializedDom.replace(
-      new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i'),
-      result,
-    );
+    return serializedDom.replace(new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i'), result);
   }
 }

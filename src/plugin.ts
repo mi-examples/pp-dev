@@ -1,10 +1,10 @@
-import { HtmlTagDescriptor, IndexHtmlTransformResult, Plugin } from 'vite';
+import { IndexHtmlTransformResult, Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI, Headers } from './lib/pp.middleware.js';
 import * as http from 'http';
 import { urlReplacer } from './lib/helpers/url.helper.js';
-import * as path from 'path';
-import { PACKAGE_NAME, VERSION } from './constants.js';
+import { ClientService } from './lib/client.service.js';
+import { clientInjectionPlugin } from './plugins/client-injection-plugin.js';
 
 export interface VitePPDevOptions {
   backendBaseURL?: string;
@@ -21,9 +21,6 @@ const redirect = (res: http.ServerResponse, url: string, statusCode?: number) =>
   res.end();
 };
 
-const PACKAGE_IMPORT = `${PACKAGE_NAME}/client`;
-const CLIENT_PATH = `/${PACKAGE_IMPORT}`;
-
 function vitePPDev(options: VitePPDevOptions): Plugin {
   const { templateName, templateLess = false, miHudLess = false, backendBaseURL, portalPageId } = options || {};
 
@@ -33,78 +30,14 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
   return {
     name: 'vite-pp-dev',
     apply: 'serve',
-    transformIndexHtml: (html, ctx) => {
+    config: (config) => {
+      config.plugins?.push(clientInjectionPlugin({ backendBaseURL, portalPageId, templateLess }));
+      config.clientInjectionPlugin = { backendBaseURL, portalPageId, templateLess };
+
+      return config;
+    },
+    transformIndexHtml: async (html, ctx) => {
       const result: IndexHtmlTransformResult = { html, tags: [] };
-
-      const getPackageAssetsUrl = (assetPath: string) => {
-        return path.posix.join(ctx.server?.config.base || '', `/${PACKAGE_NAME}/assets${assetPath}`);
-      };
-
-      result.tags.push(
-        {
-          tag: 'script',
-          injectTo: 'head',
-          attrs: {
-            type: 'module',
-            src: path.posix.join(ctx.server?.config.base || '', CLIENT_PATH),
-          },
-        },
-        {
-          tag: 'link',
-          injectTo: 'head',
-          attrs: {
-            rel: 'stylesheet',
-            href: getPackageAssetsUrl('/client/css/client.css?inline'),
-          },
-        },
-        {
-          tag: 'div',
-          injectTo: 'body',
-          attrs: {
-            class: 'pp-dev-info',
-          },
-          children: [
-            {
-              tag: 'span',
-              children: [
-                {
-                  tag: 'a',
-                  attrs: {
-                    href: `https://www.npmjs.com/package/${PACKAGE_NAME}/v/${VERSION}`,
-                    target: '_blank',
-                  },
-                  children: `<b>${PACKAGE_NAME}</b>: <b style="color: orange">${VERSION}</b>`,
-                },
-                { tag: 'span', children: '; ' },
-                ...([
-                  backendBaseURL
-                    ? {
-                        tag: 'span',
-                        children: `Backend URL: <a href="!!${backendBaseURL}" target="_blank">!!${backendBaseURL}</a>;`,
-                      }
-                    : null,
-                  {
-                    tag: 'span',
-                    children: ` Template mode: ${
-                      templateLess || !backendBaseURL || Number.isNaN(+portalPageId!)
-                        ? `<b style="color: red">Disabled</b>;`
-                        : `<b style="color: green">Enabled</b>;`
-                    } `,
-                  },
-                  backendBaseURL && !Number.isNaN(+portalPageId!)
-                    ? {
-                        tag: 'span',
-                      // eslint-disable-next-line max-len
-                        children: `Portal page ID: <a href="!!${backendBaseURL}/admin/page/edit/id/${portalPageId}" target="_blank">${portalPageId}</a>;`,
-                      }
-                    : null,
-                  miHudLess ? `MI HUD: <b style="color: red">Disabled</b>;` : null,
-                ].filter((v) => !!v) as HtmlTagDescriptor[]),
-              ],
-            },
-          ],
-        },
-      );
 
       if (isFirstRequest) {
         isFirstRequest = false;
@@ -117,19 +50,6 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
       }
 
       return result;
-    },
-    resolveId: async function (source, importer, options) {
-      if (source === CLIENT_PATH) {
-        return await this.resolve(PACKAGE_IMPORT, importer, {
-          skipSelf: true,
-          ...options,
-        });
-      } else if (source.startsWith(`/${PACKAGE_NAME}/assets`)) {
-        return await this.resolve(source.replace('/', ''), importer, {
-          skipSelf: true,
-          ...options,
-        });
-      }
     },
     configureServer: (server) => {
       let base = server.config.base;
@@ -226,6 +146,9 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
 
             next();
           });
+
+          const eventHandler = new ClientService(server);
+          eventHandler.init();
         }
       }
     },

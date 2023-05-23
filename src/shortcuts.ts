@@ -21,10 +21,7 @@ export type CLIShortcut = {
   action(server: ViteDevServer): void | Promise<void>;
 };
 
-export function bindShortcuts(
-  server: ViteDevServer,
-  opts: BindShortcutsOptions,
-): void {
+export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions): void {
   if (!server.httpServer || !process.stdin.isTTY || process.env.CI) {
     return;
   }
@@ -32,16 +29,11 @@ export function bindShortcuts(
 
   if (opts.print) {
     server.config.logger.info(
-      colors.dim(colors.green('  ➜')) +
-        colors.dim('  press ') +
-        colors.bold('h') +
-        colors.dim(' to show help'),
+      colors.dim(colors.green('  ➜')) + colors.dim('  press ') + colors.bold('h') + colors.dim(' to show help'),
     );
   }
 
-  const shortcuts = (opts.customShortcuts ?? [])
-    .filter(isDefined)
-    .concat(BASE_SHORTCUTS);
+  const shortcuts = (opts.customShortcuts ?? []).filter(isDefined).concat(BASE_SHORTCUTS);
 
   let actionRunning = false;
 
@@ -64,9 +56,7 @@ export function bindShortcuts(
           colors.bold('  Shortcuts'),
           ...shortcuts.map(
             (shortcut) =>
-              colors.dim('  press ') +
-              colors.bold(shortcut.key) +
-              colors.dim(` to ${shortcut.description}`),
+              colors.dim('  press ') + colors.bold(shortcut.key) + colors.dim(` to ${shortcut.description}`),
           ),
         ].join('\n'),
       );

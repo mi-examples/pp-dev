@@ -1,0 +1,41 @@
+{%# This is EJS template. Parameters: openDelimiter: "{", closeDelimiter="}" %}
+<div class="pp-dev-info">
+  <span>
+    <span
+      ><a href="https://www.npmjs.com/package/{%= PACKAGE_NAME %}/v/{%= VERSION %}" target="_blank">
+        <b>{%= PACKAGE_NAME %}</b>: <b style="color: orange">{%= VERSION %}</b></a
+      >;
+    </span>
+    {% if (backendBaseURL) { %}
+    <span> Backend URL: <a href="!!{%= backendBaseURL %}" target="_blank">!!{%= backendBaseURL %}</a>; </span>
+    {% } %}
+    <span>
+      <span>Template mode: </span>
+      {% if (templateLess || !backendBaseURL || Number.isNaN(+portalPageId)) { %}
+      <b style="color: red">Disabled</b>
+      {% } else { %}
+      <b style="color: green">Enabled</b>
+      {% } %};
+    </span>
+    {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
+    <span
+      >Portal page ID:
+      <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank">{%= portalPageId %}</a>;
+    </span>
+    {% } %}
+  </span>
+  <button id="sync-template" class="sync-button" title="Sync template (Not implemented yet)">
+    <svg
+      fill="#007BFF"
+      width="16px"
+      height="16px"
+      viewBox="0 0 24 24"
+      transform="rotate(0)matrix(1, 0, 0, -1, 0, 0)"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M19.91,15.51H15.38a1,1,0,0,0,0,2h2.4A8,8,0,0,1,4,12a1,1,0,0,0-2,0,10,10,0,0,0,16.88,7.23V21a1,1,0,0,0,2,0V16.5A1,1,0,0,0,19.91,15.51ZM12,2A10,10,0,0,0,5.12,4.77V3a1,1,0,0,0-2,0V7.5a1,1,0,0,0,1,1h4.5a1,1,0,0,0,0-2H6.22A8,8,0,0,1,20,12a1,1,0,0,0,2,0A10,10,0,0,0,12,2Z"
+      />
+    </svg>
+  </button>
+</div>

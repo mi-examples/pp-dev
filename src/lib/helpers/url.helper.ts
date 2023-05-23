@@ -5,9 +5,7 @@ export const stringIsAValidUrl = (s: string, protocols: string[]) => {
     const parsed = new URL(s);
 
     if (protocols) {
-      return parsed.protocol
-        ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol)
-        : false;
+      return parsed.protocol ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol) : false;
     }
 
     return true;
@@ -16,15 +14,8 @@ export const stringIsAValidUrl = (s: string, protocols: string[]) => {
   }
 };
 
-export const urlReplacer = (
-  originalHost: string,
-  destinationHost: string,
-  content: string,
-) => {
-  const urlReplaceRegExp = new RegExp(
-    `(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`,
-    'gi',
-  );
+export const urlReplacer = (originalHost: string, destinationHost: string, content: string) => {
+  const urlReplaceRegExp = new RegExp(`(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`, 'gi');
 
   return content.replace(urlReplaceRegExp, (substring, ...args) => {
     if (substring.startsWith('!!')) {
@@ -35,15 +26,8 @@ export const urlReplacer = (
   });
 };
 
-export const urlPathReplacer = (
-  urlPath: string,
-  destinationPath: string,
-  content: string,
-) => {
-  const urlReplaceRegExp = new RegExp(
-    `${urlPath.replace(/\\*\//gi, '\\\\/')}`,
-    'gi',
-  );
+export const urlPathReplacer = (urlPath: string, destinationPath: string, content: string) => {
+  const urlReplaceRegExp = new RegExp(`${urlPath.replace(/\\*\//gi, '\\\\/')}`, 'gi');
 
   return content.replace(urlReplaceRegExp, destinationPath);
 };
