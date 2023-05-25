@@ -7,7 +7,7 @@
       >;
     </span>
     {% if (backendBaseURL) { %}
-    <span> Backend URL: <a href="{%= backendBaseURL %}" target="_blank">{%= backendBaseURL %}</a>; </span>
+    <span> Backend URL: <a href="!!{%= backendBaseURL %}" target="_blank">!!{%= backendBaseURL %}</a>; </span>
     {% } %}
     <span>
       <span>Template mode: </span>
@@ -17,7 +17,7 @@
     {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
     <span
       >Portal page ID:
-      <a href="{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank">{%= portalPageId %}</a>;
+      <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank">{%= portalPageId %}</a>;
     </span>
     {% } %}
   </span>
