@@ -15,6 +15,26 @@ export type PPWatchConfig = { baseURL: string; portalPageId: number };
 async function loadTsConfig<T extends object>(filePath: string) {
   const cwd = process.cwd();
 
+  let isESM = false;
+  if (/\.m[jt]s$/.test(filePath)) {
+    isESM = true;
+  } else if (/\.c[jt]s$/.test(filePath)) {
+    isESM = false;
+  } else {
+    // check package.json for type: "module" and set `isESM` to true
+    try {
+      const cwd = process.cwd();
+      const pkg = readFileSync(path.resolve(cwd, 'package.json'), {
+        encoding: 'utf-8',
+        flag: 'r',
+      });
+
+      isESM = !!pkg && JSON.parse(pkg).type === 'module';
+    } catch (e) {
+      //
+    }
+  }
+
   const result = await build({
     absWorkingDir: cwd,
     entryPoints: [filePath],
@@ -23,7 +43,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
     target: ['node14.18', 'node16'],
     platform: 'node',
     bundle: true,
-    // format: isESM ? 'esm' : 'cjs',
+    format: isESM ? 'esm' : 'cjs',
     mainFields: ['main'],
     sourcemap: 'inline',
     metafile: true,
@@ -123,7 +143,7 @@ export async function getConfig() {
   return config;
 }
 
-export async function getViteConfig(mode: string) {
+export async function getViteConfig() {
   const pkg = JSON.parse(
     readFileSync(path.resolve(process.cwd(), 'package.json'), {
       encoding: 'utf-8',
@@ -133,37 +153,28 @@ export async function getViteConfig(mode: string) {
 
   const templateName = pkg.name;
 
-  return mergeConfig(
-    {
-      base: `/pt/${templateName}`,
-      server: {
-        port: 3000,
-      },
-      build: {
-        minify: false,
-        rollupOptions: {
-          output: {
-            banner: header,
-          },
+  return {
+    base: `/pt/${templateName}`,
+    server: {
+      port: 3000,
+    },
+    build: {
+      minify: false,
+      rollupOptions: {
+        output: {
+          banner: header,
         },
       },
-      plugins: [
-        vitePPDev({
-          templateName,
-          ...(await getConfig()),
-        }),
-        clientInjectionPlugin(),
-        zipPack({
-          outFileName: `${templateName}.zip`,
-        }),
-      ],
-    } as InlineConfig,
-    (
-      await loadConfigFromFile({
-        command: 'serve',
-        mode,
-      })
-    )?.config || {},
-    true,
-  ) as InlineConfig;
+    },
+    plugins: [
+      vitePPDev({
+        templateName,
+        ...(await getConfig()),
+      }),
+      clientInjectionPlugin(),
+      zipPack({
+        outFileName: `${templateName}.zip`,
+      }),
+    ],
+  } as InlineConfig;
 }

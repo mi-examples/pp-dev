@@ -29,7 +29,7 @@ export function initProxy(opts: ProxyOpts) {
   return createProxyMiddleware(
     (pathname) => {
       if (
-        (opts.proxyIgnore || []).every((value) => {
+        (opts.proxyIgnore || []).some((value) => {
           if (typeof value === 'string') {
             return pathname.startsWith(value);
           } else if (typeof value.test === 'function') {

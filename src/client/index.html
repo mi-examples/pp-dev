@@ -7,23 +7,21 @@
       >;
     </span>
     {% if (backendBaseURL) { %}
-    <span> Backend URL: <a href="!!{%= backendBaseURL %}" target="_blank">!!{%= backendBaseURL %}</a>; </span>
+    <span> Backend URL: <a href="{%= backendBaseURL %}" target="_blank">{%= backendBaseURL %}</a>; </span>
     {% } %}
     <span>
       <span>Template mode: </span>
       {% if (templateLess || !backendBaseURL || Number.isNaN(+portalPageId)) { %}
-      <b style="color: red">Disabled</b>
-      {% } else { %}
-      <b style="color: green">Enabled</b>
-      {% } %};
+      <b style="color: red">Disabled</b>; {% } else { %} <b style="color: green">Enabled</b>; {% } %}
     </span>
     {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
     <span
       >Portal page ID:
-      <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank">{%= portalPageId %}</a>;
+      <a href="{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank">{%= portalPageId %}</a>;
     </span>
     {% } %}
   </span>
+  {% if (!templateLess && backendBaseURL && Number.isNaN(+portalPageId)) { %}
   <button id="sync-template" class="sync-button" title="Sync template (Not implemented yet)">
     <svg
       fill="#007BFF"
@@ -38,4 +36,5 @@
       />
     </svg>
   </button>
+  {% } %}
 </div>

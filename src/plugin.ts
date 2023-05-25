@@ -4,7 +4,6 @@ import { MiAPI, Headers } from './lib/pp.middleware.js';
 import * as http from 'http';
 import { urlReplacer } from './lib/helpers/url.helper.js';
 import { ClientService } from './lib/client.service.js';
-import { clientInjectionPlugin } from './plugins/client-injection-plugin.js';
 
 export interface VitePPDevOptions {
   backendBaseURL?: string;
@@ -31,7 +30,6 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
     name: 'vite-pp-dev',
     apply: 'serve',
     config: (config) => {
-      config.plugins?.push(clientInjectionPlugin({ backendBaseURL, portalPageId, templateLess }));
       config.clientInjectionPlugin = { backendBaseURL, portalPageId, templateLess };
 
       return config;
@@ -58,7 +56,7 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
         base += '/';
       }
 
-      const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/') - 1);
+      const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
 
       // Redirect from `/` and `/pt/${templateName}` and `${base}` (without training slash) to portal page address
       server.middlewares.use(function (req, res, next) {
@@ -79,7 +77,7 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
         server.middlewares.use(
           proxyPassMiddleware({
             baseURL: backendBaseURL,
-            proxyIgnore: ['/@vite', '/@metricinsights'],
+            proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
           }) as any,
         );
 

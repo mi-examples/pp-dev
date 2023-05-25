@@ -34,7 +34,7 @@ export class ClientService {
   }
 
   onTemplateSync(data: any) {
-    // console.log('onTemplateSync', data);
+    console.log('onTemplateSync', data);
 
     setTimeout(() => {
       this.server.ws.send('template:sync:response', { syncedAt: new Date(), currentHash: 'sync-hash' });

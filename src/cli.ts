@@ -7,7 +7,16 @@ import type { ServerOptions, BuildOptions, LogLevel } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
 import { getViteConfig } from './index.js';
-import { mergeConfig, build, optimizeDeps, resolveConfig, preview, createLogger, ViteDevServer } from 'vite';
+import {
+  mergeConfig,
+  build,
+  optimizeDeps,
+  resolveConfig,
+  preview,
+  createLogger,
+  ViteDevServer,
+  loadConfigFromFile,
+} from 'vite';
 
 const cli = cac('pp-dev');
 const colors = createColors();
@@ -111,9 +120,24 @@ cli
     const { createServer } = await import('vite');
 
     try {
+      const configFromFile = await loadConfigFromFile(
+        { mode: options.mode || 'development', command: 'serve' },
+        options.config,
+        root,
+        options.logLevel,
+      );
+
+      let config = await getViteConfig();
+
+      if (configFromFile) {
+        const { plugins, ...fileConfig } = configFromFile.config;
+
+        config = mergeConfig(config, fileConfig);
+      }
+
       const server = await createServer(
         mergeConfig(
-          await getViteConfig(options.mode || 'serve'),
+          config,
           {
             root,
             base: options.base,
@@ -218,9 +242,24 @@ cli
     const buildOptions: BuildOptions = cleanOptions(options);
 
     try {
+      const configFromFile = await loadConfigFromFile(
+        { mode: options.mode || 'production', command: 'build' },
+        options.config,
+        root,
+        options.logLevel,
+      );
+
+      let config = await getViteConfig();
+
+      if (configFromFile) {
+        const { plugins, ...fileConfig } = configFromFile.config;
+
+        config = mergeConfig(config, fileConfig);
+      }
+
       await build(
         mergeConfig(
-          await getViteConfig(options.mode || 'build'),
+          config,
           {
             root,
             base: options.base,
@@ -250,8 +289,23 @@ cli
   .action(async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
     try {
-      const config = await resolveConfig(
-        mergeConfig(await getViteConfig(options.mode || 'serve'), {
+      const configFromFile = await loadConfigFromFile(
+        { mode: options.mode || 'production', command: 'build' },
+        options.config,
+        root,
+        options.logLevel,
+      );
+
+      let config = await getViteConfig();
+
+      if (configFromFile) {
+        const { plugins, ...fileConfig } = configFromFile.config;
+
+        config = mergeConfig(config, fileConfig);
+      }
+
+      const optimizeConfig = await resolveConfig(
+        mergeConfig(config, {
           root,
           base: options.base,
           configFile: options.config,
@@ -261,7 +315,7 @@ cli
         'serve',
       );
 
-      await optimizeDeps(config, options.force, true);
+      await optimizeDeps(optimizeConfig, options.force, true);
     } catch (e: any) {
       createLogger(options.logLevel).error(colors.red(`error when optimizing deps:\n${e.stack}`), { error: e });
 
@@ -292,8 +346,23 @@ cli
       filterDuplicateOptions(options);
 
       try {
+        const configFromFile = await loadConfigFromFile(
+          { mode: options.mode || 'production', command: 'build' },
+          options.config,
+          root,
+          options.logLevel,
+        );
+
+        let config = await getViteConfig();
+
+        if (configFromFile) {
+          const { plugins, ...fileConfig } = configFromFile.config;
+
+          config = mergeConfig(config, fileConfig);
+        }
+
         const server = await preview(
-          mergeConfig(getViteConfig(options.mode || 'build'), {
+          mergeConfig(config, {
             root,
             base: options.base,
             configFile: options.config,

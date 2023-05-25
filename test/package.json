@@ -4,7 +4,7 @@
   "scripts": {
     "build": "pp-dev build",
     "start": "pp-dev",
-    "reinstall": "npm uninstall pp-dev && npm i ../metricinsights-pp-dev-0.0.1.tgz"
+    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.0.1.tgz"
   },
   "dependencies": {
     "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.0.1.tgz",
