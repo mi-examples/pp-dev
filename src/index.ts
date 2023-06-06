@@ -1,4 +1,4 @@
-import { mergeConfig, loadConfigFromFile, InlineConfig } from 'vite';
+import { InlineConfig } from 'vite';
 import { readFileSync, readdirSync, writeFileSync, unlink } from 'fs';
 import * as path from 'path';
 import vitePPDev, { VitePPDevOptions } from './plugin.js';

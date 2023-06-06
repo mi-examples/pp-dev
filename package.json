@@ -64,5 +64,25 @@
     "LICENSE.md",
     "pp-dev.d.ts",
     "assets"
-  ]
+  ],
+  "types": "./dist/index.d.ts",
+  "directories": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mi-examples/pp-dev-js.git"
+  },
+  "keywords": [
+    "mi",
+    "metricinsights",
+    "pp",
+    "portal",
+    "pages",
+    "helper"
+  ],
+  "bugs": {
+    "url": "https://github.com/mi-examples/pp-dev-js/issues"
+  },
+  "homepage": "https://github.com/mi-examples/pp-dev-js#readme"
 }
