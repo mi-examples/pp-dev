@@ -21,7 +21,7 @@
     </span>
     {% } %}
   </span>
-  {% if (!templateLess && backendBaseURL && Number.isNaN(+portalPageId)) { %}
+  {% if (!templateLess && backendBaseURL && !Number.isNaN(+portalPageId)) { %}
   <button id="sync-template" class="sync-button" title="Sync template (Not implemented yet)">
     <svg
       fill="#007BFF"
