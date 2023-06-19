@@ -1,7 +1,7 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"
@@ -52,6 +52,7 @@
     "@types/ejs": "^3.1.2",
     "@types/express": "^4.17.17",
     "@types/jsdom": "^21.1.1",
+    "prettier": "^2.8.8",
     "rimraf": "^5.0.1",
     "rollup": "^3.23.0",
     "rollup-plugin-scss": "^3.0.0",

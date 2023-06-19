@@ -4,10 +4,10 @@
   "scripts": {
     "build": "pp-dev build",
     "start": "pp-dev",
-    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.0.1.tgz"
+    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.0.3.tgz"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.0.1.tgz",
+    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.0.3.tgz",
     "luxon": "^3.3.0"
   },
   "devDependencies": {

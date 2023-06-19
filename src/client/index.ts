@@ -11,6 +11,18 @@ if (import.meta.hot) {
 
   const syncButton = document.getElementById('sync-template');
 
+  const clientWrapButton = document.querySelector('.pp-dev-info__wrap-btn svg');
+  const bottomInfoPanel = document.querySelector('.pp-dev-info');
+
+  if (clientWrapButton && bottomInfoPanel) {
+    clientWrapButton.addEventListener('click', (e) => {
+      e.preventDefault();
+
+      bottomInfoPanel.classList.toggle('closed');
+      clientWrapButton.classList.toggle('closed');
+    });
+  }
+
   if (syncButton) {
     hot.on('template:sync:response', (payload) => {
       syncButton.classList.remove('syncing');

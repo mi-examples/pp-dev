@@ -1,18 +1,60 @@
 .pp-dev-info {
   position: fixed;
   z-index: 10000;
-  min-width: 800px;
+  white-space: nowrap;
   width: fit-content;
-  height: 30px;
-  top: calc(100% - 30px);
+  height: 25px;
+  top: calc(100% - 25px);
   right: 0;
   text-align: center;
-  padding: 5px 20px;
-  background-color: #f0f0f0;
+  padding: 3px 8px 3px 0;
+  background-color: #ffffff;
   border-radius: 3px 0 0 0;
   color: #333;
   box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
   display: flex;
+  transition: all 0.3s;
+
+  &__wrap-btn {
+    box-sizing: content-box;
+    display: flex;
+    align-items: center;
+    max-width: 13px;
+    width: 100%;
+    margin-right: 10px;
+    padding-left: 10px;
+    cursor: pointer;
+
+    &:hover {
+      animation: arrowHover 0.8s linear infinite;
+    }
+  }
+
+  &__wrap-btn-arrow {
+    width: 13px;
+  }
+
+  &.closed {
+    transform: translateX(calc(100% - 27px));
+    height: 20px;
+    top: calc(100% - 20px);
+
+    & .pp-dev-info__wrap-btn {
+      &:hover {
+        animation: arrowHover 1.2s linear infinite;
+      }
+
+      .pp-dev-info__wrap-btn-arrow {
+        transform: rotate(180deg);
+        max-width: 12px;
+      }
+    }
+
+    & .pp-dev-info__wrap-btn {
+      margin-left: -2px;
+    }
+  }
 
   .sync-button {
     background-color: transparent;
@@ -29,12 +71,44 @@
     }
   }
 
+  .margin-5 {
+    margin-right: 5px;
+  }
+
+  .margin-10 {
+    margin-right: 10px;
+  }
+
+  .custom-font {
+    font-family: sans-serif;
+    font-size: 13px;
+    font-weight: 300;
+    vertical-align: middle;
+    line-height: 1.5;
+
+    &:not(.not-colored) a {
+      color: rgb(0, 123, 255);
+    }
+  }
+
   @keyframes rotation {
     0% {
       transform: rotate(0deg) matrix(1, 0, 0, -1, 0, 0);
     }
     100% {
       transform: rotate(360deg) matrix(1, 0, 0, -1, 0, 0);
+    }
+  }
+
+  @keyframes arrowHover {
+    0% {
+      transform: translateX(2px);
+    }
+    50% {
+      transform: translateX(-2px);
+    }
+    100% {
+      transform: translateX(2px);
     }
   }
 }
