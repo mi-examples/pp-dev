@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 if (!import.meta.url.includes('node_modules')) {
   try {
     // only available as dev dependency
-    await import('source-map-support').then((r) => r.default.install());
+    await import('source-map-support').then((r) => r.install?.() || r.default.install());
   } catch (e) {
     /* empty */
   }
