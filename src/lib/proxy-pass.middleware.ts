@@ -9,13 +9,14 @@ export interface ProxyOpts {
 
   proxyIgnore?: (string | RegExp)[];
 
-  viteDevServer?: ViteDevServer;
+  viteDevServer: ViteDevServer;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
+export const PROXY_HEADER = 'X-PP-Proxy';
 
 export function initProxy(opts: ProxyOpts) {
-  const { rewritePath = /^\/(?!pt).*/i, baseURL = '' } = opts;
+  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', viteDevServer } = opts;
 
   if (!baseURL) {
     throw new Error('Base url is required');
@@ -66,11 +67,11 @@ export function initProxy(opts: ProxyOpts) {
         host,
         origin,
       },
-      onProxyReq(proxyReq, req) {
+      onProxyReq(proxyReq, req, res) {
         const host = req.headers.host;
         const referer = proxyReq.getHeader('referer');
 
-        console.log(
+        viteDevServer.config.logger.info(
           `Proxies request: ${req.method} ${req.url} -> ${proxyReq.method} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
         );
 
@@ -89,6 +90,8 @@ export function initProxy(opts: ProxyOpts) {
         return proxyReq;
       },
       onProxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+        res.setHeader(PROXY_HEADER, 1);
+
         const type = await (await fileType).fileTypeFromBuffer(responseBuffer);
 
         if (type) {
@@ -114,7 +117,8 @@ export function initProxy(opts: ProxyOpts) {
 
           const reqHost = req.headers.host ?? '';
 
-          return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response)); // manipulate response and return the result
+          // manipulate response and return the result
+          return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
         }
       }),
     },

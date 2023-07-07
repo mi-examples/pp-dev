@@ -119,4 +119,15 @@ const BASE_SHORTCUTS: CLIShortcut[] = [
       await server.close().finally(() => process.exit());
     },
   },
+  {
+    key: 'C',
+    description: 'clear proxy cache',
+    action(server: ViteDevServer): void | Promise<void> {
+      if (server.cache) {
+        server.cache.clear();
+
+        server.config.logger.info('Proxy cache cleared');
+      }
+    },
+  },
 ];

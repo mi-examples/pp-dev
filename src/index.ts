@@ -172,9 +172,12 @@ export async function getViteConfig() {
         ...(await getConfig()),
       }),
       clientInjectionPlugin(),
-      zipPack({
-        outFileName: `${templateName}.zip`,
-      }),
+      {
+        ...zipPack({
+          outFileName: `${templateName}.zip`,
+        }),
+        enforce: 'post',
+      },
     ],
   } as InlineConfig;
 }

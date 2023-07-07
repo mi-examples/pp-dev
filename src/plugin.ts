@@ -4,6 +4,7 @@ import { MiAPI, Headers } from './lib/pp.middleware.js';
 import * as http from 'http';
 import { urlReplacer } from './lib/helpers/url.helper.js';
 import { ClientService } from './lib/client.service.js';
+import { initProxyCache } from './lib/proxy-cache.middleware.js';
 
 export interface VitePPDevOptions {
   backendBaseURL?: string;
@@ -74,8 +75,11 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
           headers: { host: baseUrlHost, referer: backendBaseURL },
         });
 
+        server.middlewares.use(initProxyCache({ viteDevServer: server, ttl: 10 * 60 * 1000 }));
+
         server.middlewares.use(
           proxyPassMiddleware({
+            viteDevServer: server,
             baseURL: backendBaseURL,
             proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
           }) as any,
