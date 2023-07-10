@@ -23,6 +23,7 @@ export class MiAPI {
     this.#headers = headers;
 
     this.#pageVars = [];
+    this.#pageTitle = '';
 
     this.#templateLoaded = new Promise((resolve) => {
       this.#templateLoadedResolve = resolve;
@@ -89,7 +90,11 @@ export class MiAPI {
           'content-type': 'application/json',
         }),
       })
-      .then((response) => response.data)
+      .then((response) => {
+        this.#pageTemplate = response.data;
+
+        return response.data;
+      })
       .finally(() => {
         this.#templateLoadedResolve(true);
       });

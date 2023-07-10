@@ -85,18 +85,18 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
           }) as any,
         );
 
-        if (typeof portalPageId !== 'undefined') {
-          const isIndexRegExp = new RegExp(`^((${base})|/)$`);
+        const isIndexRegExp = new RegExp(`^((${base})|/)$`);
 
-          // Get portal page variables from the backend (also, redirect magic)
-          server.middlewares.use(function (req, res, next) {
-            const isNeedTemplateLoad = !(templateLess && miHudLess);
-            const isIndexRequest = isIndexRegExp.test(req.url ?? '');
+        // Get portal page variables from the backend (also, redirect magic)
+        server.middlewares.use(function (req, res, next) {
+          const isNeedTemplateLoad = !(templateLess && miHudLess);
+          const isIndexRequest = isIndexRegExp.test(req.url ?? '');
 
             if (isNeedTemplateLoad && isIndexRequest) {
               const headers = (req.headers ?? {}) as Headers;
 
-              const loadPageData = !templateLess
+            const loadPageData =
+              !templateLess && typeof portalPageId !== 'undefined'
                 ? mi.getPageVariables(portalPageId, headers)
                 : mi.getPageTemplate(headers);
 
@@ -109,31 +109,31 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
                     return redirect(res, `/home?proxyRedirect=${encodeURIComponent('/')}`, 302);
                   }
 
-                  next(reason);
-                });
-            } else {
-              next();
-            }
-          });
+                next(reason);
+              });
+          } else {
+            next();
+          }
+        });
 
-          server.middlewares.use(function (req, res, next) {
-            if (isIndexRegExp.test(req.url ?? '')) {
-              const end = res.end;
+        server.middlewares.use(function (req, res, next) {
+          if (isIndexRegExp.test(req.url ?? '')) {
+            const end = res.end;
 
-              const buffers: Buffer[] = [];
+            const buffers: Buffer[] = [];
 
-              res.write = function (body) {
-                buffers.push(body);
+            res.write = function (body) {
+              buffers.push(body);
 
-                return true;
-              };
+              return true;
+            };
 
-              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-              // @ts-ignore
-              res.end = function (chunk: any, encoding: BufferEncoding, cb?: () => void) {
-                if (typeof chunk === 'string') {
-                  buffers.push(Buffer.from(chunk));
-                }
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            res.end = function (chunk: any, encoding: BufferEncoding, cb?: () => void) {
+              if (typeof chunk === 'string') {
+                buffers.push(Buffer.from(chunk));
+              }
 
                 end.call(
                   this,
@@ -146,12 +146,11 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
               };
             }
 
-            next();
-          });
+          next();
+        });
 
-          const eventHandler = new ClientService(server);
-          eventHandler.init();
-        }
+        const eventHandler = new ClientService(server);
+        eventHandler.init();
       }
     },
   };
