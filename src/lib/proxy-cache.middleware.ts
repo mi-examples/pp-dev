@@ -78,6 +78,8 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
         }
 
         if (res.hasHeader(PROXY_HEADER)) {
+          viteDevServer.config.logger?.info(`[Cached] ${url}`);
+
           cache.put(url, { headers: res.getHeaders(), content: buffer }, ttl);
         }
 
