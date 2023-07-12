@@ -109,11 +109,14 @@ export class MiAPI {
         headers: Object.assign(this.#clearHeaders(headers), {
           accept: 'application/json',
           'content-type': 'application/json',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
+          expires: '0',
         }),
       })
       .then((response) => {
         const {
-          page: { tags, name, template },
+          page: { tags = '[]', name, template },
         } = response.data;
 
         if (template && tags) {

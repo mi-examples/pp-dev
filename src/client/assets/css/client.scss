@@ -1,44 +1,138 @@
+$pp-dev-height: 30px;
+
 .pp-dev-info {
+  // Define theme colors
+  --pp-dev-info-color-primary: #007bff;
+  --pp-dev-info-color-secondary: #6c757d;
+  --pp-dev-info-color-success: #28a745;
+  --pp-dev-info-color-info: #17a2b8;
+  --pp-dev-info-color-warning: #ffc107;
+  --pp-dev-info-color-danger: #dc3545;
+  --pp-dev-info-color-light: #f8f9fa;
+  --pp-dev-info-color-dark: #343a40;
+  --pp-dev-info-color-white: #ffffff;
+  --pp-dev-info-color-black: #000000;
+
+  // Setup default values for styles that can be overlapped by other page styles
+  // (e.g. color, font-family, font-size etc.)
+  // This is needed to make sure that the extension styles are not overlapped by the page styles
+  // and the extension is still usable
+  * {
+    color: var(--pp-dev-info-color-dark);
+    font-family: sans-serif;
+    font-size: 13px;
+    font-weight: 300;
+    line-height: 1.5;
+    letter-spacing: 0.00938em;
+    text-decoration: none;
+    text-transform: inherit;
+    vertical-align: inherit;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: 0 0;
+    list-style: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   position: fixed;
   z-index: 10000;
   white-space: nowrap;
   width: fit-content;
-  height: 25px;
-  top: calc(100% - 25px);
+  height: $pp-dev-height;
+  top: calc(100% - $pp-dev-height);
   right: 0;
   text-align: center;
   padding: 3px 8px 3px 0;
-  background-color: #ffffff;
+  background-color: var(--pp-dev-info-color-white);
   border-radius: 3px 0 0 0;
-  color: #333;
+  color: var(--pp-dev-info-color-dark);
   box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
   box-sizing: border-box;
   display: flex;
   transition: all 0.3s;
+  overflow: hidden;
 
-  &__wrap-btn {
-    box-sizing: content-box;
-    display: flex;
-    align-items: center;
-    max-width: 13px;
-    width: 100%;
-    margin-right: 10px;
-    padding-left: 10px;
-    cursor: pointer;
+  @mixin bold {
+    font-weight: 700;
+  }
+
+  .primary {
+    color: var(--pp-dev-info-color-primary) !important;
+  }
+
+  .success {
+    color: var(--pp-dev-info-color-success) !important;
+  }
+
+  .info {
+    color: var(--pp-dev-info-color-info) !important;
+  }
+
+  .warning {
+    color: var(--pp-dev-info-color-warning) !important;
+  }
+
+  .danger {
+    color: var(--pp-dev-info-color-danger) !important;
+  }
+
+  a {
+    color: var(--pp-dev-info-color-primary);
+    text-decoration: none;
+    vertical-align: middle;
+    line-height: 1.5;
 
     &:hover {
-      animation: arrowHover 0.8s linear infinite;
+      text-decoration: none;
+    }
+
+    &:active,
+    &:hover {
+      outline: 0;
     }
   }
 
-  &__wrap-btn-arrow {
-    width: 13px;
+  button {
+    padding: 1px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .bold,
+  .status-text {
+    @include bold;
+  }
+
+  & {
+    &__wrap-btn {
+      box-sizing: content-box;
+      display: flex;
+      align-items: center;
+      max-width: 13px;
+      width: 100%;
+      margin-right: 10px;
+      padding-left: 10px;
+      cursor: pointer;
+
+      &:hover {
+        animation: arrowHover 0.8s linear infinite;
+      }
+    }
+
+    &__wrap-btn-arrow {
+      width: 13px;
+      fill: var(--pp-dev-info-color-dark);
+    }
   }
 
   &.closed {
     transform: translateX(calc(100% - 27px));
-    height: 20px;
-    top: calc(100% - 20px);
 
     & .pp-dev-info__wrap-btn {
       &:hover {
@@ -60,6 +154,7 @@
     background-color: transparent;
     border: none;
     cursor: pointer;
+    padding: 4px 2px;
 
     &.syncing {
       cursor: not-allowed;
@@ -85,9 +180,10 @@
     font-weight: 300;
     vertical-align: middle;
     line-height: 1.5;
+    color: var(--pp-dev-info-color-dark);
 
     &:not(.not-colored) a {
-      color: rgb(0, 123, 255);
+      color: var(--pp-dev-info-color-primary) !important;
     }
   }
 
@@ -109,6 +205,23 @@
     }
     100% {
       transform: translateX(2px);
+    }
+  }
+
+  // Dark mode support with css variables
+  @media screen and (prefers-color-scheme: dark) {
+    & {
+      // Dark theme colors
+      --pp-dev-info-color-primary: #007bff;
+      --pp-dev-info-color-secondary: #a4abb6;
+      --pp-dev-info-color-success: #56f000;
+      --pp-dev-info-color-info: #2dccff;
+      --pp-dev-info-color-warning: #ffb302;
+      --pp-dev-info-color-danger: #ff3838;
+      --pp-dev-info-color-light: #343a40;
+      --pp-dev-info-color-dark: #f8f9fa;
+      --pp-dev-info-color-white: #000000;
+      --pp-dev-info-color-black: #ffffff;
     }
   }
 }
