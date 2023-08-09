@@ -21,6 +21,12 @@ const redirect = (res: http.ServerResponse, url: string, statusCode?: number) =>
   res.end();
 };
 
+function cutUrlParams(url: string) {
+  const urlParts = url.split('?');
+
+  return urlParts[0];
+}
+
 function vitePPDev(options: VitePPDevOptions): Plugin {
   const { templateName, templateLess = false, miHudLess = false, backendBaseURL, portalPageId } = options || {};
 
@@ -90,24 +96,24 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
         // Get portal page variables from the backend (also, redirect magic)
         server.middlewares.use(function (req, res, next) {
           const isNeedTemplateLoad = !(templateLess && miHudLess);
-          const isIndexRequest = isIndexRegExp.test(req.url ?? '');
+          const isIndexRequest = isIndexRegExp.test(cutUrlParams(req.url ?? ''));
 
-            if (isNeedTemplateLoad && isIndexRequest) {
-              const headers = (req.headers ?? {}) as Headers;
+          if (isNeedTemplateLoad && isIndexRequest) {
+            const headers = (req.headers ?? {}) as Headers;
 
             const loadPageData =
               !templateLess && typeof portalPageId !== 'undefined'
                 ? mi.getPageVariables(portalPageId, headers)
                 : mi.getPageTemplate(headers);
 
-              loadPageData
-                .then(() => {
-                  next();
-                })
-                .catch((reason) => {
-                  if (reason.response) {
-                    return redirect(res, `/home?proxyRedirect=${encodeURIComponent('/')}`, 302);
-                  }
+            loadPageData
+              .then(() => {
+                next();
+              })
+              .catch((reason) => {
+                if (reason.response) {
+                  return redirect(res, `/home?proxyRedirect=${encodeURIComponent('/')}`, 302);
+                }
 
                 next(reason);
               });
@@ -117,7 +123,7 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
         });
 
         server.middlewares.use(function (req, res, next) {
-          if (isIndexRegExp.test(req.url ?? '')) {
+          if (isIndexRegExp.test(cutUrlParams(req.url ?? ''))) {
             const end = res.end;
 
             const buffers: Buffer[] = [];
@@ -135,16 +141,16 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
                 buffers.push(Buffer.from(chunk));
               }
 
-                end.call(
-                  this,
-                  Buffer.from(
-                    urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(Buffer.concat(buffers), miHudLess)),
-                  ),
-                  encoding,
-                  cb,
-                );
-              };
-            }
+              end.call(
+                this,
+                Buffer.from(
+                  urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(Buffer.concat(buffers), miHudLess)),
+                ),
+                encoding,
+                cb,
+              );
+            };
+          }
 
           next();
         });
