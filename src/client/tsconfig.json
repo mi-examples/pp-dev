@@ -10,7 +10,9 @@
     "target": "esnext",
     "outDir": "../../dist/client",
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "include": ["./**/*"],
   "exclude": ["dist", "node_modules"]

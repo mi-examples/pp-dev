@@ -1,6 +1,6 @@
 $pp-dev-height: 30px;
 
-.pp-dev-info {
+.pp-dev-info-namespace {
   // Define theme colors
   --pp-dev-info-color-primary: #007bff;
   --pp-dev-info-color-secondary: #6c757d;
@@ -13,215 +13,306 @@ $pp-dev-height: 30px;
   --pp-dev-info-color-white: #ffffff;
   --pp-dev-info-color-black: #000000;
 
-  // Setup default values for styles that can be overlapped by other page styles
-  // (e.g. color, font-family, font-size etc.)
-  // This is needed to make sure that the extension styles are not overlapped by the page styles
-  // and the extension is still usable
-  * {
-    color: var(--pp-dev-info-color-dark);
-    font-family: sans-serif;
-    font-size: 13px;
-    font-weight: 300;
-    line-height: 1.5;
-    letter-spacing: 0.00938em;
-    text-decoration: none;
-    text-transform: inherit;
-    vertical-align: inherit;
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    outline: 0;
-    background: 0 0;
-    list-style: none;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
+  .pp-dev-info__popup {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: max-content;
+    max-width: 300px;
+    height: max-content;
+    max-height: max-content;
+    background-color: var(--pp-dev-info-color-white);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s;
+    overflow: hidden;
+    z-index: 100000;
+    border: 1px solid var(--pp-dev-info-color-secondary);
 
-  position: fixed;
-  z-index: 10000;
-  white-space: nowrap;
-  width: fit-content;
-  height: $pp-dev-height;
-  top: calc(100% - $pp-dev-height);
-  right: 0;
-  text-align: center;
-  padding: 3px 8px 3px 0;
-  background-color: var(--pp-dev-info-color-white);
-  border-radius: 3px 0 0 0;
-  color: var(--pp-dev-info-color-dark);
-  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
-  box-sizing: border-box;
-  display: flex;
-  transition: all 0.3s;
-  overflow: hidden;
-
-  @mixin bold {
-    font-weight: 700;
-  }
-
-  .primary {
-    color: var(--pp-dev-info-color-primary) !important;
-  }
-
-  .success {
-    color: var(--pp-dev-info-color-success) !important;
-  }
-
-  .info {
-    color: var(--pp-dev-info-color-info) !important;
-  }
-
-  .warning {
-    color: var(--pp-dev-info-color-warning) !important;
-  }
-
-  .danger {
-    color: var(--pp-dev-info-color-danger) !important;
-  }
-
-  a {
-    color: var(--pp-dev-info-color-primary);
-    text-decoration: none;
-    vertical-align: middle;
-    line-height: 1.5;
-
-    &:hover {
-      text-decoration: none;
-    }
-
-    &:active,
-    &:hover {
-      outline: 0;
-    }
-  }
-
-  button {
-    padding: 1px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .bold,
-  .status-text {
-    @include bold;
-  }
-
-  & {
-    &__wrap-btn {
-      box-sizing: content-box;
+    &-title {
       display: flex;
       align-items: center;
-      max-width: 13px;
+      justify-content: space-between;
+      padding: 0 10px;
+      height: 30px;
       width: 100%;
-      margin-right: 10px;
-      padding-left: 10px;
-      cursor: pointer;
+      box-sizing: border-box;
+      border-bottom: 1px solid var(--pp-dev-info-color-light);
+      background-color: var(--pp-dev-info-color-secondary);
 
-      &:hover {
-        animation: arrowHover 0.8s linear infinite;
+      &-text {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--pp-dev-info-color-white);
+      }
+
+      &-close {
+        cursor: pointer;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--pp-dev-info-color-white);
+
+        &:hover {
+          color: var(--pp-dev-info-color-light);
+        }
       }
     }
 
-    &__wrap-btn-arrow {
-      width: 13px;
-      fill: var(--pp-dev-info-color-dark);
+    &-content {
+      padding: 10px;
+      overflow-y: auto;
+      box-sizing: border-box;
+      flex-grow: 1;
+      background-color: var(--pp-dev-info-color-white);
+      width: 100%;
     }
-  }
 
-  &.closed {
-    transform: translateX(calc(100% - 27px));
+    &--success {
+      border-color: var(--pp-dev-info-color-success);
 
-    & .pp-dev-info__wrap-btn {
-      &:hover {
-        animation: arrowHover 1.2s linear infinite;
+      .pp-dev-info__popup {
+        &-title {
+          background-color: var(--pp-dev-info-color-success);
+        }
+
+        &-content {
+          color: var(--pp-dev-info-color-success);
+        }
       }
-
-      .pp-dev-info__wrap-btn-arrow {
-        transform: rotate(180deg);
-        max-width: 12px;
-      }
     }
 
-    & .pp-dev-info__wrap-btn {
-      margin-left: -2px;
-    }
-  }
+    &--danger {
+      border-color: var(--pp-dev-info-color-danger);
 
-  .sync-button {
-    background-color: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 4px 2px;
+      .pp-dev-info__popup {
+        &-title {
+          background-color: var(--pp-dev-info-color-danger);
+        }
 
-    &.syncing {
-      cursor: not-allowed;
-      pointer-events: none;
-
-      svg {
-        animation: rotation 2s linear infinite;
+        &-content {
+          color: var(--pp-dev-info-color-danger);
+        }
       }
     }
   }
 
-  .margin-5 {
-    margin-right: 5px;
-  }
+  &.pp-dev-info,
+  .pp-dev-info {
+    // Setup default values for styles that can be overlapped by other page styles
+    // (e.g. color, font-family, font-size etc.)
+    // This is needed to make sure that the extension styles are not overlapped by the page styles
+    // and the extension is still usable
+    * {
+      color: var(--pp-dev-info-color-dark);
+      font-family: sans-serif;
+      font-size: 13px;
+      font-weight: 300;
+      line-height: 1.5;
+      letter-spacing: 0.00938em;
+      text-decoration: none;
+      text-transform: inherit;
+      vertical-align: inherit;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      background: 0 0;
+      list-style: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
 
-  .margin-10 {
-    margin-right: 10px;
-  }
-
-  .custom-font {
-    font-family: sans-serif;
-    font-size: 13px;
-    font-weight: 300;
-    vertical-align: middle;
-    line-height: 1.5;
+    position: fixed;
+    z-index: 10000;
+    white-space: nowrap;
+    width: fit-content;
+    height: $pp-dev-height;
+    top: calc(100% - $pp-dev-height);
+    right: 0;
+    text-align: center;
+    padding: 3px 8px 3px 0;
+    background-color: var(--pp-dev-info-color-white);
+    border-radius: 3px 0 0 0;
     color: var(--pp-dev-info-color-dark);
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+    box-sizing: border-box;
+    display: flex;
+    transition: all 0.3s;
+    overflow: hidden;
 
-    &:not(.not-colored) a {
+    @mixin bold {
+      font-weight: 700;
+    }
+
+    .primary {
       color: var(--pp-dev-info-color-primary) !important;
     }
-  }
 
-  @keyframes rotation {
-    0% {
-      transform: rotate(0deg) matrix(1, 0, 0, -1, 0, 0);
+    .success {
+      color: var(--pp-dev-info-color-success) !important;
     }
-    100% {
-      transform: rotate(360deg) matrix(1, 0, 0, -1, 0, 0);
-    }
-  }
 
-  @keyframes arrowHover {
-    0% {
-      transform: translateX(2px);
+    .info {
+      color: var(--pp-dev-info-color-info) !important;
     }
-    50% {
-      transform: translateX(-2px);
-    }
-    100% {
-      transform: translateX(2px);
-    }
-  }
 
-  // Dark mode support with css variables
-  @media screen and (prefers-color-scheme: dark) {
+    .warning {
+      color: var(--pp-dev-info-color-warning) !important;
+    }
+
+    .danger {
+      color: var(--pp-dev-info-color-danger) !important;
+    }
+
+    a {
+      color: var(--pp-dev-info-color-primary);
+      text-decoration: none;
+      vertical-align: middle;
+      line-height: 1.5;
+
+      &:hover {
+        text-decoration: none;
+      }
+
+      &:active,
+      &:hover {
+        outline: 0;
+      }
+    }
+
+    button {
+      padding: 1px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .bold,
+    .status-text {
+      @include bold;
+    }
+
     & {
-      // Dark theme colors
-      --pp-dev-info-color-primary: #007bff;
-      --pp-dev-info-color-secondary: #a4abb6;
-      --pp-dev-info-color-success: #56f000;
-      --pp-dev-info-color-info: #2dccff;
-      --pp-dev-info-color-warning: #ffb302;
-      --pp-dev-info-color-danger: #ff3838;
-      --pp-dev-info-color-light: #343a40;
-      --pp-dev-info-color-dark: #f8f9fa;
-      --pp-dev-info-color-white: #000000;
-      --pp-dev-info-color-black: #ffffff;
+      &__wrap-btn {
+        box-sizing: content-box;
+        display: flex;
+        align-items: center;
+        max-width: 13px;
+        width: 100%;
+        margin-right: 10px;
+        padding-left: 10px;
+        cursor: pointer;
+
+        &:hover {
+          animation: arrowHover 0.8s linear infinite;
+        }
+      }
+
+      &__wrap-btn-arrow {
+        width: 13px;
+        fill: var(--pp-dev-info-color-dark);
+      }
+    }
+
+    &.closed {
+      transform: translateX(calc(100% - 27px));
+
+      & .pp-dev-info__wrap-btn {
+        &:hover {
+          animation: arrowHover 1.2s linear infinite;
+        }
+
+        .pp-dev-info__wrap-btn-arrow {
+          transform: rotate(180deg);
+          max-width: 12px;
+        }
+      }
+
+      & .pp-dev-info__wrap-btn {
+        margin-left: -2px;
+      }
+    }
+
+    .sync-button {
+      background-color: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px 2px;
+
+      &.syncing {
+        cursor: not-allowed;
+        pointer-events: none;
+
+        svg {
+          animation: rotation 2s linear infinite;
+        }
+      }
+    }
+
+    .margin-5 {
+      margin-right: 5px;
+    }
+
+    .margin-10 {
+      margin-right: 10px;
+    }
+
+    .custom-font {
+      font-family: sans-serif;
+      font-size: 13px;
+      font-weight: 300;
+      vertical-align: middle;
+      line-height: 1.5;
+      color: var(--pp-dev-info-color-dark);
+
+      &:not(.not-colored) a {
+        color: var(--pp-dev-info-color-primary) !important;
+      }
+    }
+
+    @keyframes rotation {
+      0% {
+        transform: rotate(0deg) matrix(1, 0, 0, -1, 0, 0);
+      }
+      100% {
+        transform: rotate(360deg) matrix(1, 0, 0, -1, 0, 0);
+      }
+    }
+
+    @keyframes arrowHover {
+      0% {
+        transform: translateX(2px);
+      }
+      50% {
+        transform: translateX(-2px);
+      }
+      100% {
+        transform: translateX(2px);
+      }
+    }
+
+    // Dark mode support with css variables
+    @media screen and (prefers-color-scheme: dark) {
+      & {
+        // Dark theme colors
+        --pp-dev-info-color-primary: #007bff;
+        --pp-dev-info-color-secondary: #a4abb6;
+        --pp-dev-info-color-success: #56f000;
+        --pp-dev-info-color-info: #2dccff;
+        --pp-dev-info-color-warning: #ffb302;
+        --pp-dev-info-color-danger: #ff3838;
+        --pp-dev-info-color-light: #343a40;
+        --pp-dev-info-color-dark: #f8f9fa;
+        --pp-dev-info-color-white: #000000;
+        --pp-dev-info-color-black: #ffffff;
+      }
     }
   }
 }

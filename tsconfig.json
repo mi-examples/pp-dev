@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "declaration": true,
     "lib": ["esnext"],
     "module": "esnext",
@@ -9,8 +10,12 @@
     "strict": true,
     "target": "esnext",
     "outDir": "./dist",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*.ts", "src/**/*.json"],
   "exclude": ["dist", "node_modules", "src/client"]
 }

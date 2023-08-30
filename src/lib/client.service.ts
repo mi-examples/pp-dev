@@ -1,13 +1,20 @@
 import { ViteDevServer } from 'vite';
+import { DistService } from './dist.service';
+import { MiAPI } from './pp.middleware';
+
+export interface ClientServiceOptions {
+  distService?: DistService;
+  miAPI?: MiAPI;
+}
 
 export class ClientService {
   private readonly server: ViteDevServer;
-  private opts: any;
+  private readonly opts: ClientServiceOptions;
   private readonly eventMap: Map<string, (this: ClientService, ...attrs: any[]) => void>;
 
-  constructor(server: ViteDevServer, opts?: any) {
+  constructor(server: ViteDevServer, opts?: ClientServiceOptions) {
     this.server = server;
-    this.opts = opts;
+    this.opts = opts || {};
 
     this.eventMap = new Map<string, (this: ClientService, ...attrs: any[]) => void>();
 
@@ -33,11 +40,45 @@ export class ClientService {
     });
   }
 
-  onTemplateSync(data: any) {
-    console.log('onTemplateSync', data);
+  async onTemplateSync() {
+    if (this.opts.distService && this.opts.miAPI) {
+      const { distService, miAPI } = this.opts;
 
-    setTimeout(() => {
-      this.server.ws.send('template:sync:response', { syncedAt: new Date(), currentHash: 'sync-hash' });
-    }, 500);
+      const currentAssets = await miAPI?.getAssets();
+
+      const newAssets = currentAssets
+        ? await distService?.saveBackupAndBuild(currentAssets)
+        : await distService?.buildNewAssets();
+
+      if (newAssets) {
+        const updateResult = await miAPI?.updateAssets(newAssets);
+
+        if (updateResult?.status === 'OK') {
+          const backupMeta = distService?.getBackupMeta();
+
+          const {
+            lastBackupName: backupFilename,
+            lastBackupHash: currentHash,
+            lastBackupDate: backupDate,
+          } = backupMeta || { lastBackupName: '', lastBackupHash: '', lastBackupDate: new Date().toISOString() };
+
+          this.server.ws.send('template:sync:response', {
+            syncedAt: new Date(backupDate),
+            currentHash,
+            backupFilename,
+          });
+        } else {
+          this.server.ws.send('template:sync:response', { error: 'Failed to update assets' });
+        }
+      } else {
+        this.server.ws.send('template:sync:response', { error: 'Failed to build new assets' });
+
+        return;
+      }
+    } else {
+      this.server.ws.send('template:sync:response', { error: 'Dist service or MiAPI is not defined' });
+
+      return;
+    }
   }
 }

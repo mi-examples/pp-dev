@@ -1,5 +1,5 @@
 {%# This is EJS template. Parameters: openDelimiter: "{", closeDelimiter="}" %}
-<div class="pp-dev-info">
+<div class="pp-dev-info-namespace pp-dev-info">
   <div class="pp-dev-info__wrap-btn">
     <svg class="pp-dev-info__wrap-btn-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
       <path
@@ -33,7 +33,7 @@
     {% } %}
   </div>
   {% if (!templateLess && backendBaseURL && !Number.isNaN(+portalPageId)) { %}
-  <button id="sync-template" class="sync-button" title="Sync template (Not implemented yet)">
+  <button id="sync-template" class="sync-button" title="Sync template">
     <svg
       fill="#007BFF"
       width="16px"
