@@ -5,6 +5,7 @@ import * as http from 'http';
 import { urlReplacer } from './lib/helpers/url.helper.js';
 import { ClientService } from './lib/client.service.js';
 import { initProxyCache } from './lib/proxy-cache.middleware.js';
+import { DistService } from './lib/dist.service.js';
 
 export interface VitePPDevOptions {
   backendBaseURL?: string;
@@ -69,6 +70,8 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
       server.middlewares.use(function (req, res, next) {
         if (req.url === '/' || req.url === `/pt/${templateName}` || req.url === baseWithoutTrailingSlash) {
           return redirect(res, base, 302);
+        } else if (req.url?.includes('?') && req.url.split('?')[0] === baseWithoutTrailingSlash) {
+          return redirect(res, `${base}?${req.url.split('?')[1]}`, 302);
         }
 
         next();
@@ -78,7 +81,13 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
         const baseUrlHost = new URL(backendBaseURL).host;
 
         const mi = new MiAPI(backendBaseURL, {
-          headers: { host: baseUrlHost, referer: backendBaseURL },
+          headers: {
+            host: baseUrlHost,
+            referer: backendBaseURL,
+            origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
+          },
+          portalPageId,
+          templateLess,
         });
 
         server.middlewares.use(initProxyCache({ viteDevServer: server, ttl: 10 * 60 * 1000 }));
@@ -155,8 +164,8 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
           next();
         });
 
-        const eventHandler = new ClientService(server);
-        eventHandler.init();
+        const distService = new DistService(templateName);
+        const eventHandler = new ClientService(server, { distService, miAPI: mi });
       }
     },
   };

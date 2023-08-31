@@ -1,7 +1,14 @@
 import axios, { Axios } from 'axios';
 import { JSDOM } from 'jsdom';
+import { AssetsAPI, PageAPI } from '../api/index.js';
 
 export type Headers = Record<string, string | undefined>;
+
+export interface MiAPIOptions {
+  portalPageId?: number;
+  headers?: Headers;
+  templateLess: boolean;
+}
 
 export class MiAPI {
   #headers: Headers;
@@ -17,8 +24,14 @@ export class MiAPI {
   #templateLoaded: Promise<boolean>;
   #templateLoadedResolve!: (value: boolean) => void;
 
-  constructor(baseURL: string, opts?: { headers?: Headers }) {
-    const { headers = {} } = opts || {};
+  private portalPageId?: number;
+  private templateLess?: boolean;
+
+  private assetsApi: AssetsAPI;
+  private pageApi: PageAPI;
+
+  constructor(baseURL: string, opts?: MiAPIOptions) {
+    const { headers = {}, portalPageId, templateLess = true } = opts || {};
 
     this.#headers = headers;
 
@@ -30,6 +43,12 @@ export class MiAPI {
     });
 
     this.#axios = axios.create({ baseURL, headers });
+
+    this.portalPageId = portalPageId;
+    this.templateLess = templateLess;
+
+    this.assetsApi = new AssetsAPI(this.#axios);
+    this.pageApi = new PageAPI(this.#axios);
   }
 
   async isTemplateLoaded() {
@@ -41,83 +60,74 @@ export class MiAPI {
 
     Object.keys(obj).forEach((key) => obj[key] === undefined && delete obj[key]);
 
+    this.#headers = obj;
+
     return obj;
   }
 
+  updateHeaders(headers: Headers) {
+    this.#clearHeaders(headers);
+  }
+
+  /**
+   * Get page template
+   * @param headers
+   */
   async getPageTemplate(headers: Headers) {
     if (this.#pageTemplate) {
       return Promise.resolve(this.#pageTemplate);
     }
 
-    const pageList = await this.#axios
-      .get<{ pages: { name: string; internal_name: string }[] }>('/api/page', {
-        withCredentials: true,
-        headers: Object.assign(this.#clearHeaders(headers), {
-          accept: 'application/json',
-          'content-type': 'application/json',
-        }),
-      })
-      .then((response) => response.data);
-
-    let page = pageList.pages.find((p) => p.name === '[DEV PAGE. DO NOT DELETE]');
-
-    if (!page) {
-      page = await this.#axios
-        .post<{ page: { name: string; internal_name: string } }>(
-          '/api/page/',
-          {
-            enabled: 'Y',
-            name: '[DEV PAGE. DO NOT DELETE]',
-            internal_name: 'dev-page-template',
-            visible_in_homepage: 'Y',
-          },
-          {
-            withCredentials: true,
-            headers: Object.assign(this.#clearHeaders(headers), {
-              accept: 'application/json',
-              'content-type': 'application/json',
-            }),
-          },
-        )
-        .then((response) => response.data.page);
+    if (typeof this.templateLess === 'undefined') {
+      this.templateLess = false;
     }
 
-    return await this.#axios
-      .get<string>(`/p/${page!.internal_name}`, {
-        withCredentials: true,
-        headers: Object.assign(this.#clearHeaders(headers), {
-          accept: 'text/html',
-          'content-type': 'application/json',
-        }),
-      })
-      .then((response) => {
-        this.#pageTemplate = response.data;
+    const pageList = await this.pageApi.getAll(this.#clearHeaders(headers));
 
-        return response.data;
+    let page = pageList.find((p) => p.name === '[DEV PAGE. DO NOT DELETE]');
+
+    if (!page) {
+      page = await this.pageApi.create(
+        {
+          enabled: 'Y',
+          name: '[DEV PAGE. DO NOT DELETE]',
+          internal_name: 'dev-page-template',
+          visible_in_homepage: 'Y',
+        },
+        this.#clearHeaders(headers),
+      );
+    }
+
+    return await this.pageApi
+      .getPageContent(page.internal_name, this.#clearHeaders(headers))
+      .then((response) => {
+        this.#pageTemplate = response;
+
+        return response;
       })
       .finally(() => {
         this.#templateLoadedResolve(true);
       });
   }
 
+  /**
+   * Get page template variables
+   *
+   * @param pageId
+   * @param headers
+   */
   async getPageVariables(pageId: number, headers: Headers) {
     this.#pageTemplate = await this.getPageTemplate(headers);
 
-    return await this.#axios
-      .get<{ page: { name: string; tags: string; template?: string } }>(`/api/page/id/${pageId}`, {
-        withCredentials: true,
-        headers: Object.assign(this.#clearHeaders(headers), {
-          accept: 'application/json',
-          'content-type': 'application/json',
-          'cache-control': 'no-cache',
-          pragma: 'no-cache',
-          expires: '0',
-        }),
-      })
+    if (!this.portalPageId) {
+      this.portalPageId = pageId;
+      this.templateLess = false;
+    }
+
+    return await this.pageApi
+      .get(pageId, this.#clearHeaders(headers))
       .then((response) => {
-        const {
-          page: { tags = '[]', name, template },
-        } = response.data;
+        const { tags = '[]', name, template } = response;
 
         if (template && tags) {
           const parsed = JSON.parse(tags) as { name: string; value: string }[];
@@ -142,6 +152,12 @@ export class MiAPI {
       });
   }
 
+  /**
+   * Build page with variables
+   *
+   * @param content
+   * @param miHudLess
+   */
   buildPage(content: string | Buffer, miHudLess = false) {
     let result = typeof content === 'string' ? content : content.toString('utf-8');
 
@@ -182,5 +198,33 @@ export class MiAPI {
     const serializedDom = dom.serialize();
 
     return serializedDom.replace(new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i'), result);
+  }
+
+  async getAssets() {
+    if (this.portalPageId) {
+      if (this.templateLess) {
+        return await this.assetsApi.downloadPageAssets(this.portalPageId, this.#headers);
+      } else {
+        const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
+
+        if (pageInfo.template) {
+          return await this.assetsApi.downloadTemplateAssets(pageInfo.template, this.#headers);
+        }
+      }
+    }
+  }
+
+  async updateAssets(assets: Buffer) {
+    if (this.portalPageId) {
+      if (this.templateLess) {
+        return await this.assetsApi.uploadPageAssets(this.portalPageId, assets, this.#headers);
+      } else {
+        const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
+
+        if (pageInfo.template) {
+          return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, this.#headers);
+        }
+      }
+    }
   }
 }
