@@ -1,4 +1,5 @@
 import { URL } from 'url';
+import type { ServerResponse } from 'http';
 
 export const stringIsAValidUrl = (s: string, protocols: string[]) => {
   try {
@@ -31,3 +32,22 @@ export const urlPathReplacer = (urlPath: string, destinationPath: string, conten
 
   return content.replace(urlReplaceRegExp, destinationPath);
 };
+
+export const redirect = (res: ServerResponse, url: string, statusCode?: number) => {
+  res.setHeader('location', url);
+  res.statusCode = statusCode || 302;
+
+  res.end();
+};
+
+export function cutUrlParams(url: string) {
+  const urlParts = url.split('?');
+
+  return urlParts[0];
+}
+
+export function cutUrlHash(url: string) {
+  const urlParts = url.split('#');
+
+  return urlParts[0];
+}

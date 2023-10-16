@@ -6,7 +6,7 @@ import { createColors } from 'picocolors';
 import type { ServerOptions, BuildOptions, LogLevel } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
-import { getViteConfig } from './index.js';
+import { getViteConfig, PPDevConfig } from './index.js';
 import {
   mergeConfig,
   build,
@@ -17,6 +17,17 @@ import {
   ViteDevServer,
   loadConfigFromFile,
 } from 'vite';
+import { parse } from 'url';
+import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
+import DevServer from 'next/dist/server/dev/next-dev-server';
+import { NextConfig } from 'next';
+import { initPPRedirect } from './lib/pp-redirect.middleware.js';
+import { MiAPI } from './lib/pp.middleware.js';
+import { initProxyCache } from './lib/proxy-cache.middleware.js';
+import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
+import { initLoadPPData } from './lib/load-pp-data.middleware.js';
+import { cutUrlParams, urlReplacer } from './lib/helpers/url.helper.js';
+import { createDevServer } from './lib/helpers/server.js';
 
 const cli = cac('pp-dev');
 const colors = createColors();
@@ -207,6 +218,188 @@ cli
           },
         ],
       });
+    } catch (e: any) {
+      const logger = createLogger(options.logLevel);
+
+      logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
+        error: e,
+      });
+      stopProfiler(logger.info);
+
+      process.exit(1);
+    }
+  });
+
+// dev
+cli
+  .command('next [root]', 'start dev server') // default command
+  .alias('next-serve') // the command is called 'serve' in Vite's API
+  .alias('next-dev') // alias to align with the script name
+  .option('--host [host]', `[string] specify hostname`)
+  .option('--port <port>', `[number] specify port`, { default: 3000 })
+  .option('--https', `[boolean] use TLS + HTTP/2`)
+  .option('--open [path]', `[boolean | string] open browser on startup`)
+  .option('--cors', `[boolean] enable CORS`)
+  .option('--strictPort', `[boolean] exit if specified port is already in use`)
+  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+  .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
+    filterDuplicateOptions(options);
+
+    const { default: next } = await import('next');
+
+    const server = createDevServer(options.logLevel);
+
+    const opts = cleanOptions(options);
+
+    const app = next({ dev: true, hostname: opts.host as string, port: opts.port });
+    const handle = app.getRequestHandler();
+
+    await app.prepare();
+
+    const nextServer = (await (app as any).getServer()) as DevServer & { nextConfig: NextConfig };
+
+    let base = nextServer.nextConfig.basePath;
+
+    if (!base.endsWith('/')) {
+      base += '/';
+    }
+
+    const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
+    const templateName = nextServer.nextConfig.serverRuntimeConfig.templateName as string;
+
+    const ppDevConfig = nextServer.nextConfig.serverRuntimeConfig.ppDevConfig as PPDevConfig;
+
+    const {
+      backendBaseURL,
+      portalPageId,
+      templateLess = true,
+      enableProxyCache = true,
+      miHudLess = true,
+      proxyCacheTTL = 10 * 60 * 1000,
+    } = ppDevConfig;
+
+    server.use(initPPRedirect(base, templateName));
+
+    if (backendBaseURL) {
+      const baseUrlHost = new URL(backendBaseURL).host;
+
+      const mi = new MiAPI(backendBaseURL, {
+        headers: {
+          host: baseUrlHost,
+          referer: backendBaseURL,
+          origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
+        },
+        portalPageId,
+        templateLess,
+      });
+
+      if (enableProxyCache) {
+        let ttl = +proxyCacheTTL;
+
+        if (!ttl || Number.isNaN(ttl) || ttl < 0) {
+          ttl = 10 * 60 * 1000; // 10 minutes
+        }
+
+        server.use(initProxyCache({ devServer: server, ttl }));
+      }
+
+      server.use(
+        proxyPassMiddleware({
+          devServer: server,
+          baseURL: backendBaseURL,
+          proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
+        }) as any,
+      );
+
+      const isIndexRegExp = new RegExp(`^((${base})|/)$`);
+
+      // Get portal page variables from the backend (also, redirect magic)
+      server.use(initLoadPPData(isIndexRegExp, mi, ppDevConfig));
+
+      server.use(
+        initRewriteResponse(
+          (url) => {
+            return isIndexRegExp.test(cutUrlParams(url));
+          },
+          (response, req) => {
+            return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
+          },
+        ),
+      );
+    }
+
+    server.all('*', (req, res) => {
+      const parsedUrl = parse(req.url, true);
+
+      handle(req, res, parsedUrl);
+    });
+
+    try {
+      await new Promise((resolve) => {
+        if (opts.host) {
+          resolve(
+            server.listen(opts.port as number, opts.host as string, () => {
+              //
+            }),
+          );
+        } else {
+          resolve(
+            server.listen(opts.port, () => {
+              //
+            }),
+          );
+        }
+      });
+
+      const info = server.config.logger.info;
+
+      const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
+      const startupDurationString = ppDevStartTime
+        ? colors.dim(`ready in ${colors.reset(colors.bold(Math.ceil(performance.now() - ppDevStartTime)))} ms`)
+        : '';
+
+      info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`, {
+        clear: true,
+      });
+
+      server.printUrls(base);
+      //   bindShortcuts(server, {
+      //     print: true,
+      //     customShortcuts: [
+      //       profileSession && {
+      //         key: 'p',
+      //         description: 'start/stop the profiler',
+      //         async action(server) {
+      //           if (profileSession) {
+      //             await stopProfiler(server.config.logger.info);
+      //           } else {
+      //             const inspector = await import('node:inspector').then((r) => (r as any).default);
+      //             await new Promise<void>((res) => {
+      //               profileSession = new inspector.Session();
+      //               profileSession.connect();
+      //               profileSession.post('Profiler.enable', () => {
+      //                 profileSession?.post('Profiler.start', () => {
+      //                   server.config.logger.info('Profiler started');
+      //                   res();
+      //                 });
+      //               });
+      //             });
+      //           }
+      //         },
+      //       },
+      //       {
+      //         key: 'l',
+      //         description: 'proxy re-login',
+      //         action(server: ViteDevServer): void | Promise<void> {
+      //           server.ws.send({
+      //             type: 'custom',
+      //             event: 'redirect',
+      //             data: { url: `/auth/index/logout?proxyRedirect=${encodeURIComponent('/')}` },
+      //           });
+      //         },
+      //       },
+      //     ],
+      //   });
     } catch (e: any) {
       const logger = createLogger(options.logLevel);
 

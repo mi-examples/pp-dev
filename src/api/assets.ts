@@ -1,12 +1,11 @@
 import { Axios } from 'axios';
 import { Headers } from './constants.js';
 import { FormData, File } from 'formdata-node';
+import { BaseAPI } from './base.js';
 
-export class AssetsAPI {
-  private axios: Axios;
-
+export class AssetsAPI extends BaseAPI {
   constructor(axios: Axios) {
-    this.axios = axios;
+    super(axios);
   }
 
   async downloadPageAssets(portalPageId: number | string, headers?: Headers) {

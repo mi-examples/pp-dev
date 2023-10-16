@@ -26,11 +26,11 @@ Config examples:
 // pp-dev.config.js
 
 /**
-* @type {import('@metricinsights/pp-dev').PPDevConfig}
-*/
+ * @type {import('@metricinsights/pp-dev').PPDevConfig}
+ */
 module.exports = {
-backendBaseURL: 'https://example.metricinsights.com',
-portalPageId: 1,
+  backendBaseURL: 'https://example.metricinsights.com',
+  portalPageId: 1,
 };
 ```
 
@@ -42,8 +42,8 @@ portalPageId: 1,
 import { PPDevConfig } from '@metricinsights/pp-dev';
 
 const config: PPDevConfig = {
-backendBaseURL: 'https://example.metricinsights.com',
-portalPageId: 1,
+  backendBaseURL: 'https://example.metricinsights.com',
+  portalPageId: 1,
 };
 
 export default config;
@@ -53,8 +53,8 @@ export default config;
 
 ```json
 {
-"backendBaseURL": "https://example.metricinsights.com",
-"portalPageId": 1
+  "backendBaseURL": "https://example.metricinsights.com",
+  "portalPageId": 1
 }
 ```
 
@@ -62,13 +62,13 @@ export default config;
 
 ```json
 {
-"name": "<project-name>",
-"version": "1.0.0",
-"scripts": {},
-"pp-dev": {
-  "backendBaseURL": "https://example.metricinsights.com",
-  "portalPageId": 1
-}
+  "name": "<project-name>",
+  "version": "1.0.0",
+  "scripts": {},
+  "pp-dev": {
+    "backendBaseURL": "https://example.metricinsights.com",
+    "portalPageId": 1
+  }
 }
 ```
 
@@ -115,6 +115,22 @@ Example: `true`
 
 Description: Disables template variables transforming. Used when you develop the portal page without a template
 
+#### `enableProxyCache`
+
+Type: Boolean
+
+Default: `true`
+
+Description: Enables proxy cache. If you want to disable proxy cache, you need to set this option to `false`
+
+#### `proxyCacheTTL`
+
+Type: Number
+
+Default: `10 * 60 * 1000`
+
+Description: Defines proxy cache TTL in milliseconds
+
 ### CLI API description
 
 - `pp-dev help` - show CLI's help
@@ -146,3 +162,21 @@ Description: Disables template variables transforming. Used when you develop the
    Also, you may need to add `type="module"` to every script that is added by the `script` tag with the `src` property.
    Actually would be good to have only one `script` tag with the `src` tag.
    Every other JS file will be imported with construction like this `import helper from './helpers';`
+
+## [Next.js](https://nextjs.org/) support
+
+If you want to use Portal Page helper with Next.js, you need to add pp-dev config to your root directory.
+
+Then you need to change your `dev` script in `package.json` to `pp-dev next`.
+
+The last step is to wrap your next config with `withPPDev` function.
+
+```javascript
+// next.config.js
+
+const { withPPDev } = require('@metricinsights/pp-dev');
+
+module.exports = withPPDev({
+  // your next config
+});
+```

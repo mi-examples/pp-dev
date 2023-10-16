@@ -2,17 +2,16 @@ import { Connect, ViteDevServer } from 'vite';
 import * as memoryCache from 'memory-cache';
 import { PROXY_HEADER } from './proxy-pass.middleware.js';
 import NextHandleFunction = Connect.NextHandleFunction;
-
-const cache = new memoryCache.Cache<string, CacheItem>();
-
-export interface ProxyCacheOpts {
-  viteDevServer: ViteDevServer;
-  ttl?: number;
-}
+import { Express } from 'express';
 
 export interface CacheItem {
   headers: Record<string, any>;
   content: any;
+}
+
+export interface ProxyCacheOpts {
+  devServer: ViteDevServer | Express;
+  ttl?: number;
 }
 
 declare module 'vite' {
@@ -21,12 +20,14 @@ declare module 'vite' {
   }
 }
 
+const cache = new memoryCache.Cache<string, CacheItem>();
+
 const testCacheUrlRegExp = /\.[a-z0-9]+$/i;
 
 export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
-  const { viteDevServer, ttl = 10 * 60 * 1000 } = opts;
+  const { devServer, ttl = 10 * 60 * 1000 } = opts;
 
-  viteDevServer.cache = cache;
+  devServer.cache = cache;
 
   return (req, res, next) => {
     const url = req.originalUrl || req.url || '';
@@ -34,8 +35,8 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     if (testCacheUrlRegExp.test(url.split('?')[0] || '')) {
       const cacheItem = cache.get(url);
 
-      if (cacheItem) {
-        viteDevServer.config.logger.info(`Proxies request: ${req.method} ${url} -> Cache ${url}`);
+      if (cacheItem && devServer.config) {
+        devServer.config.logger.info(`Proxies request: ${req.method} ${url} -> Cache ${url}`);
 
         for (const [header, value] of Object.entries(cacheItem.headers)) {
           res.setHeader(header, value);
@@ -78,7 +79,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
         }
 
         if (res.hasHeader(PROXY_HEADER)) {
-          viteDevServer.config.logger?.info(`[Cached] ${url}`);
+          devServer.config.logger?.info(`[Cached] ${url}`);
 
           cache.put(url, { headers: res.getHeaders(), content: buffer }, ttl);
         }
