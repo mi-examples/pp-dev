@@ -8,6 +8,8 @@ import { pathToFileURL } from 'url';
 import { PP_WATCH_CONFIG_NAMES, PP_DEV_CONFIG_NAMES } from './constants.js';
 import { clientInjectionPlugin } from './plugins/client-injection-plugin.js';
 import header from './banner/header.js';
+import type { NextConfig } from 'next';
+import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
 
 export type PPDevConfig = Omit<VitePPDevOptions, 'templateName'>;
 export type PPWatchConfig = { baseURL: string; portalPageId: number };
@@ -97,6 +99,21 @@ async function loadConfig<T extends object>(dirFiles: string[], configNames: str
   return null;
 }
 
+function getPkg() {
+  const cwd = process.cwd();
+
+  try {
+    return JSON.parse(
+      readFileSync(path.resolve(cwd, 'package.json'), {
+        encoding: 'utf-8',
+        flag: 'r',
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
 export async function getConfig() {
   const endsWithRegExp = /\.config\.((ts)|(js(on)?))$/;
   const cwd = process.cwd();
@@ -129,12 +146,7 @@ export async function getConfig() {
     }
   }
 
-  const pkg = JSON.parse(
-    readFileSync(path.resolve(cwd, 'package.json'), {
-      encoding: 'utf-8',
-      flag: 'r',
-    }),
-  );
+  const pkg = getPkg();
 
   if (!configFound && typeof pkg['pp-dev'] === 'object') {
     config = pkg['pp-dev'];
@@ -144,12 +156,7 @@ export async function getConfig() {
 }
 
 export async function getViteConfig() {
-  const pkg = JSON.parse(
-    readFileSync(path.resolve(process.cwd(), 'package.json'), {
-      encoding: 'utf-8',
-      flag: 'r',
-    }),
-  );
+  const pkg = getPkg();
 
   const templateName = pkg.name;
 
@@ -180,4 +187,35 @@ export async function getViteConfig() {
       },
     ],
   } as InlineConfig;
+}
+
+export function withPPDev(nextjsConfig: NextConfig, ppDevConfig?: PPDevConfig) {
+  return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {
+    const config = await getConfig();
+
+    const pkg = getPkg();
+
+    const templateName = pkg.name;
+
+    if (phase === PHASE_DEVELOPMENT_SERVER) {
+      const devConfig = Object.assign(config, ppDevConfig);
+
+      return Object.assign({ basePath: `/pt/${templateName}`, trailingSlash: true } as NextConfig, nextjsConfig, {
+        serverRuntimeConfig: {
+          templateName,
+          ppDevConfig: devConfig,
+        },
+        publicRuntimeConfig: {
+          templateName,
+          ppDevConfig: {
+            backendBaseURL: devConfig.backendBaseURL,
+            portalPageId: devConfig.portalPageId,
+            templateLess: devConfig.templateLess,
+          },
+        },
+      } as NextConfig);
+    }
+
+    return Object.assign({ basePath: `/pt/${templateName}` } as NextConfig, nextjsConfig);
+  };
 }

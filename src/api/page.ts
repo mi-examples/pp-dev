@@ -1,5 +1,5 @@
-import { Axios } from 'axios';
 import { Headers } from './constants.js';
+import { BaseAPI } from './base.js';
 
 export interface Page {
   name: string;
@@ -10,13 +10,7 @@ export interface Page {
   template?: string;
 }
 
-export class PageAPI {
-  private axios: Axios;
-
-  constructor(axios: Axios) {
-    this.axios = axios;
-  }
-
+export class PageAPI extends BaseAPI {
   async getAll(headers?: Headers) {
     return (
       await this.axios.get<{ pages: Page[] }>('/api/page', {

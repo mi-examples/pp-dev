@@ -1,6 +1,7 @@
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import { urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
 import { ViteDevServer } from 'vite';
+import { Express } from 'express';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -9,14 +10,14 @@ export interface ProxyOpts {
 
   proxyIgnore?: (string | RegExp)[];
 
-  viteDevServer: ViteDevServer;
+  devServer: ViteDevServer | Express;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 export const PROXY_HEADER = 'X-PP-Proxy';
 
 export function initProxy(opts: ProxyOpts) {
-  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', viteDevServer } = opts;
+  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer } = opts;
 
   if (!baseURL) {
     throw new Error('Base url is required');
@@ -71,7 +72,7 @@ export function initProxy(opts: ProxyOpts) {
         const host = req.headers.host;
         const referer = proxyReq.getHeader('referer');
 
-        viteDevServer.config.logger.info(
+        devServer.config.logger.info(
           `Proxies request: ${req.method} ${req.url} -> ${proxyReq.method} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
         );
 
