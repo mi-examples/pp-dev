@@ -1,8 +1,11 @@
 # pp-dev
 
-Portal Page development framework and build tool.
+The PP Dev Helper is a development framework and build tool for Metric Insights' Portal Pages, designed to make the lives of PP developers easier:
+- build your Portal Page
+- run/test locally with API requests proxied to a Metric Insights server
+- a lot more (to be documented soon!)
 
-This package is based on [Vite](https://vitejs.dev/) tool.
+pp-dev is based on [Vite](https://vitejs.dev/).
 
 ## Usage
 
@@ -12,13 +15,14 @@ Package installation
 $ npm i @metricinsights/pp-dev
 ```
 
-### Define configuration
+### Define Configuration
 
-You need to create the file with the name `pp-dev.config` and extension `js` or
-`cjs` (if you define type `module` in package.json) or `ts` if you want to use Typescript, or `json`.
-You also can define configuration in `package.json` with the `pp-dev` key
+You'll need to create a file with the name `pp-dev.config` and extension `js` or
+`cjs` (if you define type `module` in package.json), or `ts` if you want to use TypeScript, or `json`.
 
-Config examples:
+Alternatively, you can define configuration in your `package.json` via the `pp-dev` key
+
+Generic configuration examples:
 
 - JavaScript
 
@@ -29,12 +33,12 @@ Config examples:
  * @type {import('@metricinsights/pp-dev').PPDevConfig}
  */
 module.exports = {
-  backendBaseURL: 'https://example.metricinsights.com',
+  backendBaseURL: 'https://mi.company.com',
   portalPageId: 1,
 };
 ```
 
-- Typescript
+- TypeScript
 
 ```typescript
 // pp-dev.config.ts
@@ -42,23 +46,23 @@ module.exports = {
 import { PPDevConfig } from '@metricinsights/pp-dev';
 
 const config: PPDevConfig = {
-  backendBaseURL: 'https://example.metricinsights.com',
+  backendBaseURL: 'https://mi.company.com',
   portalPageId: 1,
 };
 
 export default config;
 ```
 
-- JSON (`pp-dev.config.json`)
+- JSON as `pp-dev.config.json`
 
 ```json
 {
-  "backendBaseURL": "https://example.metricinsights.com",
+  "backendBaseURL": "https://mi.company.com",
   "portalPageId": 1
 }
 ```
 
-- JSON in `package.json` file
+- JSON as `package.json`
 
 ```json
 {
@@ -66,16 +70,38 @@ export default config;
   "version": "1.0.0",
   "scripts": {},
   "pp-dev": {
-    "backendBaseURL": "https://example.metricinsights.com",
+    "backendBaseURL": "https://mi.company.com",
     "portalPageId": 1
   }
 }
 ```
 
+## [Next.js](https://nextjs.org/) Configuration
+
+To use the PP Dev Helper with Next.js:
+
+1. Add pp-dev config to your root directory.
+
+2. Change your `dev` script in `package.json` to `pp-dev next`.
+
+3. Finally, wrap your next.config with a `withPPDev` function.
+
+```javascript
+// next.config.js
+
+const { withPPDev } = require('@metricinsights/pp-dev');
+
+module.exports = withPPDev({
+  // your next config
+});
+```
+
+
+
 ### Vite configuration
 
-If you need to change something in the build you can define `vite.config` file.
-More description you can find [here](https://vitejs.dev/config/)
+If you need to change something in the build you can define a `vite.config` file.
+More details [Vite Confighere](https://vitejs.dev/config/)
 
 ### Configuration API description
 
@@ -83,7 +109,7 @@ More description you can find [here](https://vitejs.dev/config/)
 
 Type: String
 
-Example: `https://example.metricinsights.com`
+Example: `https://mi.company.com`
 
 Description: Defines the backend URL (Metric Insights instance) that is used for proxying requests to the MI backend
 
@@ -93,7 +119,7 @@ Type: Number
 
 Example: `1`
 
-Description: Defines the Portal Page Id that used to get portal page variables values.
+Description: Defines the Portal Page ID that used to get Portal Page Variable values.
 
 #### `miHudLess`
 
@@ -113,7 +139,7 @@ Default: `false`
 
 Example: `true`
 
-Description: Disables template variables transforming. Used when you develop the portal page without a template
+Description: Disables Template Variables transformation. Used when developing a Portal Page without a template
 
 #### `enableProxyCache`
 
@@ -138,9 +164,10 @@ Description: Defines proxy cache TTL in milliseconds
 - `pp-dev` or `pp-dev serve` or `pp-dev dev` runs application in development mode
 - `pp-dev build` starts the application build. Will create `dist` and `dist-zip` folders. `dist` folder contains unzipped build files. `dist-zip` contains file `<package-name>.zip` with files from the `dist` folder
 
-## Migration guide from old portal page helper to new
 
-1. You need to initialize npm in your portal page repository (if you have `package.json` file in PP folder, you can skip this step):
+## Migration guide from old Portal Page Helper to new
+
+1. Initialize npm in your portal page repository (if you have `package.json` file in PP folder, you can skip this step):
 
    Go to portal page folder and run command. This command will create `package.json` file in your folder
 
@@ -148,35 +175,18 @@ Description: Defines proxy cache TTL in milliseconds
    $ npm init
    ```
 
-2. You need to install this package by this command:
+2. Install this package by this command:
    ```shell
     $ npm i @metricinsights/pp-dev
    ```
-3. You need to create two scripts in `package.json` script section.
+3. Create two scripts in `package.json` script section.
 
    - `start` script: `"start": "pp-dev"`
    - `build` script: `"build": "pp-dev build"`
 
-4. You need to change all paths to the file in index.html to the absolute path.
+4. Change all paths to the file in index.html to the absolute path.
    If you have a path like `/pt/main.js` this must be changed to `/main.js`.
    Also, you may need to add `type="module"` to every script that is added by the `script` tag with the `src` property.
    Actually would be good to have only one `script` tag with the `src` tag.
    Every other JS file will be imported with construction like this `import helper from './helpers';`
 
-## [Next.js](https://nextjs.org/) support
-
-If you want to use Portal Page helper with Next.js, you need to add pp-dev config to your root directory.
-
-Then you need to change your `dev` script in `package.json` to `pp-dev next`.
-
-The last step is to wrap your next config with `withPPDev` function.
-
-```javascript
-// next.config.js
-
-const { withPPDev } = require('@metricinsights/pp-dev');
-
-module.exports = withPPDev({
-  // your next config
-});
-```
