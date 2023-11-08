@@ -1,11 +1,11 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
-    "declaration": true,
+    "declaration": false,
     "lib": ["esnext"],
     "module": "esnext",
     "moduleResolution": "node",
-    "removeComments": true,
+    "removeComments": false,
     "sourceMap": true,
     "strict": true,
     "target": "esnext",
@@ -16,6 +16,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*.ts", "src/**/*.json"],
+  "include": ["src/**/*.ts", "src/**/*.json", "rollup.config.ts"],
   "exclude": ["dist", "node_modules", "src/client"]
 }

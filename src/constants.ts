@@ -4,8 +4,8 @@ import { fileURLToPath } from 'url';
 
 export const PP_DEV_PACKAGE_DIR = resolve(
   // import.meta.url is `dist/node/constants.js` after bundle
-  fileURLToPath(import.meta.url),
-  '../..',
+  (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
+  '../../..',
 );
 
 export const PP_DEV_CLIENT_ENTRY = resolve(PP_DEV_PACKAGE_DIR, 'dist/client/client.js');

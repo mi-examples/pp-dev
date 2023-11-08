@@ -1,34 +1,49 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"
   },
-  "main": "dist/index.js",
+  "main": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
   "scripts": {
     "clean": "rimraf ./dist",
     "prebuild": "npm run clean",
     "build": "npm run build:node && npm run build:client",
-    "build:node": "tsc",
+    "build:node": "rollup --config rollup.config.ts --configPlugin typescript && node scripts/postbuild.js",
     "build:client": "rollup --config src/client/rollup.config.ts --configPlugin typescript",
     "test": "cd test && npm run build",
     "version": "npm version --commit-hooks false --git-tag-version false"
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./helpers": {
+      "types": "./dist/types/helpers.d.ts",
+      "import": "./dist/esm/helpers.js",
+      "require": "./dist/cjs/helpers.js"
     },
     "./plugin": {
-      "types": "./dist/plugin.d.ts",
-      "import": "./dist/plugin.js"
+      "types": "./dist/types/plugin.d.ts",
+      "import": "./dist/esm/plugin.js",
+      "require": "./dist/cjs/plugin.js"
     },
     "./client/*": "./dist/client/*",
     "./package.json": "./package.json"
   },
   "author": "Serhii Shpak",
+  "typesVersions": {
+    ">=4.2": {
+      "*": [
+        "./dist/types/*"
+      ]
+    }
+  },
   "license": "ISC",
   "peerDependencies": {
     "next": "^13.5.4"
@@ -63,6 +78,7 @@
     "prettier": "^2.8.8",
     "rimraf": "^5.0.1",
     "rollup": "^3.23.0",
+    "rollup-plugin-dts": "^6.1.0",
     "rollup-plugin-scss": "^3.0.0",
     "tslib": "^2.5.2"
   },
@@ -75,7 +91,6 @@
     "pp-dev.d.ts",
     "assets"
   ],
-  "types": "./dist/index.d.ts",
   "directories": {
     "test": "test"
   },

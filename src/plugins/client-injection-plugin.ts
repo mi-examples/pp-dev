@@ -3,7 +3,7 @@ import * as path from 'path';
 import { PP_DEV_CLIENT_ENTRY, PACKAGE_NAME, VERSION, PP_DEV_PACKAGE_DIR } from '../constants.js';
 import * as fs from 'fs';
 import { AsyncTemplateFunction, compile } from 'ejs';
-import * as url from 'url';
+import { fileURLToPath } from 'url';
 
 export interface ClientInjectionPluginOpts {
   backendBaseURL?: string;
@@ -17,13 +17,15 @@ declare module 'vite' {
   }
 }
 
-const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
+const DIRNAME = path.dirname(
+  (typeof __filename !== 'undefined' && __filename) || fileURLToPath(new URL('.', import.meta.url)),
+);
 
 const PACKAGE_IMPORT = `${PACKAGE_NAME}/client`;
 const CLIENT_PATH = `/${PACKAGE_IMPORT}`;
 
 export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin {
-  const clientPanelTpl = fs.readFileSync(path.resolve(__dirname, '..', 'client', 'index.html'), {
+  const clientPanelTpl = fs.readFileSync(path.resolve(DIRNAME, 'client', 'index.html'), {
     encoding: 'utf8',
     flag: 'r',
   });

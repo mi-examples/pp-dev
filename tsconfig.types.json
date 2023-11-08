@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist/types",
+    "declarationDir": "./dist/types",
+    "removeComments": false,
+    "declaration": true,
+    "emitDeclarationOnly": true
+  },
+  "exclude": ["dist", "node_modules", "src/client", "rollup.config.ts"]
+}

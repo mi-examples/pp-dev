@@ -1,4 +1,4 @@
-import type { PPDevConfig, PPWatchConfig } from '.';
+import type { PPDevConfig, PPWatchConfig } from './dist/types';
 
 declare module 'pp-dev.config.ts' {
   const config: PPDevConfig;
