@@ -2,6 +2,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "es5",
+    "moduleResolution": "bundler",
     "sourceMap": true
   },
   "exclude": ["node_modules"]

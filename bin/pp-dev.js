@@ -13,12 +13,8 @@ if (!import.meta.url.includes('node_modules')) {
 global.__pp_dev_start_time = performance.now();
 
 // check debug mode first before requiring the CLI.
-const debugIndex = process.argv.findIndex((arg) =>
-  /^(?:-d|--debug)$/.test(arg),
-);
-const filterIndex = process.argv.findIndex((arg) =>
-  /^(?:-f|--filter)$/.test(arg),
-);
+const debugIndex = process.argv.findIndex((arg) => /^(?:-d|--debug)$/.test(arg));
+const filterIndex = process.argv.findIndex((arg) => /^(?:-f|--filter)$/.test(arg));
 const profileIndex = process.argv.indexOf('--profile');
 
 if (debugIndex > 0) {
@@ -33,9 +29,7 @@ if (debugIndex > 0) {
       .map((v) => `pp-dev:${v},vite:${v}`)
       .join(',');
   }
-  process.env.DEBUG = `${
-    process.env.DEBUG ? process.env.DEBUG + ',' : ''
-  }${value}`;
+  process.env.DEBUG = `${process.env.DEBUG ? process.env.DEBUG + ',' : ''}${value}`;
 
   if (filterIndex > 0) {
     const filter = process.argv[filterIndex + 1];
@@ -48,7 +42,7 @@ if (debugIndex > 0) {
 }
 
 function start() {
-  return import('../dist/cli.js');
+  return import('../dist/esm/cli.js');
 }
 
 if (profileIndex > 0) {

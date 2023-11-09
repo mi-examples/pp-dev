@@ -9,8 +9,9 @@ import * as console from 'console';
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pluginPath = path.resolve(__dirname, '..', '..');
+const DIRNAME = path.dirname((typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url));
+
+const pluginPath = path.resolve(DIRNAME, '..', '..');
 const node_modules_path = path.resolve(pluginPath, '..', '..');
 
 export interface SyncOptions {

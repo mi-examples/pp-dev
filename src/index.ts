@@ -189,18 +189,22 @@ export async function getViteConfig() {
   } as InlineConfig;
 }
 
-export function withPPDev(nextjsConfig: NextConfig, ppDevConfig?: PPDevConfig) {
+export function withPPDev(
+  nextjsConfig:
+    | NextConfig
+    | ((phase: string, nextConfig?: { defaultConfig?: any }) => NextConfig | Promise<NextConfig>),
+  ppDevConfig?: PPDevConfig,
+) {
   return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {
     const config = await getConfig();
-
     const pkg = getPkg();
-
     const templateName = pkg.name;
+    const nextConfiguration = typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
 
     if (phase === PHASE_DEVELOPMENT_SERVER) {
       const devConfig = Object.assign(config, ppDevConfig);
 
-      return Object.assign({ basePath: `/pt/${templateName}`, trailingSlash: true } as NextConfig, nextjsConfig, {
+      return Object.assign({ basePath: `/pt/${templateName}`, trailingSlash: true } as NextConfig, nextConfiguration, {
         serverRuntimeConfig: {
           templateName,
           ppDevConfig: devConfig,
@@ -216,6 +220,6 @@ export function withPPDev(nextjsConfig: NextConfig, ppDevConfig?: PPDevConfig) {
       } as NextConfig);
     }
 
-    return Object.assign({ basePath: `/pt/${templateName}` } as NextConfig, nextjsConfig);
+    return Object.assign({ basePath: `/pt/${templateName}` } as NextConfig, nextConfiguration);
   };
 }

@@ -16,7 +16,7 @@ export default defineConfig({
   plugins: [
     nodeResolve(),
     typescript({
-      tsconfig: path.resolve(__dirname, './tsconfig.json'),
+      tsconfig: path.resolve(__dirname, './tsconfig.build.json'),
     }),
     scss(),
     url({
@@ -36,15 +36,4 @@ export default defineConfig({
       return true;
     },
   },
-  // build: {
-  //   outDir: '../../dist/client',
-  //   emptyOutDir: true,
-  //   sourcemap: true,
-  //   manifest: false,
-  //   // lib: {
-  //   //   name: 'client',
-  //   //   entry: './index.ts',
-  //   //   fileName: 'client',
-  //   // },
-  // },
 });

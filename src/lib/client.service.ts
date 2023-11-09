@@ -1,6 +1,6 @@
 import { ViteDevServer } from 'vite';
-import { DistService } from './dist.service';
-import { MiAPI } from './pp.middleware';
+import { DistService } from './dist.service.js';
+import { MiAPI } from './pp.middleware.js';
 
 export interface ClientServiceOptions {
   distService?: DistService;
