@@ -20,7 +20,7 @@ import {
 import { parse } from 'url';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import type DevServer from 'next/dist/server/dev/next-dev-server';
-import { NextConfig } from 'next';
+import type { NextConfig } from 'next';
 import { initPPRedirect } from './lib/pp-redirect.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
 import { initProxyCache } from './lib/proxy-cache.middleware.js';

@@ -9,7 +9,6 @@ import { PP_WATCH_CONFIG_NAMES, PP_DEV_CONFIG_NAMES } from './constants.js';
 import { clientInjectionPlugin } from './plugins/client-injection-plugin.js';
 import header from './banner/header.js';
 import type { NextConfig } from 'next';
-import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
 
 export type PPDevConfig = Omit<VitePPDevOptions, 'templateName'>;
 export type PPWatchConfig = { baseURL: string; portalPageId: number };
@@ -196,6 +195,8 @@ export function withPPDev(
   ppDevConfig?: PPDevConfig,
 ) {
   return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {
+    const { PHASE_DEVELOPMENT_SERVER } = await import('next/constants.js');
+
     const config = await getConfig();
     const pkg = getPkg();
     const templateName = pkg.name;
