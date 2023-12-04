@@ -1,7 +1,7 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"
@@ -46,7 +46,7 @@
   },
   "license": "ISC",
   "peerDependencies": {
-    "next": "^13.5.4"
+    "next": ">= 13 < 15"
   },
   "dependencies": {
     "axios": "^1.4.0",
