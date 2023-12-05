@@ -1,6 +1,13 @@
 # pp-dev
 
-The PP Dev Helper is a development framework and build tool for Metric Insights' Portal Pages, designed to make the lives of PP developers easier:
+<p align="center">
+   <a href="https://www.npmjs.com/package/@metricinsights/pp-dev"><img alt="npm" src="https://img.shields.io/npm/v/%40metricinsights%2Fpp-dev?logo=npm&label=npm%20package"></a>
+   <a href="https://github.com/mi-examples/pp-dev-js/actions/workflows/publish.yml"><img alt="GitHub Workflow Status (with event)" src="https://img.shields.io/github/actions/workflow/status/mi-examples/pp-dev-js/publish.yml?logo=github"></a>
+</p>
+
+The PP Dev Helper is a development framework and build tool for Metric Insights' Portal Pages, designed to make the
+lives of PP developers easier:
+
 - build your Portal Page
 - run/test locally with API requests proxied to a Metric Insights server
 - a lot more (to be documented soon!)
@@ -96,8 +103,6 @@ module.exports = withPPDev({
 });
 ```
 
-
-
 ### Vite configuration
 
 If you need to change something in the build you can define a `vite.config` file.
@@ -157,13 +162,21 @@ Default: `10 * 60 * 1000`
 
 Description: Defines proxy cache TTL in milliseconds
 
+#### `disableSSLValidation`
+
+Type: Boolean
+
+Default: `false`
+
+Description: Disables SSL certificate validation for proxy requests. Useful for self-signed certificates
+
 ### CLI API description
 
 - `pp-dev help` - show CLI's help
 
 - `pp-dev` or `pp-dev serve` or `pp-dev dev` runs application in development mode
-- `pp-dev build` starts the application build. Will create `dist` and `dist-zip` folders. `dist` folder contains unzipped build files. `dist-zip` contains file `<package-name>.zip` with files from the `dist` folder
-
+- `pp-dev build` starts the application build. Will create `dist` and `dist-zip` folders. `dist` folder contains
+  unzipped build files. `dist-zip` contains file `<package-name>.zip` with files from the `dist` folder
 
 ## Migration guide from old Portal Page Helper to new
 
@@ -189,4 +202,3 @@ Description: Defines proxy cache TTL in milliseconds
    Also, you may need to add `type="module"` to every script that is added by the `script` tag with the `src` property.
    Actually would be good to have only one `script` tag with the `src` tag.
    Every other JS file will be imported with construction like this `import helper from './helpers';`
-
