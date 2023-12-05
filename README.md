@@ -157,6 +157,14 @@ Default: `10 * 60 * 1000`
 
 Description: Defines proxy cache TTL in milliseconds
 
+#### `disableSSLValidation`
+
+Type: Boolean
+
+Default: `false`
+
+Description: Disables SSL certificate validation for proxy requests. Useful for self-signed certificates
+
 ### CLI API description
 
 - `pp-dev help` - show CLI's help

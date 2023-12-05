@@ -276,6 +276,7 @@ cli
       enableProxyCache = true,
       miHudLess = true,
       proxyCacheTTL = 10 * 60 * 1000,
+      disableSSLValidation = false,
     } = ppDevConfig;
 
     server.use(initPPRedirect(base, templateName));
@@ -291,6 +292,7 @@ cli
         },
         portalPageId,
         templateLess,
+        disableSSLValidation,
       });
 
       if (enableProxyCache) {
@@ -308,6 +310,7 @@ cli
           devServer: server,
           baseURL: backendBaseURL,
           proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
+          disableSSLValidation,
         }) as any,
       );
 

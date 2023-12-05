@@ -85,9 +85,9 @@ async function loadJSONConfig<T extends object>(filePath: string) {
 async function loadConfig<T extends object>(dirFiles: string[], configNames: string[]) {
   for (const configName of configNames) {
     if (dirFiles.includes(configName)) {
-      if (configName.endsWith('.ts')) {
+      if (/\.[cm]?ts$/i.test(configName)) {
         return (await loadTsConfig(configName)) as T;
-      } else if (configName.endsWith('.js')) {
+      } else if (/\.[cm]?js$/i.test(configName)) {
         return (await loadJsConfig(path.resolve('.', configName))) as T;
       } else if (configName.endsWith('.json')) {
         return (await loadJSONConfig(path.resolve('.', configName))) as T;
@@ -114,7 +114,7 @@ function getPkg() {
 }
 
 export async function getConfig() {
-  const endsWithRegExp = /\.config\.((ts)|(js(on)?))$/;
+  const endsWithRegExp = /\.config\.(([cm]?ts)|([cm]?js)|(json))$/;
   const cwd = process.cwd();
   const dirContent = readdirSync(cwd, { withFileTypes: true })
     .filter((value) => value.isFile() && endsWithRegExp.test(value.name))

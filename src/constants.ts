@@ -19,9 +19,17 @@ export const PP_WATCH_CONFIG_NAMES = ['.pp-watch.config.js', '.pp-watch.config.t
 
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',
+  '.pp-dev.config.cjs',
+  '.pp-dev.config.mjs',
   '.pp-dev.config.ts',
+  '.pp-dev.config.cts',
+  '.pp-dev.config.mts',
   '.pp-dev.config.json',
   'pp-dev.config.js',
+  'pp-dev.config.cjs',
+  'pp-dev.config.mjs',
   'pp-dev.config.ts',
+  'pp-dev.config.cts',
+  'pp-dev.config.mts',
   'pp-dev.config.json',
 ] as const;

@@ -17,6 +17,7 @@ export interface VitePPDevOptions {
   miHudLess?: boolean;
   enableProxyCache?: boolean;
   proxyCacheTTL?: number;
+  disableSSLValidation?: boolean;
 }
 
 function vitePPDev(options: VitePPDevOptions): Plugin {
@@ -28,6 +29,7 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
     portalPageId,
     enableProxyCache = true,
     proxyCacheTTL = 10 * 60 * 1000,
+    disableSSLValidation = false,
   } = options || {};
 
   // Avoid server caching for index.html file when first loading
@@ -78,6 +80,7 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
           },
           portalPageId,
           templateLess,
+          disableSSLValidation,
         });
 
         if (enableProxyCache) {
@@ -95,6 +98,7 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
             devServer: server,
             baseURL: backendBaseURL,
             proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
+            disableSSLValidation,
           }) as any,
         );
 

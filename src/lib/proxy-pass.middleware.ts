@@ -11,13 +11,15 @@ export interface ProxyOpts {
   proxyIgnore?: (string | RegExp)[];
 
   devServer: ViteDevServer | Express;
+
+  disableSSLValidation?: boolean;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 export const PROXY_HEADER = 'X-PP-Proxy';
 
 export function initProxy(opts: ProxyOpts) {
-  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer } = opts;
+  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer, disableSSLValidation = false } = opts;
 
   if (!baseURL) {
     throw new Error('Base url is required');
@@ -64,6 +66,7 @@ export function initProxy(opts: ProxyOpts) {
       changeOrigin: true,
       autoRewrite: true,
       logLevel: 'silent',
+      secure: !disableSSLValidation,
       headers: {
         host,
         origin,
@@ -122,6 +125,17 @@ export function initProxy(opts: ProxyOpts) {
           return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
         }
       }),
+      onError(err, req, res) {
+        const errorMessage = `Proxy error: "${err.message}" when trying to "${req.method} ${req.url}"\n\n${err.stack}`;
+
+        devServer.config.logger.error(errorMessage);
+
+        res.writeHead(500, {
+          'Content-Type': 'text/plain',
+        });
+
+        res.end(errorMessage);
+      },
     },
   );
 }

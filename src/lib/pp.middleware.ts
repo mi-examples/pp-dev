@@ -1,6 +1,7 @@
 import axios, { Axios } from 'axios';
 import { JSDOM } from 'jsdom';
 import { AssetsAPI, PageAPI } from '../api/index.js';
+import { Agent } from 'https';
 
 export type Headers = Record<string, string | undefined>;
 
@@ -8,6 +9,7 @@ export interface MiAPIOptions {
   portalPageId?: number;
   headers?: Headers;
   templateLess: boolean;
+  disableSSLValidation?: boolean;
 }
 
 export class MiAPI {
@@ -31,7 +33,7 @@ export class MiAPI {
   private pageApi: PageAPI;
 
   constructor(baseURL: string, opts?: MiAPIOptions) {
-    const { headers = {}, portalPageId, templateLess = true } = opts || {};
+    const { headers = {}, portalPageId, templateLess = true, disableSSLValidation = false } = opts || {};
 
     this.#headers = headers;
 
@@ -42,7 +44,14 @@ export class MiAPI {
       this.#templateLoadedResolve = resolve;
     });
 
-    this.#axios = axios.create({ baseURL, headers });
+    if (disableSSLValidation) {
+      axios.defaults.httpsAgent = new Agent({ rejectUnauthorized: false });
+    }
+
+    this.#axios = axios.create({
+      baseURL,
+      headers,
+    });
 
     this.portalPageId = portalPageId;
     this.templateLess = templateLess;
