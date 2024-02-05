@@ -3,9 +3,13 @@ import { Connect } from 'vite';
 import NextHandleFunction = Connect.NextHandleFunction;
 import { cutUrlParams, redirect } from './helpers/url.helper.js';
 import { Headers, MiAPI } from './pp.middleware.js';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
 
 export function initLoadPPData(applyUrlRegExp: RegExp, mi: MiAPI, opts: PPDevConfig): NextHandleFunction {
   const { templateLess = false, miHudLess = false, portalPageId } = opts;
+
+  const logger = createLogger();
 
   return (req, res, next) => {
     const isNeedTemplateLoad = !(templateLess && miHudLess);
@@ -25,7 +29,11 @@ export function initLoadPPData(applyUrlRegExp: RegExp, mi: MiAPI, opts: PPDevCon
         })
         .catch((reason) => {
           if (reason.response) {
-            return redirect(res, `/home?proxyRedirect=${encodeURIComponent('/')}`, 302);
+            const redirectUrl = `/home?proxyRedirect=${encodeURIComponent('/')}`;
+
+            logger.info(colors.yellow(`Redirecting to: ${redirectUrl}`));
+
+            return redirect(res, redirectUrl, 302);
           }
 
           next(reason);

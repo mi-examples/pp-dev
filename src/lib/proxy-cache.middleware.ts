@@ -3,6 +3,8 @@ import * as memoryCache from 'memory-cache';
 import { PROXY_HEADER } from './proxy-pass.middleware.js';
 import NextHandleFunction = Connect.NextHandleFunction;
 import { Express } from 'express';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
 
 export interface CacheItem {
   headers: Record<string, any>;
@@ -27,6 +29,8 @@ const testCacheUrlRegExp = /\.[a-z0-9]+$/i;
 export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
   const { devServer, ttl = 10 * 60 * 1000 } = opts;
 
+  const logger = createLogger();
+
   devServer.cache = cache;
 
   return (req, res, next) => {
@@ -35,8 +39,10 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     if (testCacheUrlRegExp.test(url.split('?')[0] || '')) {
       const cacheItem = cache.get(url);
 
-      if (cacheItem && devServer.config) {
-        devServer.config.logger.info(`Proxies request: ${req.method} ${url} -> Cache ${url}`);
+      if (cacheItem) {
+        logger.info(
+          `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${url} -> ${colors.blue('Cache')} ${url}`,
+        );
 
         for (const [header, value] of Object.entries(cacheItem.headers)) {
           res.setHeader(header, value);
@@ -79,7 +85,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
         }
 
         if (res.hasHeader(PROXY_HEADER)) {
-          devServer.config.logger?.info(`[Cached] ${url}`);
+          logger.info(`${colors.blue('[Cached]')} ${url}`);
 
           cache.put(url, { headers: res.getHeaders(), content: buffer }, ttl);
         }

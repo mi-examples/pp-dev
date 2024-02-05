@@ -3,8 +3,8 @@ import * as winston from 'winston';
 import * as memoryCache from 'memory-cache';
 import type { CacheItem } from '../proxy-cache.middleware.js';
 import type { Express } from 'express';
-import { createColors } from 'picocolors';
 import { URL } from 'url';
+import { colors } from './color.helper.js';
 
 declare module 'express' {
   interface Express {
@@ -15,8 +15,6 @@ declare module 'express' {
     printUrls: (base?: string) => void;
   }
 }
-
-const colors = createColors();
 
 export function createDevServer(logLevel = 'info') {
   const server = (express as any).default() as Express;

@@ -2,6 +2,9 @@ import axios, { Axios } from 'axios';
 import { JSDOM } from 'jsdom';
 import { AssetsAPI, PageAPI } from '../api/index.js';
 import { Agent } from 'https';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
+import { Logger } from 'vite';
 
 export type Headers = Record<string, string | undefined>;
 
@@ -11,6 +14,8 @@ export interface MiAPIOptions {
   templateLess: boolean;
   disableSSLValidation?: boolean;
 }
+
+export const TEMPLATE_PAGE_NAME = '[DEV PAGE. DO NOT DELETE]';
 
 export class MiAPI {
   #headers: Headers;
@@ -32,6 +37,8 @@ export class MiAPI {
   private assetsApi: AssetsAPI;
   private pageApi: PageAPI;
 
+  private logger: Logger;
+
   constructor(baseURL: string, opts?: MiAPIOptions) {
     const { headers = {}, portalPageId, templateLess = true, disableSSLValidation = false } = opts || {};
 
@@ -40,9 +47,7 @@ export class MiAPI {
     this.#pageVars = [];
     this.#pageTitle = '';
 
-    this.#templateLoaded = new Promise((resolve) => {
-      this.#templateLoadedResolve = resolve;
-    });
+    this.#templateLoaded = Promise.resolve(false);
 
     if (disableSSLValidation) {
       axios.defaults.httpsAgent = new Agent({ rejectUnauthorized: false });
@@ -58,6 +63,8 @@ export class MiAPI {
 
     this.assetsApi = new AssetsAPI(this.#axios);
     this.pageApi = new PageAPI(this.#axios);
+
+    this.logger = createLogger();
   }
 
   async isTemplateLoaded() {
@@ -65,7 +72,7 @@ export class MiAPI {
   }
 
   #clearHeaders(headers: Headers) {
-    const obj = Object.assign({}, headers, { host: undefined });
+    const obj = Object.assign({}, headers, { host: undefined, referer: undefined });
 
     Object.keys(obj).forEach((key) => obj[key] === undefined && delete obj[key]);
 
@@ -83,6 +90,12 @@ export class MiAPI {
    * @param headers
    */
   async getPageTemplate(headers: Headers) {
+    if (!(await this.#templateLoaded)) {
+      this.#templateLoaded = new Promise((resolve) => {
+        this.#templateLoadedResolve = resolve;
+      });
+    }
+
     if (this.#pageTemplate) {
       return Promise.resolve(this.#pageTemplate);
     }
@@ -91,20 +104,47 @@ export class MiAPI {
       this.templateLess = false;
     }
 
-    const pageList = await this.pageApi.getAll(this.#clearHeaders(headers));
+    const pageList = await this.pageApi
+      .getAll(this.#clearHeaders(headers))
+      .then((response) => {
+        this.logger.info(colors.green('Page list fetched'));
 
-    let page = pageList.find((p) => p.name === '[DEV PAGE. DO NOT DELETE]');
+        return response;
+      })
+      .catch((e) => {
+        this.logger.error(colors.red(`Error fetching page list: ${e.message}`));
+
+        throw new Error('Current user does not have access to page list');
+      });
+
+    let page = pageList.find((p) => p.name === TEMPLATE_PAGE_NAME);
 
     if (!page) {
-      page = await this.pageApi.create(
-        {
-          enabled: 'Y',
-          name: '[DEV PAGE. DO NOT DELETE]',
-          internal_name: 'dev-page-template',
-          visible_in_homepage: 'Y',
-        },
-        this.#clearHeaders(headers),
-      );
+      this.logger.warn(colors.yellow('Creating dev page template...'));
+
+      page = await this.pageApi
+        .create(
+          {
+            enabled: 'Y',
+            name: TEMPLATE_PAGE_NAME,
+            internal_name: 'dev-page-template',
+            visible_in_homepage: 'Y',
+          },
+          this.#clearHeaders(headers),
+        )
+        .then((response) => {
+          this.logger.info(colors.green('Dev page created'));
+
+          return response;
+        })
+        .catch((e) => {
+          this.logger.error(colors.red(`Error creating dev page: ${e.message}`));
+
+          throw new Error(
+            `Error when creating dev page.
+            That can be caused by missing permissions or page with name "${TEMPLATE_PAGE_NAME}" already exists`,
+          );
+        });
     }
 
     return await this.pageApi
@@ -113,6 +153,16 @@ export class MiAPI {
         this.#pageTemplate = response;
 
         return response;
+      })
+      .then((response) => {
+        this.logger.info(colors.green('Page template fetched'));
+
+        return response;
+      })
+      .catch((e) => {
+        this.logger.error(colors.red(`Error fetching page template: ${e.message}`));
+
+        throw new Error('Error fetching page template');
       })
       .finally(() => {
         this.#templateLoadedResolve(true);
@@ -153,8 +203,16 @@ export class MiAPI {
         return [];
       })
       .catch((reason) => {
+        this.logger.error(colors.red(`Error fetching page variables: ${reason.message}`));
+
         if (reason.response?.status === 404) {
           throw new Error(`Portal Page with id "${pageId}" not found on instance ${this.#axios.getUri()}`);
+        }
+
+        if (reason.response?.status === 401) {
+          throw new Error(
+            `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`,
+          );
         }
 
         throw reason;

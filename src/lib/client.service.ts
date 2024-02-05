@@ -1,6 +1,8 @@
-import { ViteDevServer } from 'vite';
+import { Logger, ViteDevServer } from 'vite';
 import { DistService } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper';
 
 export interface ClientServiceOptions {
   distService?: DistService;
@@ -12,6 +14,8 @@ export class ClientService {
   private readonly opts: ClientServiceOptions;
   private readonly eventMap: Map<string, (this: ClientService, ...attrs: any[]) => void>;
 
+  private logger: Logger;
+
   constructor(server: ViteDevServer, opts?: ClientServiceOptions) {
     this.server = server;
     this.opts = opts || {};
@@ -20,6 +24,8 @@ export class ClientService {
 
     this.eventMap.set('info-data:request', this.onInfoDataRequest.bind(this));
     this.eventMap.set('template:sync', this.onTemplateSync.bind(this));
+
+    this.logger = createLogger();
 
     this.init();
   }
@@ -67,16 +73,24 @@ export class ClientService {
             currentHash,
             backupFilename,
           });
+
+          this.logger.info(colors.green('Template synced'));
         } else {
           this.server.ws.send('template:sync:response', { error: 'Failed to update assets' });
+
+          this.logger.error(colors.red('Failed to update assets'));
         }
       } else {
         this.server.ws.send('template:sync:response', { error: 'Failed to build new assets' });
+
+        this.logger.error(colors.red('Failed to build new assets'));
 
         return;
       }
     } else {
       this.server.ws.send('template:sync:response', { error: 'Dist service or MiAPI is not defined' });
+
+      this.logger.error(colors.red('Dist service or MiAPI is not defined'));
 
       return;
     }

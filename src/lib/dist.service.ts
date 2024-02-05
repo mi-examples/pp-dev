@@ -5,6 +5,9 @@ import * as crypto from 'crypto';
 import * as process from 'process';
 import * as child_process from 'child_process';
 import * as console from 'console';
+import { createLogger } from './logger.js';
+import { Logger } from 'vite';
+import { colors } from './helpers/color.helper.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
@@ -37,6 +40,8 @@ export class DistService {
   private readonly pageName: string;
   private currentMeta: SyncMeta | null = null;
 
+  private logger: Logger;
+
   constructor(pageName: string, syncOptions?: SyncOptions) {
     const {
       backupFolder = path.resolve(process.cwd(), 'backups'),
@@ -50,6 +55,8 @@ export class DistService {
     this.pageName = pageName;
 
     this.syncMeta();
+
+    this.logger = createLogger();
   }
 
   async checkMeta() {
@@ -142,15 +149,17 @@ export class DistService {
 
     await this.syncMeta();
 
-    return await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile);
+    return await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile).finally(() => {
+      this.logger.info(`Backup saved to ${filename}`);
+    });
   }
 
   async buildNewAssets() {
-    const buildCommand = new Promise<string>(function (resolve, reject) {
+    const buildCommand = new Promise<string>((resolve, reject) => {
       let data = '';
 
       // Colorized log output with message about build start
-      console.log('\x1b[36m%s\x1b[0m', '[DistService] Build started');
+      this.logger.info(colors.cyan('[DistService] Build started'));
 
       const proc = child_process.spawn('node', [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'], {
         cwd: process.cwd(),
@@ -180,7 +189,7 @@ export class DistService {
     try {
       await buildCommand.finally(() => {
         // Colorized log output with message about build end
-        console.log('\x1b[36m%s\x1b[0m', '[DistService] Build finished');
+        this.logger.info(colors.cyan('[DistService] Build finished'));
       });
 
       const assetFile = path.resolve(process.cwd(), `./dist-zip/${this.pageName}.zip`);

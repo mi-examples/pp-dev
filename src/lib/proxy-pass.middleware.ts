@@ -2,6 +2,8 @@ import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middlewar
 import { urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
 import { ViteDevServer } from 'vite';
 import { Express } from 'express';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -29,6 +31,8 @@ export function initProxy(opts: ProxyOpts) {
   const origin = baseURL.replace(hostOriginRegExp, '$1$2');
 
   const fileType = import('file-type');
+
+  const logger = createLogger();
 
   return createProxyMiddleware(
     (pathname) => {
@@ -75,8 +79,10 @@ export function initProxy(opts: ProxyOpts) {
         const host = req.headers.host;
         const referer = proxyReq.getHeader('referer');
 
-        devServer.config.logger.info(
-          `Proxies request: ${req.method} ${req.url} -> ${proxyReq.method} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
+        logger.info(
+          `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${req.url} -> ${colors.green(
+            proxyReq.method,
+          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
         );
 
         if (host && referer && typeof referer === 'string') {
@@ -128,7 +134,7 @@ export function initProxy(opts: ProxyOpts) {
       onError(err, req, res) {
         const errorMessage = `Proxy error: "${err.message}" when trying to "${req.method} ${req.url}"\n\n${err.stack}`;
 
-        devServer.config.logger.error(errorMessage);
+        logger.error(errorMessage);
 
         res.writeHead(500, {
           'Content-Type': 'text/plain',

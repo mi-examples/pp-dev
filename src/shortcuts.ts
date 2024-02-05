@@ -1,7 +1,6 @@
-import { createColors } from 'picocolors';
 import type { ViteDevServer } from 'vite';
-
-const colors = createColors();
+import { createLogger } from './lib/logger.js';
+import { colors } from './lib/helpers/color.helper.js';
 
 export function isDefined<T>(value: T | undefined | null): value is T {
   return value != null;
@@ -27,8 +26,10 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
   }
   (server as any)._shortcutsOptions = opts;
 
+  const logger = createLogger();
+
   if (opts.print) {
-    server.config.logger.info(
+    logger.info(
       colors.dim(colors.green('  ➜')) + colors.dim('  press ') + colors.bold('h') + colors.dim(' to show help'),
     );
   }
@@ -50,7 +51,7 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
     }
 
     if (input === 'h') {
-      server.config.logger.info(
+      logger.info(
         [
           '',
           colors.bold('  Shortcuts'),

@@ -2,21 +2,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { performance } from 'node:perf_hooks';
 import { cac } from 'cac';
-import { createColors } from 'picocolors';
 import type { ServerOptions, BuildOptions, LogLevel } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
 import { getViteConfig, PPDevConfig } from './index.js';
-import {
-  mergeConfig,
-  build,
-  optimizeDeps,
-  resolveConfig,
-  preview,
-  createLogger,
-  ViteDevServer,
-  loadConfigFromFile,
-} from 'vite';
+import { mergeConfig, build, optimizeDeps, resolveConfig, preview, ViteDevServer, loadConfigFromFile } from 'vite';
 import { parse } from 'url';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import type DevServer from 'next/dist/server/dev/next-dev-server';
@@ -28,9 +18,10 @@ import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import { cutUrlParams, urlReplacer } from './lib/helpers/url.helper.js';
 import { createDevServer } from './lib/helpers/server.js';
+import { createLogger } from './lib/logger.js';
+import { colors } from './lib/helpers/color.helper.js';
 
 const cli = cac('pp-dev');
-const colors = createColors();
 
 // global options
 interface GlobalCLIOptions {
@@ -158,10 +149,15 @@ cli
             clearScreen: options.clearScreen,
             optimizeDeps: { force: options.force },
             server: cleanOptions(options),
+            customLogger: createLogger(options.logLevel),
           },
           true,
         ),
       );
+
+      if (!server.config.base || server.config.base === '/') {
+        throw new Error('base cannot be equal to "/" or empty string');
+      }
 
       if (!server.httpServer) {
         throw new Error('HTTP server not available');
@@ -169,16 +165,14 @@ cli
 
       await server.listen();
 
-      const info = server.config.logger.info;
+      const logger = createLogger(options.logLevel);
 
       const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
       const startupDurationString = ppDevStartTime
         ? colors.dim(`ready in ${colors.reset(colors.bold(Math.ceil(performance.now() - ppDevStartTime)))} ms`)
         : '';
 
-      info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`, {
-        clear: !server.config.logger.hasWarned,
-      });
+      logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`);
 
       server.printUrls();
       bindShortcuts(server, {
@@ -189,7 +183,7 @@ cli
             description: 'start/stop the profiler',
             async action(server) {
               if (profileSession) {
-                await stopProfiler(server.config.logger.info);
+                await stopProfiler(logger.info);
               } else {
                 const inspector = await import('node:inspector').then((r) => (r as any).default);
                 await new Promise<void>((res) => {
@@ -197,7 +191,8 @@ cli
                   profileSession.connect();
                   profileSession.post('Profiler.enable', () => {
                     profileSession?.post('Profiler.start', () => {
-                      server.config.logger.info('Profiler started');
+                      logger.info('Profiler started');
+
                       res();
                     });
                   });
@@ -262,6 +257,10 @@ cli
 
     if (!base.endsWith('/')) {
       base += '/';
+    }
+
+    if (base === '/') {
+      throw new Error('basePath cannot be equal to "/" or empty string');
     }
 
     const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
@@ -354,14 +353,14 @@ cli
         }
       });
 
-      const info = server.config.logger.info;
+      const logger = createLogger();
 
       const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
       const startupDurationString = ppDevStartTime
         ? colors.dim(`ready in ${colors.reset(colors.bold(Math.ceil(performance.now() - ppDevStartTime)))} ms`)
         : '';
 
-      info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`, {
+      logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`, {
         clear: true,
       });
 
