@@ -2,12 +2,13 @@
   "name": "test",
   "version": "1.0.0",
   "scripts": {
-    "build": "pp-dev build",
-    "start": "pp-dev",
-    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.4.1.tgz"
+    "build": "pp-dev build --changelog",
+    "changelog": "pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
+    "dev": "pp-dev",
+    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.5.0.tgz"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.4.1.tgz",
+    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.5.0.tgz",
     "luxon": "^3.3.0"
   },
   "devDependencies": {

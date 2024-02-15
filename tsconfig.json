@@ -14,7 +14,8 @@
 
     /* Bundler mode */
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*.ts", "src/**/*.json", "rollup.config.ts"],
   "exclude": ["dist", "node_modules", "src/client"]

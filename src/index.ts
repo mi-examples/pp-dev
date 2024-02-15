@@ -2,7 +2,6 @@ import { InlineConfig } from 'vite';
 import { readFileSync, readdirSync, writeFileSync, unlink } from 'fs';
 import * as path from 'path';
 import vitePPDev, { VitePPDevOptions } from './plugin.js';
-import zipPack from 'vite-plugin-zip-pack';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'url';
 import { PP_WATCH_CONFIG_NAMES, PP_DEV_CONFIG_NAMES } from './constants.js';
@@ -156,6 +155,8 @@ export async function getConfig() {
 
 export async function getViteConfig() {
   const pkg = getPkg();
+
+  const { default: zipPack } = await import('vite-plugin-zip-pack');
 
   const templateName = pkg.name;
 

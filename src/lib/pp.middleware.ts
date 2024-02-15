@@ -111,10 +111,14 @@ export class MiAPI {
 
         return response;
       })
-      .catch((e) => {
-        this.logger.error(colors.red(`Error fetching page list: ${e.message}`));
+      .catch(async (e) => {
+        if (await this.pageApi.checkAuth(this.#clearHeaders(headers))) {
+          this.logger.error(colors.red(`Error fetching page list: ${e.message}\n${e.stack}`));
 
-        throw new Error('Current user does not have access to page list');
+          throw new Error('Current user does not have access to page list');
+        } else {
+          throw e;
+        }
       });
 
     let page = pageList.find((p) => p.name === TEMPLATE_PAGE_NAME);

@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { performance } from 'node:perf_hooks';
 import { cac } from 'cac';
-import type { ServerOptions, BuildOptions, LogLevel } from 'vite';
+import type { ServerOptions, BuildOptions, LogLevel, InlineConfig } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
 import { getViteConfig, PPDevConfig } from './index.js';
@@ -20,8 +20,13 @@ import { cutUrlParams, urlReplacer } from './lib/helpers/url.helper.js';
 import { createDevServer } from './lib/helpers/server.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
+import { ChangelogGenerator } from './lib/changelog-generator.js';
 
 const cli = cac('pp-dev');
+
+interface PPDevBuildOptions extends BuildOptions {
+  changelog?: boolean | string;
+}
 
 // global options
 interface GlobalCLIOptions {
@@ -39,6 +44,13 @@ interface GlobalCLIOptions {
   m?: string;
   mode?: string;
   force?: boolean;
+}
+
+interface ChangelogOptions {
+  oldAssetsPath?: string;
+  newAssetsPath?: string;
+  destination?: string;
+  filename?: string;
 }
 
 let profileSession = (global as any).__pp_dev_profile_session;
@@ -243,7 +255,6 @@ cli
     const { default: next } = await import('next');
 
     const server = createDevServer(options.logLevel);
-
     const opts = cleanOptions(options);
 
     const app = next({ dev: true, hostname: opts.host as string, port: opts.port });
@@ -432,9 +443,13 @@ cli
   .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle (experimental)`)
   .option('--emptyOutDir', `[boolean] force empty outDir when it's outside of root`)
   .option('-w, --watch', `[boolean] rebuilds when modules have changed on disk`)
-  .action(async (root: string, options: BuildOptions & GlobalCLIOptions) => {
+  .option(
+    '--changelog [assetsFile]',
+    `[boolean | string] generate changelog between assetsFile and current build (default: false)`,
+  )
+  .action(async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
-    const buildOptions: BuildOptions = cleanOptions(options);
+    const buildOptions: PPDevBuildOptions = cleanOptions(options);
 
     try {
       const configFromFile = await loadConfigFromFile(
@@ -452,22 +467,75 @@ cli
         config = mergeConfig(config, fileConfig);
       }
 
-      await build(
-        mergeConfig(
-          config,
-          {
-            root,
-            base: options.base,
-            mode: options.mode,
-            configFile: options.config,
-            logLevel: options.logLevel,
-            clearScreen: options.clearScreen,
-            optimizeDeps: { force: options.force },
-            build: buildOptions,
-          },
-          true,
-        ),
-      );
+      const buildConfig = mergeConfig(
+        config,
+        {
+          root,
+          base: options.base,
+          mode: options.mode,
+          configFile: options.config,
+          logLevel: options.logLevel,
+          clearScreen: options.clearScreen,
+          optimizeDeps: { force: options.force },
+          build: buildOptions,
+        },
+        true,
+      ) as InlineConfig;
+
+      await build(buildConfig);
+
+      if (buildOptions.changelog) {
+        const executionRoot = root || process.cwd();
+
+        const outDir = buildConfig.build?.outDir || 'dist';
+
+        let oldAssetsPath = '';
+
+        if (typeof buildOptions.changelog === 'string') {
+          oldAssetsPath = path.resolve(executionRoot, buildOptions.changelog);
+        } else {
+          const backupsDirPath = path.resolve(executionRoot, 'backups');
+
+          if (!fs.existsSync(backupsDirPath)) {
+            createLogger(options.logLevel).warn(
+              colors.yellow(`backups directory not found, skipping changelog generation`),
+            );
+
+            return;
+          }
+
+          const backups = fs.readdirSync(backupsDirPath, { withFileTypes: true });
+
+          if (!backups.length) {
+            createLogger(options.logLevel).warn(colors.yellow(`no backups found, skipping changelog generation`));
+
+            return;
+          }
+
+          const latestBackup = backups
+            .filter((value) => {
+              return value.isFile() && value.name.endsWith('.zip');
+            })
+            .reduce((latest, current) => {
+              const latestTime = fs.statSync(path.resolve(backupsDirPath, latest.name)).mtimeMs;
+              const currentTime = fs.statSync(path.resolve(backupsDirPath, current.name)).mtimeMs;
+
+              return latestTime > currentTime ? latest : current;
+            }, backups[0]).name;
+
+          oldAssetsPath = path.resolve(backupsDirPath, latestBackup);
+        }
+
+        const currentAssetFilePath = path.resolve(executionRoot, outDir);
+
+        const changelogGenerator = new ChangelogGenerator({
+          oldAssetsPath,
+          newAssetsPath: currentAssetFilePath,
+          destinationPath: path.resolve(executionRoot, 'dist-zip'),
+        });
+
+        await changelogGenerator.generateChangelog();
+      }
     } catch (e: any) {
       createLogger(options.logLevel).error(colors.red(`error during build:\n${e.stack}`), { error: e });
 
@@ -475,6 +543,48 @@ cli
     } finally {
       stopProfiler((message) => createLogger(options.logLevel).info(message));
     }
+  });
+
+// changelog
+cli
+  .command('changelog [oldAssetPath] [newAssetPath]', 'generate changelog between two assets files/folders')
+  .option('--oldAssetsPath <oldAssetsPath>', `[string] path to the old assets zip file or folder`)
+  .option('--newAssetsPath <newAssetsPath>', `[string] path to the new assets zip file or folder`)
+  .option('--destination <destination>', `[string] destination folder for the changelog (default: .)`)
+  .option('--filename <filename>', `[string] filename for the changelog (default: CHANGELOG.html)`)
+  .action(async (oldAssetPath: string, newAssetPath: string, options: ChangelogOptions & GlobalCLIOptions) => {
+    filterDuplicateOptions(options);
+
+    const {
+      oldAssetsPath: oldPath = oldAssetPath,
+      newAssetsPath: newPath = newAssetPath,
+      destination = '.',
+      filename = 'CHANGELOG.html',
+      logLevel,
+    } = options;
+
+    const root = process.cwd();
+
+    if (!oldPath || !newPath) {
+      createLogger(logLevel).error(
+        colors.red(`error during changelog generation: oldAssetPath and newAssetPath are required`),
+      );
+
+      process.exit(1);
+    }
+
+    const fullOldPath = path.resolve(root, oldPath);
+    const fullNewPath = path.resolve(root, newPath);
+    const fullDestination = path.resolve(root, destination);
+
+    const changelogGenerator = new ChangelogGenerator({
+      oldAssetsPath: fullOldPath,
+      newAssetsPath: fullNewPath,
+      destinationPath: fullDestination,
+      changelogFilename: filename,
+    });
+
+    await changelogGenerator.generateChangelog();
   });
 
 // optimize
