@@ -67,9 +67,12 @@
     "pino": "^8.18.0",
     "pino-pretty": "^10.3.1",
     "sass": "^1.62.1",
+    "sharp": "^0.33.2",
     "source-map-support": "^0.5.21",
+    "svgo": "^3.2.0",
     "typescript": "^5.0.4",
     "vite": "^4.3.4",
+    "vite-plugin-image-optimizer": "^1.1.7",
     "vite-plugin-zip-pack": "^1.0.5",
     "winston": "^3.11.0"
   },

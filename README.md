@@ -170,6 +170,48 @@ Default: `false`
 
 Description: Disables SSL certificate validation for proxy requests. Useful for self-signed certificates
 
+#### `imageOptimizer`
+
+Type: Boolean | Object
+
+Default: `true`
+
+Description: Enables image optimization for build.
+If you want to disable image optimization, you need to set this option to `false`.
+If you want to customize image optimization, you need to set this option to an object with properties that are described
+in the [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options)
+
+#### `outDir`
+
+Type: String
+
+Default: `dist`
+
+Description: Define the output directory for the build
+
+#### `distZip`
+
+Type: Boolean | { outDir?: string, outFileName?: string }
+
+Default: `true`
+
+Description: Enables zipping the build output.
+If you want to disable zipping the build output, you need to set this option to `false`.
+If you want to customize zipping the build output,
+you need to set this option to an object with properties `outDir` and `outFileName`.
+
+- `outDir` defines the output directory for the zipped build.
+- `outFileName` defines the output file name for the zipped build.
+  You can use placeholder `[templateName]` in the file name to replace it with the template name.
+
+#### `syncBackupsDir`
+
+Type: String
+
+Default: `backups`
+
+Description: Define the directory for the asset backups that are used for backup assets from the MI server
+
 ### CLI API description
 
 - `pp-dev help` - show CLI's help

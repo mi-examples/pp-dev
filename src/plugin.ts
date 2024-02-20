@@ -8,28 +8,257 @@ import { DistService } from './lib/dist.service.js';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import { initPPRedirect } from './lib/pp-redirect.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
+import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 
-export interface VitePPDevOptions {
-  backendBaseURL?: string;
-  portalPageId?: number;
-  templateName: string;
-  templateLess?: boolean;
-  miHudLess?: boolean;
-  enableProxyCache?: boolean;
-  proxyCacheTTL?: number;
-  disableSSLValidation?: boolean;
+type RequiredSelection<T, K extends keyof T> = Required<Pick<T, K>> & Omit<T, K>;
+
+interface DistZipOptions {
+  /**
+   * Output ZIP archive file name.
+   * You can use `[templateName]` placeholder to replace it with the template name.
+   * @default `${templateName}.zip`
+   */
+  outFileName?: string;
+
+  /**
+   * Output directory for the build.
+   * @default 'dist-zip'
+   */
+  outDir?: string;
 }
 
-function vitePPDev(options: VitePPDevOptions): Plugin {
+export interface VitePPDevOptions {
+  /**
+   * Backend base URL to MI instance for the local proxy.
+   */
+  backendBaseURL?: string;
+
+  /**
+   * Portal page ID on the MI instance.
+   */
+  portalPageId?: number;
+
+  /**
+   * Template name or PP internal name that will be used for the asset generation.
+   * Equals to package.json name field value.
+   */
+  templateName: string;
+
+  /**
+   * Enable or disable template variables loading from the backend.
+   */
+  templateLess?: boolean;
+
+  /**
+   * Enable or disable MI top bar and scripts loading from the backend for local development.
+   */
+  miHudLess?: boolean;
+
+  /**
+   * Enable or disable request caching to the backend by the local proxy.
+   * @default true
+   */
+  enableProxyCache?: boolean;
+
+  /**
+   * Request caching time in milliseconds.
+   * @default 600000 (10 minutes)
+   */
+  proxyCacheTTL?: number;
+
+  /**
+   * Disable SSL certificate validation for MI instances with self-signed certificates.
+   * @default false
+   */
+  disableSSLValidation?: boolean;
+
+  /**
+   * Image optimizer options.
+   * @default true
+   */
+  imageOptimizer?: boolean | Parameters<typeof ViteImageOptimizer>[0];
+
+  /**
+   * Output directory for the build.
+   * @default 'dist'
+   */
+  outDir?: string;
+
+  /**
+   * Disable or enable packing the build output into a ZIP archive.
+   * @default true
+   */
+  distZip?: boolean | DistZipOptions;
+
+  /**
+   * Backups an asset directory path for sync with the MI instance.
+   * @default backups
+   */
+  syncBackupsDir?: string;
+}
+
+export type NormalizedVitePPDevOptions = RequiredSelection<
+  VitePPDevOptions,
+  | 'templateName'
+  | 'templateLess'
+  | 'miHudLess'
+  | 'enableProxyCache'
+  | 'proxyCacheTTL'
+  | 'disableSSLValidation'
+  | 'imageOptimizer'
+  | 'outDir'
+  | 'distZip'
+  | 'syncBackupsDir'
+>;
+
+function isVitePPDevOptions(options: any): options is VitePPDevOptions {
+  return (
+    typeof options === 'object' &&
+    typeof options.templateName === 'string' &&
+    (typeof options.backendBaseURL === 'string' || options.backendBaseURL === undefined) &&
+    (typeof options.portalPageId === 'number' || options.portalPageId === undefined) &&
+    (typeof options.templateLess === 'boolean' || options.templateLess === undefined) &&
+    (typeof options.miHudLess === 'boolean' || options.miHudLess === undefined) &&
+    (typeof options.enableProxyCache === 'boolean' || options.enableProxyCache === undefined) &&
+    (typeof options.proxyCacheTTL === 'number' || options.proxyCacheTTL === undefined) &&
+    (typeof options.disableSSLValidation === 'boolean' || options.disableSSLValidation === undefined) &&
+    (typeof options.imageOptimizer === 'boolean' ||
+      typeof options.imageOptimizer === 'object' ||
+      options.imageOptimizer === undefined) &&
+    (typeof options.outDir === 'string' || options.outDir === undefined) &&
+    (typeof options.distZip === 'boolean' || typeof options.distZip === 'object' || options.distZip === undefined) &&
+    (typeof options.syncBackupsDir === 'string' || options.syncBackupsDir === undefined)
+  );
+}
+
+function throwConfigError(config: VitePPDevOptions) {
+  if (typeof config !== 'object') {
+    throw new Error('VitePPDevOptions must be an object');
+  }
+
+  if (typeof config.templateName !== 'string') {
+    throw new Error('VitePPDevOptions.templateName must be a string');
+  }
+
+  if (config.backendBaseURL !== undefined && typeof config.backendBaseURL !== 'string') {
+    throw new Error('VitePPDevOptions.backendBaseURL must be a string');
+  }
+
+  if (config.portalPageId !== undefined && typeof config.portalPageId !== 'number') {
+    throw new Error('VitePPDevOptions.portalPageId must be a number');
+  }
+
+  if (config.templateLess !== undefined && typeof config.templateLess !== 'boolean') {
+    throw new Error('VitePPDevOptions.templateLess must be a boolean');
+  }
+
+  if (config.miHudLess !== undefined && typeof config.miHudLess !== 'boolean') {
+    throw new Error('VitePPDevOptions.miHudLess must be a boolean');
+  }
+
+  if (config.enableProxyCache !== undefined && typeof config.enableProxyCache !== 'boolean') {
+    throw new Error('VitePPDevOptions.enableProxyCache must be a boolean');
+  }
+
+  if (config.proxyCacheTTL !== undefined && typeof config.proxyCacheTTL !== 'number') {
+    throw new Error('VitePPDevOptions.proxyCacheTTL must be a number');
+  }
+
+  if (config.disableSSLValidation !== undefined && typeof config.disableSSLValidation !== 'boolean') {
+    throw new Error('VitePPDevOptions.disableSSLValidation must be a boolean');
+  }
+
+  if (
+    config.imageOptimizer !== undefined &&
+    typeof config.imageOptimizer !== 'boolean' &&
+    typeof config.imageOptimizer !== 'object'
+  ) {
+    throw new Error('VitePPDevOptions.imageOptimizer must be a boolean or an object');
+  }
+
+  if (config.outDir !== undefined && typeof config.outDir !== 'string') {
+    throw new Error('VitePPDevOptions.outDir must be a string');
+  }
+
+  if (config.distZip !== undefined && typeof config.distZip !== 'boolean' && typeof config.distZip !== 'object') {
+    throw new Error('VitePPDevOptions.distZip must be a boolean or an object');
+  }
+
+  if (config.syncBackupsDir !== undefined && typeof config.syncBackupsDir !== 'string') {
+    throw new Error('VitePPDevOptions.syncBackupsDir must be a string');
+  }
+}
+
+export function normalizeVitePPDevConfig(config: VitePPDevOptions): NormalizedVitePPDevOptions {
+  !isVitePPDevOptions(config) && throwConfigError(config);
+
   const {
-    templateName,
-    templateLess = false,
-    backendBaseURL,
-    miHudLess = false,
-    portalPageId,
     enableProxyCache = true,
     proxyCacheTTL = 10 * 60 * 1000,
     disableSSLValidation = false,
+    imageOptimizer = true,
+    miHudLess = false,
+    templateLess = false,
+    outDir = 'dist',
+    distZip = true,
+    syncBackupsDir = 'backups',
+  } = config || {};
+
+  let distZipConfig = distZip;
+
+  if (distZipConfig === true) {
+    distZipConfig = {
+      outFileName: `${config.templateName}.zip`,
+      outDir: 'dist-zip',
+    };
+  } else if (typeof distZip === 'object') {
+    distZipConfig = {
+      outFileName:
+        typeof distZip.outFileName === 'string'
+          ? distZip.outFileName.replace('[templateName]', config.templateName)
+          : `${config.templateName}.zip`,
+      outDir: distZip.outDir ?? 'dist-zip',
+    };
+  } else {
+    distZipConfig = false;
+  }
+
+  let imageOptimizerConfig = imageOptimizer;
+
+  if (typeof imageOptimizer === 'boolean') {
+    if (imageOptimizerConfig === true) {
+      imageOptimizerConfig = {};
+    }
+  } else if (typeof imageOptimizer !== 'object') {
+    imageOptimizerConfig = false;
+  }
+
+  return {
+    enableProxyCache,
+    proxyCacheTTL,
+    disableSSLValidation,
+    imageOptimizer: imageOptimizerConfig,
+    templateLess,
+    miHudLess,
+    outDir,
+    distZip: distZipConfig,
+    syncBackupsDir,
+    ...config,
+  } as NormalizedVitePPDevOptions;
+}
+
+function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
+  const {
+    templateName,
+    templateLess,
+    backendBaseURL,
+    miHudLess,
+    portalPageId,
+    enableProxyCache,
+    proxyCacheTTL,
+    disableSSLValidation,
+    distZip,
+    syncBackupsDir,
   } = options || {};
 
   // Avoid server caching for index.html file when first loading
@@ -118,7 +347,18 @@ function vitePPDev(options: VitePPDevOptions): Plugin {
           ),
         );
 
-        const distService = new DistService(templateName);
+        const distService =
+          distZip !== false
+            ? new DistService(
+                templateName,
+                Object.assign(
+                  { backupDir: syncBackupsDir },
+                  typeof distZip === 'object'
+                    ? { distZipFolder: distZip.outDir, distZipFilename: distZip.outFileName }
+                    : undefined,
+                ),
+              )
+            : undefined;
         const eventHandler = new ClientService(server, { distService, miAPI: mi });
       }
     },
