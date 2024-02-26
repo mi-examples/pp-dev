@@ -21,6 +21,8 @@ export interface SyncOptions {
   backupFolder?: string;
   backupNameTemplate?: string;
   dateFormat?: (date: Date) => string;
+  distZipFolder?: string;
+  distZipFilename?: string;
 }
 
 export interface SyncMeta {
@@ -39,12 +41,18 @@ export class DistService {
   private readonly dateFormat: (date: Date) => string;
   private readonly pageName: string;
   private currentMeta: SyncMeta | null = null;
+  private readonly distZipFolder: string;
+  private readonly distZipFilename: string;
 
   private logger: Logger;
 
   constructor(pageName: string, syncOptions?: SyncOptions) {
+    this.pageName = pageName;
+
     const {
       backupFolder = path.resolve(process.cwd(), 'backups'),
+      distZipFolder = path.resolve(process.cwd(), 'dist-zip'),
+      distZipFilename = `${this.pageName}.zip`,
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
       dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
     } = syncOptions || {};
@@ -52,7 +60,9 @@ export class DistService {
     this.backupFolder = backupFolder;
     this.backupNameTemplate = backupNameTemplate;
     this.dateFormat = dateFormat;
-    this.pageName = pageName;
+
+    this.distZipFolder = distZipFolder;
+    this.distZipFilename = distZipFilename;
 
     this.syncMeta();
 
@@ -192,7 +202,7 @@ export class DistService {
         this.logger.info(colors.cyan('[DistService] Build finished'));
       });
 
-      const assetFile = path.resolve(process.cwd(), `./dist-zip/${this.pageName}.zip`);
+      const assetFile = path.resolve(process.cwd(), this.distZipFolder, this.distZipFilename);
 
       if (!(await fs.stat(assetFile))) {
         throw new Error(`File ${assetFile} not found`);

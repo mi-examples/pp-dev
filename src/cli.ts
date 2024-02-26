@@ -494,7 +494,7 @@ cli
         if (typeof buildOptions.changelog === 'string') {
           oldAssetsPath = path.resolve(executionRoot, buildOptions.changelog);
         } else {
-          const backupsDirPath = path.resolve(executionRoot, 'backups');
+          const backupsDirPath = path.resolve(executionRoot, buildConfig.ppDevConfig?.syncBackupsDir || 'backups');
 
           if (!fs.existsSync(backupsDirPath)) {
             createLogger(options.logLevel).warn(
@@ -528,10 +528,23 @@ cli
 
         const currentAssetFilePath = path.resolve(executionRoot, outDir);
 
+        let changelogDestination = 'dist-zip';
+
+        if (buildConfig.ppDevConfig) {
+          if (buildConfig.ppDevConfig.distZip === false) {
+            changelogDestination = (buildConfig.build?.outDir as string) || 'dist';
+          } else if (
+            typeof buildConfig.ppDevConfig.distZip === 'object' &&
+            typeof buildConfig.ppDevConfig.distZip.outDir === 'string'
+          ) {
+            changelogDestination = buildConfig.ppDevConfig.distZip.outDir;
+          }
+        }
+
         const changelogGenerator = new ChangelogGenerator({
           oldAssetsPath,
           newAssetsPath: currentAssetFilePath,
-          destinationPath: path.resolve(executionRoot, 'dist-zip'),
+          destinationPath: path.resolve(executionRoot, changelogDestination),
         });
 
         await changelogGenerator.generateChangelog();
