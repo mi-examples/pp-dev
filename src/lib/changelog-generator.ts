@@ -93,10 +93,12 @@ export const changelogTemplate = /* HTML */ `<!DOCTYPE html>
         .blob-code.code-deletion {
           background-color: #ffebe9;
         }
-        .blob-code.skip {
+        .blob-code.skip,
+        .blob-code.message {
           text-align: center;
         }
-        .blob-code.skip .blob-code-inner {
+        .blob-code.skip .blob-code-inner,
+        .blob-code.message .blob-code-inner {
           font-weight: bold;
           color: #6a737d;
           padding: 10px 0;
@@ -265,7 +267,10 @@ export class ChangelogGenerator {
     }
 
     if (this.isZipFile(oldAssetsPath)) {
-      const unzipDestinationPath = path.join(os.tmpdir(), crypto.createHash('md5').update(oldAssetsPath).digest('hex'));
+      const unzipDestinationPath = path.resolve(
+        os.tmpdir(),
+        crypto.createHash('md5').update(oldAssetsPath).digest('hex'),
+      );
 
       this.oldAssetsPath = this.unzipFile(oldAssetsPath, unzipDestinationPath)
         .then(() => {
@@ -291,7 +296,10 @@ export class ChangelogGenerator {
     }
 
     if (this.isZipFile(newAssetsPath)) {
-      const unzipDestinationPath = crypto.createHash('md5').update(newAssetsPath).digest('hex');
+      const unzipDestinationPath = path.resolve(
+        os.tmpdir(),
+        crypto.createHash('md5').update(newAssetsPath).digest('hex'),
+      );
 
       this.newAssetsPath = this.unzipFile(newAssetsPath, unzipDestinationPath)
         .then(() => {
@@ -393,7 +401,15 @@ export class ChangelogGenerator {
     return path.replace(/\\/g, '/');
   }
 
-  private diffTableTemplate(diffLines: ChangelogDiffLine[]): string {
+  private diffTableTemplate(diffLinesHTML: string): string {
+    return /* HTML */ `<table class="diff-table">
+      <tbody>
+        ${diffLinesHTML}
+      </tbody>
+    </table>`;
+  }
+
+  private getDiffTableHTML(diffLines: ChangelogDiffLine[]): string {
     const diffLinesHTML = diffLines
       .filter((value, index, array) => {
         if (value.lineType === LINE_CONTEXT) {
@@ -420,32 +436,34 @@ export class ChangelogGenerator {
         return [line] as ChangelogDiffLine[];
       })
       .flat()
-      .map((line) => this.diffLineTemplate(line))
+      .map((line) => this.diffLineHTML(line))
       .join('');
 
-    return /* HTML */ `<table class="diff-table">
-      <tbody>
-        ${diffLinesHTML}
-      </tbody>
-    </table>`;
+    return this.diffTableTemplate(diffLinesHTML);
+  }
+
+  private diffLineMessageTemplate(message: string): string {
+    return /* HTML */ `<tr>
+      <td class="blob-num"></td>
+      <td class="blob-num"></td>
+      <td class="blob-code message">
+        <span class="blob-code-inner">${message}</span>
+      </td>
+    </tr>`;
+  }
+
+  private diffLineSkipTemplate(): string {
+    return /* HTML */ `<tr>
+      <td class="blob-num"></td>
+      <td class="blob-num"></td>
+      <td class="blob-code skip">
+        <span class="blob-code-inner">Skip</span>
+      </td>
+    </tr>`;
   }
 
   private diffLineTemplate(diffLine: ChangelogDiffLine): string {
-    if (this.diffLineTemplateHandler) {
-      return this.diffLineTemplateHandler(diffLine);
-    }
-
     const { lineNumber, lineContent, lineType } = diffLine;
-
-    if (lineNumber === -1) {
-      return /* HTML */ `<tr>
-        <td class="blob-num"></td>
-        <td class="blob-num"></td>
-        <td class="blob-code skip">
-          <span class="blob-code-inner">Skip</span>
-        </td>
-      </tr>`;
-    }
 
     const numClass = lineType === LINE_ADDED ? 'addition' : lineType === LINE_REMOVED ? 'deletion' : '';
     const codeClass = lineType === LINE_ADDED ? 'code-addition' : lineType === LINE_REMOVED ? 'code-deletion' : '';
@@ -464,6 +482,20 @@ export class ChangelogGenerator {
         <span class="blob-code-inner" data-code-prefix="${prefix}">${escapeHTMLSequence(lineContent ?? '')}</span>
       </td>
     </tr>`;
+  }
+
+  private diffLineHTML(diffLine: ChangelogDiffLine): string {
+    if (this.diffLineTemplateHandler) {
+      return this.diffLineTemplateHandler(diffLine);
+    }
+
+    const { lineNumber } = diffLine;
+
+    if (lineNumber === -1) {
+      return this.diffLineSkipTemplate();
+    }
+
+    return this.diffLineTemplate(diffLine);
   }
 
   private diffFileTemplate(filename: string, htmlDiff: string): string {
@@ -555,7 +587,7 @@ export class ChangelogGenerator {
         /* HTML */ `<span class="renamed"
           >Renamed <span class="from">${filepath1}</span> -> <span class="to">${filepath2}</span></span
         >`,
-        'No changes',
+        this.diffTableTemplate(this.diffLineMessageTemplate('No changes')),
       );
     }
 
@@ -567,11 +599,17 @@ export class ChangelogGenerator {
     );
 
     if (difference.state === 'left' && assetFile1Path) {
-      return this.diffFileTemplate(/* HTML */ `<span class="removed">Removed ${filepath}</span>`, 'File removed');
+      return this.diffFileTemplate(
+        /* HTML */ `<span class="removed">Removed ${filepath}</span>`,
+        this.diffTableTemplate(this.diffLineMessageTemplate('File removed')),
+      );
     }
 
     if (difference.state === 'right' && assetFile2Path) {
-      return this.diffFileTemplate(/* HTML */ `<span class="added">Added ${filepath}</span>`, 'File added');
+      return this.diffFileTemplate(
+        /* HTML */ `<span class="added">Added ${filepath}</span>`,
+        this.diffTableTemplate(this.diffLineMessageTemplate('File added')),
+      );
     }
 
     if (difference.state === 'distinct' && assetFile1Path && assetFile2Path) {
@@ -588,8 +626,8 @@ export class ChangelogGenerator {
       return this.diffFileTemplate(
         filenameTitle,
         (await isBinaryFile(assetFile1Path)) || (await isBinaryFile(assetFile2Path))
-          ? 'Binary file'
-          : this.diffTableTemplate(
+          ? this.diffTableTemplate(this.diffLineMessageTemplate('Binary file'))
+          : this.getDiffTableHTML(
               await this.generateAssetFilesDiff(
                 fs.readFileSync(assetFile1Path, 'utf-8'),
                 fs.readFileSync(assetFile2Path, 'utf-8'),
