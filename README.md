@@ -214,11 +214,78 @@ Description: Define the directory for the asset backups that are used for backup
 
 ### CLI API description
 
-- `pp-dev help` - show CLI's help
+`pp-dev help` - show CLI's help
 
-- `pp-dev` or `pp-dev serve` or `pp-dev dev` runs application in development mode
-- `pp-dev build` starts the application build. Will create `dist` and `dist-zip` folders. `dist` folder contains
-  unzipped build files. `dist-zip` contains file `<package-name>.zip` with files from the `dist` folder
+Global options:
+
+- `-c, --config <configFile>` - define the path to the configuration file. Default is `pp-dev.config.js`
+- `--base <path>` - public base path (default: `/`)
+- `-l, --logLevel <level>` - define the log level. Default is `info`. Available options: `trace`, `debug`, `info`, `warn`, `error`, `silent`
+- `--clearScreen` - clear the screen before logging
+- `--mode <mode>` - define the environment mode. Default is `development`. Available options: `development`, `production`, `test`
+
+#### `pp-dev`
+
+Aliases: `pp-dev dev`, `pp-dev serve`
+
+Runs application in development mode with hot-reload. Also, its proxies requests to the MI server.
+
+Available options and arguments:
+
+- `[root]` - define the root directory for the application. Default is `.`
+- `--host <host>` - define the host for the application. Default is `localhost`
+- `--port <port>` - define the port for the application. Default is `3000`
+- `--open [path]` - open the application in the default browser. You can define the path to open the browser with the specific page
+- `--strictPort` - enable strict port checking. If the port is already in use, the application will exit with an error
+
+#### `pp-dev next`
+
+Aliases: `pp-dev next-server`, `pp-dev next-dev`
+
+Runs the Next.js application in development mode with hot-reload. Also, its proxies requests to the MI server.
+
+Available options and arguments:
+
+- `[root]` - define the root directory for the application. Default is `.`
+- `--port <port>` - define the port for the application. Default is `3000`
+- `--host <host>` - define the host for the application. Default is `localhost`
+
+#### `pp-dev build`
+
+Runs the application build. Will create `dist` and `dist-zip` folders. `dist` folder contains unzipped build files. `dist-zip` contains file `<package-name>.zip` with files from the `dist` folder
+
+Available options and arguments:
+
+- `[root]` - define the root directory for the application. Default is `.`
+- `--target <target>` - transpile target. Default is `modules`.
+- `--outDir <outDir>` - define the output directory for the build. Default is `dist`
+- `--assetsDir <dir>` - directory under outDir to place assets in Default is `assets`
+- `--changelog [assetsFile]` - create a changelog file. You can define the path to the assets file or set `true` to use the default path. Default is `true`. Default path is `backups/<latest>.zip` where `<latest>` is the latest backup file
+
+#### `pp-dev changelog [oldAssetPath] [newAssetPath]`
+
+Create a changelog file. You can define the path to the previous and current assets files. If you don't define the path to the previous assets and current assets file, the CLI will try to get it from options. If you don't define the path to the current assets file, the CLI will throw an error.
+
+Available options and arguments:
+
+- `[oldAssetPath]` - define the path to the current assets file. Can accept path to the folder or path to the zip file
+- `[newAssetPath]` - define the path to the previous assets file. Can accept path to the folder or path to the zip file
+- `--oldAssetsPath <oldAssetsPath>` - define the path to the previous assets file. Can accept path to the folder or path to the zip file
+- `--newAssetsPath <newAssetsPath>` - define the path to the current assets file. Can accept path to the folder or path to the zip file
+- `--destination <destination>` - define the destination path for the changelog file. Default is `.`
+- `--filename <filename>` - define the filename for the changelog file. Default is `CHANGELOG.html`
+
+#### `pp-dev generate-icon-font [source] [destination]`
+
+Generate an icon font from the source folder. You can define the path to the source folder and the destination folder. If you don't define the path to the source folder, the CLI will try to get it from options. If you don't define the path to the destination folder, the CLI will throw an error.
+
+Available options and arguments:
+
+- `[source]` - define the path to the source folder with SVG icons
+- `[destination]` - define the path to the destination folder for the generated icon font and styles
+- `--source <source>` - define the path to the source folder with SVG icons
+- `--destination <destination>` - define the path to the destination folder for the generated icon font and styles
+- `--fontName <fontName>` - define the font name. Default is `icon-font`
 
 ## Migration guide from old Portal Page Helper to new
 
