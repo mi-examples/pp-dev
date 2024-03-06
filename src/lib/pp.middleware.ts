@@ -90,7 +90,7 @@ export class MiAPI {
    * @param headers
    */
   async getPageTemplate(headers: Headers) {
-    if (!(await this.#templateLoaded)) {
+    if (!(await this.#templateLoaded) && !this.#pageTemplate) {
       this.#templateLoaded = new Promise((resolve) => {
         this.#templateLoadedResolve = resolve;
       });
@@ -112,6 +112,8 @@ export class MiAPI {
         return response;
       })
       .catch(async (e) => {
+        this.#templateLoadedResolve(false);
+
         if (await this.pageApi.checkAuth(this.#clearHeaders(headers))) {
           this.logger.error(colors.red(`Error fetching page list: ${e.message}\n${e.stack}`));
 
@@ -144,6 +146,8 @@ export class MiAPI {
         .catch((e) => {
           this.logger.error(colors.red(`Error creating dev page: ${e.message}`));
 
+          this.#templateLoadedResolve(false);
+
           throw new Error(
             `Error when creating dev page.
             That can be caused by missing permissions or page with name "${TEMPLATE_PAGE_NAME}" already exists`,
@@ -159,17 +163,18 @@ export class MiAPI {
         return response;
       })
       .then((response) => {
+        this.#templateLoadedResolve(true);
+
         this.logger.info(colors.green('Page template fetched'));
 
         return response;
       })
       .catch((e) => {
+        this.#templateLoadedResolve(false);
+
         this.logger.error(colors.red(`Error fetching page template: ${e.message}`));
 
         throw new Error('Error fetching page template');
-      })
-      .finally(() => {
-        this.#templateLoadedResolve(true);
       });
   }
 

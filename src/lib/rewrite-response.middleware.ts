@@ -2,6 +2,7 @@ import { Connect } from 'vite';
 import NextHandleFunction = Connect.NextHandleFunction;
 import { decodeContent, encodeContent } from './helpers/content-encoding.helper.js';
 import type { ServerResponse } from 'http';
+import { createLogger } from './logger.js';
 
 /**
  * Rewrite response middleware
@@ -15,6 +16,10 @@ export function initRewriteResponse(
 ): NextHandleFunction {
   return (req, res, next) => {
     if (predicate(req.url ?? '', req, res)) {
+      const logger = createLogger();
+
+      logger.info(`Rewrite response for ${req.url}`);
+
       const end = res.end;
 
       const buffers: Buffer[] = [];
@@ -25,9 +30,7 @@ export function initRewriteResponse(
         return true;
       };
 
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      res.end = function (chunk: any, encoding: BufferEncoding, cb?: () => void) {
+      res.end = function (chunk?: any, encoding?: BufferEncoding | (() => void), cb?: () => void) {
         if (typeof chunk === 'string') {
           buffers.push(Buffer.from(chunk));
         }
@@ -35,7 +38,12 @@ export function initRewriteResponse(
         const contentEncoding = res.getHeader('content-encoding') as string;
         const content = decodeContent(Buffer.from(Buffer.concat(buffers)), contentEncoding);
 
-        end.call(this, encodeContent(rewrite(content, req, res), contentEncoding), encoding, cb);
+        const bufferEncoding = typeof encoding !== 'function' && encoding ? encoding : 'utf-8';
+        const endCallback = typeof encoding === 'function' ? encoding : cb;
+
+        end.call(this, encodeContent(rewrite(content, req, res), contentEncoding), bufferEncoding, endCallback);
+
+        return this;
       };
     }
 
