@@ -261,17 +261,19 @@ cli
 
     const { default: next } = await import('next');
 
+    const logger = createLogger();
+
     const server = createDevServer(options.logLevel);
     const opts = cleanOptions(options);
 
     const app = next({ dev: true, hostname: opts.host as string, port: opts.port });
-    const handle = app.getRequestHandler();
 
     await app.prepare();
 
     const nextServer = (await (app as any).getServer()) as DevServer & { nextConfig: NextConfig };
 
     let base = nextServer.nextConfig.basePath;
+    const { assetPrefix } = nextServer.nextConfig;
 
     if (!base.endsWith('/')) {
       base += '/';
@@ -322,11 +324,17 @@ cli
         server.use(initProxyCache({ devServer: server, ttl }));
       }
 
+      const proxyIgnore = ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash];
+
+      if (assetPrefix) {
+        proxyIgnore.push(assetPrefix);
+      }
+
       server.use(
         proxyPassMiddleware({
           devServer: server,
           baseURL: backendBaseURL,
-          proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
+          proxyIgnore,
           disableSSLValidation,
         }) as any,
       );
@@ -348,7 +356,16 @@ cli
       );
     }
 
+    const handle = app.getRequestHandler();
+
     server.all('*', (req, res) => {
+      if (req.url.startsWith(assetPrefix) && assetPrefix !== baseWithoutTrailingSlash) {
+        const parsedUrl = parse(req.url.replace(assetPrefix, baseWithoutTrailingSlash), true);
+
+
+        return handle(req, res, parsedUrl);
+      }
+
       const parsedUrl = parse(req.url, true);
 
       handle(req, res, parsedUrl);
@@ -370,8 +387,6 @@ cli
           );
         }
       });
-
-      const logger = createLogger();
 
       const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
       const startupDurationString = ppDevStartTime
