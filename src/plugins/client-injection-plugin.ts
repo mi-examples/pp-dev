@@ -21,7 +21,7 @@ const DIRNAME = path.dirname(
   (typeof __filename !== 'undefined' && __filename) || fileURLToPath(new URL('.', import.meta.url)),
 );
 
-const PACKAGE_IMPORT = `${PACKAGE_NAME}/client`;
+const PACKAGE_IMPORT = `/${PACKAGE_NAME}/client`;
 const CLIENT_PATH = `/${PACKAGE_IMPORT}`;
 
 export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin {
@@ -29,7 +29,10 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
     encoding: 'utf8',
     flag: 'r',
   });
+
   let render: AsyncTemplateFunction;
+  let base = '';
+  let baseChanged = false;
 
   return {
     name: 'pp-dev:client',
@@ -49,33 +52,44 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
       }
     },
     transformIndexHtml: async (html, ctx) => {
+      if (ctx.server?.config.base && base !== ctx.server?.config.base) {
+        base = ctx.server.config.base;
+        baseChanged = true;
+      }
+
       const result: IndexHtmlTransformResult = {
         html,
         tags: [
-          { tag: 'link', injectTo: 'head', attrs: { rel: 'stylesheet', href: `${PACKAGE_NAME}/client/client.css` } },
-          { tag: 'script', injectTo: 'body', attrs: { src: `${PACKAGE_NAME}/client/client.js`, type: 'module' } },
+          {
+            tag: 'link',
+            injectTo: 'head',
+            attrs: { rel: 'stylesheet', href: path.posix.join(base, PACKAGE_NAME, 'client/client.css') },
+          },
         ],
       };
 
       const { backendBaseURL, templateLess, portalPageId } = opts || ctx.server?.config.clientInjectionPlugin || {};
 
-      if (!render && ctx.server?.config.base) {
+      if (!render || baseChanged) {
         render = compile(
-          clientPanelTpl.replace(
-            new RegExp(`${CLIENT_PATH}`, 'g'),
-            path.posix.join(ctx.server.config.base, PACKAGE_IMPORT),
-          ),
+          clientPanelTpl.replace(new RegExp(`${CLIENT_PATH}`, 'g'), path.posix.join(base, PACKAGE_IMPORT)),
           { openDelimiter: '{', closeDelimiter: '}', async: true },
         );
       }
 
-      if (ctx.server?.config.base) {
-        result.tags.push({
-          tag: 'div',
-          injectTo: 'body',
-          children: await render({ PACKAGE_NAME, VERSION, backendBaseURL, templateLess, portalPageId }),
-        });
-      }
+      result.tags.push({
+        tag: 'div',
+        injectTo: 'body-prepend',
+        children: await render?.({ PACKAGE_NAME, VERSION, backendBaseURL, templateLess, portalPageId }),
+      });
+
+      result.tags.push({
+        tag: 'script',
+        injectTo: 'body-prepend',
+        attrs: { src: path.posix.join(base, PACKAGE_NAME, 'client/client.js'), type: 'module' },
+      });
+
+      baseChanged = false;
 
       return result;
     },

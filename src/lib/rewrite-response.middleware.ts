@@ -11,11 +11,15 @@ import { createLogger } from './logger.js';
  * @param rewrite Rewrite response content handler
  */
 export function initRewriteResponse(
-  predicate: (url: string, req: Connect.IncomingMessage, res: ServerResponse<Connect.IncomingMessage>) => boolean,
+  predicate: (
+    url: string,
+    req: Connect.IncomingMessage,
+    res: ServerResponse<Connect.IncomingMessage>,
+  ) => Promise<boolean> | boolean,
   rewrite: (response: Buffer, req: Connect.IncomingMessage, res: ServerResponse<Connect.IncomingMessage>) => Buffer,
 ): NextHandleFunction {
-  return (req, res, next) => {
-    if (predicate(req.url ?? '', req, res)) {
+  return async (req, res, next) => {
+    if (await predicate(req.url ?? '', req, res)) {
       const logger = createLogger();
 
       logger.info(`Rewrite response for ${req.url}`);

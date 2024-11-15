@@ -1,7 +1,7 @@
 import { IndexHtmlTransformResult, Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
-import { cutUrlParams, urlReplacer } from './lib/helpers/url.helper.js';
+import { urlReplacer } from './lib/helpers/url.helper.js';
 import { ClientService } from './lib/client.service.js';
 import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import { DistService } from './lib/dist.service.js';
@@ -264,11 +264,17 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   // Avoid server caching for index.html file when first loading
   let isFirstRequest = true;
 
+  let baseDir = process.cwd();
+
   return {
     name: 'vite-pp-dev',
     apply: 'serve',
     config: (config) => {
       config.clientInjectionPlugin = { backendBaseURL, portalPageId, templateLess };
+
+      if (config.root) {
+        baseDir = config.root;
+      }
 
       return config;
     },
@@ -336,17 +342,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         // Get portal page variables from the backend (also, redirect magic)
         server.middlewares.use(initLoadPPData(isIndexRegExp, mi, options));
 
-        server.middlewares.use(
-          initRewriteResponse(
-            (url) => {
-              return isIndexRegExp.test(cutUrlParams(url));
-            },
-            (response, req) => {
-              return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
-            },
-          ),
-        );
-
         const distService =
           distZip !== false
             ? new DistService(
@@ -359,7 +354,21 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                 ),
               )
             : undefined;
+
         const eventHandler = new ClientService(server, { distService, miAPI: mi });
+
+        return () => {
+          server.middlewares.use(
+            initRewriteResponse(
+              (url) => {
+                return url.endsWith('index.html');
+              },
+              (response, req) => {
+                return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
+              },
+            ),
+          );
+        }
       }
     },
   };

@@ -4,6 +4,7 @@ import { ViteDevServer } from 'vite';
 import { Express } from 'express';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
+import { ServerResponse } from 'http';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -34,8 +35,13 @@ export function initProxy(opts: ProxyOpts) {
 
   const logger = createLogger();
 
-  return createProxyMiddleware(
-    (pathname) => {
+  return createProxyMiddleware({
+    /**
+     * IMPORTANT: avoid res.end being called automatically
+     **/
+    selfHandleResponse: true, // res.end() will be called internally by responseInterceptor()
+
+    pathFilter: (pathname, req) => {
       if (
         (opts.proxyIgnore || []).some((value) => {
           if (typeof value === 'string') {
@@ -47,6 +53,8 @@ export function initProxy(opts: ProxyOpts) {
           return true;
         })
       ) {
+        // Ignored paths
+
         return false;
       }
 
@@ -60,22 +68,34 @@ export function initProxy(opts: ProxyOpts) {
 
       return false;
     },
-    {
-      /**
-       * IMPORTANT: avoid res.end being called automatically
-       **/
-      selfHandleResponse: true, // res.end() will be called internally by responseInterceptor()
 
-      target: baseURL,
-      changeOrigin: true,
-      autoRewrite: true,
-      logLevel: 'silent',
-      secure: !disableSSLValidation,
-      headers: {
-        host,
-        origin,
+    target: baseURL,
+    changeOrigin: true,
+    autoRewrite: true,
+    cookieDomainRewrite: {
+      [host]: 'localhost',
+    },
+    logger: {
+      info: () => {
+        //
       },
-      onProxyReq(proxyReq, req, res) {
+      log: () => {
+        //
+      },
+      error: () => {
+        //
+      },
+      warn: () => {
+        //
+      },
+    },
+    secure: !disableSSLValidation,
+    headers: {
+      host,
+      origin,
+    },
+    on: {
+      proxyReq(proxyReq, req, res) {
         const host = req.headers.host;
         const referer = proxyReq.getHeader('referer');
 
@@ -99,7 +119,7 @@ export function initProxy(opts: ProxyOpts) {
 
         return proxyReq;
       },
-      onProxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+      proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
         res.setHeader(PROXY_HEADER, 1);
 
         const type = await (await fileType).fileTypeFromBuffer(responseBuffer);
@@ -131,19 +151,21 @@ export function initProxy(opts: ProxyOpts) {
           return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
         }
       }),
-      onError(err, req, res) {
+      error(err, req, res) {
         const errorMessage = `Proxy error: "${err.message}" when trying to "${req.method} ${req.url}"\n\n${err.stack}`;
 
         logger.error(errorMessage);
 
-        res.writeHead(500, {
-          'Content-Type': 'text/plain',
-        });
+        if (res.writable) {
+          (res as ServerResponse).writeHead(500, {
+            'Content-Type': 'text/plain',
+          });
+        }
 
         res.end(errorMessage);
       },
     },
-  );
+  });
 }
 
 export default initProxy;
