@@ -103,6 +103,24 @@ $pp-dev-height: 30px;
 
   &.pp-dev-info,
   .pp-dev-info {
+    position: fixed;
+    z-index: 10000;
+    white-space: nowrap;
+    width: fit-content;
+    height: $pp-dev-height;
+    top: calc(100% - $pp-dev-height);
+    right: 0;
+    text-align: center;
+    padding: 3px 8px 3px 0;
+    background-color: var(--pp-dev-info-color-white);
+    border-radius: 3px 0 0 0;
+    color: var(--pp-dev-info-color-dark);
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+    box-sizing: border-box;
+    display: flex;
+    transition: all 0.3s;
+    overflow: hidden;
+
     // Setup default values for styles that can be overlapped by other page styles
     // (e.g. color, font-family, font-size etc.)
     // This is needed to make sure that the extension styles are not overlapped by the page styles
@@ -127,24 +145,6 @@ $pp-dev-height: 30px;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
-
-    position: fixed;
-    z-index: 10000;
-    white-space: nowrap;
-    width: fit-content;
-    height: $pp-dev-height;
-    top: calc(100% - $pp-dev-height);
-    right: 0;
-    text-align: center;
-    padding: 3px 8px 3px 0;
-    background-color: var(--pp-dev-info-color-white);
-    border-radius: 3px 0 0 0;
-    color: var(--pp-dev-info-color-dark);
-    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
-    box-sizing: border-box;
-    display: flex;
-    transition: all 0.3s;
-    overflow: hidden;
 
     @mixin bold {
       font-weight: 700;

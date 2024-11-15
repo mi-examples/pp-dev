@@ -18,10 +18,12 @@ export default defineConfig({
     typescript({
       tsconfig: path.resolve(__dirname, './tsconfig.build.json'),
     }),
-    scss(),
+    scss({
+      fileName: 'client.css',
+    }),
     url({
       fileName: '[name][extname]',
-      include: ['**/*.svg', '**/*.png', '**/*.jp(e)?g', '**/*.gif', '**/*.webp', '**/*.html'],
+      include: ['**/*.svg', '**/*.png', '**/*.jp(e)?g', '**/*.gif', '**/*.webp', '**/*.html', '**/*.css'],
       limit: 0,
     }),
   ],
