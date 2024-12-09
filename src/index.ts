@@ -13,6 +13,9 @@ declare module 'vite' {
   }
 }
 
+const pathPagePrefix = '/p';
+const pathTemplatePrefix = '/pt';
+
 export async function getViteConfig() {
   const pkg = getPkg();
 
@@ -47,18 +50,25 @@ export async function getViteConfig() {
   }
 
   return {
-    base: templateLess ? `/p/${templateName}` : `/pt/${templateName}`,
+    base: templateLess ? `${pathPagePrefix}/${templateName}` : `${pathTemplatePrefix}/${templateName}`,
     server: {
       port: 3000,
     },
     build: {
       minify: false,
+      assetsInlineLimit: 4096,
       rollupOptions: {
         output: {
           banner: header,
         },
       },
       outDir,
+    },
+    css: {
+      modules: { localsConvention: 'dashes' },
+      scss: {
+        api: 'modern',
+      },
     },
     ppDevConfig: normalizedPPDevConfig,
     plugins,

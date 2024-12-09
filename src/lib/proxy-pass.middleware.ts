@@ -4,7 +4,7 @@ import { ViteDevServer } from 'vite';
 import { Express } from 'express';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
-import { ServerResponse } from 'http';
+import { ServerResponse, IncomingMessage } from 'http';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -20,6 +20,17 @@ export interface ProxyOpts {
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 export const PROXY_HEADER = 'X-PP-Proxy';
+
+// TODO: Implement interceptor for streaming responses
+function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: BufferEncoding) => Buffer) {
+  return async <T extends IncomingMessage>(proxyRes: T, req: T, res: ServerResponse<T>) => {
+    res.setHeader(PROXY_HEADER, 1);
+
+    res.setHeaders(new Map(Object.entries(proxyRes.headers)) as any);
+
+    proxyRes.pipe(res);
+  };
+}
 
 export function initProxy(opts: ProxyOpts) {
   const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer, disableSSLValidation = false } = opts;
@@ -119,38 +130,72 @@ export function initProxy(opts: ProxyOpts) {
 
         return proxyReq;
       },
-      proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
-        res.setHeader(PROXY_HEADER, 1);
+      proxyRes: (serverRes, req, res) => {
+        if (
+          serverRes.headers['content-type']?.includes('text/event-stream') ||
+          (serverRes.headers['transfer-encoding']?.includes('chunked') &&
+            serverRes.headers['x-accel-buffering'] === 'no')
+        ) {
+          logger.info(`${colors.blue('Start streaming for request:')} ${colors.green(req.method)} ${req.url}`);
 
-        const type = await (await fileType).fileTypeFromBuffer(responseBuffer);
+          const streamInterceptor = streamResponseInterceptor((data, encoding) => {
+            return Buffer.from(urlReplacer(host, req.headers.host ?? '', data.toString(encoding)), encoding);
+          });
 
-        if (type) {
-          return responseBuffer;
-        } else {
-          let response = responseBuffer.toString('utf8'); // convert buffer to string
-
-          try {
-            const reqUrl = new URL(req.url ?? '', `http://${host}`);
-
-            if (reqUrl.searchParams && reqUrl.searchParams.has('proxyRedirect')) {
-              response +=
-                '<script>' +
-                'const params = new URLSearchParams(window.location.search);' +
-                "if (params.has('proxyRedirect')) {" +
-                " setTimeout(() => { window.location = params.get('proxyRedirect'); }, 50);" +
-                '}' +
-                '</script>';
-            }
-          } catch {
-            //
-          }
-
-          const reqHost = req.headers.host ?? '';
-
-          // manipulate response and return the result
-          return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
+          return streamInterceptor(serverRes, req, res);
         }
-      }),
+
+        const rewriteInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+          res.setHeader(PROXY_HEADER, 1);
+
+          const type = await (await fileType).fileTypeFromBuffer(responseBuffer);
+
+          if (type) {
+            return responseBuffer;
+          } else {
+            let response = responseBuffer.toString('utf8'); // convert buffer to string
+
+            try {
+              const reqUrl = new URL(req.url ?? '', `http://${host}`);
+
+              if (reqUrl.searchParams && reqUrl.searchParams.has('proxyRedirect')) {
+                const redirectToFunction = function () {
+                  let url = window.location.href;
+
+                  const func = function () {
+                    const params = new URLSearchParams(window.location.search);
+
+                    if (!params.has('proxyRedirect')) {
+                      return;
+                    }
+
+                    if (url !== window.location.href) {
+                      url = window.location.href;
+
+                      setTimeout(func, 2000);
+                    } else {
+                      window.location.href = params.get('proxyRedirect') as string;
+                    }
+                  };
+
+                  setTimeout(func, 2000);
+                };
+
+                response += '<script>' + `(${redirectToFunction.toString()})()` + '</script>';
+              }
+            } catch {
+              //
+            }
+
+            const reqHost = req.headers.host ?? '';
+
+            // manipulate response and return the result
+            return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
+          }
+        });
+
+        return rewriteInterceptor(serverRes, req, res);
+      },
       error(err, req, res) {
         const errorMessage = `Proxy error: "${err.message}" when trying to "${req.method} ${req.url}"\n\n${err.stack}`;
 

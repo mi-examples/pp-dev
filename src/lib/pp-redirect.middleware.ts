@@ -20,6 +20,7 @@ export function initPPRedirect(base: string, templateName?: string): NextHandleF
 
     if (templateName) {
       findPaths.push(`/pt/${templateName}`);
+      findPaths.push(`/pl/${templateName}`);
     }
 
     // Redirect from `/` and `/pt/${templateName}` and `${base}` (without a training slash) to portal page address

@@ -2,7 +2,10 @@
   "compilerOptions": {
     "baseUrl": ".",
     "declaration": false,
-    "lib": ["esnext"],
+    "lib": [
+      "esnext",
+      "dom"
+    ],
     "module": "esnext",
     "moduleResolution": "node",
     "removeComments": false,
