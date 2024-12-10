@@ -95,6 +95,13 @@ export interface VitePPDevOptions {
    * @default backups
    */
   syncBackupsDir?: string;
+
+  /**
+   * Enable Metric Insights v7 features.
+   * @default false
+   * @since 0.8.0
+   */
+  v7Features?: boolean;
 }
 
 export type NormalizedVitePPDevOptions = RequiredSelection<
@@ -109,6 +116,7 @@ export type NormalizedVitePPDevOptions = RequiredSelection<
   | 'outDir'
   | 'distZip'
   | 'syncBackupsDir'
+  | 'v7Features'
 >;
 
 function isVitePPDevOptions(options: any): options is VitePPDevOptions {
@@ -127,7 +135,8 @@ function isVitePPDevOptions(options: any): options is VitePPDevOptions {
       options.imageOptimizer === undefined) &&
     (typeof options.outDir === 'string' || options.outDir === undefined) &&
     (typeof options.distZip === 'boolean' || typeof options.distZip === 'object' || options.distZip === undefined) &&
-    (typeof options.syncBackupsDir === 'string' || options.syncBackupsDir === undefined)
+    (typeof options.syncBackupsDir === 'string' || options.syncBackupsDir === undefined) &&
+    (typeof options.v7Features === 'boolean' || options.v7Features === undefined)
   );
 }
 
@@ -187,6 +196,10 @@ function throwConfigError(config: VitePPDevOptions) {
   if (config.syncBackupsDir !== undefined && typeof config.syncBackupsDir !== 'string') {
     throw new Error('VitePPDevOptions.syncBackupsDir must be a string');
   }
+
+  if (config.v7Features !== undefined && typeof config.v7Features !== 'boolean') {
+    throw new Error('VitePPDevOptions.v7Features must be a boolean');
+  }
 }
 
 export function normalizeVitePPDevConfig(config: VitePPDevOptions): NormalizedVitePPDevOptions {
@@ -202,6 +215,7 @@ export function normalizeVitePPDevConfig(config: VitePPDevOptions): NormalizedVi
     outDir = 'dist',
     distZip = true,
     syncBackupsDir = 'backups',
+    v7Features = false,
   } = config || {};
 
   let distZipConfig = distZip;
@@ -243,6 +257,7 @@ export function normalizeVitePPDevConfig(config: VitePPDevOptions): NormalizedVi
     outDir,
     distZip: distZipConfig,
     syncBackupsDir,
+    v7Features,
     ...config,
   } as NormalizedVitePPDevOptions;
 }
@@ -259,6 +274,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     disableSSLValidation,
     distZip,
     syncBackupsDir,
+    v7Features,
   } = options || {};
 
   // Avoid server caching for index.html file when first loading
@@ -271,6 +287,10 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     apply: 'serve',
     config: (config) => {
       config.clientInjectionPlugin = { backendBaseURL, portalPageId, templateLess };
+
+      if (v7Features) {
+        config.base = `/pl/${templateName}`;
+      }
 
       if (config.root) {
         baseDir = config.root;
@@ -368,7 +388,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
               },
             ),
           );
-        }
+        };
       }
     },
   };
