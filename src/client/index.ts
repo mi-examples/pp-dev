@@ -75,6 +75,28 @@ if (import.meta.hot) {
     window.location.href = data.url;
   });
 
+  hot.on('client:config:update', (data: { config: { [key: string]: any } }) => {
+    if (typeof data.config?.canSync === 'boolean') {
+      if (data.config.canSync) {
+        const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
+
+        if ($syncButton) {
+          $syncButton.disabled = false;
+          $syncButton.classList.remove('disabled');
+          $syncButton.title = 'Sync template';
+        }
+      } else {
+        const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
+
+        if ($syncButton) {
+          $syncButton.disabled = true;
+          $syncButton.classList.add('disabled');
+          $syncButton.title = 'Sync is unavailable on this instance';
+        }
+      }
+    }
+  });
+
   let isClosed = getStorageItem(CLOSED_CLASS_STORAGE_KEY) === 'true' || false;
 
   const $infoPanel = document.querySelector('.pp-dev-info');
@@ -100,12 +122,16 @@ if (import.meta.hot) {
     });
   }
 
-  const $syncButton = document.getElementById('sync-template');
+  const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
 
   if ($syncButton) {
     hot.on(
       'template:sync:response',
-      (payload: { syncedAt: string; currentHash: string; backupFilename: string } | { error: string }) => {
+      (
+        payload:
+          | { syncedAt: string; currentHash: string; backupFilename: string }
+          | { error: string; config?: { [p: string]: any } },
+      ) => {
         $syncButton.classList.remove('syncing');
 
         if ('error' in payload && typeof payload.error !== 'undefined') {
@@ -114,6 +140,10 @@ if (import.meta.hot) {
             content: payload.error,
             className: 'pp-dev-info__popup--danger',
           });
+
+          $syncButton.disabled = true;
+          $syncButton.classList.add('disabled');
+          $syncButton.title = 'Sync is unavailable on this instance';
         } else if ('syncedAt' in payload && typeof payload.syncedAt !== 'undefined') {
           infoPopup({
             title: 'Sync success',

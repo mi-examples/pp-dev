@@ -246,6 +246,12 @@ $pp-dev-height: 30px;
       cursor: pointer;
       padding: 4px 2px;
 
+      &.disabled {
+        svg {
+          fill: gray!important;
+        }
+      }
+
       &.syncing {
         cursor: not-allowed;
         pointer-events: none;

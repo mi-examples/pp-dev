@@ -223,7 +223,7 @@ If you want to enable V7 features, you need to set this option to `true`.
 This option is used for enabling new features that are available only on the Metric Insights v7 instances.
 When setting this option to `true`, the CLI will use apply changes:
 1. Default development path will be changed from `/pt/<portal-page-name>` to `/pl/<portal-page-name>`. This will avoid conflicts with the Metric Insights v7 features when developing a Portal Page with the Metric Insights toolbar.
-2. The Code Sync feature will use the new URLs of the Metric Insights v7 instances **(not implemented yet)**
+2. The Code Sync feature will use the new URLs of the Metric Insights v7 instances (available only on the Metric Insights v7.1.0 instances or higher).
 
 ### CLI API description
 

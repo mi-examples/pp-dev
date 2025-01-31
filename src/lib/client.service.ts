@@ -50,6 +50,25 @@ export class ClientService {
     if (this.opts.distService && this.opts.miAPI) {
       const { distService, miAPI } = this.opts;
 
+      if (this.server.config.clientInjectionPlugin?.v7Features) {
+        if (!miAPI?.isV710OrHigher) {
+          this.server.ws.send('template:sync:response', {
+            error: 'This feature is available only for MI v7.1.0 or higher',
+            config: {
+              canSync: false,
+            },
+          });
+
+          return;
+        } else {
+          this.server.ws.send('client:config:update', {
+            config: {
+              canSync: true,
+            },
+          });
+        }
+      }
+
       const currentAssets = await miAPI?.getAssets();
 
       const newAssets = currentAssets

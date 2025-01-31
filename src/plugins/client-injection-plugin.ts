@@ -9,6 +9,8 @@ export interface ClientInjectionPluginOpts {
   backendBaseURL?: string;
   templateLess: boolean;
   portalPageId?: number;
+  canSync?: boolean;
+  v7Features?: boolean;
 }
 
 declare module 'vite' {
@@ -68,7 +70,12 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
         ],
       };
 
-      const { backendBaseURL, templateLess, portalPageId } = opts || ctx.server?.config.clientInjectionPlugin || {};
+      const {
+        backendBaseURL,
+        templateLess,
+        portalPageId,
+        canSync = true,
+      } = opts || ctx.server?.config.clientInjectionPlugin || {};
 
       if (!render || baseChanged) {
         render = compile(
@@ -80,7 +87,7 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
       result.tags.push({
         tag: 'div',
         injectTo: 'body-prepend',
-        children: await render?.({ PACKAGE_NAME, VERSION, backendBaseURL, templateLess, portalPageId }),
+        children: await render?.({ PACKAGE_NAME, VERSION, backendBaseURL, templateLess, portalPageId, canSync }),
       });
 
       result.tags.push({

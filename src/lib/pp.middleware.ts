@@ -1,6 +1,6 @@
 import axios, { Axios } from 'axios';
 import { JSDOM } from 'jsdom';
-import { AssetsAPI, PageAPI } from '../api/index.js';
+import { AssetsAPI, PageAPI, AssetsV7API, PageTemplateAPI } from '../api/index.js';
 import { Agent } from 'https';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
@@ -13,6 +13,7 @@ export interface MiAPIOptions {
   headers?: Headers;
   templateLess: boolean;
   disableSSLValidation?: boolean;
+  v7Features?: boolean;
 }
 
 export const TEMPLATE_PAGE_NAME = '[DEV PAGE. DO NOT DELETE]';
@@ -20,13 +21,17 @@ export const TEMPLATE_PAGE_NAME = '[DEV PAGE. DO NOT DELETE]';
 export class MiAPI {
   #headers: Headers;
 
-  #axios: Axios;
+  readonly #axios: Axios;
 
   #pageTemplate: string | null = null;
 
   #pageTitle!: string;
 
   #pageVars: { name: string; value: string }[];
+
+  #v7Features!: boolean;
+
+  #isV710OrHigher!: boolean;
 
   #templateLoaded: Promise<boolean>;
   #templateLoadedResolve!: (value: boolean) => void;
@@ -36,16 +41,26 @@ export class MiAPI {
 
   private assetsApi: AssetsAPI;
   private pageApi: PageAPI;
+  private pageTemplateApi: PageTemplateAPI;
 
   private logger: Logger;
 
   constructor(baseURL: string, opts?: MiAPIOptions) {
-    const { headers = {}, portalPageId, templateLess = true, disableSSLValidation = false } = opts || {};
+    const {
+      headers = {},
+      portalPageId,
+      templateLess = true,
+      disableSSLValidation = false,
+      v7Features = false,
+    } = opts || {};
 
     this.#headers = headers;
 
     this.#pageVars = [];
     this.#pageTitle = '';
+
+    this.#v7Features = v7Features;
+    this.#isV710OrHigher = false;
 
     this.#templateLoaded = Promise.resolve(false);
 
@@ -61,14 +76,19 @@ export class MiAPI {
     this.portalPageId = portalPageId;
     this.templateLess = templateLess;
 
-    this.assetsApi = new AssetsAPI(this.#axios);
+    this.assetsApi = new (!v7Features ? AssetsAPI : AssetsV7API)(this.#axios);
     this.pageApi = new PageAPI(this.#axios);
+    this.pageTemplateApi = new PageTemplateAPI(this.#axios);
 
     this.logger = createLogger();
   }
 
   async isTemplateLoaded() {
     return this.#templateLoaded;
+  }
+
+  get isV710OrHigher() {
+    return this.#isV710OrHigher;
   }
 
   #clearHeaders(headers: Headers) {
@@ -83,6 +103,25 @@ export class MiAPI {
 
   updateHeaders(headers: Headers) {
     this.#clearHeaders(headers);
+  }
+
+  private get localTemplateHTML() {
+    return /* HTML */ `<!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Local template</title>
+          <meta charset="UTF-8" />
+          <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        </head>
+        <body>
+          <div id="mi-react-root"></div>
+          <script src="/auth/info.js"></script>
+          <script src="/js/main.js" defer></script>
+          <link rel="stylesheet" href="/css/main.css" />
+        </body>
+      </html>` as const;
   }
 
   /**
@@ -102,6 +141,39 @@ export class MiAPI {
 
     if (typeof this.templateLess === 'undefined') {
       this.templateLess = false;
+    }
+
+    if (this.#v7Features) {
+      const page = await this.pageApi
+        .get(this.portalPageId!, this.#clearHeaders(headers))
+        .then((response) => {
+          this.logger.info(colors.green('Page fetched'));
+
+          return response;
+        })
+        .catch(async (e) => {
+          this.#templateLoadedResolve(false);
+
+          if (await this.pageApi.checkAuth(this.#clearHeaders(headers))) {
+            this.logger.error(colors.red(`Error fetching page data: ${e.message}\n${e.stack}`));
+
+            throw new Error('Current user does not have access to the page');
+          } else {
+            throw e;
+          }
+        });
+
+      if (typeof page.template_id !== 'undefined') {
+        this.#isV710OrHigher = true;
+      }
+
+      this.#pageTemplate = this.localTemplateHTML;
+
+      this.logger.info(colors.green('Local page template fetched'));
+
+      this.#templateLoadedResolve(true);
+
+      return this.#pageTemplate;
     }
 
     const pageList = await this.pageApi
@@ -259,15 +331,21 @@ export class MiAPI {
         } else {
           container.append(placeholder);
         }
+      } else {
+        const container = dom.window.document.createElement('div');
 
-        const head = dom.window.document.querySelector('head')!;
-        const title = head!.querySelector('title');
+        container.append(placeholder);
 
-        if (title) {
-          title.text = this.#pageTitle;
-        } else {
-          head.innerHTML += `<title>${this.#pageTitle}</title>`;
-        }
+        dom.window.document.body.append(container);
+      }
+
+      const head = dom.window.document.querySelector('head')!;
+      const title = head!.querySelector('title');
+
+      if (title) {
+        title.text = this.#pageTitle;
+      } else {
+        head.innerHTML += `<title>${this.#pageTitle}</title>`;
       }
     }
 
@@ -283,8 +361,14 @@ export class MiAPI {
       } else {
         const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
 
-        if (pageInfo.template) {
-          return await this.assetsApi.downloadTemplateAssets(pageInfo.template, this.#headers);
+        if (this.#isV710OrHigher) {
+          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+
+          return await this.assetsApi.downloadTemplateAssets(templateInfo.id, this.#headers);
+        } else {
+          if (pageInfo.template) {
+            return await this.assetsApi.downloadTemplateAssets(pageInfo.template, this.#headers);
+          }
         }
       }
     }
@@ -297,8 +381,14 @@ export class MiAPI {
       } else {
         const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
 
-        if (pageInfo.template) {
-          return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, this.#headers);
+        if (this.#isV710OrHigher) {
+          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+
+          return await this.assetsApi.uploadTemplateAssets(templateInfo.id, assets, this.#headers);
+        } else {
+          if (pageInfo.template) {
+            return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, this.#headers);
+          }
         }
       }
     }

@@ -173,7 +173,7 @@ export class DistService {
 
       const proc = child_process.spawn('node', [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'], {
         cwd: process.cwd(),
-        env: process.env,
+        env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
         stdio: 'inherit',
       });
 
