@@ -7,7 +7,11 @@ export interface Page {
   visible_in_homepage: 'Y' | 'N';
   internal_name: string;
   tags?: string;
-  template?: string;
+  template?: string | null;
+  template_id?: number | null;
+  base_url?: string;
+  groups?: { group_id: number; name: string }[];
+  custom_domain?: string | null;
 }
 
 export class PageAPI extends BaseAPI {

@@ -10,9 +10,25 @@ export class AssetsAPI extends BaseAPI {
     super(axios);
   }
 
+  protected getDownloadUrl(portalPageId: number | string) {
+    return `/admin/page/downloadassets/id/${portalPageId}`;
+  }
+
+  protected getDownloadTemplateUrl(templateId: number | string) {
+    return `/admin/pagetemplate/downloadassets/id/${templateId}`;
+  }
+
+  protected getUploadUrl(portalPageId: number | string) {
+    return `/admin/page/uploadassets/id/${portalPageId}`;
+  }
+
+  protected getUploadTemplateUrl(templateId: number | string) {
+    return `/admin/pagetemplate/uploadassets/id/${templateId}`;
+  }
+
   async downloadPageAssets(portalPageId: number | string, headers?: Headers) {
     return this.axios
-      .get<Buffer>(`/admin/page/downloadassets/id/${portalPageId}`, {
+      .get<Buffer>(this.getDownloadUrl(portalPageId), {
         withCredentials: true,
         headers: Object.assign({}, headers, { accept: '*/*' }),
         responseType: 'arraybuffer',
@@ -33,10 +49,10 @@ export class AssetsAPI extends BaseAPI {
 
     formData.append('file', assetFile);
 
-    const url = `/admin/page/uploadassets/id/${portalPageId}`;
+    const url = this.getUploadUrl(portalPageId);
 
     return this.axios
-      .post<{ status?: 'OK' }>(`/admin/page/uploadassets/id/${portalPageId}`, formData, {
+      .post<{ status?: 'OK' }>(url, formData, {
         withCredentials: true,
         headers: Object.assign({}, headers, {
           accept: 'application/json',
@@ -49,7 +65,7 @@ export class AssetsAPI extends BaseAPI {
 
   async downloadTemplateAssets(templateId: number | string, headers?: Headers) {
     return this.axios
-      .get<Buffer>(`/admin/pagetemplate/downloadassets/id/${templateId}`, {
+      .get<Buffer>(this.getDownloadTemplateUrl(templateId), {
         withCredentials: true,
         headers: Object.assign({}, headers, { accept: '*/*' }),
         responseType: 'arraybuffer',
@@ -72,7 +88,7 @@ export class AssetsAPI extends BaseAPI {
 
     formData.append('file', assetFile, 'file.zip');
 
-    const url = `/admin/pagetemplate/uploadassets/id/${templateId}`;
+    const url = this.getUploadTemplateUrl(templateId);
 
     return this.axios
       .post<{ status?: 'OK' }>(url, formData, {
@@ -84,5 +100,23 @@ export class AssetsAPI extends BaseAPI {
         }),
       })
       .then((res) => res.data);
+  }
+}
+
+export class AssetsV7API extends AssetsAPI {
+  protected getDownloadUrl(portalPageId: number | string) {
+    return `/api/page/id/${portalPageId}/asset/download`;
+  }
+
+  protected getDownloadTemplateUrl(templateId: number | string) {
+    return `/api/page_template/id/${templateId}/asset/download`;
+  }
+
+  protected getUploadUrl(portalPageId: number | string) {
+    return `/api/page/id/${portalPageId}/asset/upload`;
+  }
+
+  protected getUploadTemplateUrl(templateId: number | string) {
+    return `/api/page_template/id/${templateId}/asset/upload`;
   }
 }

@@ -286,7 +286,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     name: 'vite-pp-dev',
     apply: 'serve',
     config: (config) => {
-      config.clientInjectionPlugin = { backendBaseURL, portalPageId, templateLess };
+      config.clientInjectionPlugin = { backendBaseURL, portalPageId, templateLess, v7Features };
 
       if (v7Features) {
         config.base = `/pl/${templateName}`;
@@ -336,6 +336,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           portalPageId,
           templateLess,
           disableSSLValidation,
+          v7Features,
         });
 
         if (enableProxyCache) {
