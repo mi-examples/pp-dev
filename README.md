@@ -8,30 +8,35 @@
 The PP Dev Helper is a development framework and build tool for Metric Insights' Portal Pages, designed to make the
 lives of PP developers easier:
 
-- build your Portal Page
-- run/test locally with API requests proxied to a Metric Insights server
-- a lot more (to be documented soon!)
+- Build and test Portal Pages locally
+- Proxy API requests to a Metric Insights server
+- Hot module replacement for faster development
+- Image optimization and asset management
+- Template variable transformation
+- Code synchronization with Metric Insights instances
 
 pp-dev is based on [Vite](https://vitejs.dev/).
 
-## Usage
+## Installation
 
-Package installation
-
-```shell
-$ npm i @metricinsights/pp-dev
+```bash
+npm install @metricinsights/pp-dev
 ```
 
-### Define Configuration
+## Configuration
 
-You'll need to create a file with the name `pp-dev.config` and extension `js` or
-`cjs` (if you define type `module` in package.json), or `ts` if you want to use TypeScript, or `json`.
+### Configuration File
 
-Alternatively, you can define configuration in your `package.json` via the `pp-dev` key
+Create a configuration file named `pp-dev.config` with one of these extensions:
+- `.js` or `.cjs` (for CommonJS)
+- `.ts` (for TypeScript)
+- `.json`
 
-Generic configuration examples:
+Alternatively, you can define configuration in your `package.json` using the `pp-dev` key.
 
-- JavaScript
+### Configuration Examples
+
+#### JavaScript (CommonJS)
 
 ```javascript
 // pp-dev.config.js
@@ -45,7 +50,7 @@ module.exports = {
 };
 ```
 
-- TypeScript
+#### TypeScript
 
 ```typescript
 // pp-dev.config.ts
@@ -60,22 +65,22 @@ const config: PPDevConfig = {
 export default config;
 ```
 
-- JSON as `pp-dev.config.json`
+#### JSON
 
 ```json
+// pp-dev.config.json
 {
   "backendBaseURL": "https://mi.company.com",
   "portalPageId": 1
 }
 ```
 
-- JSON as `package.json`
+#### package.json
 
 ```json
 {
-  "name": "<project-name>",
+  "name": "my-portal-page",
   "version": "1.0.0",
-  "scripts": {},
   "pp-dev": {
     "backendBaseURL": "https://mi.company.com",
     "portalPageId": 1
@@ -83,244 +88,156 @@ export default config;
 }
 ```
 
-## [Next.js](https://nextjs.org/) Configuration
+## Configuration Options
 
-To use the PP Dev Helper with Next.js:
+### Required Options
 
-1. Add pp-dev config to your root directory.
+| Option | Type | Description |
+|--------|------|-------------|
+| `backendBaseURL` | string | URL of the Metric Insights instance for API proxying |
+| `portalPageId` | number | ID of the Portal Page for variable values (deprecated, use `appId` instead) |
+| `appId` | number | ID of the Portal Page for variable values (synonym for `portalPageId`) |
 
-2. Change your `dev` script in `package.json` to `pp-dev next`.
+### Optional Options
 
-3. Finally, wrap your next.config with a `withPPDev` function.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `miHudLess` | boolean | `false` | Disables Metric Insights navigation bar in development |
+| `templateLess` | boolean | `false` | Disables template variable transformation |
+| `enableProxyCache` | boolean | `true` | Enables caching of proxied requests |
+| `proxyCacheTTL` | number | `600000` | Cache TTL in milliseconds (10 minutes) |
+| `disableSSLValidation` | boolean | `false` | Disables SSL certificate validation for proxy requests |
+| `imageOptimizer` | boolean \| object | `true` | Controls image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options |
+| `outDir` | string | `dist` | Output directory for builds |
+| `distZip` | boolean \| object | `true` | Controls build output zipping. Object options: `{ outDir?: string, outFileName?: string }` |
+| `syncBackupsDir` | string | `backups` | Directory for asset backups from MI server |
+| `v7Features` | boolean | `false` | Enables Metric Insights v7 features |
+| `personalAccessToken` | string | `process.env.MI_ACCESS_TOKEN` | Personal Access Token for the MI instance |
 
+### v7Features Details
+
+When enabled (`true`), this option:
+1. Changes development path from `/pt/<portal-page-name>` to `/pl/<portal-page-name>`
+2. Updates Code Sync feature to use v7.1.0+ URLs
+
+### Personal Access Token
+
+The `personalAccessToken` option allows you to authenticate with the Metric Insights instance. You can set it in your configuration or use the `MI_ACCESS_TOKEN` environment variable.
+
+Example:
+```javascript
+// pp-dev.config.js
+module.exports = {
+  backendBaseURL: 'https://mi.company.com',
+  appId: 1,
+  personalAccessToken: process.env.MI_ACCESS_TOKEN,
+};
+```
+
+## CLI Commands
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `-c, --config <file>` | Path to configuration file (default: `pp-dev.config.js`) |
+| `--base <path>` | Public base path (default: `/`) |
+| `-l, --logLevel <level>` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `silent` (default: `info`) |
+| `--clearScreen` | Clear screen before logging |
+| `--mode <mode>` | Environment mode: `development`, `production`, `test` (default: `development`) |
+
+### Development Server
+
+```bash
+pp-dev [root] [options]
+# Aliases: pp-dev dev, pp-dev serve
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `[root]` | `.` | Root directory of the application |
+| `--host <host>` | `localhost` | Server hostname |
+| `--port <port>` | `3000` | Server port |
+| `--open [path]` | - | Open browser on server start |
+| `--strictPort` | - | Exit if port is already in use |
+
+### Next.js Development
+
+```bash
+pp-dev next [options]
+# Aliases: pp-dev next-server, pp-dev next-dev
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `[root]` | `.` | Root directory of the application |
+| `--port <port>` | `3000` | Server port |
+| `--host <host>` | `localhost` | Server hostname |
+
+### Build
+
+```bash
+pp-dev build [options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `[root]` | `.` | Root directory of the application |
+| `--target <target>` | `modules` | Transpile target |
+| `--outDir <dir>` | `dist` | Output directory |
+| `--assetsDir <dir>` | `assets` | Assets directory under outDir |
+| `--changelog [file]` | `true` | Create changelog file |
+
+### Changelog Generation
+
+```bash
+pp-dev changelog [oldAssetPath] [newAssetPath] [options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `[oldAssetPath]` | - | Path to previous assets |
+| `[newAssetPath]` | - | Path to current assets |
+| `--oldAssetsPath <path>` | - | Path to previous assets |
+| `--newAssetsPath <path>` | - | Path to current assets |
+| `--destination <path>` | `.` | Changelog output directory |
+| `--filename <name>` | `CHANGELOG.html` | Changelog filename |
+
+### Icon Font Generation
+
+```bash
+pp-dev generate-icon-font [source] [destination] [options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `[source]` | - | Source directory with SVG icons |
+| `[destination]` | - | Output directory |
+| `--source <path>` | - | Source directory with SVG icons |
+| `--destination <path>` | - | Output directory |
+| `--fontName <name>` | `icon-font` | Font name |
+
+## Next.js Integration
+
+1. Add pp-dev configuration to your project root
+2. Update `package.json` scripts:
+   ```json
+   {
+     "scripts": {
+       "dev": "pp-dev next"
+     }
+   }
+   ```
+3. Wrap your Next.js config:
 ```javascript
 // next.config.js
-
 const { withPPDev } = require('@metricinsights/pp-dev');
 
 module.exports = withPPDev({
-  // your next config
+     // your Next.js config
 });
 ```
 
-### Vite configuration
+## Vite Configuration
 
-If you need to change something in the build you can define a `vite.config` file.
-More details [Vite Confighere](https://vitejs.dev/config/)
-
-### Configuration API description
-
-#### `backendBaseURL`
-
-Type: String
-
-Example: `https://mi.company.com`
-
-Description: Defines the backend URL (Metric Insights instance) that is used for proxying requests to the MI backend
-
-#### `portalPageId`
-
-Type: Number
-
-Example: `1`
-
-Description: Defines the Portal Page ID that used to get Portal Page Variable values.
-
-#### `miHudLess`
-
-Type: Boolean
-
-Default: `false`
-
-Example: `true`
-
-Description: Disables Metric Insights navigation bar for local development
-
-#### `templateLess`
-
-Type: Boolean
-
-Default: `false`
-
-Example: `true`
-
-Description: Disables Template Variables transformation. Used when developing a Portal Page without a template
-
-#### `enableProxyCache`
-
-Type: Boolean
-
-Default: `true`
-
-Description: Enables proxy cache. If you want to disable proxy cache, you need to set this option to `false`
-
-#### `proxyCacheTTL`
-
-Type: Number
-
-Default: `10 * 60 * 1000`
-
-Description: Defines proxy cache TTL in milliseconds
-
-#### `disableSSLValidation`
-
-Type: Boolean
-
-Default: `false`
-
-Description: Disables SSL certificate validation for proxy requests. Useful for self-signed certificates
-
-#### `imageOptimizer`
-
-Type: Boolean | Object
-
-Default: `true`
-
-Description: Enables image optimization for build.
-If you want to disable image optimization, you need to set this option to `false`.
-If you want to customize image optimization, you need to set this option to an object with properties that are described
-in the [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options)
-
-#### `outDir`
-
-Type: String
-
-Default: `dist`
-
-Description: Define the output directory for the build
-
-#### `distZip`
-
-Type: Boolean | { outDir?: string, outFileName?: string }
-
-Default: `true`
-
-Description: Enables zipping the build output.
-If you want to disable zipping the build output, you need to set this option to `false`.
-If you want to customize zipping the build output,
-you need to set this option to an object with properties `outDir` and `outFileName`.
-
-- `outDir` defines the output directory for the zipped build.
-- `outFileName` defines the output file name for the zipped build.
-  You can use placeholder `[templateName]` in the file name to replace it with the template name.
-
-#### `syncBackupsDir`
-
-Type: String
-
-Default: `backups`
-
-Description: Define the directory for the asset backups that are used for backup assets from the MI server
-
-#### `v7Features`
-
-Type: Boolean
-
-Default: `false`
-
-Description: Enables V7 features.
-If you want to enable V7 features, you need to set this option to `true`.
-This option is used for enabling new features that are available only on the Metric Insights v7 instances.
-When setting this option to `true`, the CLI will use apply changes:
-1. Default development path will be changed from `/pt/<portal-page-name>` to `/pl/<portal-page-name>`. This will avoid conflicts with the Metric Insights v7 features when developing a Portal Page with the Metric Insights toolbar.
-2. The Code Sync feature will use the new URLs of the Metric Insights v7 instances (available only on the Metric Insights v7.1.0 instances or higher).
-
-### CLI API description
-
-`pp-dev help` - show CLI's help
-
-Global options:
-
-- `-c, --config <configFile>` - define the path to the configuration file. Default is `pp-dev.config.js`
-- `--base <path>` - public base path (default: `/`)
-- `-l, --logLevel <level>` - define the log level. Default is `info`. Available options: `trace`, `debug`, `info`, `warn`, `error`, `silent`
-- `--clearScreen` - clear the screen before logging
-- `--mode <mode>` - define the environment mode. Default is `development`. Available options: `development`, `production`, `test`
-
-#### `pp-dev`
-
-Aliases: `pp-dev dev`, `pp-dev serve`
-
-Runs application in development mode with hot-reload. Also, its proxies requests to the MI server.
-
-Available options and arguments:
-
-- `[root]` - define the root directory for the application. Default is `.`
-- `--host <host>` - define the host for the application. Default is `localhost`
-- `--port <port>` - define the port for the application. Default is `3000`
-- `--open [path]` - open the application in the default browser. You can define the path to open the browser with the specific page
-- `--strictPort` - enable strict port checking. If the port is already in use, the application will exit with an error
-
-#### `pp-dev next`
-
-Aliases: `pp-dev next-server`, `pp-dev next-dev`
-
-Runs the Next.js application in development mode with hot-reload. Also, its proxies requests to the MI server.
-
-Available options and arguments:
-
-- `[root]` - define the root directory for the application. Default is `.`
-- `--port <port>` - define the port for the application. Default is `3000`
-- `--host <host>` - define the host for the application. Default is `localhost`
-
-#### `pp-dev build`
-
-Runs the application build. Will create `dist` and `dist-zip` folders. `dist` folder contains unzipped build files. `dist-zip` contains file `<package-name>.zip` with files from the `dist` folder
-
-Available options and arguments:
-
-- `[root]` - define the root directory for the application. Default is `.`
-- `--target <target>` - transpile target. Default is `modules`.
-- `--outDir <outDir>` - define the output directory for the build. Default is `dist`
-- `--assetsDir <dir>` - directory under outDir to place assets in Default is `assets`
-- `--changelog [assetsFile]` - create a changelog file. You can define the path to the assets file or set `true` to use the default path. Default is `true`. Default path is `backups/<latest>.zip` where `<latest>` is the latest backup file
-
-#### `pp-dev changelog [oldAssetPath] [newAssetPath]`
-
-Create a changelog file. You can define the path to the previous and current assets files. If you don't define the path to the previous assets and current assets file, the CLI will try to get it from options. If you don't define the path to the current assets file, the CLI will throw an error.
-
-Available options and arguments:
-
-- `[oldAssetPath]` - define the path to the current assets file. Can accept path to the folder or path to the zip file
-- `[newAssetPath]` - define the path to the previous assets file. Can accept path to the folder or path to the zip file
-- `--oldAssetsPath <oldAssetsPath>` - define the path to the previous assets file. Can accept path to the folder or path to the zip file
-- `--newAssetsPath <newAssetsPath>` - define the path to the current assets file. Can accept path to the folder or path to the zip file
-- `--destination <destination>` - define the destination path for the changelog file. Default is `.`
-- `--filename <filename>` - define the filename for the changelog file. Default is `CHANGELOG.html`
-
-#### `pp-dev generate-icon-font [source] [destination]`
-
-Generate an icon font from the source folder. You can define the path to the source folder and the destination folder. If you don't define the path to the source folder, the CLI will try to get it from options. If you don't define the path to the destination folder, the CLI will throw an error.
-
-Available options and arguments:
-
-- `[source]` - define the path to the source folder with SVG icons
-- `[destination]` - define the path to the destination folder for the generated icon font and styles
-- `--source <source>` - define the path to the source folder with SVG icons
-- `--destination <destination>` - define the path to the destination folder for the generated icon font and styles
-- `--fontName <fontName>` - define the font name. Default is `icon-font`
-
-## Migration guide from old Portal Page Helper to new
-
-1. Initialize npm in your portal page repository (if you have `package.json` file in PP folder, you can skip this step):
-
-   Go to portal page folder and run command. This command will create `package.json` file in your folder
-
-   ```shell
-   $ npm init
-   ```
-
-2. Install this package by this command:
-   ```shell
-    $ npm i @metricinsights/pp-dev
-   ```
-3. Create two scripts in `package.json` script section.
-
-   - `start` script: `"start": "pp-dev"`
-   - `build` script: `"build": "pp-dev build"`
-
-4. Change all paths to the file in index.html to the absolute path.
-   If you have a path like `/pt/main.js` this must be changed to `/main.js`.
-   Also, you may need to add `type="module"` to every script that is added by the `script` tag with the `src` property.
-   Actually would be good to have only one `script` tag with the `src` tag.
-   Every other JS file will be imported with construction like this `import helper from './helpers';`
+For custom build configuration, create a `vite.config` file. See [Vite Configuration](https://vitejs.dev/config/) for details.

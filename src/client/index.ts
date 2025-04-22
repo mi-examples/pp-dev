@@ -33,36 +33,177 @@ function removeStorageItem(key: string) {
   }
 }
 
-function infoPopup(opts: { title: string; content: string; style?: string; className?: string }) {
+interface InfoPopupOptions {
+  title: string;
+  content: string;
+  style?: string;
+  className?: string;
+  duration?: number;
+  onClose?: () => void;
+  type?: 'success' | 'danger' | 'info' | 'warning';
+}
+
+let activePopups = 0;
+const POPUP_OFFSET = 10;
+const POPUP_HEIGHT = 100;
+const ANIMATION_DURATION = 300;
+
+function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
+  const $popup = document.createElement('div');
+
+  $popup.classList.add('pp-dev-info-namespace');
+
+  const typeClass = opts.type ? `pp-dev-info__popup--${opts.type}` : '';
+
   const template = `
-    <div class="pp-dev-info__popup ${opts.className || ''}" style="${opts.style || ''}">
+    <div class="pp-dev-info__popup ${typeClass} ${opts.className || ''}" style="${opts.style || ''}">
       <div class="pp-dev-info__popup-title">
         <div class="pp-dev-info__popup-title-text">${opts.title}</div>
         <div class="pp-dev-info__popup-title-close">
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M18 6L6 18"></path>
             <path d="M6 6l12 12"></path>
           </svg>
         </div>
       </div>
       <div class="pp-dev-info__popup-content">${opts.content}</div>
+      <div class="pp-dev-info__popup-progress"></div>
     </div>
-    `;
+  `;
 
-  const $popup = document.createElement('div');
-
-  $popup.classList.add('pp-dev-info-namespace');
   $popup.innerHTML = template;
 
-  $popup.querySelector('.pp-dev-info__popup-title-close')?.addEventListener('click', () => {
-    $popup.remove();
+  return $popup;
+}
+
+function updatePopupPositions() {
+  const popups = document.querySelectorAll(
+    '.pp-dev-info-namespace:not(.pp-dev-info)'
+  );
+  const $devPanel = document.querySelector('.pp-dev-info');
+  
+  // Update popup positions
+  popups.forEach((popup, index) => {
+    const top = POPUP_OFFSET + (index * (POPUP_HEIGHT + POPUP_OFFSET));
+    (popup as HTMLElement).style.top = `${top}px`;
   });
 
+  // Ensure dev panel stays at the bottom
+  if ($devPanel) {
+    ($devPanel as HTMLElement).style.top = 'auto';
+    ($devPanel as HTMLElement).style.bottom = '0';
+  }
+}
+
+function animatePopup($popup: HTMLDivElement, type: 'enter' | 'exit') {
+  return new Promise<void>((resolve) => {
+    const $popupContent = $popup.querySelector('.pp-dev-info-namespace');
+
+    if (!$popupContent) {
+      return resolve();
+    }
+
+    if (type === 'enter') {
+      $popupContent.classList.add('entering');
+
+      requestAnimationFrame(() => {
+        $popupContent.classList.remove('entering');
+
+        resolve();
+      });
+    } else {
+      $popupContent.classList.add('exiting');
+
+      setTimeout(() => {
+        $popupContent.classList.remove('exiting');
+
+        resolve();
+      }, ANIMATION_DURATION);
+    }
+  });
+}
+
+function infoPopup(opts: InfoPopupOptions) {
+  const $popup = createPopupElement(opts);
+  const $closeButton = $popup.querySelector('.pp-dev-info__popup-title-close');
+  const $progressBar = $popup.querySelector('.pp-dev-info__popup-progress');
+
+  const removePopup = async () => {
+    await animatePopup($popup, 'exit');
+
+    $popup.remove();
+
+    activePopups--;
+
+    updatePopupPositions();
+
+    opts.onClose?.();
+  };
+
+  $closeButton?.addEventListener('click', removePopup);
   document.body.appendChild($popup);
 
-  setTimeout(() => {
-    $popup.remove();
-  }, 10000);
+  // Position the popup
+  activePopups++;
+  updatePopupPositions();
+
+  // Animate entrance
+  animatePopup($popup, 'enter');
+
+  const duration = opts.duration ?? 10000;
+
+  if (duration > 0) {
+    let remainingTime = duration;
+    let lastUpdate = Date.now();
+    let isVisible = true;
+
+    // Update progress bar
+    const updateProgress = () => {
+      if (!isVisible) {
+        return;
+      }
+
+      const now = Date.now();
+      const elapsed = now - lastUpdate;
+      remainingTime -= elapsed;
+      lastUpdate = now;
+
+      if (remainingTime <= 0) {
+        removePopup();
+
+        return;
+      }
+
+      const progress = (remainingTime / duration) * 100;
+      if ($progressBar) {
+        ($progressBar as HTMLElement).style.width = `${progress}%`;
+      }
+
+      requestAnimationFrame(updateProgress);
+    };
+
+    // Handle visibility change
+    document.addEventListener('visibilitychange', () => {
+      isVisible = !document.hidden;
+
+      if (isVisible) {
+        lastUpdate = Date.now();
+        requestAnimationFrame(updateProgress);
+      }
+    });
+
+    // Start progress bar animation
+    requestAnimationFrame(updateProgress);
+  }
 }
 
 if (import.meta.hot) {
@@ -130,7 +271,7 @@ if (import.meta.hot) {
       (
         payload:
           | { syncedAt: string; currentHash: string; backupFilename: string }
-          | { error: string; config?: { [p: string]: any } },
+          | { error: string; config?: { [p: string]: any }; refresh?: boolean },
       ) => {
         $syncButton.classList.remove('syncing');
 
@@ -141,9 +282,15 @@ if (import.meta.hot) {
             className: 'pp-dev-info__popup--danger',
           });
 
-          $syncButton.disabled = true;
-          $syncButton.classList.add('disabled');
-          $syncButton.title = 'Sync is unavailable on this instance';
+          if (payload.refresh) {
+            setTimeout(() => {
+              window.location.reload();
+            });
+          } else {
+            $syncButton.disabled = true;
+            $syncButton.classList.add('disabled');
+            $syncButton.title = 'Sync is unavailable on this instance';
+          }
         } else if ('syncedAt' in payload && typeof payload.syncedAt !== 'undefined') {
           infoPopup({
             title: 'Sync success',

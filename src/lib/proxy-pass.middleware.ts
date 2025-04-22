@@ -5,6 +5,8 @@ import { Express } from 'express';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
+import { tokenLoginFunction } from './helpers/login.helper';
+import { MiAPI } from './pp.middleware';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -16,6 +18,8 @@ export interface ProxyOpts {
   devServer: ViteDevServer | Express;
 
   disableSSLValidation?: boolean;
+
+  miAPI: MiAPI;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
@@ -33,7 +37,7 @@ function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: Buffer
 }
 
 export function initProxy(opts: ProxyOpts) {
-  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer, disableSSLValidation = false } = opts;
+  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer, disableSSLValidation = false, miAPI } = opts;
 
   if (!baseURL) {
     throw new Error('Base url is required');
@@ -120,6 +124,10 @@ export function initProxy(opts: ProxyOpts) {
           proxyReq.setHeader('referer', referer.replace(new RegExp(`https?://${host}`), baseURL));
         }
 
+        if (miAPI.personalAccessToken) {
+          proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
+        }
+
         req.socket.on('close', () => {
           setTimeout(() => {
             if (!proxyReq.destroyed) {
@@ -160,28 +168,43 @@ export function initProxy(opts: ProxyOpts) {
 
               if (reqUrl.searchParams && reqUrl.searchParams.has('proxyRedirect')) {
                 const redirectToFunction = function () {
+                  const storageKey = 'pp-dev::redirectCount' as const;
+
+                  let redirectCount = +(localStorage.getItem(storageKey) ?? 0);
+
+                  if (Number.isNaN(redirectCount)) {
+                    redirectCount = 0;
+                  }
+
                   let url = window.location.href;
 
                   const func = function () {
                     const params = new URLSearchParams(window.location.search);
 
                     if (!params.has('proxyRedirect')) {
+                      localStorage.removeItem(storageKey);
+
                       return;
                     }
 
                     if (url !== window.location.href) {
                       url = window.location.href;
 
-                      setTimeout(func, 2000);
+                      setTimeout(func, redirectCount < 3 ? 3000 : 5000);
                     } else {
+                      localStorage.setItem(storageKey, `${++redirectCount}`);
                       window.location.href = params.get('proxyRedirect') as string;
                     }
                   };
 
-                  setTimeout(func, 2000);
+                  setTimeout(func, 3000);
                 };
 
                 response += '<script>' + `(${redirectToFunction.toString()})()` + '</script>';
+              }
+
+              if (reqUrl.pathname.startsWith('/login')) {
+                response += '<script>' + `const host = "${host}";\n(${tokenLoginFunction.toString()})()` + '</script>';
               }
             } catch {
               //

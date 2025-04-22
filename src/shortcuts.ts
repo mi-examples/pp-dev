@@ -3,7 +3,7 @@ import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
 
 export function isDefined<T>(value: T | undefined | null): value is T {
-  return value != null;
+  return value !== null || typeof value !== 'undefined';
 }
 
 export type BindShortcutsOptions = {

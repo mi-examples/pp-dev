@@ -1,10 +1,11 @@
 import { PPDevConfig } from '@metricinsights/pp-dev';
 
 const ppDevConfig: PPDevConfig = {
-  backendBaseURL: 'https://demo7.metricinsights.com',
-  portalPageId: 377,
+  backendBaseURL: 'https://stg7x.metricinsights.com',
+  portalPageId: 684,
   // miHudLess: true,
   v7Features: true,
+  templateLess: true
 };
 
 export default ppDevConfig;

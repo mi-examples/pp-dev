@@ -14,6 +14,7 @@ export interface MiAPIOptions {
   templateLess: boolean;
   disableSSLValidation?: boolean;
   v7Features?: boolean;
+  personalAccessToken?: string;
 }
 
 export const TEMPLATE_PAGE_NAME = '[DEV PAGE. DO NOT DELETE]';
@@ -30,6 +31,8 @@ export class MiAPI {
   #pageVars: { name: string; value: string }[];
 
   #v7Features!: boolean;
+
+  #personalAccessToken!: string | undefined;
 
   #isV710OrHigher!: boolean;
 
@@ -52,6 +55,7 @@ export class MiAPI {
       templateLess = true,
       disableSSLValidation = false,
       v7Features = false,
+      personalAccessToken,
     } = opts || {};
 
     this.#headers = headers;
@@ -60,6 +64,7 @@ export class MiAPI {
     this.#pageTitle = '';
 
     this.#v7Features = v7Features;
+    this.#personalAccessToken = personalAccessToken;
     this.#isV710OrHigher = false;
 
     this.#templateLoaded = Promise.resolve(false);
@@ -98,7 +103,19 @@ export class MiAPI {
 
     this.#headers = obj;
 
+    if (!obj.authorization && this.#personalAccessToken) {
+      obj.authorization = `Bearer ${this.#personalAccessToken}`;
+    }
+
     return obj;
+  }
+
+  get personalAccessToken(): string | undefined {
+    return this.#personalAccessToken;
+  }
+
+  set personalAccessToken(token: string | undefined) {
+    this.#personalAccessToken = token;
   }
 
   updateHeaders(headers: Headers) {
@@ -157,7 +174,10 @@ export class MiAPI {
           if (await this.pageApi.checkAuth(this.#clearHeaders(headers))) {
             this.logger.error(colors.red(`Error fetching page data: ${e.message}\n${e.stack}`));
 
-            throw new Error('Current user does not have access to the page');
+            throw new Error(
+              'The current user does not have access to this page. ' +
+              'Check your configuration to ensure the portalPageId is correct.'
+            );
           } else {
             throw e;
           }
@@ -392,5 +412,13 @@ export class MiAPI {
         }
       }
     }
+  }
+
+  async get<T extends any = any>(path: string, headers?: Record<string, any>, cleanup = false) {
+    const normalizedHeaders = cleanup ? headers : Object.assign({}, this.#clearHeaders(this.#headers), headers);
+
+    return await this.#axios.get<T>(path, {
+      headers: normalizedHeaders,
+    });
   }
 }

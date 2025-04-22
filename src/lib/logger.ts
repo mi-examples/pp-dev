@@ -1,5 +1,3 @@
-// import pino from 'pino';
-// import { PrettyOptions } from 'pino-pretty';
 import { createLogger as cL, Logger, LogLevel } from 'vite';
 
 const storage = new Map<string, Logger>();

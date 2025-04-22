@@ -3,6 +3,7 @@ import { DistService } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper';
+import { isAxiosError } from 'axios';
 
 export interface ClientServiceOptions {
   distService?: DistService;
@@ -69,13 +70,52 @@ export class ClientService {
         }
       }
 
-      const currentAssets = await miAPI?.getAssets();
+      const currentAssets = await miAPI?.getAssets().catch((err) => {
+        if (isAxiosError(err)) {
+          if (err.response?.status === 412) {
+            this.logger.info(colors.yellow('Session expired'));
+
+            this.server.ws.send('template:sync:response', { error: 'Session expired', refresh: true });
+
+            return err;
+          }
+
+          // Get Address Info error (server in maintenance mode, VPN connection is needed or no internet connection)
+          if (
+            err.cause instanceof Error &&
+            ((err.cause as { code: string } & Error).code === 'ECONNRESET' ||
+              (err.cause as { code: string } & Error).code === 'ENOTFOUND')
+          ) {
+            this.logger.info(
+              colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
+            );
+
+            this.server.ws.send('template:sync:response', {
+              error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+            });
+
+            return err;
+          }
+        }
+
+        throw err;
+      });
+
+      if (currentAssets instanceof Error) {
+        return;
+      }
 
       const newAssets = currentAssets
-        ? await distService?.saveBackupAndBuild(currentAssets)
-        : await distService?.buildNewAssets();
+        ? await distService?.saveBackupAndBuild(currentAssets).catch((err: Error) => {
+            if (err.message === 'Backup file is not a ZIP file') {
+              this.logger.error(colors.red('Backup file is not a ZIP file'));
 
-      if (newAssets) {
+              return err;
+            }
+          })
+        : await distService?.buildNewAssets()
+
+      if (newAssets && newAssets instanceof Buffer) {
         const updateResult = await miAPI?.updateAssets(newAssets);
 
         if (updateResult?.status === 'OK') {
@@ -100,6 +140,14 @@ export class ClientService {
           this.logger.error(colors.red('Failed to update assets'));
         }
       } else {
+        if (newAssets instanceof Error) {
+          this.server.ws.send('template:sync:response', { error: newAssets.message });
+
+          this.logger.error(colors.red(newAssets.message));
+
+          return;
+        }
+
         this.server.ws.send('template:sync:response', { error: 'Failed to build new assets' });
 
         this.logger.error(colors.red('Failed to build new assets'));

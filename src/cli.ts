@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { performance } from 'node:perf_hooks';
 import { cac } from 'cac';
-import type { ServerOptions, BuildOptions, LogLevel, InlineConfig } from 'vite';
+import { ServerOptions, BuildOptions, LogLevel, InlineConfig, loadEnv } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
 import { getViteConfig, PPDevConfig } from './index.js';
@@ -16,12 +16,15 @@ import { MiAPI } from './lib/pp.middleware.js';
 import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
-import { cutUrlParams, urlReplacer } from './lib/helpers/url.helper.js';
+import { cutUrlParams, urlReplacer, redirect } from './lib/helpers/url.helper.js';
 import { createDevServer } from './lib/helpers/server.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
 import { ChangelogGenerator } from './lib/changelog-generator.js';
 import { IconFontGenerator } from './lib/icon-font-generator.js';
+import * as process from 'node:process';
+import internalServer from './lib/internal.middleware';
+import type { Request, Response, NextFunction } from 'express';
 
 const cli = cac('pp-dev');
 
@@ -150,6 +153,16 @@ cli
 
       let config = await getViteConfig();
 
+      const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
+
+      if (envVars) {
+        Object.keys(envVars).forEach((key) => {
+          if (key.startsWith('MI_')) {
+            process.env[key] = envVars[key];
+          }
+        });
+      }
+
       if (configFromFile) {
         const { plugins, ...fileConfig } = configFromFile.config;
 
@@ -266,6 +279,16 @@ cli
     const server = createDevServer(options.logLevel);
     const opts = cleanOptions(options);
 
+    const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
+
+    if (envVars) {
+      Object.keys(envVars).forEach((key) => {
+        if (key.startsWith('MI_')) {
+          process.env[key] = envVars[key];
+        }
+      });
+    }
+
     const app = next({ dev: true, hostname: opts.host as string, port: opts.port });
 
     await app.prepare();
@@ -290,18 +313,31 @@ cli
 
     const {
       backendBaseURL,
-      portalPageId,
+      portalPageId: ppId,
+      appId,
       templateLess = true,
       enableProxyCache = true,
       miHudLess = true,
       proxyCacheTTL = 10 * 60 * 1000,
       disableSSLValidation = false,
+      v7Features = false,
+      personalAccessToken = process.env.MI_ACCESS_TOKEN,
     } = ppDevConfig;
+
+    const portalPageId = appId ?? ppId;
 
     server.use(initPPRedirect(base, templateName));
 
     if (backendBaseURL) {
-      const baseUrlHost = new URL(backendBaseURL).host;
+      let baseUrlHost: string;
+
+      try {
+        baseUrlHost = new URL(backendBaseURL).host;
+      } catch (err) {
+        logger.error(colors.red(`Invalid backendBaseURL: ${backendBaseURL}`));
+
+        process.exit(1);
+      }
 
       const mi = new MiAPI(backendBaseURL, {
         headers: {
@@ -312,6 +348,8 @@ cli
         portalPageId,
         templateLess,
         disableSSLValidation,
+        v7Features,
+        personalAccessToken,
       });
 
       if (enableProxyCache) {
@@ -336,6 +374,7 @@ cli
           baseURL: backendBaseURL,
           proxyIgnore,
           disableSSLValidation,
+          miAPI: mi,
         }) as any,
       );
 
@@ -354,21 +393,126 @@ cli
           },
         ),
       );
+
+      // Add internal server for token handling
+      internalServer.post('/@api/login', async (req: Request, res: Response, next: NextFunction) => {
+        const { token, tokenType } = req.body;
+
+        if (!token) {
+          res
+            .status(400)
+            .json({
+              error: 'Token is required',
+            })
+            .end();
+
+          return;
+        }
+
+        const handleError = (reason: any) => {
+          logger.error(reason);
+          next(reason);
+
+          return null;
+        };
+
+        if (tokenType === 'personal') {
+          const testRequest = await mi
+            .get<{ user: { user_id: number; username: string } }>(
+              '/data/page/index/auth/info',
+              {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              true,
+            )
+            .then(async (response) => {
+              if (typeof response.data?.user?.user_id === 'number') {
+                mi.personalAccessToken = token;
+
+                return response;
+              }
+
+              res.status(400).json({ error: 'Token expired or invalid' }).end();
+            })
+            .catch(handleError);
+
+          if (!testRequest) {
+            return;
+          }
+
+          redirect(res, '/', 302);
+        } else if (tokenType === 'regular') {
+          const testRequest = await mi
+            .get<{ users: { user_id: number; username: string }[] }>(
+              '/api/user',
+              {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Token: token,
+              },
+              true,
+            )
+            .then((response) => {
+              if (response.data?.users?.length) {
+                mi.personalAccessToken = undefined;
+                res.setHeader('set-cookie', response.headers['set-cookie'] ?? '');
+
+                return response;
+              }
+
+              res.status(400).json({ error: 'Token expired or invalid' }).end();
+            })
+            .catch(handleError);
+
+          if (!testRequest) {
+            return;
+          }
+
+          redirect(res, '/', 302);
+        }
+      });
+
+      server.use(internalServer);
     }
 
     const handle = app.getRequestHandler();
 
     server.all('*', (req, res) => {
-      if (req.url.startsWith(assetPrefix) && assetPrefix !== baseWithoutTrailingSlash) {
-        const parsedUrl = parse(req.url.replace(assetPrefix, baseWithoutTrailingSlash), true);
+      try {
+        if (req.url?.startsWith(assetPrefix) && assetPrefix !== baseWithoutTrailingSlash) {
+          const newUrl = req.url.replace(assetPrefix, baseWithoutTrailingSlash);
+          const parsedUrl = parse(newUrl, true);
 
+          if (!parsedUrl.pathname) {
+            res.statusCode = 400;
+            res.end('Invalid URL');
 
-        return handle(req, res, parsedUrl);
+            return;
+          }
+
+          return handle(req, res, parsedUrl);
+        }
+
+        const parsedUrl = parse(req.url || '/', true);
+
+        if (!parsedUrl.pathname) {
+          res.statusCode = 400;
+          res.end('Invalid URL');
+
+          return;
+        }
+
+        handle(req, res, parsedUrl);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+
+        logger.error(colors.red(`Error handling request: ${errorMessage}`));
+
+        res.statusCode = 500;
+        res.end('Internal Server Error');
       }
-
-      const parsedUrl = parse(req.url, true);
-
-      handle(req, res, parsedUrl);
     });
 
     try {
@@ -398,43 +542,6 @@ cli
       });
 
       server.printUrls(base);
-      //   bindShortcuts(server, {
-      //     print: true,
-      //     customShortcuts: [
-      //       profileSession && {
-      //         key: 'p',
-      //         description: 'start/stop the profiler',
-      //         async action(server) {
-      //           if (profileSession) {
-      //             await stopProfiler(server.config.logger.info);
-      //           } else {
-      //             const inspector = await import('node:inspector').then((r) => (r as any).default);
-      //             await new Promise<void>((res) => {
-      //               profileSession = new inspector.Session();
-      //               profileSession.connect();
-      //               profileSession.post('Profiler.enable', () => {
-      //                 profileSession?.post('Profiler.start', () => {
-      //                   server.config.logger.info('Profiler started');
-      //                   res();
-      //                 });
-      //               });
-      //             });
-      //           }
-      //         },
-      //       },
-      //       {
-      //         key: 'l',
-      //         description: 'proxy re-login',
-      //         action(server: ViteDevServer): void | Promise<void> {
-      //           server.ws.send({
-      //             type: 'custom',
-      //             event: 'redirect',
-      //             data: { url: `/auth/index/logout?proxyRedirect=${encodeURIComponent('/')}` },
-      //           });
-      //         },
-      //       },
-      //     ],
-      //   });
     } catch (e: any) {
       const logger = createLogger(options.logLevel);
 
