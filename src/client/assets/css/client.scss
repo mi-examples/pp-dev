@@ -14,7 +14,7 @@ $pp-dev-height: 30px;
   --pp-dev-info-color-black: #000000;
 
   .pp-dev-info__popup {
-    position: absolute;
+    position: fixed;
     top: 10px;
     right: 10px;
     width: max-content;
@@ -22,21 +22,50 @@ $pp-dev-height: 30px;
     height: max-content;
     max-height: max-content;
     background-color: var(--pp-dev-info-color-white);
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    border-radius: 3px;
+    box-shadow:
+      0 4px 6px rgba(0, 0, 0, 0.1),
+      0 1px 3px rgba(0, 0, 0, 0.08);
+    border-radius: 8px;
     display: flex;
     flex-direction: column;
-    transition: all 0.3s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
-    z-index: 100000;
+    z-index: 100001;
     border: 1px solid var(--pp-dev-info-color-secondary);
+    transform: translateX(0);
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+
+    &.entering {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+
+    &.exiting {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+
+    &-progress {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--pp-dev-info-color-primary), var(--pp-dev-info-color-info));
+      width: 100%;
+      transform-origin: left;
+      transition: width 0.1s linear;
+      border-radius: 0 0 0 8px;
+    }
 
     &-title {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 10px;
-      height: 30px;
+      padding: 12px 16px;
+      height: auto;
+      min-height: 30px;
       width: 100%;
       box-sizing: border-box;
       border-bottom: 1px solid var(--pp-dev-info-color-light);
@@ -44,36 +73,52 @@ $pp-dev-height: 30px;
 
       &-text {
         font-size: 14px;
-        font-weight: 700;
+        font-weight: 600;
         color: var(--pp-dev-info-color-white);
+        line-height: 1.4;
       }
 
       &-close {
         cursor: pointer;
-        width: 30px;
-        height: 30px;
+        width: 24px;
+        height: 24px;
         display: flex;
         align-items: center;
         justify-content: center;
         color: var(--pp-dev-info-color-white);
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
 
         &:hover {
-          color: var(--pp-dev-info-color-light);
+          background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        svg {
+          transition: transform 0.2s ease;
+        }
+
+        &:hover svg {
+          transform: scale(1.1);
         }
       }
     }
 
     &-content {
-      padding: 10px;
+      padding: 12px 16px;
       overflow-y: auto;
       box-sizing: border-box;
       flex-grow: 1;
       background-color: var(--pp-dev-info-color-white);
       width: 100%;
+      line-height: 1.5;
+      font-size: 13px;
     }
 
     &--success {
       border-color: var(--pp-dev-info-color-success);
+      box-shadow:
+        0 4px 6px rgba(40, 167, 69, 0.1),
+        0 1px 3px rgba(40, 167, 69, 0.08);
 
       .pp-dev-info__popup {
         &-title {
@@ -83,11 +128,18 @@ $pp-dev-height: 30px;
         &-content {
           color: var(--pp-dev-info-color-success);
         }
+
+        &-progress {
+          background: linear-gradient(90deg, var(--pp-dev-info-color-success), #4caf50);
+        }
       }
     }
 
     &--danger {
       border-color: var(--pp-dev-info-color-danger);
+      box-shadow:
+        0 4px 6px rgba(220, 53, 69, 0.1),
+        0 1px 3px rgba(220, 53, 69, 0.08);
 
       .pp-dev-info__popup {
         &-title {
@@ -97,6 +149,53 @@ $pp-dev-height: 30px;
         &-content {
           color: var(--pp-dev-info-color-danger);
         }
+
+        &-progress {
+          background: linear-gradient(90deg, var(--pp-dev-info-color-danger), #f44336);
+        }
+      }
+    }
+
+    &--info {
+      border-color: var(--pp-dev-info-color-info);
+      box-shadow:
+        0 4px 6px rgba(23, 162, 184, 0.1),
+        0 1px 3px rgba(23, 162, 184, 0.08);
+
+      .pp-dev-info__popup {
+        &-title {
+          background-color: var(--pp-dev-info-color-info);
+        }
+
+        &-content {
+          color: var(--pp-dev-info-color-info);
+        }
+
+        &-progress {
+          background: linear-gradient(90deg, var(--pp-dev-info-color-info), #2196f3);
+        }
+      }
+    }
+
+    &--warning {
+      border-color: var(--pp-dev-info-color-warning);
+      box-shadow:
+        0 4px 6px rgba(255, 193, 7, 0.1),
+        0 1px 3px rgba(255, 193, 7, 0.08);
+
+      .pp-dev-info__popup {
+        &-title {
+          background-color: var(--pp-dev-info-color-warning);
+          color: var(--pp-dev-info-color-dark);
+        }
+
+        &-content {
+          color: var(--pp-dev-info-color-warning);
+        }
+
+        &-progress {
+          background: linear-gradient(90deg, var(--pp-dev-info-color-warning), #ff9800);
+        }
       }
     }
   }
@@ -104,22 +203,25 @@ $pp-dev-height: 30px;
   &.pp-dev-info,
   .pp-dev-info {
     position: fixed;
-    z-index: 10000;
+    z-index: 100000;
     white-space: nowrap;
     width: fit-content;
     height: $pp-dev-height;
     top: calc(100% - $pp-dev-height);
     right: 0;
     text-align: center;
-    padding: 3px 8px 3px 0;
+    padding: 8px 12px;
     background-color: var(--pp-dev-info-color-white);
-    border-radius: 3px 0 0 0;
+    border-radius: 8px 0 0 0;
     color: var(--pp-dev-info-color-dark);
     box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
     box-sizing: border-box;
     display: flex;
-    transition: all 0.3s;
-    overflow: hidden;
+    align-items: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: visible;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 
     // Setup default values for styles that can be overlapped by other page styles
     // (e.g. color, font-family, font-size etc.)
@@ -144,6 +246,73 @@ $pp-dev-height: 30px;
       list-style: none;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+    }
+
+    &__content {
+      display: flex;
+      align-items: center;
+      gap: 0px;
+    }
+
+    &__section {
+      display: flex;
+      align-items: center;
+      position: relative;
+      padding: 0 8px;
+
+      &:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        height: 12px;
+        width: 1px;
+        background-color: rgba(0, 0, 0, 0.15);
+
+        @media screen and (prefers-color-scheme: dark) {
+          background-color: rgba(255, 255, 255, 0.2);
+        }
+      }
+
+      &:first-child {
+        padding-left: 0;
+      }
+
+      &:last-child {
+        padding-right: 0;
+      }
+    }
+
+    &__item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    &__label {
+      color: var(--pp-dev-info-color-secondary);
+      font-weight: 500;
+    }
+
+    &__value {
+      font-weight: 600;
+    }
+
+    &__link {
+      color: var(--pp-dev-info-color-primary);
+      text-decoration: none;
+      transition: color 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      &:hover {
+        color: var(--pp-dev-info-color-primary);
+        text-decoration: underline;
+      }
     }
 
     @mixin bold {
@@ -199,66 +368,118 @@ $pp-dev-height: 30px;
       @include bold;
     }
 
-    & {
-      &__wrap-btn {
-        box-sizing: content-box;
-        display: flex;
-        align-items: center;
-        max-width: 13px;
-        width: 100%;
-        margin-right: 10px;
-        padding-left: 10px;
-        cursor: pointer;
+    &__wrap-btn {
+      box-sizing: content-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      margin-right: 12px;
+      padding: 4px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background-color 0.2s ease;
 
-        &:hover {
-          animation: arrowHover 0.8s linear infinite;
-        }
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+        animation: arrowHover 0.8s linear infinite;
       }
 
-      &__wrap-btn-arrow {
-        width: 13px;
+      &-arrow {
+        width: 16px;
+        height: 16px;
         fill: var(--pp-dev-info-color-dark);
+        transition: transform 0.2s ease;
       }
     }
 
     &.closed {
-      transform: translateX(calc(100% - 27px));
+      transform: translateX(calc(100% - 40px));
+      z-index: 100002;
 
       & .pp-dev-info__wrap-btn {
         &:hover {
           animation: arrowHover 1.2s linear infinite;
         }
 
-        .pp-dev-info__wrap-btn-arrow {
+        &-arrow {
           transform: rotate(180deg);
-          max-width: 12px;
         }
-      }
-
-      & .pp-dev-info__wrap-btn {
-        margin-left: -2px;
       }
     }
 
     .sync-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 4px;
+      margin-left: 12px;
       background-color: transparent;
       border: none;
+      border-radius: 4px;
       cursor: pointer;
-      padding: 4px 2px;
+      color: var(--pp-dev-info-color-primary);
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
 
-      &.disabled {
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: currentColor;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        border-radius: 4px;
+      }
+
+      svg {
+        position: relative;
+        z-index: 1;
+        transition: transform 0.3s ease;
+      }
+
+      &:hover:not(.disabled) {
+        color: var(--pp-dev-info-color-primary);
+
         svg {
-          fill: gray!important;
+          transform: scale(1.2) rotate(90deg) matrix(1, 0, 0, -1, 0, 0);
+          transition: transform 0.2s ease;
         }
       }
 
-      &.syncing {
+      &:active:not(.disabled) {
+        svg {
+          transform: scale(0.9) rotate(90deg) matrix(1, 0, 0, -1, 0, 0);
+        }
+      }
+
+      &.disabled {
+        opacity: 0.5;
         cursor: not-allowed;
         pointer-events: none;
+        color: var(--pp-dev-info-color-secondary);
+      }
 
+      &.syncing {
         svg {
-          animation: rotation 2s linear infinite;
+          animation: rotate 1.5s linear infinite;
         }
+      }
+    }
+
+    @keyframes rotate {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
       }
     }
 

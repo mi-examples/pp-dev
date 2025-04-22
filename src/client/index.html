@@ -8,38 +8,51 @@
     </svg>
   </div>
 
-  <div>
-    <span class="margin-5 custom-font not-colored"
-      ><a href="https://www.npmjs.com/package/{%= PACKAGE_NAME %}/v/{%= VERSION %}" target="_blank">
-        <span class="bold primary">{%= PACKAGE_NAME %}</span>: <span class="bold warning">{%= VERSION %}</span></a
-      >;
-    </span>
+  <div class="pp-dev-info__content">
+    <div class="pp-dev-info__section">
+      <span class="pp-dev-info__item">
+        <a href="https://www.npmjs.com/package/{%= PACKAGE_NAME %}/v/{%= VERSION %}" target="_blank" class="pp-dev-info__link">
+          <span class="pp-dev-info__label">Package:</span>
+          <span class="pp-dev-info__value primary">{%= PACKAGE_NAME %}</span>
+          <span class="pp-dev-info__value warning">{%= VERSION %}</span>
+        </a>
+      </span>
+    </div>
+
     {% if (backendBaseURL) { %}
-    <span class="margin-5 custom-font">
-      <span>Backend URL: </span><a href="!!{%= backendBaseURL %}" target="_blank">!!{%= backendBaseURL %}</a>;
-    </span>
+    <div class="pp-dev-info__section">
+      <span class="pp-dev-info__item">
+        <span class="pp-dev-info__label">Backend URL:</span>
+        <a href="!!{%= backendBaseURL %}" target="_blank" class="pp-dev-info__link">!!{%= backendBaseURL %}</a>
+      </span>
+    </div>
     {% } %}
-    <span class="margin-5 custom-font">
-      <span>Template mode: </span>
-      {% if (templateLess || !backendBaseURL || Number.isNaN(+portalPageId)) { %}
-      <span class="status-text danger">Disabled</span>; {% } else { %} <span class="status-text success">Enabled</span>;
-      {% } %}
-    </span>
+
+    <div class="pp-dev-info__section">
+      <span class="pp-dev-info__item">
+        <span class="pp-dev-info__label">Template mode:</span>
+        {% if (templateLess || !backendBaseURL || Number.isNaN(+portalPageId)) { %}
+        <span class="pp-dev-info__value danger">Disabled</span>
+        {% } else { %}
+        <span class="pp-dev-info__value success">Enabled</span>
+        {% } %}
+      </span>
+    </div>
+
     {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
-    <span class="margin-5 custom-font"
-      ><span>Portal page ID: </span>
-      <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank">{%= portalPageId %}</a>;
-    </span>
+    <div class="pp-dev-info__section">
+      <span class="pp-dev-info__item">
+        <span class="pp-dev-info__label">Portal page ID:</span>
+        <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank" class="pp-dev-info__link">{%= portalPageId %}</a>
+      </span>
+    </div>
     {% } %}
   </div>
-  {% if (!templateLess && backendBaseURL && !Number.isNaN(+portalPageId)) { %}
-  <button
-    id="sync-template"
-    class="sync-button"
-    title="Sync template"
-  >
+
+  {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
+  <button id="sync-template" class="sync-button" title="Sync template">
     <svg
-      fill="#007BFF"
+      fill="currentColor"
       width="16px"
       height="16px"
       viewBox="0 0 24 24"

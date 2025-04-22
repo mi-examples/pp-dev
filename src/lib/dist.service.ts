@@ -138,6 +138,11 @@ export class DistService {
   }
 
   async saveBackup(backupFile: Buffer) {
+    // Verify if the backup file is an ZIP file (magic number)
+    if (backupFile.toString('utf-8').slice(0, 4) !== 'PK\x03\x04') {
+      throw new Error('Backup file is not a ZIP file');
+    }
+
     const backupFileHash = crypto.createHash('md5').update(backupFile).digest('hex');
     const lastSavedBackup = await this.getLatestSavedBackup();
 

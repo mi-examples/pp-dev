@@ -29,8 +29,13 @@ export const urlReplacer = (originalHost: string, destinationHost: string, conte
 
 export const urlPathReplacer = (urlPath: string, destinationPath: string, content: string) => {
   const urlReplaceRegExp = new RegExp(`${urlPath.replace(/\\*\//gi, '\\\\/')}`, 'gi');
+  const unescapedUrlReplaceRegExp = new RegExp(`${urlPath}`, 'gi');
 
-  return content.replace(urlReplaceRegExp, destinationPath);
+  const replacedContent = content.replace(urlReplaceRegExp, destinationPath);
+
+  return replacedContent === content
+    ? replacedContent.replace(unescapedUrlReplaceRegExp, destinationPath)
+    : replacedContent;
 };
 
 export const redirect = (res: ServerResponse, url: string, statusCode?: number) => {
