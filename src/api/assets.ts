@@ -44,8 +44,9 @@ export class AssetsAPI extends BaseAPI {
    */
   async uploadPageAssets(portalPageId: number | string, file: Buffer, headers?: Headers) {
     const formData = new (await this.formdataModulePromise).FormData();
+    const { File } = await this.formdataModulePromise;
 
-    const assetFile = new File([file.buffer], 'file.zip', { type: 'application/zip' });
+    const assetFile = new File([file], 'file.zip', { type: 'application/zip' });
 
     formData.append('file', assetFile);
 
@@ -81,10 +82,9 @@ export class AssetsAPI extends BaseAPI {
    */
   async uploadTemplateAssets(templateId: number | string, file: Buffer, headers?: Headers) {
     const formData = new (await this.formdataModulePromise).FormData();
+    const { File } = await this.formdataModulePromise;
 
-    const assetFile = new (await this.formdataModulePromise).File([file.buffer], 'file.zip', {
-      type: 'application/zip',
-    });
+    const assetFile = new File([file], 'file.zip', { type: 'application/zip' });
 
     formData.append('file', assetFile, 'file.zip');
 
@@ -103,20 +103,3 @@ export class AssetsAPI extends BaseAPI {
   }
 }
 
-export class AssetsV7API extends AssetsAPI {
-  protected getDownloadUrl(portalPageId: number | string) {
-    return `/api/page/id/${portalPageId}/asset/download`;
-  }
-
-  protected getDownloadTemplateUrl(templateId: number | string) {
-    return `/api/page_template/id/${templateId}/asset/download`;
-  }
-
-  protected getUploadUrl(portalPageId: number | string) {
-    return `/api/page/id/${portalPageId}/asset/upload`;
-  }
-
-  protected getUploadTemplateUrl(templateId: number | string) {
-    return `/api/page_template/id/${templateId}/asset/upload`;
-  }
-}

@@ -11,8 +11,8 @@
     "outDir": "../../dist/client",
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
-    "emitDeclarationOnly": true
+    "allowImportingTsExtensions": false,
+    "emitDeclarationOnly": false
   },
   "include": ["./**/*"],
   "exclude": ["dist", "node_modules"]

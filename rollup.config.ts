@@ -46,8 +46,13 @@ const configs: RollupOptions[] = [
       format: 'esm',
       assetFileNames: '[name][extname]',
       sourcemap: true,
+      exports: 'named',
     },
-    external: [...Object.keys(pkg.dependencies), ...Object.keys(pkg.peerDependencies)],
+    external: [
+      ...Object.keys(pkg.dependencies),
+      ...Object.keys(pkg.devDependencies),
+      ...Object.keys(pkg.peerDependencies),
+    ],
   }),
 
   // CJS Build
@@ -70,8 +75,13 @@ const configs: RollupOptions[] = [
       format: 'cjs',
       assetFileNames: '[name][extname]',
       sourcemap: true,
+      exports: 'named',
     },
-    external: [...Object.keys(pkg.dependencies), ...Object.keys(pkg.peerDependencies)],
+    external: [
+      ...Object.keys(pkg.dependencies),
+      ...Object.keys(pkg.devDependencies),
+      ...Object.keys(pkg.peerDependencies),
+    ],
   }),
 
   // Type Definitions
@@ -93,7 +103,11 @@ const configs: RollupOptions[] = [
       format: 'esm',
       assetFileNames: '[name][extname]',
     },
-    external: [...Object.keys(pkg.dependencies), ...Object.keys(pkg.peerDependencies)],
+    external: [
+      ...Object.keys(pkg.dependencies),
+      ...Object.keys(pkg.devDependencies),
+      ...Object.keys(pkg.peerDependencies),
+    ],
   }),
 ];
 

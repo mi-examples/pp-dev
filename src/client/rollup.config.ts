@@ -5,6 +5,7 @@ import url from '@rollup/plugin-url';
 import { fileURLToPath } from 'url';
 // import * as pkg from '../../package.json';
 import * as path from 'path';
+import * as sass from 'sass';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -21,6 +22,8 @@ export default defineConfig({
     scss({
       fileName: 'client.css',
       sourceMap: true,
+      sass,
+      outputStyle: 'compressed',
     }),
     url({
       fileName: '[name][extname]',
