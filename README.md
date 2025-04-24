@@ -59,7 +59,8 @@ import { PPDevConfig } from '@metricinsights/pp-dev';
 
 const config: PPDevConfig = {
   backendBaseURL: 'https://mi.company.com',
-  portalPageId: 1,
+  appId: 1,
+  v7Features: true,
 };
 
 export default config;
@@ -71,7 +72,8 @@ export default config;
 // pp-dev.config.json
 {
   "backendBaseURL": "https://mi.company.com",
-  "portalPageId": 1
+  "appId": 1,
+  "v7Features": true
 }
 ```
 
@@ -83,7 +85,8 @@ export default config;
   "version": "1.0.0",
   "pp-dev": {
     "backendBaseURL": "https://mi.company.com",
-    "portalPageId": 1
+    "appId": 1,
+    "v7Features": true
   }
 }
 ```
