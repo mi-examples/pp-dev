@@ -5,10 +5,12 @@
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     "@semantic-release/changelog",
-    {
-      "path": "@semantic-release/npm",
-      "npmPublish": false
-    },
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": false
+      }
+    ],
     ["semantic-release-github-pullrequest", {
       "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
       "baseRef": "main",
