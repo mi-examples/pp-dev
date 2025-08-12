@@ -9,8 +9,29 @@
   ],
   "tagFormat": "v${version}",
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "angular",
+        "presetConfig": {
+          "issuePrefixes": [],
+          "issueFormat": false,
+          "issueReferences": false
+        }
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "angular",
+        "presetConfig": {
+          "issuePrefixes": [],
+          "commitTypes": ["feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "ci", "build"],
+          "issueFormat": false,
+          "issueReferences": false
+        }
+      }
+    ],
     "@semantic-release/changelog",
     [
       "@semantic-release/npm",
@@ -29,10 +50,10 @@
       "@semantic-release/github",
       {
         "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
-        "releasedLabels": ["released"],
+        "releasedLabels": false,
+        "successComment": false,
         "failTitle": false,
-        "successComment": "🎉 This PR has been released as version <%= nextRelease.version %>",
-        "failComment": "❌ This PR could not be released. Please check the logs for more details."
+        "failComment": false
       }
     ]
   ],
