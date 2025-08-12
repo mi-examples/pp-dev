@@ -73,7 +73,8 @@ Alternatively, you can define configuration in your `package.json` using the `pp
  */
 module.exports = {
   backendBaseURL: 'https://mi.company.com',
-  portalPageId: 1,
+  appId: 1,
+  v7Features: true,
 };
 ```
 
