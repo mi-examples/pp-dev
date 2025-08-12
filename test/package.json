@@ -1,18 +1,20 @@
 {
   "name": "test",
+  "type": "module",
   "version": "1.0.0",
   "scripts": {
-    "build": "pp-dev build --changelog",
-    "changelog": "pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
-    "dev": "pp-dev",
-    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.10.0.tgz"
+    "build": "npx pp-dev build --changelog",
+    "changelog": "npx pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
+    "dev": "npx pp-dev",
+    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.10.1.tgz"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.10.0.tgz",
+    "@metricinsights/pp-dev": "^0.10.1",
     "luxon": "^3.3.0"
   },
   "devDependencies": {
     "@types/luxon": "^3.3.0",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "vite": "^6.3.5"
   }
 }

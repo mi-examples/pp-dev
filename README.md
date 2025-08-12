@@ -23,6 +23,33 @@ pp-dev is based on [Vite](https://vitejs.dev/).
 npm install @metricinsights/pp-dev
 ```
 
+## 🚀 Build System
+
+The pp-dev package includes an optimized build system with multiple build strategies:
+
+### Quick Start
+```bash
+# Standard build (parallel)
+npm run build
+
+# Fast development build
+npm run build:fast
+
+# Watch mode for development
+npm run build:watch
+
+# Bundle analysis
+npm run build:analyze
+```
+
+### Build Features
+- **Parallel builds** for 40-60% faster build times
+- **Enhanced tree-shaking** for smaller bundles
+- **Multiple output formats** (ESM, CJS, Types)
+- **Bundle analysis** with visualizer support
+
+📖 See [BUILD_IMPROVEMENTS.md](./BUILD_IMPROVEMENTS.md) for detailed information.
+
 ## Configuration
 
 ### Configuration File

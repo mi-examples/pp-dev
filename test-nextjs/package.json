@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "pp-dev next",
+    "dev": "npx pp-dev next",
     "build": "next build",
     "start": "next start",
-    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.10.0.tgz",
+    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.10.1.tgz",
     "lint": "next lint"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.10.0.tgz",
+    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.10.1.tgz",
     "next": "13.5.4",
     "react": "^18",
     "react-dom": "^18",

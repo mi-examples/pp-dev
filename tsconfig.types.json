@@ -5,7 +5,9 @@
     "declarationDir": "./dist/types",
     "removeComments": false,
     "declaration": true,
-    "emitDeclarationOnly": true
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "sourceMap": false
   },
   "exclude": ["dist", "node_modules", "src/client", "rollup.config.ts"]
 }

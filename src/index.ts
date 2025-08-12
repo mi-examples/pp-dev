@@ -1,20 +1,23 @@
-import { InlineConfig, PluginOption } from 'vite';
-import vitePPDev, { NormalizedVitePPDevOptions, normalizeVitePPDevConfig } from './plugin.js';
-import { clientInjectionPlugin } from './plugins/client-injection-plugin.js';
-import header from './banner/header.js';
-import type { NextConfig } from 'next';
-import { getConfig, getPkg, PPDevConfig } from './config.js';
+import { InlineConfig, PluginOption } from "vite";
+import vitePPDev, {
+  NormalizedVitePPDevOptions,
+  normalizeVitePPDevConfig,
+} from "./plugin.js";
+import { clientInjectionPlugin } from "./plugins/client-injection-plugin.js";
+import header from "./banner/header.js";
+import type { NextConfig } from "next";
+import { getConfig, getPkg, PPDevConfig } from "./config.js";
 
-export type { PPDevConfig, PPWatchConfig } from './config.js';
+export type { PPDevConfig, PPWatchConfig } from "./config.js";
 
-declare module 'vite' {
+declare module "vite" {
   interface UserConfig {
     ppDevConfig?: NormalizedVitePPDevOptions;
   }
 }
 
-const pathPagePrefix = '/p';
-const pathTemplatePrefix = '/pt';
+const pathPagePrefix = "/p";
+const pathTemplatePrefix = "/pt";
 
 export async function getViteConfig() {
   const pkg = getPkg();
@@ -22,35 +25,47 @@ export async function getViteConfig() {
   const templateName = pkg.name;
 
   const ppDevConfig = await getConfig();
-  const normalizedPPDevConfig = normalizeVitePPDevConfig(Object.assign(ppDevConfig, { templateName }));
+  const normalizedPPDevConfig = normalizeVitePPDevConfig(
+    Object.assign(ppDevConfig, { templateName })
+  );
 
-  const plugins: InlineConfig['plugins'] = [vitePPDev(normalizedPPDevConfig), clientInjectionPlugin()];
+  const plugins: InlineConfig["plugins"] = [
+    vitePPDev(normalizedPPDevConfig),
+    clientInjectionPlugin(),
+  ];
 
-  const { outDir, distZip, imageOptimizer, templateLess } = normalizedPPDevConfig;
+  const { outDir, distZip, imageOptimizer, templateLess } =
+    normalizedPPDevConfig;
 
   if (imageOptimizer) {
-    const { ViteImageOptimizer } = await import('vite-plugin-image-optimizer');
+    const { ViteImageOptimizer } = await import("vite-plugin-image-optimizer");
 
-    plugins.push(ViteImageOptimizer(typeof imageOptimizer === 'object' ? imageOptimizer : undefined));
+    plugins.push(
+      ViteImageOptimizer(
+        typeof imageOptimizer === "object" ? imageOptimizer : undefined
+      )
+    );
   }
 
   if (distZip) {
-    const { default: zipPack } = await import('vite-plugin-zip-pack');
+    const { default: zipPack } = await import("vite-plugin-zip-pack");
 
     plugins.push({
       ...zipPack(
-        typeof distZip === 'object'
+        typeof distZip === "object"
           ? distZip
           : {
               outFileName: `${templateName}.zip`,
-            },
+            }
       ),
-      enforce: 'post',
+      enforce: "post",
     } as PluginOption);
   }
 
   return {
-    base: templateLess ? `${pathPagePrefix}/${templateName}` : `${pathTemplatePrefix}/${templateName}`,
+    base: templateLess
+      ? `${pathPagePrefix}/${templateName}`
+      : `${pathTemplatePrefix}/${templateName}`,
     server: {
       port: 3000,
     },
@@ -65,9 +80,9 @@ export async function getViteConfig() {
       outDir,
     },
     css: {
-      modules: { localsConvention: 'dashes' },
+      modules: { localsConvention: "dashes" },
       scss: {
-        api: 'modern',
+        api: "modern",
       },
     },
     ppDevConfig: normalizedPPDevConfig,
@@ -78,16 +93,25 @@ export async function getViteConfig() {
 export function withPPDev(
   nextjsConfig:
     | NextConfig
-    | ((phase: string, nextConfig?: { defaultConfig?: any }) => NextConfig | Promise<NextConfig>),
-  ppDevConfig?: PPDevConfig,
+    | ((
+        phase: string,
+        nextConfig?: { defaultConfig?: any }
+      ) => NextConfig | Promise<NextConfig>),
+  ppDevConfig?: PPDevConfig
 ) {
-  return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {
-    const { PHASE_DEVELOPMENT_SERVER } = await import('next/constants.js');
+  return async (
+    phase: string,
+    nextConfig: { defaultConfig?: any } = {}
+  ): Promise<NextConfig> => {
+    const { PHASE_DEVELOPMENT_SERVER } = await import("next/constants.js");
 
     const config = await getConfig();
     const pkg = getPkg();
     const templateName = pkg.name;
-    const nextConfiguration = typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
+    const nextConfiguration =
+      typeof nextjsConfig === "function"
+        ? await nextjsConfig(phase, nextConfig)
+        : nextjsConfig;
 
     if (phase === PHASE_DEVELOPMENT_SERVER) {
       const devConfig = Object.assign(config, ppDevConfig);
@@ -95,7 +119,12 @@ export function withPPDev(
       const { templateLess } = devConfig;
 
       return Object.assign(
-        { basePath: templateLess ? `/p/${templateName}` : `/pt/${templateName}`, trailingSlash: true } as NextConfig,
+        {
+          basePath: templateLess
+            ? `${pathPagePrefix}/${templateName}`
+            : `${pathTemplatePrefix}/${templateName}`,
+          trailingSlash: true,
+        } as NextConfig,
         nextConfiguration,
         {
           serverRuntimeConfig: {
@@ -106,14 +135,17 @@ export function withPPDev(
             templateName,
             ppDevConfig: {
               backendBaseURL: devConfig.backendBaseURL,
-              portalPageId: devConfig.portalPageId,
+              portalPageId: devConfig.portalPageId || devConfig.appId,
               templateLess: devConfig.templateLess,
             },
           },
-        } as NextConfig,
+        } as NextConfig
       );
     }
 
-    return Object.assign({ basePath: `/pt/${templateName}` } as NextConfig, nextConfiguration);
+    return Object.assign(
+      { basePath: `${pathTemplatePrefix}/${templateName}` } as NextConfig,
+      nextConfiguration
+    );
   };
 }

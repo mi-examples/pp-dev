@@ -18,17 +18,24 @@ export default defineConfig({
       tsconfig: path.resolve(__dirname, './tsconfig.build.json'),
       sourceMap: true,
       declaration: false,
+      compilerOptions: {
+        removeComments: false,
+      },
     }),
     scss({
       fileName: 'client.css',
       sourceMap: true,
       sass,
       outputStyle: 'compressed',
+      // Better CSS optimization
+      includePaths: ['node_modules'],
     }),
     url({
       fileName: '[name][extname]',
       include: ['**/*.svg', '**/*.png', '**/*.jp(e)?g', '**/*.gif', '**/*.webp', '**/*.html', '**/*.css'],
       limit: 0,
+      // Better asset handling
+      publicPath: '/assets/',
     }),
   ],
   output: {
@@ -41,5 +48,17 @@ export default defineConfig({
     sourcemapIgnoreList() {
       return true;
     },
+    // Better code generation
+    generatedCode: {
+      constBindings: true,
+      objectShorthand: true,
+      arrowFunctions: true,
+    },
+  },
+  // Better tree-shaking
+  treeshake: {
+    moduleSideEffects: false,
+    propertyReadSideEffects: false,
+    unknownGlobalSideEffects: false,
   },
 });
