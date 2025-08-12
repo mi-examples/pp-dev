@@ -1,3 +1,12 @@
+# [@metricinsights/pp-dev-v0.11.0-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.10.1...v0.11.0-beta.1) (2025-08-12)
+
+
+### Features
+
+* **pp-dev:** add dependency version synchronization for create-pp-dev releases ([2597b01](https://github.com/mi-examples/pp-dev-js/commit/2597b017a59b1359753e85953648e2ce1674253c))
+* **pp-dev:** add esbuild configuration and build optimization scripts ([bbe1791](https://github.com/mi-examples/pp-dev-js/commit/bbe1791e9eb2e220f1552618a9a534a80ddd2f96))
+* **pp-dev:** add semantic release configuration and update dependencies ([5962bcc](https://github.com/mi-examples/pp-dev-js/commit/5962bccbb76fb684415f731f85f372cdd109d8f1))
+
 # Changelog
 
 All notable changes to the `@metricinsights/pp-dev` package will be documented in this file.
@@ -134,4 +143,4 @@ All notable changes to the `@metricinsights/pp-dev` package will be documented i
 
 ### Added
 - Initial package setup
-- Basic helper functionality 
+- Basic helper functionality
