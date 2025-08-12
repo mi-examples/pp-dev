@@ -210,14 +210,15 @@ cli
       bindShortcuts(server, {
         print: true,
         customShortcuts: [
-          profileSession && {
+          ...(profileSession ? [{
             key: 'p',
             description: 'start/stop the profiler',
-            async action(server) {
+            async action(server: ViteDevServer) {
               if (profileSession) {
                 await stopProfiler(logger.info);
               } else {
                 const inspector = await import('node:inspector').then((r) => (r as any).default);
+                
                 await new Promise<void>((res) => {
                   profileSession = new inspector.Session();
                   profileSession.connect();
@@ -231,7 +232,7 @@ cli
                 });
               }
             },
-          },
+          }] : []),
           {
             key: 'l',
             description: 'proxy re-login',

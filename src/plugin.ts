@@ -26,6 +26,12 @@ interface DistZipOptions {
    * @default 'dist-zip'
    */
   outDir?: string;
+
+  /**
+   * Input directory for the build.
+   * @default 'dist'
+   */
+  inDir?: string;
 }
 
 export interface VitePPDevOptions {

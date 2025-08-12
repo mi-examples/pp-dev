@@ -1,10 +1,15 @@
-import axios, { Axios } from 'axios';
-import { JSDOM } from 'jsdom';
-import { AssetsAPI, PageAPI, AssetsV7API, PageTemplateAPI } from '../api/index.js';
-import { Agent } from 'https';
-import { createLogger } from './logger.js';
-import { colors } from './helpers/color.helper.js';
-import { Logger } from 'vite';
+import axios, { Axios } from "axios";
+import { JSDOM } from "jsdom";
+import {
+  AssetsAPI,
+  PageAPI,
+  AssetsV7API,
+  PageTemplateAPI,
+} from "../api/index.js";
+import { Agent } from "https";
+import { createLogger } from "./logger.js";
+import { colors } from "./helpers/color.helper.js";
+import { Logger } from "vite";
 
 export type Headers = Record<string, string | undefined>;
 
@@ -17,7 +22,7 @@ export interface MiAPIOptions {
   personalAccessToken?: string;
 }
 
-export const TEMPLATE_PAGE_NAME = '[DEV PAGE. DO NOT DELETE]';
+export const TEMPLATE_PAGE_NAME = "[DEV PAGE. DO NOT DELETE]";
 
 export class MiAPI {
   #headers: Headers;
@@ -61,7 +66,7 @@ export class MiAPI {
     this.#headers = headers;
 
     this.#pageVars = [];
-    this.#pageTitle = '';
+    this.#pageTitle = "";
 
     this.#v7Features = v7Features;
     this.#personalAccessToken = personalAccessToken;
@@ -97,9 +102,14 @@ export class MiAPI {
   }
 
   #clearHeaders(headers: Headers) {
-    const obj = Object.assign({}, headers, { host: undefined, referer: undefined });
+    const obj = Object.assign({}, headers, {
+      host: undefined,
+      referer: undefined,
+    });
 
-    Object.keys(obj).forEach((key) => obj[key] === undefined && delete obj[key]);
+    Object.keys(obj).forEach(
+      (key) => obj[key] === undefined && delete obj[key]
+    );
 
     this.#headers = obj;
 
@@ -127,10 +137,23 @@ export class MiAPI {
       <html lang="en">
         <head>
           <meta charset="UTF-8" />
-          <title>Local template</title>
-          <meta charset="UTF-8" />
+          <title>%%PAGE TITLE%%</title>
+          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+          <meta name="theme-color" content="rgba(255, 255, 255, 1)"/>
+          <link rel="shortcut icon" type="image/x-icon" sizes="any" href="/img/favicon/favicon.ico"/>
+          <link rel="icon" type="image/png" sizes="16x16" href="/img/favicon/favicon-16x16.png"/>
+          <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon/favicon-32x32.png"/>
+          <link rel="icon" type="image/png" sizes="48x48" href="/img/favicon/favicon-48x48.png"/>
+          <meta name="msapplication-config" content="/auth/browserconfig.xml"/>
+          <link rel="apple-touch-icon" sizes="180x180" href="/img/favicon/apple-touch-icon.png"/>
+          <link rel="manifest" href="/auth/site.webmanifest"/>
+          <link rel="manifest" href="/auth/manifest.json"/>
+          <link rel="stylesheet" type="text/css" href="/auth/theme-vars.css"/>
           <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <script src="/js/libs/underscore-latest.min.js" charset="utf-8"></script>
+          <script src="/js/jquery/jquery-latest.min.js" charset="utf-8"></script>
+          <script src="/js/application/rating_component.js" charset="utf-8"></script>
         </head>
         <body>
           <div id="mi-react-root"></div>
@@ -156,7 +179,7 @@ export class MiAPI {
       return Promise.resolve(this.#pageTemplate);
     }
 
-    if (typeof this.templateLess === 'undefined') {
+    if (typeof this.templateLess === "undefined") {
       this.templateLess = false;
     }
 
@@ -164,7 +187,7 @@ export class MiAPI {
       const page = await this.pageApi
         .get(this.portalPageId!, this.#clearHeaders(headers))
         .then((response) => {
-          this.logger.info(colors.green('Page fetched'));
+          this.logger.info(colors.green("Page fetched"));
 
           return response;
         })
@@ -172,24 +195,31 @@ export class MiAPI {
           this.#templateLoadedResolve(false);
 
           if (await this.pageApi.checkAuth(this.#clearHeaders(headers))) {
-            this.logger.error(colors.red(`Error fetching page data: ${e.message}\n${e.stack}`));
+            this.logger.error(
+              colors.red(`Error fetching page data: ${e.message}\n${e.stack}`)
+            );
 
             throw new Error(
-              'The current user does not have access to this page. ' +
-              'Check your configuration to ensure the portalPageId is correct.'
+              "The current user does not have access to this page. " +
+                "Check your configuration to ensure the portalPageId is correct."
             );
           } else {
             throw e;
           }
         });
 
-      if (typeof page.template_id !== 'undefined') {
+      if (typeof page.template_id !== "undefined") {
         this.#isV710OrHigher = true;
       }
 
       this.#pageTemplate = this.localTemplateHTML;
 
-      this.logger.info(colors.green('Local page template fetched'));
+      this.#pageTemplate = this.#pageTemplate.replace(
+        /%%PAGE TITLE%%/g,
+        page.name || "Local template"
+      );
+
+      this.logger.info(colors.green("Local page template fetched"));
 
       this.#templateLoadedResolve(true);
 
@@ -199,7 +229,7 @@ export class MiAPI {
     const pageList = await this.pageApi
       .getAll(this.#clearHeaders(headers))
       .then((response) => {
-        this.logger.info(colors.green('Page list fetched'));
+        this.logger.info(colors.green("Page list fetched"));
 
         return response;
       })
@@ -207,9 +237,11 @@ export class MiAPI {
         this.#templateLoadedResolve(false);
 
         if (await this.pageApi.checkAuth(this.#clearHeaders(headers))) {
-          this.logger.error(colors.red(`Error fetching page list: ${e.message}\n${e.stack}`));
+          this.logger.error(
+            colors.red(`Error fetching page list: ${e.message}\n${e.stack}`)
+          );
 
-          throw new Error('Current user does not have access to page list');
+          throw new Error("Current user does not have access to page list");
         } else {
           throw e;
         }
@@ -218,31 +250,33 @@ export class MiAPI {
     let page = pageList.find((p) => p.name === TEMPLATE_PAGE_NAME);
 
     if (!page) {
-      this.logger.warn(colors.yellow('Creating dev page template...'));
+      this.logger.warn(colors.yellow("Creating dev page template..."));
 
       page = await this.pageApi
         .create(
           {
-            enabled: 'Y',
+            enabled: "Y",
             name: TEMPLATE_PAGE_NAME,
-            internal_name: 'dev-page-template',
-            visible_in_homepage: 'Y',
+            internal_name: "dev-page-template",
+            visible_in_homepage: "Y",
           },
-          this.#clearHeaders(headers),
+          this.#clearHeaders(headers)
         )
         .then((response) => {
-          this.logger.info(colors.green('Dev page created'));
+          this.logger.info(colors.green("Dev page created"));
 
           return response;
         })
         .catch((e) => {
-          this.logger.error(colors.red(`Error creating dev page: ${e.message}`));
+          this.logger.error(
+            colors.red(`Error creating dev page: ${e.message}`)
+          );
 
           this.#templateLoadedResolve(false);
 
           throw new Error(
             `Error when creating dev page.
-            That can be caused by missing permissions or page with name "${TEMPLATE_PAGE_NAME}" already exists`,
+            That can be caused by missing permissions or page with name "${TEMPLATE_PAGE_NAME}" already exists`
           );
         });
     }
@@ -257,16 +291,18 @@ export class MiAPI {
       .then((response) => {
         this.#templateLoadedResolve(true);
 
-        this.logger.info(colors.green('Page template fetched'));
+        this.logger.info(colors.green("Page template fetched"));
 
         return response;
       })
       .catch((e) => {
         this.#templateLoadedResolve(false);
 
-        this.logger.error(colors.red(`Error fetching page template: ${e.message}`));
+        this.logger.error(
+          colors.red(`Error fetching page template: ${e.message}`)
+        );
 
-        throw new Error('Error fetching page template');
+        throw new Error("Error fetching page template");
       });
   }
 
@@ -287,7 +323,7 @@ export class MiAPI {
     return await this.pageApi
       .get(pageId, this.#clearHeaders(headers))
       .then((response) => {
-        const { tags = '[]', name, template } = response;
+        const { tags = "[]", name, template } = response;
 
         if (template && tags) {
           const parsed = JSON.parse(tags) as { name: string; value: string }[];
@@ -304,15 +340,19 @@ export class MiAPI {
         return [];
       })
       .catch((reason) => {
-        this.logger.error(colors.red(`Error fetching page variables: ${reason.message}`));
+        this.logger.error(
+          colors.red(`Error fetching page variables: ${reason.message}`)
+        );
 
         if (reason.response?.status === 404) {
-          throw new Error(`Portal Page with id "${pageId}" not found on instance ${this.#axios.getUri()}`);
+          throw new Error(
+            `Portal Page with id "${pageId}" not found on instance ${this.#axios.getUri()}`
+          );
         }
 
         if (reason.response?.status === 401) {
           throw new Error(
-            `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`,
+            `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`
           );
         }
 
@@ -327,24 +367,25 @@ export class MiAPI {
    * @param miHudLess
    */
   buildPage(content: string | Buffer, miHudLess = false) {
-    let result = typeof content === 'string' ? content : content.toString('utf-8');
+    let result =
+      typeof content === "string" ? content : content.toString("utf-8");
 
     for (const v of this.#pageVars) {
-      result = result.replace(new RegExp(`\\[${v.name}\\]`, 'g'), v.value);
+      result = result.replace(new RegExp(`\\[${v.name}\\]`, "g"), v.value);
     }
 
     const dom = new JSDOM(miHudLess ? result : this.#pageTemplate!);
 
-    const placeholderText = '%%PLACEHOLDER%%';
+    const placeholderText = "%%PLACEHOLDER%%";
 
     if (!miHudLess) {
-      const placeholder = dom.window.document.createElement('div');
+      const placeholder = dom.window.document.createElement("div");
       placeholder.innerHTML = placeholderText;
 
-      const container = dom.window.document.querySelector('.main-side');
+      const container = dom.window.document.querySelector(".main-side");
 
       if (container) {
-        const scripts = container.querySelectorAll('script');
+        const scripts = container.querySelectorAll("script");
 
         if (scripts.length) {
           container.insertBefore(placeholder, scripts.item(scripts.length - 1));
@@ -352,15 +393,15 @@ export class MiAPI {
           container.append(placeholder);
         }
       } else {
-        const container = dom.window.document.createElement('div');
+        const container = dom.window.document.createElement("div");
 
         container.append(placeholder);
 
         dom.window.document.body.append(container);
       }
 
-      const head = dom.window.document.querySelector('head')!;
-      const title = head!.querySelector('title');
+      const head = dom.window.document.querySelector("head")!;
+      const title = head!.querySelector("title");
 
       if (title) {
         title.text = this.#pageTitle;
@@ -371,23 +412,41 @@ export class MiAPI {
 
     const serializedDom = dom.serialize();
 
-    return serializedDom.replace(new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i'), result);
+    return serializedDom.replace(
+      new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, "i"),
+      result
+    );
   }
 
   async getAssets() {
     if (this.portalPageId) {
       if (this.templateLess) {
-        return await this.assetsApi.downloadPageAssets(this.portalPageId, this.#headers);
+        return await this.assetsApi.downloadPageAssets(
+          this.portalPageId,
+          this.#headers
+        );
       } else {
-        const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
+        const pageInfo = await this.pageApi.get(
+          this.portalPageId,
+          this.#headers
+        );
 
         if (this.#isV710OrHigher) {
-          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+          const templateInfo = await this.pageTemplateApi.get(
+            pageInfo.template_id!,
+            this.#headers
+          );
 
-          return await this.assetsApi.downloadTemplateAssets(templateInfo.id, this.#headers);
+          return await this.assetsApi.downloadTemplateAssets(
+            templateInfo.id,
+            this.#headers
+          );
         } else {
           if (pageInfo.template) {
-            return await this.assetsApi.downloadTemplateAssets(pageInfo.template, this.#headers);
+            return await this.assetsApi.downloadTemplateAssets(
+              pageInfo.template,
+              this.#headers
+            );
           }
         }
       }
@@ -397,25 +456,49 @@ export class MiAPI {
   async updateAssets(assets: Buffer) {
     if (this.portalPageId) {
       if (this.templateLess) {
-        return await this.assetsApi.uploadPageAssets(this.portalPageId, assets, this.#headers);
+        return await this.assetsApi.uploadPageAssets(
+          this.portalPageId,
+          assets,
+          this.#headers
+        );
       } else {
-        const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
+        const pageInfo = await this.pageApi.get(
+          this.portalPageId,
+          this.#headers
+        );
 
         if (this.#isV710OrHigher) {
-          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+          const templateInfo = await this.pageTemplateApi.get(
+            pageInfo.template_id!,
+            this.#headers
+          );
 
-          return await this.assetsApi.uploadTemplateAssets(templateInfo.id, assets, this.#headers);
+          return await this.assetsApi.uploadTemplateAssets(
+            templateInfo.id,
+            assets,
+            this.#headers
+          );
         } else {
           if (pageInfo.template) {
-            return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, this.#headers);
+            return await this.assetsApi.uploadTemplateAssets(
+              pageInfo.template,
+              assets,
+              this.#headers
+            );
           }
         }
       }
     }
   }
 
-  async get<T extends any = any>(path: string, headers?: Record<string, any>, cleanup = false) {
-    const normalizedHeaders = cleanup ? headers : Object.assign({}, this.#clearHeaders(this.#headers), headers);
+  async get<T extends any = any>(
+    path: string,
+    headers?: Record<string, any>,
+    cleanup = false
+  ) {
+    const normalizedHeaders = cleanup
+      ? headers
+      : Object.assign({}, this.#clearHeaders(this.#headers), headers);
 
     return await this.#axios.get<T>(path, {
       headers: normalizedHeaders,

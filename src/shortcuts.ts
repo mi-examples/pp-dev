@@ -2,8 +2,8 @@ import type { ViteDevServer } from 'vite';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
 
-export function isDefined<T>(value: T | undefined | null): value is T {
-  return value !== null || typeof value !== 'undefined';
+export function isDefined<T>(value: T | undefined | null | false): value is T {
+  return value !== null && value !== undefined && value !== false;
 }
 
 export type BindShortcutsOptions = {
