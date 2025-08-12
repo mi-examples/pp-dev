@@ -1,3 +1,10 @@
+# [@metricinsights/pp-dev-v0.11.0-beta.2](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.1...v0.11.0-beta.2) (2025-08-12)
+
+
+### Bug Fixes
+
+* remove issue number references from semantic-release configs ([f532226](https://github.com/mi-examples/pp-dev-js/commit/f532226b1ecc4cf9d2cfac6e92cb1c101468a329))
+
 # [@metricinsights/pp-dev-v0.11.0-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.10.1...v0.11.0-beta.1) (2025-08-12)
 
 
