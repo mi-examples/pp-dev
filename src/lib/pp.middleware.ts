@@ -8,7 +8,7 @@ import {
 } from "../api/index.js";
 import { Agent } from "https";
 import { createLogger } from "./logger.js";
-import { colors } from "./helpers/color.helper.js";
+import { colors, getTokenErrorInfo, logTokenError } from "./helpers/index.js";
 import { Logger } from "vite";
 
 export type Headers = Record<string, string | undefined>;
@@ -23,6 +23,19 @@ export interface MiAPIOptions {
 }
 
 export const TEMPLATE_PAGE_NAME = "[DEV PAGE. DO NOT DELETE]";
+
+// Performance optimization: Connection pool for axios instances
+const axiosInstanceCache = new Map<string, Axios>();
+
+// Performance optimization: Lazy JSDOM import
+let jsdomModule: typeof import('jsdom') | null = null;
+
+async function getJSDOM() {
+  if (!jsdomModule) {
+    jsdomModule = await import('jsdom');
+  }
+  return jsdomModule;
+}
 
 export class MiAPI {
   #headers: Headers;
@@ -74,14 +87,28 @@ export class MiAPI {
 
     this.#templateLoaded = Promise.resolve(false);
 
-    if (disableSSLValidation) {
-      axios.defaults.httpsAgent = new Agent({ rejectUnauthorized: false });
-    }
+    // Performance optimization: Use cached axios instance
+    const cacheKey = `${baseURL}:${disableSSLValidation}`;
+    if (axiosInstanceCache.has(cacheKey)) {
+      this.#axios = axiosInstanceCache.get(cacheKey)!;
+    } else {
+      if (disableSSLValidation) {
+        axios.defaults.httpsAgent = new Agent({ rejectUnauthorized: false });
+      }
 
-    this.#axios = axios.create({
-      baseURL,
-      headers,
-    });
+      this.#axios = axios.create({
+        baseURL,
+        headers,
+        // Performance optimization: Add connection pooling
+        timeout: 30000, // 30 seconds timeout
+        maxRedirects: 5,
+        // Keep connections alive
+        httpAgent: new Agent({ keepAlive: true, maxSockets: 10 }),
+        httpsAgent: new Agent({ keepAlive: true, maxSockets: 10 }),
+      });
+
+      axiosInstanceCache.set(cacheKey, this.#axios);
+    }
 
     this.portalPageId = portalPageId;
     this.templateLess = templateLess;
@@ -361,6 +388,80 @@ export class MiAPI {
   }
 
   /**
+   * Get page info
+   *
+   * @param pageId
+   * @param headers
+   */
+  async getPageInfo(pageId: number, headers: Headers) {
+    if (!this.portalPageId) {
+      this.portalPageId = pageId;
+    }
+
+    const clearHeaders = this.#clearHeaders(headers);
+    const pageIdToFetch = this.portalPageId!;
+
+    try {
+      if (this.#v7Features) {
+        return await this.#fetchV7Page(pageIdToFetch, clearHeaders);
+      }
+      
+      return await this.#fetchLegacyPage(pageIdToFetch, clearHeaders);
+    } catch (error) {
+      this.#handlePageFetchError(error, pageIdToFetch);
+    }
+  }
+
+  /**
+   * Fetch page data for v7 features
+   */
+  async #fetchV7Page(pageId: number, headers: Headers) {
+    const page = await this.pageApi.get(pageId, headers);
+    
+    this.logger.info(colors.green("Page fetched"));
+
+    if (typeof page.template_id !== "undefined") {
+      this.#isV710OrHigher = true;
+    }
+
+    return page;
+  }
+
+  /**
+   * Fetch page data for legacy features
+   */
+  async #fetchLegacyPage(pageId: number, headers: Headers) {
+    return await this.pageApi.get(pageId, headers);
+  }
+
+  /**
+   * Handle page fetch errors with appropriate error messages
+   */
+  #handlePageFetchError(error: any, pageId: number) {
+    if (this.#v7Features && error.message?.includes("access")) {
+      throw new Error(
+        "The current user does not have access to this page. " +
+        "Check your configuration to ensure the portalPageId is correct."
+      );
+    }
+
+    if (error.response?.status === 404) {
+      throw new Error(
+        `Portal Page with id "${pageId}" not found on instance ${this.#axios.getUri()}`
+      );
+    }
+
+    if (error.response?.status === 401) {
+      throw new Error(
+        `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`
+      );
+    }
+
+    // Re-throw the original error if it doesn't match any specific cases
+    throw error;
+  }
+
+  /**
    * Build page with variables
    *
    * @param content
@@ -491,6 +592,30 @@ export class MiAPI {
     }
   }
 
+  /**
+   * Validate if the current token/credentials are still valid
+   * @param headers Optional headers to use for validation
+   * @returns Promise<boolean> - true if valid, false if invalid
+   */
+  async validateCredentials(headers?: Headers): Promise<{ isValid: boolean; error?: string; code?: string }> {
+    try {
+      const testHeaders = headers || this.#headers;
+      
+      // Try to make a simple API call to validate credentials
+      await this.get('/api/user', testHeaders, true);
+      
+      return { isValid: true };
+    } catch (error: any) {
+      const errorInfo = getTokenErrorInfo(error);
+      
+      return { 
+        isValid: false, 
+        error: errorInfo.userFriendlyMessage,
+        code: errorInfo.code
+      };
+    }
+  }
+
   async get<T extends any = any>(
     path: string,
     headers?: Record<string, any>,
@@ -500,8 +625,37 @@ export class MiAPI {
       ? headers
       : Object.assign({}, this.#clearHeaders(this.#headers), headers);
 
-    return await this.#axios.get<T>(path, {
-      headers: normalizedHeaders,
-    });
+    try {
+      return await this.#axios.get<T>(path, {
+        headers: normalizedHeaders,
+      });
+    } catch (error: any) {
+      // Use the token helper for better error handling
+      if (getTokenErrorInfo(error).code !== 'UNKNOWN_ERROR') {
+        const errorInfo = getTokenErrorInfo(error);
+        this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
+        
+        // Log detailed error information with suggestions
+        logTokenError(this.logger, error, 'API Request');
+        
+        // Preserve the original error structure but enhance it with our error info
+        if (error.response) {
+          // If it's already an Axios error, enhance it
+          error.tokenErrorInfo = errorInfo;
+        } else {
+          // If it's a generic error, create a mock response structure
+          (error as any).response = {
+            status: errorInfo.status,
+            data: { message: errorInfo.message }
+          };
+          error.tokenErrorInfo = errorInfo;
+        }
+        
+        throw error;
+      }
+      
+      // Re-throw other errors as-is
+      throw error;
+    }
   }
 }
