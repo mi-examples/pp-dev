@@ -1,3 +1,15 @@
+# [@metricinsights/pp-dev-v0.11.0-beta.3](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.2...v0.11.0-beta.3) (2025-08-14)
+
+
+### Bug Fixes
+
+* **ci:** improve package detection and JSON validation ([f787a1c](https://github.com/mi-examples/pp-dev-js/commit/f787a1c2bf47c091c275d09317745b924c45f53f))
+
+
+### Features
+
+* **pp-dev:** add startup optimization and enhance authentication helpers ([a29e311](https://github.com/mi-examples/pp-dev-js/commit/a29e31136e0c27d221fc26028fd5c4970654e386))
+
 # [@metricinsights/pp-dev-v0.11.0-beta.2](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.1...v0.11.0-beta.2) (2025-08-12)
 
 
