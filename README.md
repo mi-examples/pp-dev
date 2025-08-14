@@ -41,9 +41,6 @@ npm run build:watch
 # Bundle analysis
 npm run build:analyze
 
-# Startup performance optimization
-npm run startup:optimize
-
 # Performance profiling
 npm run startup:profile
 ```
