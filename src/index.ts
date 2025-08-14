@@ -3,7 +3,7 @@ import vitePPDev, {
   NormalizedVitePPDevOptions,
   normalizeVitePPDevConfig,
 } from "./plugin.js";
-import { clientInjectionPlugin } from "./plugins/client-injection-plugin.js";
+import { clientInjectionPlugin, miTopBarPlugin } from "./plugins/index.js";
 import header from "./banner/header.js";
 import type { NextConfig } from "next";
 import { getConfig, getPkg, PPDevConfig } from "./config.js";
@@ -34,8 +34,12 @@ export async function getViteConfig() {
     clientInjectionPlugin(),
   ];
 
-  const { outDir, distZip, imageOptimizer, templateLess } =
+  const { outDir, distZip, imageOptimizer, templateLess, integrateMiTopBar } =
     normalizedPPDevConfig;
+
+  if (integrateMiTopBar) {
+    plugins.push(miTopBarPlugin());
+  }
 
   if (imageOptimizer) {
     const { ViteImageOptimizer } = await import("vite-plugin-image-optimizer");

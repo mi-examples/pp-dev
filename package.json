@@ -19,6 +19,8 @@
     "build:analyze": "rollup --config rollup.config.ts --configPlugin typescript --configPlugin rollup-plugin-visualizer",
     "build:fast": "npm run build:parallel",
     "build:optimize": "tsx scripts/build-optimizer.js",
+    "startup:optimize": "tsx scripts/startup-optimizer.js",
+    "startup:profile": "node --prof bin/pp-dev.js",
     "test": "cd test && npm run build",
     "release": "semantic-release",
     "version": "npm version --commit-hooks false --git-tag-version false"

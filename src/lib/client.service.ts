@@ -1,9 +1,9 @@
-import { Logger, ViteDevServer } from 'vite';
-import { DistService } from './dist.service.js';
-import { MiAPI } from './pp.middleware.js';
-import { createLogger } from './logger.js';
-import { colors } from './helpers/color.helper';
-import { isAxiosError } from 'axios';
+import { createLogger } from "./logger.js";
+import { colors, getTokenErrorInfo, logTokenError } from "./helpers/index.js";
+import { DistService } from "./dist.service.js";
+import { MiAPI } from "./pp.middleware.js";
+import { Logger, ViteDevServer } from "vite";
+import { isAxiosError } from "axios";
 
 export interface ClientServiceOptions {
   distService?: DistService;
@@ -70,12 +70,40 @@ export class ClientService {
         }
       }
 
-      const currentAssets = await miAPI?.getAssets().catch((err) => {
+      const currentAssets = await miAPI?.getAssets().catch(async (err) => {
         if (isAxiosError(err)) {
-          if (err.response?.status === 412) {
-            this.logger.info(colors.yellow('Session expired'));
-
-            this.server.ws.send('template:sync:response', { error: 'Session expired', refresh: true });
+          // Use the token helper for better error handling
+          const errorInfo = getTokenErrorInfo(err);
+          
+          if (errorInfo.code === 'SESSION_EXPIRED') {
+            this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
+            
+            // Try to validate credentials to get more specific error information
+            try {
+              const validation = await miAPI?.validateCredentials();
+              if (validation && !validation.isValid) {
+                this.logger.error(colors.red(`Authentication error: ${validation.error}`));
+                this.server.ws.send('template:sync:response', { 
+                  error: validation.error, 
+                  code: validation.code,
+                  refresh: true 
+                });
+              } else {
+                this.logger.info(colors.yellow('Session expired'));
+                this.server.ws.send('template:sync:response', { 
+                  error: 'Session expired', 
+                  code: 'SESSION_EXPIRED',
+                  refresh: true 
+                });
+              }
+            } catch (validationError) {
+              this.logger.info(colors.yellow('Session expired'));
+              this.server.ws.send('template:sync:response', { 
+                error: 'Session expired', 
+                code: 'SESSION_EXPIRED',
+                refresh: true 
+              });
+            }
 
             return err;
           }
@@ -92,6 +120,7 @@ export class ClientService {
 
             this.server.ws.send('template:sync:response', {
               error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+              code: 'CONNECTION_ERROR'
             });
 
             return err;

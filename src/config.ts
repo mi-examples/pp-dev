@@ -1,15 +1,70 @@
-import { readdirSync, readFileSync, unlink, writeFileSync } from 'fs';
+import { readdirSync, readFileSync, unlink, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
-import { build } from 'esbuild';
 import { pathToFileURL } from 'url';
 import { type VitePPDevOptions } from './plugin.js';
 
 export type PPDevConfig = Omit<VitePPDevOptions, 'templateName'>;
 export type PPWatchConfig = { baseURL: string; portalPageId: number };
 
+// Performance optimization: Cache for configuration files
+interface ConfigCache {
+  data: any;
+  timestamp: number;
+  filePath: string;
+}
+
+const configCache = new Map<string, ConfigCache>();
+const CACHE_TTL = 30 * 1000; // 30 seconds cache
+
+// Performance optimization: Memoized package.json reading
+let packageJsonCache: { data: any; timestamp: number } | null = null;
+const PACKAGE_CACHE_TTL = 60 * 1000; // 1 minute cache
+
+function getPackageJson(): any {
+  const now = Date.now();
+  
+  if (packageJsonCache && (now - packageJsonCache.timestamp) < PACKAGE_CACHE_TTL) {
+    return packageJsonCache.data;
+  }
+
+  const cwd = process.cwd();
+  try {
+    const data = JSON.parse(
+      readFileSync(path.resolve(cwd, 'package.json'), {
+        encoding: 'utf-8',
+        flag: 'r',
+      }),
+    );
+    
+    packageJsonCache = { data, timestamp: now };
+    return data;
+  } catch {
+    const empty = {};
+    packageJsonCache = { data: empty, timestamp: now };
+    return empty;
+  }
+}
+
+// Performance optimization: Lazy esbuild import
+let esbuildModule: typeof import('esbuild') | null = null;
+
+async function getEsbuild() {
+  if (!esbuildModule) {
+    esbuildModule = await import('esbuild');
+  }
+  return esbuildModule;
+}
+
 async function loadTsConfig<T extends object>(filePath: string) {
   const cwd = process.cwd();
+
+  // Performance optimization: Check cache first
+  const cacheKey = `ts:${filePath}`;
+  const cached = configCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    return cached.data as T;
+  }
 
   let isESM = false;
   if (/\.m[jt]s$/.test(filePath)) {
@@ -17,21 +72,14 @@ async function loadTsConfig<T extends object>(filePath: string) {
   } else if (/\.c[jt]s$/.test(filePath)) {
     isESM = false;
   } else {
-    // check package.json for type: "module" and set `isESM` to true
-    try {
-      const cwd = process.cwd();
-      const pkg = readFileSync(path.resolve(cwd, 'package.json'), {
-        encoding: 'utf-8',
-        flag: 'r',
-      });
-
-      isESM = !!pkg && JSON.parse(pkg).type === 'module';
-    } catch (e) {
-      //
-    }
+    // Performance optimization: Use cached package.json
+    const pkg = getPackageJson();
+    isESM = !!pkg && pkg.type === 'module';
   }
 
-  const result = await build({
+  const esbuild = await getEsbuild();
+  
+  const result = await esbuild.build({
     absWorkingDir: cwd,
     entryPoints: [filePath],
     outfile: 'out.js',
@@ -60,21 +108,84 @@ async function loadTsConfig<T extends object>(filePath: string) {
     const conf = (await import(fileUrl)).default;
 
     config = conf?.default || conf;
-  } finally {
-    unlink(fileNameTmp, () => {
-      //
+    
+    // Cache the result
+    configCache.set(cacheKey, {
+      data: config,
+      timestamp: Date.now(),
+      filePath,
     });
+  } finally {
+    // Clean up temp file
+    if (existsSync(fileNameTmp)) {
+      unlink(fileNameTmp, () => {
+        // Ignore errors
+      });
+    }
   }
 
   return config;
 }
 
 async function loadJsConfig<T extends object>(filePath: string) {
-  return (await import(pathToFileURL(filePath).toString())).default as T;
+  // Performance optimization: Check cache first
+  const cacheKey = `js:${filePath}`;
+  const cached = configCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    return cached.data as T;
+  }
+
+  const config = (await import(pathToFileURL(filePath).toString())).default as T;
+  
+  // Cache the result
+  configCache.set(cacheKey, {
+    data: config,
+    timestamp: Date.now(),
+    filePath,
+  });
+  
+  return config;
 }
 
 async function loadJSONConfig<T extends object>(filePath: string) {
-  return JSON.parse(readFileSync(filePath, { encoding: 'utf-8' })) as T;
+  // Performance optimization: Check cache first
+  const cacheKey = `json:${filePath}`;
+  const cached = configCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    return cached.data as T;
+  }
+
+  const config = JSON.parse(readFileSync(filePath, { encoding: 'utf-8' })) as T;
+  
+  // Cache the result
+  configCache.set(cacheKey, {
+    data: config,
+    timestamp: Date.now(),
+    filePath,
+  });
+  
+  return config;
+}
+
+// Performance optimization: Memoized directory reading
+let dirContentCache: { files: string[]; timestamp: number } | null = null;
+const DIR_CACHE_TTL = 10 * 1000; // 10 seconds cache
+
+function getDirectoryContent(): string[] {
+  const now = Date.now();
+  
+  if (dirContentCache && (now - dirContentCache.timestamp) < DIR_CACHE_TTL) {
+    return dirContentCache.files;
+  }
+
+  const endsWithRegExp = /\.config\.(([cm]?ts)|([cm]?js)|(json))$/;
+  const cwd = process.cwd();
+  const files = readdirSync(cwd, { withFileTypes: true })
+    .filter((value) => value.isFile() && endsWithRegExp.test(value.name))
+    .map((value) => value.name);
+
+  dirContentCache = { files, timestamp: now };
+  return files;
 }
 
 async function loadConfig<T extends object>(dirFiles: string[], configNames: string[]) {
@@ -94,26 +205,11 @@ async function loadConfig<T extends object>(dirFiles: string[], configNames: str
 }
 
 export function getPkg() {
-  const cwd = process.cwd();
-
-  try {
-    return JSON.parse(
-      readFileSync(path.resolve(cwd, 'package.json'), {
-        encoding: 'utf-8',
-        flag: 'r',
-      }),
-    );
-  } catch {
-    return {};
-  }
+  return getPackageJson();
 }
 
 export async function getConfig() {
-  const endsWithRegExp = /\.config\.(([cm]?ts)|([cm]?js)|(json))$/;
-  const cwd = process.cwd();
-  const dirContent = readdirSync(cwd, { withFileTypes: true })
-    .filter((value) => value.isFile() && endsWithRegExp.test(value.name))
-    .map((value) => value.name);
+  const dirContent = getDirectoryContent();
 
   let config: PPDevConfig = {};
   let configFound = false;
@@ -140,11 +236,26 @@ export async function getConfig() {
     }
   }
 
-  const pkg = getPkg();
+  const pkg = getPackageJson();
 
   if (!configFound && typeof pkg['pp-dev'] === 'object') {
     config = pkg['pp-dev'];
   }
 
   return config;
+}
+
+// Export cache management functions for external use
+export function clearConfigCache() {
+  configCache.clear();
+  packageJsonCache = null;
+  dirContentCache = null;
+}
+
+export function getConfigCacheStats() {
+  return {
+    configEntries: configCache.size,
+    packageJsonCached: !!packageJsonCache,
+    dirContentCached: !!dirContentCache,
+  };
 }
