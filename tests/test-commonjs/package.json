@@ -1,12 +1,11 @@
 {
-  "name": "pp-dev-test-page",
+  "name": "test-commonjs",
   "type": "module",
   "version": "1.0.0",
   "scripts": {
     "build": "npx pp-dev build --changelog",
     "changelog": "npx pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
-    "dev": "npx pp-dev",
-    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.10.1.tgz"
+    "dev": "npx pp-dev"
   },
   "dependencies": {
     "@metricinsights/pp-dev": "^0.10.1",
