@@ -23,6 +23,40 @@ pp-dev is based on [Vite](https://vitejs.dev/).
 npm install @metricinsights/pp-dev
 ```
 
+### Peer Dependencies
+
+This package requires Next.js as a peer dependency for certain functionality:
+
+```bash
+npm install next@^15
+```
+
+**Note**: pp-dev requires Next.js version 15 or higher (but less than 17) to be installed in your project. This is a peer dependency, meaning it won't be automatically installed with pp-dev.
+
+## Package Structure
+
+The pp-dev package provides multiple entry points for different use cases:
+
+```javascript
+// Main package (includes everything)
+import ppDev from '@metricinsights/pp-dev';
+
+// Plugin only (for Vite integration)
+import { vitePPDev } from '@metricinsights/pp-dev/plugin';
+
+// Helpers only (for utility functions)
+import { helpers } from '@metricinsights/pp-dev/helpers';
+
+// Client assets (for development UI)
+import '@metricinsights/pp-dev/client/css/client.css';
+```
+
+**Available Exports**:
+- **Main**: Complete pp-dev functionality with CLI and plugins
+- **Plugin**: Vite plugin for integration with build tools
+- **Helpers**: Utility functions for authentication and configuration
+- **Client**: Development UI assets and styles
+
 ## 🚀 Performance & Build System
 
 The pp-dev package includes optimized startup performance and build system with multiple strategies:
@@ -43,6 +77,9 @@ npm run build:analyze
 
 # Performance profiling
 npm run startup:profile
+
+# Startup optimization
+npm run startup:optimize
 ```
 
 ### Performance Features
@@ -51,12 +88,30 @@ npm run startup:profile
 - **Lazy loading** of heavy modules (jsdom, esbuild)
 - **API response caching** with configurable TTL
 - **HTTP connection pooling** for reduced overhead
+- **Startup profiling** with detailed performance analysis
+- **Intelligent dependency optimization** based on profiling data
 
 ### Build Features
 - **Parallel builds** for 40-60% faster build times
 - **Enhanced tree-shaking** for smaller bundles
 - **Multiple output formats** (ESM, CJS, Types)
 - **Bundle analysis** with visualizer support
+- **ESBuild integration** for faster TypeScript compilation
+- **Build optimization scripts** for performance tuning
+
+### Startup Optimization
+
+The new startup optimization system in v0.11.0 provides:
+
+- **Performance Monitoring**: Real-time startup time tracking and analysis
+- **Cache Optimization**: Intelligent cache management for config and API responses
+- **Dependency Analysis**: Identification of performance bottlenecks
+- **Optimization Suggestions**: Automated recommendations for performance improvements
+
+Run the startup optimizer to analyze and improve your development environment:
+```bash
+npm run startup:optimize
+```
 
 📖 See [BUILD_IMPROVEMENTS.md](./BUILD_IMPROVEMENTS.md) for build details.
 📖 See [STARTUP_PERFORMANCE.md](./STARTUP_PERFORMANCE.md) for performance details.
@@ -86,6 +141,8 @@ module.exports = {
   backendBaseURL: 'https://mi.company.com',
   appId: 1,
   v7Features: true,
+  miHudLess: true,
+  integrateMiTopBar: true,
 };
 ```
 
@@ -100,6 +157,8 @@ const config: PPDevConfig = {
   backendBaseURL: 'https://mi.company.com',
   appId: 1,
   v7Features: true,
+  miHudLess: true,
+  integrateMiTopBar: true,
 };
 
 export default config;
@@ -112,7 +171,9 @@ export default config;
 {
   "backendBaseURL": "https://mi.company.com",
   "appId": 1,
-  "v7Features": true
+  "v7Features": true,
+  "miHudLess": true,
+  "integrateMiTopBar": true
 }
 ```
 
@@ -125,12 +186,16 @@ export default config;
   "pp-dev": {
     "backendBaseURL": "https://mi.company.com",
     "appId": 1,
-    "v7Features": true
+    "v7Features": true,
+    "miHudLess": true,
+    "integrateMiTopBar": true
   }
 }
 ```
 
 ## Configuration Options
+
+> **Version Compatibility**: This documentation covers pp-dev v0.11.0+. Some options may not be available in older versions. Check the [CHANGELOG](./CHANGELOG.md) for version-specific information.
 
 ### Required Options
 
@@ -145,6 +210,7 @@ export default config;
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `miHudLess` | boolean | `false` | Disables Metric Insights navigation bar in development |
+| `integrateMiTopBar` | boolean | `false` | Integrates MI Top Bar and script into the App build (requires `miHudLess: true`) |
 | `templateLess` | boolean | `false` | Disables template variable transformation |
 | `enableProxyCache` | boolean | `true` | Enables caching of proxied requests |
 | `proxyCacheTTL` | number | `600000` | Cache TTL in milliseconds (10 minutes) |
@@ -156,6 +222,27 @@ export default config;
 | `v7Features` | boolean | `false` | Enables Metric Insights v7 features |
 | `personalAccessToken` | string | `process.env.MI_ACCESS_TOKEN` | Personal Access Token for the MI instance |
 
+### integrateMiTopBar Details
+
+The `integrateMiTopBar` option allows you to integrate the Metric Insights Top Bar and scripts directly into your application build. This is useful when you want to:
+
+1. **Customize the Top Bar**: Modify the appearance and behavior of the MI navigation
+2. **Bundle Integration**: Include MI scripts in your build instead of loading them dynamically
+3. **Offline Development**: Work with MI features even when disconnected from the server
+
+**Important**: This option can only be enabled when `miHudLess` is set to `true`.
+
+Example configuration:
+```javascript
+// pp-dev.config.js
+module.exports = {
+  backendBaseURL: 'https://mi.company.com',
+  appId: 1,
+  miHudLess: true,           // Required: Disable dynamic MI scripts
+  integrateMiTopBar: true,    // Enable: Integrate Top Bar into build
+};
+```
+
 ### v7Features Details
 
 When enabled (`true`), this option:
@@ -166,14 +253,43 @@ When enabled (`true`), this option:
 
 The `personalAccessToken` option allows you to authenticate with the Metric Insights instance. You can set it in your configuration or use the `MI_ACCESS_TOKEN` environment variable.
 
-Example:
+Example with authentication and Top Bar integration:
 ```javascript
 // pp-dev.config.js
 module.exports = {
   backendBaseURL: 'https://mi.company.com',
   appId: 1,
   personalAccessToken: process.env.MI_ACCESS_TOKEN,
+  miHudLess: true,
+  integrateMiTopBar: true,
 };
+```
+
+**Environment Variable**: Set `MI_ACCESS_TOKEN` in your `.env` file:
+```bash
+MI_ACCESS_TOKEN=your_token_here
+```
+
+### Enhanced Authentication (v0.11.0+)
+
+The new authentication system in v0.11.0 provides:
+
+- **Automatic Environment Loading**: Automatically loads `MI_*` environment variables from `.env` files
+- **Token Validation**: Enhanced token validation and error handling
+- **Secure Headers**: Automatic header management for authenticated requests
+- **Connection Pooling**: Optimized HTTP connections for better performance
+
+**Supported Environment Variables**:
+- `MI_ACCESS_TOKEN`: Personal access token for authentication
+- `MI_BACKEND_URL`: Alternative to `backendBaseURL` in config
+- `MI_APP_ID`: Alternative to `appId` in config
+
+**Automatic Loading**: pp-dev automatically detects and loads these variables from your project's `.env` file:
+```bash
+# .env
+MI_ACCESS_TOKEN=your_personal_access_token
+MI_BACKEND_URL=https://mi.company.com
+MI_APP_ID=123
 ```
 
 ## CLI Commands
@@ -202,6 +318,15 @@ pp-dev [root] [options]
 | `--port <port>` | `3000` | Server port |
 | `--open [path]` | - | Open browser on server start |
 | `--strictPort` | - | Exit if port is already in use |
+
+**Development Shortcuts**:
+- `p` - Start/stop performance profiler (v0.11.0+)
+- `l` - Proxy re-login (refresh authentication)
+- `r` - Restart dev server
+- `u` - Show server URLs
+- `q` - Quit dev server
+
+**Performance Profiling**: Use the `p` shortcut to start/stop the Node.js profiler for detailed performance analysis during development.
 
 ### Next.js Development
 
@@ -283,3 +408,42 @@ module.exports = withPPDev({
 ## Vite Configuration
 
 For custom build configuration, create a `vite.config` file. See [Vite Configuration](https://vitejs.dev/config/) for details.
+
+## Troubleshooting
+
+### Common Issues
+
+#### Next.js Peer Dependency Error
+
+If you encounter an error like "Next.js is required but not available":
+
+1. **Install Next.js in your project:**
+   ```bash
+   npm install next@^15
+   ```
+
+2. **Verify the installation:**
+   ```bash
+   npm list next
+   ```
+
+3. **Check your package.json:**
+   ```json
+   {
+     "dependencies": {
+       "next": "^15.0.0"
+     }
+   }
+   ```
+
+#### Version Compatibility
+
+- **pp-dev** requires Next.js version 15 or higher (but less than 17)
+- **Node.js** version 20 or higher is required
+- **TypeScript** version 4.2 or higher is supported
+
+### Getting Help
+
+- Check the [GitHub Issues](https://github.com/mi-examples/pp-dev-js/issues) for known problems
+- Review the [CHANGELOG.md](./CHANGELOG.md) for recent changes
+- Ensure all peer dependencies are properly installed
