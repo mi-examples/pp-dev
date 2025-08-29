@@ -5,10 +5,11 @@
   "scripts": {
     "build": "npx pp-dev build --changelog",
     "changelog": "npx pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
-    "dev": "npx pp-dev"
+    "dev": "npx pp-dev",
+    "reinstall": "npm i ../../packages/pp-dev/metricinsights-pp-dev-latest.tgz"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "^0.10.1",
+    "@metricinsights/pp-dev": "file:../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
     "luxon": "^3.3.0"
   },
   "devDependencies": {

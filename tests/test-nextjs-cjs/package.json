@@ -6,11 +6,11 @@
     "dev": "npx pp-dev next",
     "build": "next build",
     "start": "next start",
-    "reinstall": "npm uninstall @metricinsights/pp-dev && npm i ../metricinsights-pp-dev-0.10.1.tgz",
+    "reinstall": "npm i ../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
     "lint": "next lint"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../metricinsights-pp-dev-0.10.1.tgz",
+    "@metricinsights/pp-dev": "file:../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
     "next": "14.0.3",
     "react": "^18",
     "react-dom": "^18",

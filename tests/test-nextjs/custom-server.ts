@@ -2,6 +2,8 @@ import { createServer } from "http";
 import { parse } from "url";
 import next from "next";
 import type { Socket } from "net";
+import { dirname } from "path";
+import { fileURLToPath } from "url";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -11,7 +13,7 @@ const port = 3000;
 const templateName = "test-nextjs";
 const basePath = "/p/test-nextjs"; // Simple base path
 
-const projectRoot = __dirname;
+const projectRoot = dirname(fileURLToPath(import.meta.url));
 
 // Initialize Next.js app
 async function startServer() {
@@ -20,6 +22,7 @@ async function startServer() {
   const openSockets = new Set<Socket>();
 
   console.log(projectRoot);
+  console.log(process);
 
   try {
     // Create Next.js app with basic configuration
@@ -31,6 +34,8 @@ async function startServer() {
       conf: {
         basePath: basePath,
         assetPrefix: basePath,
+        // Fix workspace root detection issue
+        outputFileTracingRoot: process.cwd(),
       },
     });
 
