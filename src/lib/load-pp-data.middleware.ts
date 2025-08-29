@@ -1,6 +1,5 @@
 import { PPDevConfig } from "../index.js";
-import { Connect } from "vite";
-import NextHandleFunction = Connect.NextHandleFunction;
+import type { NextHandleFunction, IncomingMessage, NextFunction } from "connect";
 import { cutUrlParams, redirect } from "./helpers/url.helper.js";
 import { Headers, MiAPI } from "./pp.middleware.js";
 import { createLogger } from "./logger.js";
@@ -104,9 +103,9 @@ export function initLoadPPData(
 async function handlePageInfoOnly(
   mi: MiAPI,
   options: LoadPPDataOptions,
-  req: Connect.IncomingMessage,
+  req: IncomingMessage,
   res: ServerResponse,
-  next: Connect.NextFunction,
+  next: NextFunction,
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
   const { portalPageId, redirectOnAuthFailure, redirectUrl } = options;
@@ -162,9 +161,9 @@ async function handlePageInfoOnly(
 async function handleTemplateLoad(
   mi: MiAPI,
   options: LoadPPDataOptions,
-  req: Connect.IncomingMessage,
+  req: IncomingMessage,
   res: ServerResponse,
-  next: Connect.NextFunction,
+  next: NextFunction,
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
   const { templateLess, portalPageId, redirectOnAuthFailure, redirectUrl } =
@@ -217,7 +216,7 @@ function handleLoadError(
   redirectOnAuthFailure: boolean,
   redirectUrl: string,
   res: ServerResponse,
-  next: Connect.NextFunction,
+  next: NextFunction,
   logger: ReturnType<typeof createLogger>,
   operationType: string
 ): void {

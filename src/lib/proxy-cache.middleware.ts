@@ -1,7 +1,7 @@
-import { Connect, ViteDevServer } from "vite";
+import { ViteDevServer } from "vite";
 import * as memoryCache from "memory-cache";
 import { PROXY_HEADER } from "./proxy-pass.middleware.js";
-import NextHandleFunction = Connect.NextHandleFunction;
+import type { NextHandleFunction } from "connect";
 import { Express } from "express";
 import { createLogger } from "./logger.js";
 import { colors } from "./helpers/color.helper.js";

@@ -1,5 +1,4 @@
-import { Connect } from 'vite';
-import NextHandleFunction = Connect.NextHandleFunction;
+import type { NextHandleFunction, IncomingMessage } from 'connect';
 import { decodeContent, encodeContent } from './helpers/content-encoding.helper.js';
 import type { ServerResponse } from 'http';
 import { createLogger } from './logger.js';
@@ -13,10 +12,10 @@ import { createLogger } from './logger.js';
 export function initRewriteResponse(
   predicate: (
     url: string,
-    req: Connect.IncomingMessage,
-    res: ServerResponse<Connect.IncomingMessage>,
+    req: IncomingMessage,
+    res: ServerResponse<IncomingMessage>,
   ) => Promise<boolean> | boolean,
-  rewrite: (response: Buffer, req: Connect.IncomingMessage, res: ServerResponse<Connect.IncomingMessage>) => Buffer,
+  rewrite: (response: Buffer, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Buffer,
 ): NextHandleFunction {
   return async (req, res, next) => {
     if (await predicate(req.url ?? '', req, res)) {
