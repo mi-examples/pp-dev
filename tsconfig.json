@@ -6,6 +6,7 @@
       "esnext",
       "dom"
     ],
+    "types": ["node"],
     "module": "esnext",
     "moduleResolution": "node",
     "removeComments": false,

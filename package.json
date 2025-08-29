@@ -19,6 +19,7 @@
     "build:analyze": "rollup --config rollup.config.ts --configPlugin typescript --configPlugin rollup-plugin-visualizer",
     "build:fast": "npm run build:parallel",
     "build:optimize": "tsx scripts/build-optimizer.js",
+    "postbuild": "npm pack && node scripts/rename-pack.js",
     "startup:optimize": "tsx scripts/startup-optimizer.js",
     "startup:profile": "node --prof bin/pp-dev.js",
     "test": "cd test && npm run build",
@@ -58,6 +59,12 @@
   },
   "peerDependencies": {
     "next": ">= 13 < 16"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true,
+      "description": "Required for Next.js development server functionality"
+    }
   },
   "dependencies": {
     "axios": "^1.7.8",

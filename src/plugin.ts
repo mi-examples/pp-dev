@@ -10,7 +10,7 @@ import { initPPRedirect } from "./lib/pp-redirect.middleware.js";
 import { initLoadPPData } from "./lib/load-pp-data.middleware.js";
 import type { ViteImageOptimizer } from "vite-plugin-image-optimizer";
 import internalServer from "./lib/internal.middleware";
-import { getTokenErrorInfo, logTokenError } from "./lib/helpers/index.js";
+import { getTokenErrorInfo } from "./lib/helpers/index.js";
 
 type RequiredSelection<T, K extends keyof T> = Required<Pick<T, K>> &
   Omit<T, K>;

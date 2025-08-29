@@ -37,6 +37,8 @@ const defaultConfig: RollupOptions = {
     }
     warn(warning);
   },
+  // Preserve Node.js globals
+  context: 'globalThis'
 };
 
 const configs: RollupOptions[] = [

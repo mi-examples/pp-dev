@@ -1,12 +1,24 @@
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
-export const PP_DEV_PACKAGE_DIR = resolve(
+const afterBundlePath = resolve(
   // import.meta.url is `dist/node/constants.js` after bundle
   (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
   '../../..',
 );
+
+const beforeBundlePath = resolve(
+  // import.meta.url is `dist/node/constants.js` after bundle
+  (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
+  '../..',
+);
+
+export const PP_DEV_PACKAGE_DIR = existsSync(resolve(afterBundlePath, 'package.json')) ? afterBundlePath : beforeBundlePath;
+
+console.log('PP_DEV_PACKAGE_DIR', PP_DEV_PACKAGE_DIR);
+console.log('afterBundlePath', afterBundlePath);
+console.log('beforeBundlePath', beforeBundlePath);
 
 export const PP_DEV_CLIENT_ENTRY = resolve(PP_DEV_PACKAGE_DIR, 'dist/client/client.js');
 

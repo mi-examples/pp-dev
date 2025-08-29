@@ -1,32 +1,43 @@
-import * as path from 'path';
-import * as fs from 'fs';
-import { performance } from 'node:perf_hooks';
-import { cac } from 'cac';
-import { ServerOptions, BuildOptions, LogLevel, InlineConfig, loadEnv } from 'vite';
-import { VERSION } from './constants.js';
-import { bindShortcuts } from './shortcuts.js';
-import { getViteConfig, PPDevConfig } from './index.js';
-import { mergeConfig, build, optimizeDeps, resolveConfig, preview, ViteDevServer, loadConfigFromFile } from 'vite';
-import { parse } from 'url';
-import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
-import type DevServer from 'next/dist/server/dev/next-dev-server';
-import type { NextConfig } from 'next';
-import { initPPRedirect } from './lib/pp-redirect.middleware.js';
-import { MiAPI } from './lib/pp.middleware.js';
-import { initProxyCache } from './lib/proxy-cache.middleware.js';
-import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
-import { initLoadPPData } from './lib/load-pp-data.middleware.js';
-import { cutUrlParams, urlReplacer, redirect } from './lib/helpers/url.helper.js';
-import { createDevServer } from './lib/helpers/server.js';
-import { createLogger } from './lib/logger.js';
-import { colors } from './lib/helpers/color.helper.js';
-import { ChangelogGenerator } from './lib/changelog-generator.js';
-import { IconFontGenerator } from './lib/icon-font-generator.js';
-import * as process from 'node:process';
-import internalServer from './lib/internal.middleware';
-import type { Request, Response, NextFunction } from 'express';
+import * as path from "path";
+import * as fs from "fs";
+import { performance } from "node:perf_hooks";
+import { cac } from "cac";
+import {
+  ServerOptions,
+  BuildOptions,
+  LogLevel,
+  InlineConfig,
+  loadEnv,
+} from "vite";
+import { VERSION } from "./constants.js";
+import { bindShortcuts } from "./shortcuts.js";
+import { getViteConfig } from "./index.js";
+import {
+  mergeConfig,
+  build,
+  optimizeDeps,
+  resolveConfig,
+  preview,
+  ViteDevServer,
+  loadConfigFromFile,
+} from "vite";
+import { parse } from "url";
+import { initRewriteResponse } from "./lib/rewrite-response.middleware.js";
+import { initPPRedirect } from "./lib/pp-redirect.middleware.js";
+import { MiAPI } from "./lib/pp.middleware.js";
+import { initProxyCache } from "./lib/proxy-cache.middleware.js";
+import proxyPassMiddleware from "./lib/proxy-pass.middleware.js";
+import { initLoadPPData } from "./lib/load-pp-data.middleware.js";
+import { urlReplacer } from "./lib/helpers/url.helper.js";
+import { createLogger } from "./lib/logger.js";
+import { colors } from "./lib/helpers/color.helper.js";
+import { ChangelogGenerator } from "./lib/changelog-generator.js";
+import { IconFontGenerator } from "./lib/icon-font-generator.js";
+// Remove the explicit process import since it's globally available
+import internalServer from "./lib/internal.middleware";
+import { safeNextImport, isNextAvailable } from "./lib/next-import.js";
 
-const cli = cac('pp-dev');
+const cli = cac("pp-dev");
 
 interface PPDevBuildOptions extends BuildOptions {
   changelog?: boolean | string;
@@ -34,7 +45,7 @@ interface PPDevBuildOptions extends BuildOptions {
 
 // global options
 interface GlobalCLIOptions {
-  '--'?: string[];
+  "--"?: string[];
   c?: boolean | string;
   config?: string;
   base?: string;
@@ -66,18 +77,26 @@ interface IconFontOptions {
 let profileSession = (global as any).__pp_dev_profile_session;
 let profileCount = 0;
 
-export const stopProfiler = (log: (message: string) => void): void | Promise<void> => {
+export const stopProfiler = (
+  log: (message: string) => void
+): void | Promise<void> => {
   if (!profileSession) {
     return;
   }
 
   return new Promise((res, rej) => {
-    profileSession!.post('Profiler.stop', (err: any, { profile }: any) => {
+    profileSession!.post("Profiler.stop", (err: any, { profile }: any) => {
       // Write profile to disk, upload, etc.
       if (!err) {
-        const outPath = path.resolve(`./pp-dev-profile-${profileCount++}.cpuprofile`);
+        const outPath = path.resolve(
+          `./pp-dev-profile-${profileCount++}.cpuprofile`
+        );
         fs.writeFileSync(outPath, JSON.stringify(profile));
-        log(colors.yellow(`CPU profile written to ${colors.white(colors.dim(outPath))}`));
+        log(
+          colors.yellow(
+            `CPU profile written to ${colors.white(colors.dim(outPath))}`
+          )
+        );
         profileSession = undefined;
         res();
       } else {
@@ -97,9 +116,11 @@ const filterDuplicateOptions = <T extends object>(options: T) => {
 /**
  * removing global flags before passing as command specific sub-configs
  */
-function cleanOptions<Options extends GlobalCLIOptions>(options: Options): Omit<Options, keyof GlobalCLIOptions> {
+function cleanOptions<Options extends GlobalCLIOptions>(
+  options: Options
+): Omit<Options, keyof GlobalCLIOptions> {
   const ret = { ...options };
-  delete ret['--'];
+  delete ret["--"];
   delete ret.c;
   delete ret.config;
   delete ret.base;
@@ -117,47 +138,54 @@ function cleanOptions<Options extends GlobalCLIOptions>(options: Options): Omit<
 }
 
 cli
-  .option('-c, --config <file>', `[string] use specified config file`)
-  .option('--base <path>', `[string] public base path (default: /)`)
-  .option('-l, --logLevel <level>', `[string] info | warn | error | silent`)
-  .option('--clearScreen', `[boolean] allow/disable clear screen when logging`)
-  .option('-d, --debug [feat]', `[string | boolean] show debug logs`)
-  .option('-f, --filter <filter>', `[string] filter debug logs`)
-  .option('-m, --mode <mode>', `[string] set env mode`);
+  .option("-c, --config <file>", `[string] use specified config file`)
+  .option("--base <path>", `[string] public base path (default: /)`)
+  .option("-l, --logLevel <level>", `[string] info | warn | error | silent`)
+  .option("--clearScreen", `[boolean] allow/disable clear screen when logging`)
+  .option("-d, --debug [feat]", `[string | boolean] show debug logs`)
+  .option("-f, --filter <filter>", `[string] filter debug logs`)
+  .option("-m, --mode <mode>", `[string] set env mode`);
 
 // dev
 cli
-  .command('[root]', 'start dev server') // default command
-  .alias('serve') // the command is called 'serve' in Vite's API
-  .alias('dev') // alias to align with the script name
-  .option('--host [host]', `[string] specify hostname`)
-  .option('--port <port>', `[number] specify port`)
-  .option('--https', `[boolean] use TLS + HTTP/2`)
-  .option('--open [path]', `[boolean | string] open browser on startup`)
-  .option('--cors', `[boolean] enable CORS`)
-  .option('--strictPort', `[boolean] exit if specified port is already in use`)
-  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+  .command("[root]", "start dev server") // default command
+  .alias("serve") // the command is called 'serve' in Vite's API
+  .alias("dev") // alias to align with the script name
+  .option("--host [host]", `[string] specify hostname`)
+  .option("--port <port>", `[number] specify port`)
+  .option("--https", `[boolean] use TLS + HTTP/2`)
+  .option("--open [path]", `[boolean | string] open browser on startup`)
+  .option("--cors", `[boolean] enable CORS`)
+  .option("--strictPort", `[boolean] exit if specified port is already in use`)
+  .option(
+    "--force",
+    `[boolean] force the optimizer to ignore the cache and re-bundle`
+  )
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
     // output structure is preserved even after bundling so require()
     // is ok here
-    const { createServer } = await import('vite');
+    const { createServer } = await import("vite");
 
     try {
       const configFromFile = await loadConfigFromFile(
-        { mode: options.mode || 'development', command: 'serve' },
+        { mode: options.mode || "development", command: "serve" },
         options.config,
         root,
-        options.logLevel,
+        options.logLevel
       );
 
       let config = await getViteConfig();
 
-      const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
+      const envVars = loadEnv(
+        options.mode || "development",
+        root ?? process.cwd(),
+        ""
+      );
 
       if (envVars) {
         Object.keys(envVars).forEach((key) => {
-          if (key.startsWith('MI_')) {
+          if (key.startsWith("MI_")) {
             process.env[key] = envVars[key];
           }
         });
@@ -183,16 +211,16 @@ cli
             server: cleanOptions(options),
             customLogger: createLogger(options.logLevel),
           },
-          true,
-        ),
+          true
+        )
       );
 
-      if (!server.config.base || server.config.base === '/') {
+      if (!server.config.base || server.config.base === "/") {
         throw new Error('base cannot be equal to "/" or empty string');
       }
 
       if (!server.httpServer) {
-        throw new Error('HTTP server not available');
+        throw new Error("HTTP server not available");
       }
 
       await server.listen();
@@ -201,46 +229,64 @@ cli
 
       const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
       const startupDurationString = ppDevStartTime
-        ? colors.dim(`ready in ${colors.reset(colors.bold(Math.ceil(performance.now() - ppDevStartTime)))} ms`)
-        : '';
+        ? colors.dim(
+            `ready in ${colors.reset(
+              colors.bold(Math.ceil(performance.now() - ppDevStartTime))
+            )} ms`
+          )
+        : "";
 
-      logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`);
+      logger.info(
+        `\n  ${colors.green(
+          `${colors.bold("PP-DEV")} v${VERSION}`
+        )}  ${startupDurationString}\n`
+      );
 
       server.printUrls();
       bindShortcuts(server, {
         print: true,
         customShortcuts: [
-          ...(profileSession ? [{
-            key: 'p',
-            description: 'start/stop the profiler',
-            async action(server: ViteDevServer) {
-              if (profileSession) {
-                await stopProfiler(logger.info);
-              } else {
-                const inspector = await import('node:inspector').then((r) => (r as any).default);
-                
-                await new Promise<void>((res) => {
-                  profileSession = new inspector.Session();
-                  profileSession.connect();
-                  profileSession.post('Profiler.enable', () => {
-                    profileSession?.post('Profiler.start', () => {
-                      logger.info('Profiler started');
+          ...(profileSession
+            ? [
+                {
+                  key: "p",
+                  description: "start/stop the profiler",
+                  async action(server: ViteDevServer) {
+                    if (profileSession) {
+                      await stopProfiler(logger.info);
+                    } else {
+                      const inspector = await import("node:inspector").then(
+                        (r) => (r as any).default
+                      );
 
-                      res();
-                    });
-                  });
-                });
-              }
-            },
-          }] : []),
+                      await new Promise<void>((res) => {
+                        profileSession = new inspector.Session();
+                        profileSession.connect();
+                        profileSession.post("Profiler.enable", () => {
+                          profileSession?.post("Profiler.start", () => {
+                            logger.info("Profiler started");
+
+                            res();
+                          });
+                        });
+                      });
+                    }
+                  },
+                },
+              ]
+            : []),
           {
-            key: 'l',
-            description: 'proxy re-login',
+            key: "l",
+            description: "proxy re-login",
             action(server: ViteDevServer): void | Promise<void> {
               server.ws.send({
-                type: 'custom',
-                event: 'redirect',
-                data: { url: `/auth/index/logout?proxyRedirect=${encodeURIComponent('/')}` },
+                type: "custom",
+                event: "redirect",
+                data: {
+                  url: `/auth/index/logout?proxyRedirect=${encodeURIComponent(
+                    "/"
+                  )}`,
+                },
               });
             },
           },
@@ -258,298 +304,626 @@ cli
     }
   });
 
-// dev
+// Next.js development server
 cli
-  .command('next [root]', 'start dev server') // default command
-  .alias('next-serve') // the command is called 'serve' in Vite's API
-  .alias('next-dev') // alias to align with the script name
-  .option('--host [host]', `[string] specify hostname`)
-  .option('--port <port>', `[number] specify port`, { default: 3000 })
-  .option('--https', `[boolean] use TLS + HTTP/2`)
-  .option('--open [path]', `[boolean | string] open browser on startup`)
-  .option('--cors', `[boolean] enable CORS`)
-  .option('--strictPort', `[boolean] exit if specified port is already in use`)
-  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+  .command(
+    "next [root]",
+    "start Next.js development server with pp-dev integration"
+  )
+  .alias("next-serve")
+  .alias("next-dev")
+  .option("--host [host]", `[string] specify hostname`)
+  .option("--port <port>", `[number] specify port`, { default: 3000 })
+  .option("--https", `[boolean] use TLS + HTTP/2`)
+  .option("--open [path]", `[boolean | string] open browser on startup`)
+  .option("--cors", `[boolean] enable CORS`)
+  .option("--strictPort", `[boolean] exit if specified port is already in use`)
+  .option(
+    "--force",
+    `[boolean] force the optimizer to ignore the cache and re-bundle`
+  )
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
 
-    const { default: next } = await import('next');
-
-    const logger = createLogger();
-
-    const server = createDevServer(options.logLevel);
-    const opts = cleanOptions(options);
-
-    const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
-
-    if (envVars) {
-      Object.keys(envVars).forEach((key) => {
-        if (key.startsWith('MI_')) {
-          process.env[key] = envVars[key];
-        }
-      });
-    }
-
-    const app = next({ dev: true, hostname: opts.host as string, port: opts.port });
-
-    await app.prepare();
-
-    const nextServer = (await (app as any).getServer()) as DevServer & { nextConfig: NextConfig };
-
-    let base = nextServer.nextConfig.basePath;
-    const { assetPrefix } = nextServer.nextConfig;
-
-    if (!base.endsWith('/')) {
-      base += '/';
-    }
-
-    if (base === '/') {
-      throw new Error('basePath cannot be equal to "/" or empty string');
-    }
-
-    const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
-    const templateName = nextServer.nextConfig.serverRuntimeConfig.templateName as string;
-
-    const ppDevConfig = nextServer.nextConfig.serverRuntimeConfig.ppDevConfig as PPDevConfig;
-
-    const {
-      backendBaseURL,
-      portalPageId: ppId,
-      appId,
-      templateLess = true,
-      enableProxyCache = true,
-      miHudLess = true,
-      proxyCacheTTL = 10 * 60 * 1000,
-      disableSSLValidation = false,
-      v7Features = false,
-      personalAccessToken = process.env.MI_ACCESS_TOKEN,
-    } = ppDevConfig;
-
-    const portalPageId = appId ?? ppId;
-
-    server.use(initPPRedirect(base, templateName));
-
-    if (backendBaseURL) {
-      let baseUrlHost: string;
-
-      try {
-        baseUrlHost = new URL(backendBaseURL).host;
-      } catch (err) {
-        logger.error(colors.red(`Invalid backendBaseURL: ${backendBaseURL}`));
-
-        process.exit(1);
+    try {
+      // Check if Next.js is available before proceeding
+      if (!isNextAvailable()) {
+        throw new Error(
+          "Next.js is required but not available. Please install Next.js as a dependency:\n" +
+            "npm install next@^13\n\n" +
+            "This package requires Next.js >=13 <16 as a peer dependency."
+        );
       }
 
-      const mi = new MiAPI(backendBaseURL, {
-        headers: {
-          host: baseUrlHost,
-          referer: backendBaseURL,
-          origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
+      const { next } = await safeNextImport();
+      const { join, basename } = await import("path");
+      const { createServer } = await import("http");
+      const { default: loadConfig } = (
+        await import("next/dist/server/config.js")
+      ).default as any;
+
+      const logger = createLogger();
+
+      const opts = cleanOptions(options);
+
+      // Load environment variables
+      const envVars = loadEnv(
+        options.mode || "development",
+        root ?? process.cwd(),
+        ""
+      );
+      if (envVars) {
+        Object.keys(envVars).forEach((key) => {
+          if (key.startsWith("MI_")) {
+            process.env[key] = envVars[key];
+          }
+        });
+      }
+
+      // Load project root
+      const projectRoot = root ? join(process.cwd(), root) : process.cwd();
+
+      logger.info(projectRoot);
+
+      // Get pp-dev config from Next.js app config
+      const config = await loadConfig("development", projectRoot);
+      // Extract pp-dev configuration from Next.js config
+      let ppDevConfig = config?.experimental?.ppDev || config?.ppDev || {};
+
+      // If no pp-dev config found in Next.js config, try to load from standalone config file
+      if (Object.keys(ppDevConfig).length === 0) {
+        try {
+          const { getConfig } = await import("./config.js");
+          const standaloneConfig = await getConfig();
+
+          if (Object.keys(standaloneConfig).length > 0) {
+            ppDevConfig = standaloneConfig;
+            logger.info(
+              colors.blue(`🔧 Loaded pp-dev config from standalone config file`)
+            );
+          } else {
+            logger.info(
+              colors.yellow(
+                "⚠️  No pp-dev config found in Next.js config or standalone file, using defaults"
+              )
+            );
+          }
+        } catch (error) {
+          logger.info(
+            colors.yellow(
+              "⚠️  Failed to load standalone pp-dev config, using defaults"
+            )
+          );
+          console.debug("Error loading standalone config:", error);
+        }
+      } else {
+        logger.info(colors.blue(`🔧 Loaded pp-dev config from Next.js config`));
+      }
+
+      // Extract configuration values with defaults
+      const {
+        backendBaseURL = process.env.MI_BACKEND_URL || "http://localhost:8080",
+        portalPageId = parseInt(process.env.MI_PORTAL_PAGE_ID || "1"),
+        templateLess = true,
+        v7Features = true,
+        disableSSLValidation = false,
+        enableProxyCache = true,
+        proxyCacheTTL = 600000,
+        personalAccessToken = process.env.MI_ACCESS_TOKEN,
+        distZip = false,
+        syncBackupsDir = "./backups",
+        miHudLess = false,
+      } = ppDevConfig;
+
+      // Get template name from config, package.json, or fallback to project directory name
+      let templateName = ppDevConfig.templateName;
+
+      if (!templateName) {
+        try {
+          const { getPkg } = await import("./config.js");
+          const pkg = getPkg();
+          templateName = pkg.name;
+        } catch (error) {
+          // Fallback to project directory name
+          templateName = basename(projectRoot);
+        }
+      }
+
+      // Calculate base path using the same logic as the plugin
+      const pathPagePrefix = "/p"; // templateLess = true - use /p
+      const pathTemplatePrefix = "/pl"; // templateLess = false && v7Features = true - use /pl
+
+      let base = templateLess ? pathPagePrefix : pathTemplatePrefix;
+      base += `/${templateName}`;
+
+      const app = next({
+        dev: true,
+        hostname: (opts.host as string) || "localhost",
+        port: opts.port,
+        dir: projectRoot,
+        conf: {
+          ...config,
+          basePath: base,
+          assetPrefix: base, // Fixed: Make assetPrefix consistent with basePath
         },
-        portalPageId,
-        templateLess,
-        disableSSLValidation,
-        v7Features,
-        personalAccessToken,
       });
 
-      if (enableProxyCache) {
-        let ttl = +proxyCacheTTL;
+      await app.prepare();
 
-        if (!ttl || Number.isNaN(ttl) || ttl < 0) {
-          ttl = 10 * 60 * 1000; // 10 minutes
+      // Default to templateLess = true for Next.js development
+      // const templateLess =
+      //   typeof ppDevConfig.templateLess === "boolean"
+      //     ? ppDevConfig.templateLess
+      //     : true;
+
+      if (!base.endsWith("/")) {
+        base += "/";
+      }
+
+      if (base === "/") {
+        throw new Error(
+          'basePath cannot be equal to "/" or equal to empty string'
+        );
+      }
+
+      const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf("/"));
+
+      // Log the configuration
+      logger.info(colors.green("✅ Next.js app prepared successfully"));
+      logger.info(
+        colors.blue(`🔧 pp-dev plugin configured for template: ${templateName}`)
+      );
+      logger.info(colors.blue(`🔧 Base path configured: ${base}`));
+
+      if (backendBaseURL) {
+        logger.info(colors.blue(`🌐 Backend URL: ${backendBaseURL}`));
+        logger.info(colors.blue(`🆔 Portal Page ID: ${portalPageId}`));
+      }
+
+      // Get the Next.js request handler
+      const handle = app.getRequestHandler();
+
+      // Start the server
+      const port = typeof opts.port === "number" ? opts.port : 3000;
+      const host = typeof opts.host === "string" ? opts.host : "localhost";
+
+      // Track open sockets for proper cleanup
+      const openSockets = new Set<any>();
+
+      // Create HTTP server with base path handling and pp-dev middlewares
+      const server = createServer(async (req: any, res: any) => {
+        try {
+          const originalUrl = req.url || "/";
+          const originalPathname = originalUrl.split("?")[0];
+
+          let parsedUrl = parse(originalUrl, true);
+
+          // Apply pp-dev middleware chain if available
+          if (fullMiddlewareChain.length > 0) {
+            // Check if this is an internal Next.js route that should skip most middlewares
+            const isInternalNextRoute =
+              originalPathname.startsWith("/_next/") ||
+              originalPathname === "/favicon.ico" ||
+              originalPathname.startsWith("/__nextjs_") ||
+              originalPathname.startsWith("/api/");
+
+            if (isInternalNextRoute) {
+              // For internal routes, only apply essential middlewares (skip proxy, cache, etc.)
+
+              if (essentialMiddlewareChain.length > 0) {
+                let middlewareIndex = 0;
+
+                const runEssentialMiddleware = () => {
+                  if (middlewareIndex >= essentialMiddlewareChain.length) {
+                    // Essential middlewares processed, continue with Next.js handling
+                    processNextJSRequest();
+                    return;
+                  }
+
+                  const middleware = essentialMiddlewareChain[middlewareIndex];
+                  middlewareIndex++;
+
+                  middleware(req, res, runEssentialMiddleware);
+                };
+
+                runEssentialMiddleware();
+                return; // Exit early, middleware will handle the rest
+              } else {
+                // No essential middlewares, process normally
+                processNextJSRequest();
+                return;
+              }
+            }
+
+            // For non-internal routes, apply full middleware chain
+            let middlewareIndex = 0;
+
+            const runMiddleware = () => {
+              if (middlewareIndex >= fullMiddlewareChain.length) {
+                // All middlewares processed, continue with Next.js handling
+                processNextJSRequest();
+                return;
+              }
+
+              const middleware = fullMiddlewareChain[middlewareIndex];
+              middlewareIndex++;
+
+              middleware(req, res, runMiddleware);
+            };
+
+            runMiddleware();
+            return; // Exit early, middleware will handle the rest
+          }
+
+          // If no middlewares, process normally
+          processNextJSRequest();
+
+          async function processNextJSRequest() {
+            // Handle base path requests
+            if (originalPathname.startsWith(base)) {
+              // Strip the base path for Next.js
+              const nextPath = originalPathname.substring(base.length);
+
+              req.url = nextPath || "/";
+              parsedUrl = parse(nextPath, true);
+            } else if (originalPathname === base.replace(/\/$/, "")) {
+              // Handle base path without trailing slash
+              req.url = "/";
+              parsedUrl = parse("/", true);
+            } else if (
+              originalPathname.startsWith("/_next/") ||
+              originalPathname === "/favicon.ico" ||
+              originalPathname.startsWith("/__nextjs_")
+            ) {
+              // Next.js internal routes - pass through as-is
+            } else if (originalPathname === "/") {
+              // Root path - this should redirect to base path
+              res.writeHead(302, { Location: base });
+              res.end();
+
+              return;
+            } else {
+              // Other requests - pass through as-is
+            }
+
+            await handle(req, res, parsedUrl);
+          }
+        } catch (error) {
+          console.error(`[DEBUG] Error:`, error);
+          res.statusCode = 500;
+          res.end("Internal Server Error");
         }
+      });
 
-        server.use(initProxyCache({ devServer: server, ttl }));
-      }
+      // Initialize pp-dev middlewares
+      let mi: MiAPI | null = null;
+      let fullMiddlewareChain: Array<
+        (req: any, res: any, next: () => void) => void
+      > = [];
+      let essentialMiddlewareChain: Array<
+        (req: any, res: any, next: () => void) => void
+      > = [];
 
-      const proxyIgnore = ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash];
+      if (backendBaseURL) {
+        const baseUrlHost = new URL(backendBaseURL).host;
 
-      if (assetPrefix) {
-        proxyIgnore.push(assetPrefix);
-      }
-
-      server.use(
-        proxyPassMiddleware({
-          devServer: server,
-          baseURL: backendBaseURL,
-          proxyIgnore,
+        // Initialize MiAPI
+        const miConfig = {
+          headers: {
+            host: baseUrlHost,
+            referer: backendBaseURL,
+            origin: backendBaseURL.replace(
+              /^(https?:\/\/)([^/]+)(\/.*)?$/i,
+              "$1$2"
+            ),
+          },
+          portalPageId,
+          appId: portalPageId,
+          templateLess,
           disableSSLValidation,
-          miAPI: mi,
-        }) as any,
-      );
-
-      const isIndexRegExp = new RegExp(`^((${base})|/)$`);
-
-      // Get portal page variables from the backend (also, redirect magic)
-      server.use(initLoadPPData(isIndexRegExp, mi, ppDevConfig));
-
-      server.use(
-        initRewriteResponse(
-          (url) => {
-            return isIndexRegExp.test(cutUrlParams(url));
-          },
-          (response, req) => {
-            return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
-          },
-        ),
-      );
-
-      // Add internal server for token handling
-      internalServer.post('/@api/login', async (req: Request, res: Response, next: NextFunction) => {
-        const { token, tokenType } = req.body;
-
-        if (!token) {
-          res
-            .status(400)
-            .json({
-              error: 'Token is required',
-            })
-            .end();
-
-          return;
-        }
-
-        const handleError = (reason: any) => {
-          logger.error(reason);
-          next(reason);
-
-          return null;
+          v7Features,
+          personalAccessToken:
+            personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
         };
 
-        if (tokenType === 'personal') {
-          const testRequest = await mi
-            .get<{ user: { user_id: number; username: string } }>(
-              '/data/page/index/auth/info',
-              {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              true,
-            )
-            .then(async (response) => {
-              if (typeof response.data?.user?.user_id === 'number') {
-                mi.personalAccessToken = token;
+        mi = new MiAPI(backendBaseURL, miConfig);
 
-                return response;
-              }
+        // Create middleware chain for HTTP server
+        // Note: We need to adapt Express middlewares to work with raw HTTP requests
 
-              res.status(400).json({ error: 'Token expired or invalid' }).end();
-            })
-            .catch(handleError);
+        // 1. PP Redirect middleware (essential for all routes)
+        const ppRedirectMiddleware = initPPRedirect(base, templateName);
+        const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
+          ppRedirectMiddleware(req, res, next);
+        };
+        essentialMiddlewareChain.push(ppRedirectWrapper);
+        fullMiddlewareChain.push(ppRedirectWrapper);
 
-          if (!testRequest) {
-            return;
+        // 2. Proxy Cache middleware (only for non-internal routes)
+        if (enableProxyCache) {
+          let ttl = +proxyCacheTTL;
+          if (!ttl || Number.isNaN(ttl) || ttl < 0) {
+            ttl = 10 * 60 * 1000; // 10 minutes
           }
 
-          redirect(res, '/', 302);
-        } else if (tokenType === 'regular') {
-          const testRequest = await mi
-            .get<{ users: { user_id: number; username: string }[] }>(
-              '/api/user',
-              {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                Token: token,
-              },
-              true,
-            )
-            .then((response) => {
-              if (response.data?.users?.length) {
-                mi.personalAccessToken = undefined;
-                res.setHeader('set-cookie', response.headers['set-cookie'] ?? '');
+          // Create mock devServer object that satisfies the type requirements
+          const mockDevServer = {
+            middlewares: {
+              use: (fn: any) => fn,
+            },
+            config: { logger: console },
+          } as any;
 
-                return response;
-              }
+          const cacheConfig = {
+            devServer: mockDevServer,
+            ttl,
+          };
 
-              res.status(400).json({ error: 'Token expired or invalid' }).end();
-            })
-            .catch(handleError);
+          const proxyCacheMiddleware = initProxyCache(cacheConfig);
+          const proxyCacheWrapper = (req: any, res: any, next: () => void) => {
+            proxyCacheMiddleware(req, res, next);
+          };
+          fullMiddlewareChain.push(proxyCacheWrapper);
 
-          if (!testRequest) {
-            return;
+          logger.info(
+            colors.blue(`🔧 Proxy cache middleware added with TTL: ${ttl}ms`)
+          );
+        }
+
+        // 3. Proxy Pass middleware (only for non-internal routes)
+        const baseWithoutTrailingSlash = base.endsWith("/")
+          ? base.substring(0, base.length - 1)
+          : base;
+
+        // Create mock devServer object for proxy pass middleware
+        const mockProxyDevServer = {
+          middlewares: {
+            use: (fn: any) => fn,
+          },
+          config: { logger: console },
+        } as any;
+
+        const proxyPassMiddlewareInstance = proxyPassMiddleware({
+          devServer: mockProxyDevServer,
+          baseURL: backendBaseURL,
+          proxyIgnore: [
+            "/@vite",
+            "/@metricinsights",
+            "/@",
+            baseWithoutTrailingSlash,
+            // Next.js internal routes that should not be proxied
+            "/_next",
+            "/favicon.ico",
+            "/__nextjs_",
+            "/api",
+          ],
+          disableSSLValidation,
+          miAPI: mi,
+        }) as any;
+
+        const proxyPassWrapper = (req: any, res: any, next: () => void) => {
+          proxyPassMiddlewareInstance(req, res, next);
+        };
+        fullMiddlewareChain.push(proxyPassWrapper);
+
+        // 4. Load PP Data middleware (only for non-internal routes)
+        const isIndexRegExp = new RegExp(`^((${base})|/)$`);
+        const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, {});
+        const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
+          loadPPDataMiddleware(req, res, next);
+        };
+        fullMiddlewareChain.push(loadPPDataWrapper);
+
+        // 5. Internal Server middleware (API endpoints) - essential for all routes
+        const internalServerMiddleware = internalServer;
+        const internalServerWrapper = (
+          req: any,
+          res: any,
+          next: () => void
+        ) => {
+          // Check if this is an internal API request
+          if (req.url?.startsWith("/@api/")) {
+            const mockNext = () => {};
+
+            internalServerMiddleware(req, res, mockNext);
+
+            return; // Don't call next() for API requests
           }
+          next();
+        };
+        essentialMiddlewareChain.push(internalServerWrapper);
+        fullMiddlewareChain.push(internalServerWrapper);
 
-          redirect(res, '/', 302);
-        }
-      });
-
-      server.use(internalServer);
-    }
-
-    const handle = app.getRequestHandler();
-
-    server.all('*', (req, res) => {
-      try {
-        if (req.url?.startsWith(assetPrefix) && assetPrefix !== baseWithoutTrailingSlash) {
-          const newUrl = req.url.replace(assetPrefix, baseWithoutTrailingSlash);
-          const parsedUrl = parse(newUrl, true);
-
-          if (!parsedUrl.pathname) {
-            res.statusCode = 400;
-            res.end('Invalid URL');
-
-            return;
+        // 6. Rewrite Response middleware (only for non-internal routes)
+        const rewriteResponseMiddleware = initRewriteResponse(
+          (url) => {
+            return url.split("?")[0].endsWith("index.html");
+          },
+          (response, req) => {
+            return Buffer.from(
+              urlReplacer(
+                baseUrlHost,
+                req.headers.host ?? "",
+                mi!.buildPage(response, miHudLess)
+              )
+            );
           }
+        );
 
-          return handle(req, res, parsedUrl);
-        }
+        const rewriteResponseWrapper = (
+          req: any,
+          res: any,
+          next: () => void
+        ) => {
+          rewriteResponseMiddleware(req, res, next);
+        };
+        fullMiddlewareChain.push(rewriteResponseWrapper);
 
-        const parsedUrl = parse(req.url || '/', true);
-
-        if (!parsedUrl.pathname) {
-          res.statusCode = 400;
-          res.end('Invalid URL');
-
-          return;
-        }
-
-        handle(req, res, parsedUrl);
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-
-        logger.error(colors.red(`Error handling request: ${errorMessage}`));
-
-        res.statusCode = 500;
-        res.end('Internal Server Error');
+        logger.info(
+          colors.blue(
+            `🔧 ${fullMiddlewareChain.length} pp-dev middlewares initialized`
+          )
+        );
+        logger.info(
+          colors.blue(
+            `🔧 ${essentialMiddlewareChain.length} essential middlewares for internal routes`
+          )
+        );
+        logger.info(
+          colors.blue(`🔧 MiAPI initialized for backend: ${backendBaseURL}`)
+        );
+        logger.info(colors.blue(`🔧 Portal Page ID: ${portalPageId}`));
       }
-    });
 
-    try {
-      await new Promise((resolve) => {
-        if (opts.host) {
-          resolve(
-            server.listen(opts.port as number, opts.host as string, () => {
-              //
-            }),
+      server.listen(port, host, () => {
+        logger.info(
+          colors.green(
+            `✅ pp-dev Next.js server running at http://${host}:${port}`
+          )
+        );
+        logger.info(
+          colors.blue(
+            `📱 Next.js app accessible at http://${host}:${port}${base}`
+          )
+        );
+        logger.info(colors.blue(`🔧 Base path handling active`));
+
+        // Track open sockets for proper cleanup
+        server.on("connection", (socket: any) => {
+          openSockets.add(socket);
+          socket.on("close", () => openSockets.delete(socket));
+        });
+
+        // Handle graceful shutdown
+        const gracefulShutdown = async (signal: string) => {
+          logger.info(
+            colors.yellow(
+              `\n🛑 Received ${signal}, shutting down gracefully...`
+            )
           );
+
+          // Set a timeout to force exit if shutdown hangs
+          const shutdownTimeout = setTimeout(() => {
+            logger.info(
+              colors.yellow("⏰ Shutdown timeout reached, forcing exit")
+            );
+            process.exit(0);
+          }, 5000);
+
+          try {
+            // Close all open sockets first
+            for (const socket of Array.from(openSockets)) {
+              socket.destroy();
+            }
+            openSockets.clear();
+
+            // Stop accepting new connections and wait for server to close
+            await new Promise<void>((resolve) => {
+              server.close(() => {
+                logger.info(colors.yellow("🛑 HTTP server closed"));
+                resolve();
+              });
+            });
+
+            // Close the Next.js app properly
+            if (app && typeof app.close === "function") {
+              await app.close();
+              logger.info(colors.yellow("🛑 Next.js app closed"));
+            }
+
+            clearTimeout(shutdownTimeout);
+            logger.info(colors.green("✅ Graceful shutdown completed"));
+            process.exit(0);
+          } catch (error) {
+            clearTimeout(shutdownTimeout);
+            logger.error(
+              colors.red(`❌ Error during graceful shutdown: ${error}`)
+            );
+            process.exit(1);
+          }
+        };
+
+        // Handle process signals - try to use process.on if available
+        let processObj = process;
+
+        // If local process.on is not available, try global process
+        if (typeof process.on !== "function") {
+          const globalProcess =
+            (globalThis as any).process || (global as any).process;
+
+          if (globalProcess && typeof globalProcess.on === "function") {
+            processObj = globalProcess;
+            logger.info(
+              colors.green("✅ Using global process object for event handlers")
+            );
+          }
+        }
+
+        if (typeof processObj.on === "function") {
+          try {
+            processObj.on("SIGINT", () => gracefulShutdown("SIGINT"));
+            processObj.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+            // Handle uncaught exceptions
+            processObj.on("uncaughtException", (error) => {
+              logger.error(colors.red(`❌ Uncaught Exception: ${error}`));
+              gracefulShutdown("uncaughtException");
+            });
+
+            processObj.on("unhandledRejection", (reason, promise) => {
+              logger.error(
+                colors.red(
+                  `❌ Unhandled Rejection at: ${promise}, reason: ${reason}`
+                )
+              );
+              gracefulShutdown("unhandledRejection");
+            });
+
+            logger.info(
+              colors.green("✅ Process event handlers registered successfully")
+            );
+          } catch (error) {
+            logger.warn(
+              colors.yellow(
+                `⚠️  Failed to register process event handlers: ${error}`
+              )
+            );
+          }
         } else {
-          resolve(
-            server.listen(opts.port, () => {
-              //
-            }),
+          logger.warn(
+            colors.yellow(
+              "⚠️  process.on is not available, graceful shutdown handlers will not be registered"
+            )
+          );
+          logger.info(
+            colors.blue(
+              "💡 This might be due to bundling or environment constraints"
+            )
           );
         }
       });
+    } catch (error) {
+      const logger = createLogger("error");
 
-      const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
-      const startupDurationString = ppDevStartTime
-        ? colors.dim(`ready in ${colors.reset(colors.bold(Math.ceil(performance.now() - ppDevStartTime)))} ms`)
-        : '';
-
-      logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`, {
-        clear: true,
-      });
-
-      server.printUrls(base);
-    } catch (e: any) {
-      const logger = createLogger(options.logLevel);
-
-      logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
-        error: e,
-      });
-      stopProfiler(logger.info);
+      // Special handling for Next.js peer dependency errors
+      if (
+        error instanceof Error &&
+        error.message.includes("Next.js is required")
+      ) {
+        logger.error(colors.red("❌ Next.js Peer Dependency Error:"));
+        logger.error(colors.red(error.message));
+        logger.error(colors.yellow("\n💡 To fix this issue:"));
+        logger.error(colors.blue("   1. Install Next.js in your project:"));
+        logger.error(colors.white("      npm install next@^15"));
+        logger.error(colors.blue("   2. Or use yarn:"));
+        logger.error(colors.white("      yarn add next@^15"));
+        logger.error(colors.blue("   3. Or use pnpm:"));
+        logger.error(colors.white("      pnpm add next@^15"));
+        logger.error(colors.yellow("\n📖 For more information, see:"));
+        logger.error(colors.blue("   https://nextjs.org/docs/getting-started"));
+      } else {
+        logger.error(colors.red(`❌ Failed to start Next.js server: ${error}`));
+      }
 
       process.exit(1);
     }
@@ -557,258 +931,353 @@ cli
 
 // build
 cli
-  .command('build [root]', 'build for production')
-  .option('--target <target>', `[string] transpile target (default: 'modules')`)
-  .option('--outDir <dir>', `[string] output directory (default: dist)`)
-  .option('--assetsDir <dir>', `[string] directory under outDir to place assets in (default: assets)`)
-  .option('--assetsInlineLimit <number>', `[number] static asset base64 inline threshold in bytes (default: 4096)`)
-  .option('--ssr [entry]', `[string] build specified entry for server-side rendering`)
-  .option('--sourcemap [output]', `[boolean | "inline" | "hidden"] output source maps for build (default: false)`)
+  .command("build [root]", "build for production")
+  .option("--target <target>", `[string] transpile target (default: 'modules')`)
+  .option("--outDir <dir>", `[string] output directory (default: dist)`)
   .option(
-    '--minify [minifier]',
-    `[boolean | "terser" | "esbuild"] enable/disable minification, ` + `or specify minifier to use (default: esbuild)`,
+    "--assetsDir <dir>",
+    `[string] directory under outDir to place assets in (default: assets)`
   )
-  .option('--manifest [name]', `[boolean | string] emit build manifest json`)
-  .option('--ssrManifest [name]', `[boolean | string] emit ssr manifest json`)
-  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle (experimental)`)
-  .option('--emptyOutDir', `[boolean] force empty outDir when it's outside of root`)
-  .option('-w, --watch', `[boolean] rebuilds when modules have changed on disk`)
   .option(
-    '--changelog [assetsFile]',
-    `[boolean | string] generate changelog between assetsFile and current build (default: false)`,
+    "--assetsInlineLimit <number>",
+    `[number] static asset base64 inline threshold in bytes (default: 4096)`
   )
-  .action(async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
-    filterDuplicateOptions(options);
-    const buildOptions: PPDevBuildOptions = cleanOptions(options);
+  .option(
+    "--ssr [entry]",
+    `[string] build specified entry for server-side rendering`
+  )
+  .option(
+    "--sourcemap [output]",
+    `[boolean | "inline" | "hidden"] output source maps for build (default: false)`
+  )
+  .option(
+    "--minify [minifier]",
+    `[boolean | "terser" | "esbuild"] enable/disable minification, ` +
+      `or specify minifier to use (default: esbuild)`
+  )
+  .option("--manifest [name]", `[boolean | string] emit build manifest json`)
+  .option("--ssrManifest [name]", `[boolean | string] emit ssr manifest json`)
+  .option(
+    "--force",
+    `[boolean] force the optimizer to ignore the cache and re-bundle (experimental)`
+  )
+  .option(
+    "--emptyOutDir",
+    `[boolean] force empty outDir when it's outside of root`
+  )
+  .option("-w, --watch", `[boolean] rebuilds when modules have changed on disk`)
+  .option(
+    "--changelog [assetsFile]",
+    `[boolean | string] generate changelog between assetsFile and current build (default: false)`
+  )
+  .action(
+    async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
+      filterDuplicateOptions(options);
+      const buildOptions: PPDevBuildOptions = cleanOptions(options);
 
-    try {
-      const configFromFile = await loadConfigFromFile(
-        { mode: options.mode || 'production', command: 'build' },
-        options.config,
-        root,
-        options.logLevel,
-      );
-
-      let config = await getViteConfig();
-
-      if (configFromFile) {
-        const { plugins, ...fileConfig } = configFromFile.config;
-
-        config = mergeConfig(config, fileConfig);
-      }
-
-      const buildConfig = mergeConfig(
-        config,
-        {
+      try {
+        const configFromFile = await loadConfigFromFile(
+          { mode: options.mode || "production", command: "build" },
+          options.config,
           root,
-          base: options.base,
-          mode: options.mode,
-          configFile: options.config,
-          logLevel: options.logLevel,
-          clearScreen: options.clearScreen,
-          optimizeDeps: { force: options.force },
-          build: buildOptions,
-        },
-        true,
-      ) as InlineConfig;
+          options.logLevel
+        );
 
-      await build(buildConfig);
+        let config = await getViteConfig();
 
-      if (buildOptions.changelog) {
-        const executionRoot = root || process.cwd();
+        if (configFromFile) {
+          const { plugins, ...fileConfig } = configFromFile.config;
 
-        const outDir = buildConfig.build?.outDir || 'dist';
+          config = mergeConfig(config, fileConfig);
+        }
 
-        let oldAssetsPath = '';
+        const buildConfig = mergeConfig(
+          config,
+          {
+            root,
+            base: options.base,
+            mode: options.mode,
+            configFile: options.config,
+            logLevel: options.logLevel,
+            clearScreen: options.clearScreen,
+            optimizeDeps: { force: options.force },
+            build: buildOptions,
+          },
+          true
+        ) as InlineConfig;
 
-        if (typeof buildOptions.changelog === 'string') {
-          oldAssetsPath = path.resolve(executionRoot, buildOptions.changelog);
-        } else {
-          const backupsDirPath = path.resolve(executionRoot, buildConfig.ppDevConfig?.syncBackupsDir || 'backups');
+        await build(buildConfig);
 
-          if (!fs.existsSync(backupsDirPath)) {
-            createLogger(options.logLevel).warn(
-              colors.yellow(`backups directory not found, skipping changelog generation`),
+        if (buildOptions.changelog) {
+          const executionRoot = root || process.cwd();
+
+          const outDir = buildConfig.build?.outDir || "dist";
+
+          let oldAssetsPath = "";
+
+          if (typeof buildOptions.changelog === "string") {
+            oldAssetsPath = path.resolve(executionRoot, buildOptions.changelog);
+          } else {
+            const backupsDirPath = path.resolve(
+              executionRoot,
+              buildConfig.ppDevConfig?.syncBackupsDir || "backups"
             );
 
-            return;
+            if (!fs.existsSync(backupsDirPath)) {
+              createLogger(options.logLevel).warn(
+                colors.yellow(
+                  `backups directory not found, skipping changelog generation`
+                )
+              );
+
+              return;
+            }
+
+            const backups = fs.readdirSync(backupsDirPath, {
+              withFileTypes: true,
+            });
+
+            if (!backups.length) {
+              createLogger(options.logLevel).warn(
+                colors.yellow(`no backups found, skipping changelog generation`)
+              );
+
+              return;
+            }
+
+            const latestBackup = backups
+              .filter((value) => {
+                return value.isFile() && value.name.endsWith(".zip");
+              })
+              .reduce((latest, current) => {
+                const latestTime = fs.statSync(
+                  path.resolve(backupsDirPath, latest.name)
+                ).mtimeMs;
+                const currentTime = fs.statSync(
+                  path.resolve(backupsDirPath, current.name)
+                ).mtimeMs;
+
+                return latestTime > currentTime ? latest : current;
+              }, backups[0]).name;
+
+            oldAssetsPath = path.resolve(backupsDirPath, latestBackup);
           }
 
-          const backups = fs.readdirSync(backupsDirPath, { withFileTypes: true });
+          const currentAssetFilePath = path.resolve(executionRoot, outDir);
 
-          if (!backups.length) {
-            createLogger(options.logLevel).warn(colors.yellow(`no backups found, skipping changelog generation`));
+          let changelogDestination = "dist-zip";
 
-            return;
+          if (buildConfig.ppDevConfig) {
+            if (buildConfig.ppDevConfig.distZip === false) {
+              changelogDestination =
+                (buildConfig.build?.outDir as string) || "dist";
+            } else if (
+              typeof buildConfig.ppDevConfig.distZip === "object" &&
+              typeof buildConfig.ppDevConfig.distZip.outDir === "string"
+            ) {
+              changelogDestination = buildConfig.ppDevConfig.distZip.outDir;
+            }
           }
 
-          const latestBackup = backups
-            .filter((value) => {
-              return value.isFile() && value.name.endsWith('.zip');
-            })
-            .reduce((latest, current) => {
-              const latestTime = fs.statSync(path.resolve(backupsDirPath, latest.name)).mtimeMs;
-              const currentTime = fs.statSync(path.resolve(backupsDirPath, current.name)).mtimeMs;
+          const changelogGenerator = new ChangelogGenerator({
+            oldAssetsPath,
+            newAssetsPath: currentAssetFilePath,
+            destinationPath: path.resolve(executionRoot, changelogDestination),
+          });
 
-              return latestTime > currentTime ? latest : current;
-            }, backups[0]).name;
-
-          oldAssetsPath = path.resolve(backupsDirPath, latestBackup);
+          await changelogGenerator.generateChangelog();
         }
+      } catch (e: any) {
+        createLogger(options.logLevel).error(
+          colors.red(`error during build:\n${e.stack}`),
+          { error: e }
+        );
 
-        const currentAssetFilePath = path.resolve(executionRoot, outDir);
-
-        let changelogDestination = 'dist-zip';
-
-        if (buildConfig.ppDevConfig) {
-          if (buildConfig.ppDevConfig.distZip === false) {
-            changelogDestination = (buildConfig.build?.outDir as string) || 'dist';
-          } else if (
-            typeof buildConfig.ppDevConfig.distZip === 'object' &&
-            typeof buildConfig.ppDevConfig.distZip.outDir === 'string'
-          ) {
-            changelogDestination = buildConfig.ppDevConfig.distZip.outDir;
-          }
-        }
-
-        const changelogGenerator = new ChangelogGenerator({
-          oldAssetsPath,
-          newAssetsPath: currentAssetFilePath,
-          destinationPath: path.resolve(executionRoot, changelogDestination),
-        });
-
-        await changelogGenerator.generateChangelog();
+        process.exit(1);
+      } finally {
+        stopProfiler((message) => createLogger(options.logLevel).info(message));
       }
-    } catch (e: any) {
-      createLogger(options.logLevel).error(colors.red(`error during build:\n${e.stack}`), { error: e });
-
-      process.exit(1);
-    } finally {
-      stopProfiler((message) => createLogger(options.logLevel).info(message));
     }
-  });
+  );
 
 // changelog
 cli
-  .command('changelog [oldAssetPath] [newAssetPath]', 'generate changelog between two assets files/folders')
-  .option('--oldAssetsPath <oldAssetsPath>', `[string] path to the old assets zip file or folder`)
-  .option('--newAssetsPath <newAssetsPath>', `[string] path to the new assets zip file or folder`)
-  .option('--destination <destination>', `[string] destination folder for the changelog (default: .)`)
-  .option('--filename <filename>', `[string] filename for the changelog (default: CHANGELOG.html)`)
-  .action(async (oldAssetPath: string, newAssetPath: string, options: ChangelogOptions & GlobalCLIOptions) => {
-    filterDuplicateOptions(options);
+  .command(
+    "changelog [oldAssetPath] [newAssetPath]",
+    "generate changelog between two assets files/folders"
+  )
+  .option(
+    "--oldAssetsPath <oldAssetsPath>",
+    `[string] path to the old assets zip file or folder`
+  )
+  .option(
+    "--newAssetsPath <newAssetsPath>",
+    `[string] path to the new assets zip file or folder`
+  )
+  .option(
+    "--destination <destination>",
+    `[string] destination folder for the changelog (default: .)`
+  )
+  .option(
+    "--filename <filename>",
+    `[string] filename for the changelog (default: CHANGELOG.html)`
+  )
+  .action(
+    async (
+      oldAssetPath: string,
+      newAssetPath: string,
+      options: ChangelogOptions & GlobalCLIOptions
+    ) => {
+      filterDuplicateOptions(options);
 
-    const {
-      oldAssetsPath: oldPath = oldAssetPath,
-      newAssetsPath: newPath = newAssetPath,
-      destination = '.',
-      filename = 'CHANGELOG.html',
-      logLevel,
-    } = options;
+      const {
+        oldAssetsPath: oldPath = oldAssetPath,
+        newAssetsPath: newPath = newAssetPath,
+        destination = ".",
+        filename = "CHANGELOG.html",
+        logLevel,
+      } = options;
 
-    const root = process.cwd();
+      const root = process.cwd();
 
-    if (!oldPath || !newPath) {
-      createLogger(logLevel).error(
-        colors.red(`error during changelog generation: oldAssetPath and newAssetPath are required`),
-      );
+      if (!oldPath || !newPath) {
+        createLogger(logLevel).error(
+          colors.red(
+            `error during changelog generation: oldAssetPath and newAssetPath are required`
+          )
+        );
 
-      process.exit(1);
+        process.exit(1);
+      }
+
+      const fullOldPath = path.resolve(root, oldPath);
+      const fullNewPath = path.resolve(root, newPath);
+      const fullDestination = path.resolve(root, destination);
+
+      const changelogGenerator = new ChangelogGenerator({
+        oldAssetsPath: fullOldPath,
+        newAssetsPath: fullNewPath,
+        destinationPath: fullDestination,
+        changelogFilename: filename,
+      });
+
+      await changelogGenerator.generateChangelog();
     }
-
-    const fullOldPath = path.resolve(root, oldPath);
-    const fullNewPath = path.resolve(root, newPath);
-    const fullDestination = path.resolve(root, destination);
-
-    const changelogGenerator = new ChangelogGenerator({
-      oldAssetsPath: fullOldPath,
-      newAssetsPath: fullNewPath,
-      destinationPath: fullDestination,
-      changelogFilename: filename,
-    });
-
-    await changelogGenerator.generateChangelog();
-  });
+  );
 
 cli
-  .command('generate-icon-font [source] [destination]', 'generate icon font from SVG files')
-  .option('--source <source>', `[string] path to the source directory with SVG files`)
-  .option('--destination <destination>', `[string] path to the destination directory to save the generated font files`)
-  .option('--font-name, -n <fontName>', `[string] name of the font to generate (default: 'icon-font')`)
-  .action(async (source: string, destination: string, options: IconFontOptions & GlobalCLIOptions) => {
-    filterDuplicateOptions(options);
+  .command(
+    "generate-icon-font [source] [destination]",
+    "generate icon font from SVG files"
+  )
+  .option(
+    "--source <source>",
+    `[string] path to the source directory with SVG files`
+  )
+  .option(
+    "--destination <destination>",
+    `[string] path to the destination directory to save the generated font files`
+  )
+  .option(
+    "--font-name, -n <fontName>",
+    `[string] name of the font to generate (default: 'icon-font')`
+  )
+  .action(
+    async (
+      source: string,
+      destination: string,
+      options: IconFontOptions & GlobalCLIOptions
+    ) => {
+      filterDuplicateOptions(options);
 
-    const { source: sourceDir = source, destination: destDir = destination, fontName = 'icon-font' } = options;
+      const {
+        source: sourceDir = source,
+        destination: destDir = destination,
+        fontName = "icon-font",
+      } = options;
 
-    const root = process.cwd();
+      const root = process.cwd();
 
-    const fullSourceDir = path.resolve(root, sourceDir);
-    const fullDestDir = path.resolve(root, destDir);
+      const fullSourceDir = path.resolve(root, sourceDir);
+      const fullDestDir = path.resolve(root, destDir);
 
-    const iconFontGenerator = new IconFontGenerator({
-      sourceDir: fullSourceDir,
-      outputDir: fullDestDir,
-      fontName,
-    });
+      const iconFontGenerator = new IconFontGenerator({
+        sourceDir: fullSourceDir,
+        outputDir: fullDestDir,
+        fontName,
+      });
 
-    const logger = createLogger(options.logLevel);
+      const logger = createLogger(options.logLevel);
 
-    logger.info(`Generating icon font from SVG files in ${colors.dim(fullSourceDir)}`);
+      logger.info(
+        `Generating icon font from SVG files in ${colors.dim(fullSourceDir)}`
+      );
 
-    await iconFontGenerator.generate();
+      await iconFontGenerator.generate();
 
-    logger.info(`Icon font generated and saved to ${colors.dim(fullDestDir)}`);
-  });
+      logger.info(
+        `Icon font generated and saved to ${colors.dim(fullDestDir)}`
+      );
+    }
+  );
 
 // optimize
 cli
-  .command('optimize [root]', 'pre-bundle dependencies')
-  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
-  .action(async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
-    filterDuplicateOptions(options);
-    try {
-      const configFromFile = await loadConfigFromFile(
-        { mode: options.mode || 'production', command: 'build' },
-        options.config,
-        root,
-        options.logLevel,
-      );
-
-      let config = await getViteConfig();
-
-      if (configFromFile) {
-        const { plugins, ...fileConfig } = configFromFile.config;
-
-        config = mergeConfig(config, fileConfig);
-      }
-
-      const optimizeConfig = await resolveConfig(
-        mergeConfig(config, {
+  .command("optimize [root]", "pre-bundle dependencies")
+  .option(
+    "--force",
+    `[boolean] force the optimizer to ignore the cache and re-bundle`
+  )
+  .action(
+    async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
+      filterDuplicateOptions(options);
+      try {
+        const configFromFile = await loadConfigFromFile(
+          { mode: options.mode || "production", command: "build" },
+          options.config,
           root,
-          base: options.base,
-          configFile: options.config,
-          logLevel: options.logLevel,
-          mode: options.mode,
-        }),
-        'serve',
-      );
+          options.logLevel
+        );
 
-      await optimizeDeps(optimizeConfig, options.force, true);
-    } catch (e: any) {
-      createLogger(options.logLevel).error(colors.red(`error when optimizing deps:\n${e.stack}`), { error: e });
+        let config = await getViteConfig();
 
-      process.exit(1);
+        if (configFromFile) {
+          const { plugins, ...fileConfig } = configFromFile.config;
+
+          config = mergeConfig(config, fileConfig);
+        }
+
+        const optimizeConfig = await resolveConfig(
+          mergeConfig(config, {
+            root,
+            base: options.base,
+            configFile: options.config,
+            logLevel: options.logLevel,
+            mode: options.mode,
+          }),
+          "serve"
+        );
+
+        await optimizeDeps(optimizeConfig, options.force, true);
+      } catch (e: any) {
+        createLogger(options.logLevel).error(
+          colors.red(`error when optimizing deps:\n${e.stack}`),
+          { error: e }
+        );
+
+        process.exit(1);
+      }
     }
-  });
+  );
 
 cli
-  .command('preview [root]', 'locally preview production build')
-  .option('--host [host]', `[string] specify hostname`)
-  .option('--port <port>', `[number] specify port`)
-  .option('--strictPort', `[boolean] exit if specified port is already in use`)
-  .option('--https', `[boolean] use TLS + HTTP/2`)
-  .option('--open [path]', `[boolean | string] open browser on startup`)
-  .option('--outDir <dir>', `[string] output directory (default: dist)`)
+  .command("preview [root]", "locally preview production build")
+  .option("--host [host]", `[string] specify hostname`)
+  .option("--port <port>", `[number] specify port`)
+  .option("--strictPort", `[boolean] exit if specified port is already in use`)
+  .option("--https", `[boolean] use TLS + HTTP/2`)
+  .option("--open [path]", `[boolean | string] open browser on startup`)
+  .option("--outDir <dir>", `[string] output directory (default: dist)`)
   .action(
     async (
       root: string,
@@ -819,16 +1288,16 @@ cli
         open?: boolean | string;
         strictPort?: boolean;
         outDir?: string;
-      } & GlobalCLIOptions,
+      } & GlobalCLIOptions
     ) => {
       filterDuplicateOptions(options);
 
       try {
         const configFromFile = await loadConfigFromFile(
-          { mode: options.mode || 'production', command: 'build' },
+          { mode: options.mode || "production", command: "build" },
           options.config,
           root,
-          options.logLevel,
+          options.logLevel
         );
 
         let config = await getViteConfig();
@@ -856,20 +1325,23 @@ cli
               https: options.https,
               open: options.open,
             },
-          }),
+          })
         );
 
         server.printUrls();
       } catch (e: any) {
-        createLogger(options.logLevel).error(colors.red(`error when starting preview server:\n${e.stack}`), {
-          error: e,
-        });
+        createLogger(options.logLevel).error(
+          colors.red(`error when starting preview server:\n${e.stack}`),
+          {
+            error: e,
+          }
+        );
 
         process.exit(1);
       } finally {
         stopProfiler((message) => createLogger(options.logLevel).info(message));
       }
-    },
+    }
   );
 
 cli.help();
