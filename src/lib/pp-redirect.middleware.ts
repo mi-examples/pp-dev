@@ -1,5 +1,4 @@
-import { Connect } from 'vite';
-import NextHandleFunction = Connect.NextHandleFunction;
+import type { NextHandleFunction } from 'connect';
 import { redirect } from './helpers/url.helper.js';
 import { URL } from 'url';
 import { createLogger } from './logger.js';

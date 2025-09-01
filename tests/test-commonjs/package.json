@@ -1,0 +1,20 @@
+{
+  "name": "test-commonjs",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "npx pp-dev build --changelog",
+    "changelog": "npx pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
+    "dev": "npx pp-dev",
+    "reinstall": "npm i ../../packages/pp-dev/metricinsights-pp-dev-latest.tgz"
+  },
+  "dependencies": {
+    "@metricinsights/pp-dev": "file:../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
+    "luxon": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.3.0",
+    "typescript": "^5.2.2",
+    "vite": "^6.3.5"
+  }
+}
