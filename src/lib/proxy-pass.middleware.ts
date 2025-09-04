@@ -192,9 +192,10 @@ export function initProxy(opts: ProxyOpts) {
 
                       setTimeout(func, redirectCount < 3 ? 3000 : 5000);
                     } else {
-                      localStorage.setItem(storageKey, `${++redirectCount}`);
                       window.location.href = params.get('proxyRedirect') as string;
                     }
+
+                    localStorage.setItem(storageKey, `${++redirectCount}`);
                   };
 
                   setTimeout(func, 3000);
