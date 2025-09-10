@@ -28,11 +28,11 @@ export const TEMPLATE_PAGE_NAME = "[DEV PAGE. DO NOT DELETE]";
 const axiosInstanceCache = new Map<string, Axios>();
 
 // Performance optimization: Lazy JSDOM import
-let jsdomModule: typeof import('jsdom') | null = null;
+let jsdomModule: typeof import("jsdom") | null = null;
 
 async function getJSDOM() {
   if (!jsdomModule) {
-    jsdomModule = await import('jsdom');
+    jsdomModule = await import("jsdom");
   }
   return jsdomModule;
 }
@@ -378,6 +378,8 @@ export class MiAPI {
         }
 
         if (reason.response?.status === 401) {
+          console.log(`Unauthorized error: ${reason}`);
+
           throw new Error(
             `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`
           );
@@ -405,7 +407,7 @@ export class MiAPI {
       if (this.#v7Features) {
         return await this.#fetchV7Page(pageIdToFetch, clearHeaders);
       }
-      
+
       return await this.#fetchLegacyPage(pageIdToFetch, clearHeaders);
     } catch (error) {
       this.#handlePageFetchError(error, pageIdToFetch);
@@ -417,7 +419,7 @@ export class MiAPI {
    */
   async #fetchV7Page(pageId: number, headers: Headers) {
     const page = await this.pageApi.get(pageId, headers);
-    
+
     this.logger.info(colors.green("Page fetched"));
 
     if (typeof page.template_id !== "undefined") {
@@ -441,7 +443,7 @@ export class MiAPI {
     if (this.#v7Features && error.message?.includes("access")) {
       throw new Error(
         "The current user does not have access to this page. " +
-        "Check your configuration to ensure the portalPageId is correct."
+          "Check your configuration to ensure the portalPageId is correct."
       );
     }
 
@@ -452,8 +454,10 @@ export class MiAPI {
     }
 
     if (error.response?.status === 401) {
-      throw new Error(
-        `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`
+      this.logger.error(
+        colors.red(
+          `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`
+        )
       );
     }
 
@@ -597,21 +601,23 @@ export class MiAPI {
    * @param headers Optional headers to use for validation
    * @returns Promise<boolean> - true if valid, false if invalid
    */
-  async validateCredentials(headers?: Headers): Promise<{ isValid: boolean; error?: string; code?: string }> {
+  async validateCredentials(
+    headers?: Headers
+  ): Promise<{ isValid: boolean; error?: string; code?: string }> {
     try {
       const testHeaders = headers || this.#headers;
-      
+
       // Try to make a simple API call to validate credentials
-      await this.get('/api/user', testHeaders, true);
-      
+      await this.get("/api/user", testHeaders, true);
+
       return { isValid: true };
     } catch (error: any) {
       const errorInfo = getTokenErrorInfo(error);
-      
-      return { 
-        isValid: false, 
+
+      return {
+        isValid: false,
         error: errorInfo.userFriendlyMessage,
-        code: errorInfo.code
+        code: errorInfo.code,
       };
     }
   }
@@ -631,13 +637,15 @@ export class MiAPI {
       });
     } catch (error: any) {
       // Use the token helper for better error handling
-      if (getTokenErrorInfo(error).code !== 'UNKNOWN_ERROR') {
+      if (getTokenErrorInfo(error).code !== "UNKNOWN_ERROR") {
         const errorInfo = getTokenErrorInfo(error);
-        this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
-        
+        this.logger.error(
+          colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`)
+        );
+
         // Log detailed error information with suggestions
-        logTokenError(this.logger, error, 'API Request');
-        
+        logTokenError(this.logger, error, "API Request");
+
         // Preserve the original error structure but enhance it with our error info
         if (error.response) {
           // If it's already an Axios error, enhance it
@@ -646,14 +654,14 @@ export class MiAPI {
           // If it's a generic error, create a mock response structure
           (error as any).response = {
             status: errorInfo.status,
-            data: { message: errorInfo.message }
+            data: { message: errorInfo.message },
           };
           error.tokenErrorInfo = errorInfo;
         }
-        
+
         throw error;
       }
-      
+
       // Re-throw other errors as-is
       throw error;
     }

@@ -708,7 +708,7 @@ cli
 
         // 4. Load PP Data middleware (only for non-internal routes)
         const isIndexRegExp = new RegExp(`^((${base})|/)$`);
-        const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, {});
+        const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, { base, v7Features });
         const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
           loadPPDataMiddleware(req, res, next);
         };
