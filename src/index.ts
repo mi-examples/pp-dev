@@ -144,6 +144,10 @@ export {
   getNextVersion,
 } from "./lib/next-import.js";
 
+// Export authentication provider for global state management
+export { authProvider, AuthProvider } from "./lib/auth.provider.js";
+export type { AuthState } from "./lib/auth.provider.js";
+
 /**
  * Creates the appropriate base path for the template based on configuration and environment
  * @param templateName - Name of the template
