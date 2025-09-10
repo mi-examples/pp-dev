@@ -3,9 +3,9 @@
   "type": "module",
   "version": "1.0.0",
   "scripts": {
-    "build": "npx pp-dev build --changelog",
-    "changelog": "npx pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
-    "dev": "npx pp-dev",
+    "build": "pp-dev build --changelog",
+    "changelog": "pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
+    "dev": "pp-dev",
     "reinstall": "npm i ../../packages/pp-dev/metricinsights-pp-dev-latest.tgz"
   },
   "dependencies": {
