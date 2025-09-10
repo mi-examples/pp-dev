@@ -169,8 +169,10 @@ export function initProxy(opts: ProxyOpts) {
               if (reqUrl.searchParams && reqUrl.searchParams.has('proxyRedirect')) {
                 const redirectToFunction = function () {
                   const storageKey = 'pp-dev::redirectCount' as const;
+                  const lastRedirectKey = 'pp-dev::lastRedirect' as const;
 
                   let redirectCount = +(localStorage.getItem(storageKey) ?? 0);
+                  let lastRedirect = localStorage.getItem(lastRedirectKey);
 
                   if (Number.isNaN(redirectCount)) {
                     redirectCount = 0;
@@ -182,6 +184,7 @@ export function initProxy(opts: ProxyOpts) {
                     const params = new URLSearchParams(window.location.search);
 
                     if (!params.has('proxyRedirect')) {
+                      console.debug('No proxyRedirect param. Cleaning up.');
                       localStorage.removeItem(storageKey);
 
                       return;
@@ -196,6 +199,7 @@ export function initProxy(opts: ProxyOpts) {
                     }
 
                     localStorage.setItem(storageKey, `${++redirectCount}`);
+                    localStorage.setItem(lastRedirectKey, new Date().toISOString());
                   };
 
                   setTimeout(func, 3000);
