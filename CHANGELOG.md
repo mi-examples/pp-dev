@@ -1,3 +1,11 @@
+# [@metricinsights/pp-dev-v0.12.0-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0...v0.12.0-beta.1) (2025-09-10)
+
+
+### Features
+
+* **auth:** add global authentication provider ([2b1e00d](https://github.com/mi-examples/pp-dev-js/commit/2b1e00d20cbfd21284aa871c47bc149829a2f865))
+* **pp-dev:** enhance CLI and core functionality ([14a3772](https://github.com/mi-examples/pp-dev-js/commit/14a3772a4955aabad6b0fa0986a7047445e0cc5b))
+
 # [@metricinsights/pp-dev-v0.11.0-beta.4](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.3...v0.11.0-beta.4) (2025-08-29)
 
 

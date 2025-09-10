@@ -134,7 +134,11 @@ function generateCacheKey(url: string): string {
     return "";
   }
 
-  return cleanUrl;
+  if (cleanUrl.includes("/auth/info.js")) {
+    return "";
+  }
+
+  return url;
 }
 
 /**
@@ -210,6 +214,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
     // Check cache for existing item
     const cacheItem = cache.get(cacheKey);
+
     if (cacheItem) {
       logger.info(
         `${colors.blue("Proxies request:")} ${colors.green(

@@ -1,10 +1,12 @@
-import { PPDevConfig } from "../index.js";
-import type { NextHandleFunction, IncomingMessage, NextFunction } from "connect";
-import { cutUrlParams, redirect } from "./helpers/url.helper.js";
-import { Headers, MiAPI } from "./pp.middleware.js";
-import { createLogger } from "./logger.js";
-import { colors } from "./helpers/color.helper.js";
-import { ServerResponse } from "http";
+import { PPDevConfig } from '../index.js';
+import type { NextHandleFunction, IncomingMessage, NextFunction } from 'connect';
+import { cutUrlParams, redirect } from './helpers/url.helper.js';
+import { Headers, MiAPI } from './pp.middleware.js';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
+import { ServerResponse } from 'http';
+import { cache } from './proxy-cache.middleware.js';
+import { authProvider } from './auth.provider.js';
 
 // Types for better type safety
 interface LoadPPDataOptions {
@@ -37,60 +39,132 @@ function setCachedResponse(key: string, data: any): void {
 }
 
 // Constants
-const DEFAULT_REDIRECT_URL = "/home?proxyRedirect=";
+const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
 
 export function initLoadPPData(
   applyUrlRegExp: RegExp,
   mi: MiAPI,
-  opts: PPDevConfig
+  opts: PPDevConfig & { base?: string },
 ): NextHandleFunction {
-  const { templateLess = false, miHudLess = false, portalPageId } = opts;
+  const { templateLess = false, miHudLess = false, portalPageId, base, v7Features } = opts;
 
   const logger = createLogger();
 
   // Validate required configuration
-  if (templateLess && miHudLess && typeof portalPageId === "undefined") {
-    throw new Error(
-      "Portal page ID is required when both templateLess and miHudLess are true"
-    );
+  if (templateLess && miHudLess && typeof portalPageId === 'undefined') {
+    throw new Error('Portal page ID is required when both templateLess and miHudLess are true');
   }
+
+  let authState = authProvider.getState();
+
+  authProvider.subscribe((state) => {
+    authState = state;
+  });
 
   return async (req, res, next) => {
     try {
       const isNeedTemplateLoad = !(templateLess && miHudLess);
-      const isApplyRequest = applyUrlRegExp.test(cutUrlParams(req.url ?? ""));
+      const isApplyRequest = applyUrlRegExp.test(cutUrlParams(req.url ?? ''));
 
+      // 1. If !isAuthenticated && !isRedirected and url started with /home - try to handle load page or template
+      if (
+        !authState.isAuthenticated &&
+        !authState.isRedirected &&
+        // For MI redirect to home page
+        req.url?.startsWith('/home') &&
+        // For helper old URL with proxyRedirect param (will redirect to base or login page based on auth state)
+        !req.url?.startsWith(DEFAULT_REDIRECT_URL)
+      ) {
+        logger.info(colors.blue('Trying to authenticate and redirect to base'));
+
+        try {
+          if (!isNeedTemplateLoad) {
+            await handlePageInfoOnly(
+              mi,
+              {
+                templateLess,
+                miHudLess,
+                portalPageId,
+                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+              },
+              req,
+              res,
+              () => {},
+              logger,
+            );
+          } else {
+            await handleTemplateLoad(
+              mi,
+              {
+                templateLess,
+                miHudLess,
+                portalPageId,
+                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+              },
+              req,
+              res,
+              () => {},
+              logger,
+            );
+          }
+
+          authProvider.setRedirected(true);
+
+          logger.info(colors.blue('Successfully authenticated. Redirecting to base'));
+
+          return redirect(res, base ?? '/', 302);
+        } catch (error) {
+          // If load throws an error, run next()
+          return next();
+        }
+      }
+
+      // Default case - continue with normal flow
       if (!isApplyRequest) {
         return next();
       }
 
       if (!isNeedTemplateLoad) {
-        return await handlePageInfoOnly(
+        const result = await handlePageInfoOnly(
           mi,
-          { templateLess, miHudLess, portalPageId },
+          {
+            templateLess,
+            miHudLess,
+            portalPageId,
+            redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+          },
           req,
           res,
           next,
-          logger
+          logger,
         );
+
+        return result;
       }
 
-      return await handleTemplateLoad(
+      const result = await handleTemplateLoad(
         mi,
-        { templateLess, miHudLess, portalPageId },
+        {
+          templateLess,
+          miHudLess,
+          portalPageId,
+          redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+        },
         req,
         res,
         next,
-        logger
+        logger,
       );
+
+      return result;
     } catch (error) {
       logger.error(
         colors.red(
-          `Unexpected error in load-pp-data middleware: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        )
+          `Unexpected error in load-pp-data middleware: ${error instanceof Error ? error.message : String(error)}`,
+        ),
       );
+
+      authProvider.reset();
 
       return next(error);
     }
@@ -106,14 +180,12 @@ async function handlePageInfoOnly(
   req: IncomingMessage,
   res: ServerResponse,
   next: NextFunction,
-  logger: ReturnType<typeof createLogger>
+  logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
   const { portalPageId, redirectOnAuthFailure, redirectUrl } = options;
 
-  if (typeof portalPageId === "undefined") {
-    const error = new Error(
-      "Portal page ID is required for page info only mode"
-    );
+  if (typeof portalPageId === 'undefined') {
+    const error = new Error('Portal page ID is required for page info only mode');
 
     logger.error(colors.red(error.message));
 
@@ -122,7 +194,7 @@ async function handlePageInfoOnly(
 
   const headers = (req.headers ?? {}) as Headers;
 
-  logger.info(colors.green("Start loading page info"));
+  logger.info(colors.green('Start loading page info'));
 
   try {
     // Performance optimization: Check cache first
@@ -130,27 +202,34 @@ async function handlePageInfoOnly(
     const cachedData = getCachedResponse(cacheKey);
 
     if (cachedData) {
-      logger.info(colors.green("Page info loaded from cache"));
+      logger.info(colors.green('Page info loaded from cache'));
       return next();
     }
 
     await mi.getPageInfo(portalPageId, headers);
 
+    logger.info(colors.blue('Clearing proxy cache after successful login'));
+    cache.clear();
+
     // Cache the successful response
     setCachedResponse(cacheKey, { success: true });
 
-    logger.info(colors.green("Page info loaded successfully"));
+    authProvider.updateState({ isAuthenticated: true });
+
+    logger.info(colors.green('Page info loaded successfully'));
 
     return next();
   } catch (error) {
+    authProvider.reset();
+
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl ?? DEFAULT_REDIRECT_URL,
+      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
       res,
       next,
       logger,
-      "Page info"
+      'Page info',
     );
   }
 }
@@ -164,13 +243,12 @@ async function handleTemplateLoad(
   req: IncomingMessage,
   res: ServerResponse,
   next: NextFunction,
-  logger: ReturnType<typeof createLogger>
+  logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
-  const { templateLess, portalPageId, redirectOnAuthFailure, redirectUrl } =
-    options;
+  const { templateLess, portalPageId, redirectOnAuthFailure, redirectUrl } = options;
   const headers = (req.headers ?? {}) as Headers;
 
-  logger.info(colors.green("Start loading page data"));
+  logger.info(colors.green('Start loading page data'));
 
   try {
     // Performance optimization: Check cache first
@@ -178,32 +256,37 @@ async function handleTemplateLoad(
     const cachedData = getCachedResponse(cacheKey);
 
     if (cachedData) {
-      logger.info(colors.green("Page data loaded from cache"));
+      logger.info(colors.green('Page data loaded from cache'));
       return next();
     }
 
     const loadPageData =
-      !templateLess && typeof portalPageId !== "undefined"
+      !templateLess && typeof portalPageId !== 'undefined'
         ? mi.getPageVariables(portalPageId, headers)
         : mi.getPageTemplate(headers);
 
     await loadPageData;
 
+    logger.info(colors.blue('Clearing proxy cache after successful login'));
+    cache.clear();
+
     // Cache the successful response
     setCachedResponse(cacheKey, { success: true });
 
-    logger.info(colors.green("Page data loaded successfully"));
+    logger.info(colors.green('Page data loaded successfully'));
 
     return next();
   } catch (error) {
+    authProvider.reset();
+
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl ?? DEFAULT_REDIRECT_URL,
+      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
       res,
       next,
       logger,
-      "Page data"
+      'Page data',
     );
   }
 }
@@ -218,14 +301,14 @@ function handleLoadError(
   res: ServerResponse,
   next: NextFunction,
   logger: ReturnType<typeof createLogger>,
-  operationType: string
+  operationType: string,
 ): void {
   // Check if it's an authorization error
   if (isAuthError(error)) {
     logger.info(colors.red(`${operationType} loading failed. Not authorized`));
 
     if (redirectOnAuthFailure) {
-      const fullRedirectUrl = `${redirectUrl}${encodeURIComponent("/")}`;
+      const fullRedirectUrl = `${redirectUrl}`;
 
       logger.info(colors.yellow(`Redirecting to: ${fullRedirectUrl}`));
 
@@ -236,9 +319,7 @@ function handleLoadError(
   // Handle other errors
   const errorMessage = error instanceof Error ? error.message : String(error);
 
-  logger.info(
-    colors.red(`${operationType} loading failed. Error: ${errorMessage}`)
-  );
+  logger.info(colors.red(`${operationType} loading failed. Error: ${errorMessage}`));
 
   // Pass error to next middleware for proper error handling
   return next(error);
@@ -248,12 +329,7 @@ function handleLoadError(
  * Type guard to check if error is an authorization error
  */
 function isAuthError(error: unknown): boolean {
-  return (
-    error !== null &&
-    typeof error === "object" &&
-    "response" in error &&
-    error.response !== undefined
-  );
+  return error !== null && typeof error === 'object' && 'response' in error && error.response !== undefined;
 }
 
 // Export cache management for external use

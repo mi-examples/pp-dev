@@ -6,11 +6,5 @@ export default defineConfig(() => {
     server: {
       // open: true,
     },
-    resolve: {
-      alias: {
-        '@metricinsights/pp-dev': path.resolve(__dirname, '../dist/esm'),
-        '@metricinsights/pp-dev/helpers': path.resolve(__dirname, '../dist/esm/helpers.js'),
-      },
-    },
   };
 });
