@@ -1,4 +1,16 @@
-# [@metricinsights/pp-dev-v0.12.0-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0...v0.12.0-beta.1) (2025-09-10)
+# [@metricinsights/pp-dev-v0.12.2](https://github.com/mi-examples/pp-dev-js/compare/v0.12.1...v0.12.2) (2025-01-15)
+
+### Bug Fixes
+
+* **release:** prepare v0.12.2 patch release
+
+# [@metricinsights/pp-dev-v0.12.1](https://github.com/mi-examples/pp-dev-js/compare/v0.12.0...v0.12.1) (2025-01-15)
+
+### Bug Fixes
+
+* **release:** prepare v0.12.1 patch release
+
+# [@metricinsights/pp-dev-v0.12.0](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0...v0.12.0) (2025-01-15)
 
 
 ### Features
