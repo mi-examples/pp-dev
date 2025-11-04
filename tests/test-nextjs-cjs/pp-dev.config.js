@@ -2,8 +2,9 @@
  * @type {import('@metricinsights/pp-dev').PPDevConfig}
  */
 const ppDevConfig = {
-  backendBaseURL: 'https://640.metricinsights.com',
-  portalPageId: 55,
+  backendBaseURL: 'https://stg7x.metricinsights.com',
+  portalPageId: 733,
+  v7Features: true,
 };
 
 module.exports = ppDevConfig;
