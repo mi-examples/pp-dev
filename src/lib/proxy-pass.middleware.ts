@@ -156,7 +156,7 @@ export function initProxy(opts: ProxyOpts) {
         const rewriteInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
           res.setHeader(PROXY_HEADER, 1);
 
-          const type = await (await fileType).fileTypeFromBuffer(responseBuffer);
+          const type = await (await fileType).fileTypeFromBuffer(responseBuffer as unknown as Uint8Array);
 
           if (type) {
             return responseBuffer;

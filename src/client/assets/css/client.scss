@@ -414,7 +414,7 @@ $pp-dev-height: 30px;
       align-items: center;
       justify-content: center;
       width: 24px;
-      height: 24px;
+      height: 26px;
       padding: 4px;
       margin-left: 12px;
       background-color: transparent;
@@ -449,14 +449,14 @@ $pp-dev-height: 30px;
         color: var(--pp-dev-info-color-primary);
 
         svg {
-          transform: scale(1.2) rotate(90deg) matrix(1, 0, 0, -1, 0, 0);
+          transform: scale(1.1) rotate(45deg);
           transition: transform 0.2s ease;
         }
       }
 
       &:active:not(.disabled) {
         svg {
-          transform: scale(0.9) rotate(90deg) matrix(1, 0, 0, -1, 0, 0);
+          transform: scale(0.9) rotate(45deg);
         }
       }
 
@@ -506,10 +506,10 @@ $pp-dev-height: 30px;
 
     @keyframes rotation {
       0% {
-        transform: rotate(0deg) matrix(1, 0, 0, -1, 0, 0);
+        transform: rotate(0deg);
       }
       100% {
-        transform: rotate(360deg) matrix(1, 0, 0, -1, 0, 0);
+        transform: rotate(360deg);
       }
     }
 
