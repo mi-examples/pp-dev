@@ -153,17 +153,9 @@ function createResponseBuffer(chunks: Buffer[]): Buffer {
     return chunks[0];
   }
 
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const result = Buffer.allocUnsafe(totalLength);
+  const totalLength = chunks.reduce((sum, chunk) => Buffer.byteLength(chunk) + sum, 0);
 
-  let offset = 0;
-
-  for (const chunk of chunks) {
-    chunk.copy(result, offset);
-    offset += chunk.length;
-  }
-
-  return result;
+  return Buffer.concat(chunks as unknown as Uint8Array[], totalLength);
 }
 
 /**
@@ -296,7 +288,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       try {
         finalBuffer = createResponseBuffer(chunks);
         
-        const responseSize = finalBuffer.length;
+        const responseSize = Buffer.byteLength(finalBuffer);
 
         // Only cache if response is not empty and reasonable size
         if (responseSize > 0 && responseSize < 10 * 1024 * 1024) {
