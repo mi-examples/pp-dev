@@ -1,6 +1,7 @@
 import * as path from "path";
 import * as fs from "fs";
 import { performance } from "node:perf_hooks";
+import { watch } from "chokidar";
 import { cac } from "cac";
 import {
   ServerOptions,
@@ -36,8 +37,83 @@ import { IconFontGenerator } from "./lib/icon-font-generator.js";
 // Remove the explicit process import since it's globally available
 import internalServer from "./lib/internal.middleware";
 import { safeNextImport, isNextAvailable } from "./lib/next-import.js";
+import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from "./constants.js";
 
 const cli = cac("pp-dev");
+
+// Config file watcher utility
+interface ConfigWatcher {
+  watcher: any;
+  restartCallback: () => Promise<void>;
+  logger: (message: string) => void;
+}
+
+function createConfigWatcher(
+  projectRoot: string,
+  restartCallback: () => Promise<void>,
+  logger: (message: string) => void
+): ConfigWatcher {
+  const configFiles = [
+    ...PP_DEV_CONFIG_NAMES,
+    ...PP_WATCH_CONFIG_NAMES,
+    "package.json",
+    "next.config.js",
+    "next.config.mjs",
+    "next.config.ts",
+    "vite.config.js",
+    "vite.config.mjs", 
+    "vite.config.ts",
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.development.local"
+  ];
+
+  const watchPatterns = configFiles.map(file => path.join(projectRoot, file));
+  
+  const watcher = watch(watchPatterns, {
+    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    persistent: true,
+    ignoreInitial: true,
+    followSymlinks: false
+  });
+
+  let restartTimeout: NodeJS.Timeout | null = null;
+
+  watcher.on('change', (filePath) => {
+    logger(colors.blue(`🔧 Config file changed: ${path.relative(projectRoot, filePath)}`));
+    
+    // Debounce restart to avoid multiple rapid restarts
+    if (restartTimeout) {
+      clearTimeout(restartTimeout);
+    }
+    
+    restartTimeout = setTimeout(async () => {
+      try {
+        logger(colors.yellow(`🔄 Restarting dev server due to config change...`));
+        await restartCallback();
+      } catch (error) {
+        logger(colors.red(`❌ Failed to restart dev server: ${error}`));
+      }
+    }, 500); // 500ms debounce
+  });
+
+  watcher.on('error', (error) => {
+    logger(colors.red(`❌ Config watcher error: ${error}`));
+  });
+
+  return {
+    watcher,
+    restartCallback,
+    logger
+  };
+}
+
+function cleanupConfigWatcher(watcher: ConfigWatcher) {
+  if (watcher.watcher) {
+    watcher.watcher.close();
+  }
+}
 
 interface PPDevBuildOptions extends BuildOptions {
   changelog?: boolean | string;
@@ -163,145 +239,222 @@ cli
   )
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
-    // output structure is preserved even after bundling so require()
-    // is ok here
-    const { createServer } = await import("vite");
+    
+    let server: ViteDevServer | null = null;
+    let configWatcher: ConfigWatcher | null = null;
+    let isRestarting = false;
 
-    try {
-      const configFromFile = await loadConfigFromFile(
-        { mode: options.mode || "development", command: "serve" },
-        options.config,
-        root,
-        options.logLevel
-      );
+    const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
+    const logger = createLogger(options.logLevel);
 
-      let config = await getViteConfig();
+    const startServer = async () => {
+      if (isRestarting) return;
+      isRestarting = true;
 
-      const envVars = loadEnv(
-        options.mode || "development",
-        root ?? process.cwd(),
-        ""
-      );
+      try {
+        // Clean up existing server if any
+        if (server) {
+          logger.info(colors.yellow("🛑 Stopping existing dev server..."));
+          await server.close();
+          server = null;
+        }
 
-      if (envVars) {
-        Object.keys(envVars).forEach((key) => {
-          if (key.startsWith("MI_")) {
-            process.env[key] = envVars[key];
-          }
+        // Clear config cache
+        const { clearConfigCache } = await import("./config.js");
+        clearConfigCache();
+
+        // output structure is preserved even after bundling so require()
+        // is ok here
+        const { createServer } = await import("vite");
+
+        const configFromFile = await loadConfigFromFile(
+          { mode: options.mode || "development", command: "serve" },
+          options.config,
+          root,
+          options.logLevel
+        );
+
+        let config = await getViteConfig();
+
+        const envVars = loadEnv(
+          options.mode || "development",
+          root ?? process.cwd(),
+          ""
+        );
+
+        if (envVars) {
+          Object.keys(envVars).forEach((key) => {
+            if (key.startsWith("MI_")) {
+              process.env[key] = envVars[key];
+            }
+          });
+        }
+
+        if (configFromFile) {
+          const { plugins, ...fileConfig } = configFromFile.config;
+
+          config = mergeConfig(config, fileConfig);
+        }
+
+        server = await createServer(
+          mergeConfig(
+            config,
+            {
+              root,
+              base: options.base,
+              mode: options.mode,
+              configFile: options.config,
+              logLevel: options.logLevel,
+              clearScreen: options.clearScreen,
+              optimizeDeps: { force: options.force },
+              server: cleanOptions(options),
+              customLogger: logger,
+            },
+            true
+          )
+        );
+
+        if (!server.config.base || server.config.base === "/") {
+          throw new Error('base cannot be equal to "/" or empty string');
+        }
+
+        if (!server.httpServer) {
+          throw new Error("HTTP server not available");
+        }
+
+        await server.listen();
+
+        const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
+        const startupDurationString = ppDevStartTime
+          ? colors.dim(
+              `ready in ${colors.reset(
+                colors.bold(Math.ceil(performance.now() - ppDevStartTime))
+              )} ms`
+            )
+          : "";
+
+        logger.info(
+          `\n  ${colors.green(
+            `${colors.bold("PP-DEV")} v${VERSION}`
+          )}  ${startupDurationString}\n`
+        );
+
+        server.printUrls();
+        bindShortcuts(server, {
+          print: true,
+          customShortcuts: [
+            ...(profileSession
+              ? [
+                  {
+                    key: "p",
+                    description: "start/stop the profiler",
+                    async action(server: ViteDevServer) {
+                      if (profileSession) {
+                        await stopProfiler(logger.info);
+                      } else {
+                        const inspector = await import("node:inspector").then(
+                          (r) => (r as any).default
+                        );
+
+                        await new Promise<void>((res) => {
+                          profileSession = new inspector.Session();
+                          profileSession.connect();
+                          profileSession.post("Profiler.enable", () => {
+                            profileSession?.post("Profiler.start", () => {
+                              logger.info("Profiler started");
+
+                              res();
+                            });
+                          });
+                        });
+                      }
+                    },
+                  },
+                ]
+              : []),
+            {
+              key: "l",
+              description: "proxy re-login",
+              action(server: ViteDevServer): void | Promise<void> {
+                server.ws.send({
+                  type: "custom",
+                  event: "redirect",
+                  data: {
+                    url: `/auth/index/logout?proxyRedirect=${encodeURIComponent(
+                      "/"
+                    )}`,
+                  },
+                });
+              },
+            },
+          ],
         });
+
+        // Set up config watcher
+        if (!configWatcher) {
+          configWatcher = createConfigWatcher(projectRoot, startServer, logger.info);
+          logger.info(colors.blue("🔧 Config file watcher started"));
+        }
+
+        isRestarting = false;
+      } catch (e: any) {
+        isRestarting = false;
+        logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
+          error: e,
+        });
+        stopProfiler(logger.info);
+        process.exit(1);
       }
+    };
 
-      if (configFromFile) {
-        const { plugins, ...fileConfig } = configFromFile.config;
-
-        config = mergeConfig(config, fileConfig);
-      }
-
-      const server = await createServer(
-        mergeConfig(
-          config,
-          {
-            root,
-            base: options.base,
-            mode: options.mode,
-            configFile: options.config,
-            logLevel: options.logLevel,
-            clearScreen: options.clearScreen,
-            optimizeDeps: { force: options.force },
-            server: cleanOptions(options),
-            customLogger: createLogger(options.logLevel),
-          },
-          true
+    // Handle graceful shutdown
+    const gracefulShutdown = async (signal: string) => {
+      logger.info(
+        colors.yellow(
+          `\n🛑 Received ${signal}, shutting down gracefully...`
         )
       );
 
-      if (!server.config.base || server.config.base === "/") {
-        throw new Error('base cannot be equal to "/" or empty string');
+      try {
+        // Clean up config watcher
+        if (configWatcher) {
+          cleanupConfigWatcher(configWatcher);
+          configWatcher = null;
+        }
+
+        // Clean up server
+        if (server) {
+          await server.close();
+          server = null;
+        }
+
+        stopProfiler(logger.info);
+        logger.info(colors.green("✅ Graceful shutdown completed"));
+        process.exit(0);
+      } catch (error) {
+        logger.error(colors.red(`❌ Error during graceful shutdown: ${error}`));
+        process.exit(1);
       }
+    };
 
-      if (!server.httpServer) {
-        throw new Error("HTTP server not available");
-      }
-
-      await server.listen();
-
-      const logger = createLogger(options.logLevel);
-
-      const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
-      const startupDurationString = ppDevStartTime
-        ? colors.dim(
-            `ready in ${colors.reset(
-              colors.bold(Math.ceil(performance.now() - ppDevStartTime))
-            )} ms`
-          )
-        : "";
-
-      logger.info(
-        `\n  ${colors.green(
-          `${colors.bold("PP-DEV")} v${VERSION}`
-        )}  ${startupDurationString}\n`
+    // Set up process signal handlers
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("uncaughtException", (error) => {
+      logger.error(colors.red(`❌ Uncaught Exception: ${error}`));
+      gracefulShutdown("uncaughtException");
+    });
+    process.on("unhandledRejection", (reason, promise) => {
+      logger.error(
+        colors.red(
+          `❌ Unhandled Rejection at: ${promise}, reason: ${reason}`
+        )
       );
+      gracefulShutdown("unhandledRejection");
+    });
 
-      server.printUrls();
-      bindShortcuts(server, {
-        print: true,
-        customShortcuts: [
-          ...(profileSession
-            ? [
-                {
-                  key: "p",
-                  description: "start/stop the profiler",
-                  async action(server: ViteDevServer) {
-                    if (profileSession) {
-                      await stopProfiler(logger.info);
-                    } else {
-                      const inspector = await import("node:inspector").then(
-                        (r) => (r as any).default
-                      );
-
-                      await new Promise<void>((res) => {
-                        profileSession = new inspector.Session();
-                        profileSession.connect();
-                        profileSession.post("Profiler.enable", () => {
-                          profileSession?.post("Profiler.start", () => {
-                            logger.info("Profiler started");
-
-                            res();
-                          });
-                        });
-                      });
-                    }
-                  },
-                },
-              ]
-            : []),
-          {
-            key: "l",
-            description: "proxy re-login",
-            action(server: ViteDevServer): void | Promise<void> {
-              server.ws.send({
-                type: "custom",
-                event: "redirect",
-                data: {
-                  url: `/auth/index/logout?proxyRedirect=${encodeURIComponent(
-                    "/"
-                  )}`,
-                },
-              });
-            },
-          },
-        ],
-      });
-    } catch (e: any) {
-      const logger = createLogger(options.logLevel);
-
-      logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
-        error: e,
-      });
-      stopProfiler(logger.info);
-
-      process.exit(1);
-    }
+    // Start the server
+    await startServer();
   });
 
 // Next.js development server
@@ -325,26 +478,57 @@ cli
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
 
-    try {
-      // Check if Next.js is available before proceeding
-      if (!isNextAvailable()) {
-        throw new Error(
-          "Next.js is required but not available. Please install Next.js as a dependency:\n" +
-            "npm install next@^13\n\n" +
-            "This package requires Next.js >=13 <16 as a peer dependency."
-        );
-      }
+    let nextApp: any = null;
+    let httpServer: any = null;
+    let configWatcher: ConfigWatcher | null = null;
+    let isRestarting = false;
 
-      const { next } = await safeNextImport();
-      const { join, basename } = await import("path");
-      const { createServer } = await import("http");
-      const { default: loadConfig } = (
-        await import("next/dist/server/config.js")
-      ).default as any;
+    const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
+    const logger = createLogger();
 
-      const logger = createLogger();
+    const startNextServer = async () => {
+      if (isRestarting) return;
+      isRestarting = true;
 
-      const opts = cleanOptions(options);
+      try {
+        // Clean up existing server if any
+        if (httpServer) {
+          logger.info(colors.yellow("🛑 Stopping existing Next.js server..."));
+          await new Promise<void>((resolve) => {
+            httpServer.close(() => {
+              httpServer = null;
+              resolve();
+            });
+          });
+        }
+
+        // Clean up existing Next.js app if any
+        if (nextApp && typeof nextApp.close === "function") {
+          await nextApp.close();
+          nextApp = null;
+        }
+
+        // Clear config cache
+        const { clearConfigCache } = await import("./config.js");
+        clearConfigCache();
+
+        // Check if Next.js is available before proceeding
+        if (!isNextAvailable()) {
+          throw new Error(
+            "Next.js is required but not available. Please install Next.js as a dependency:\n" +
+              "npm install next@^13\n\n" +
+              "This package requires Next.js >=13 <16 as a peer dependency."
+          );
+        }
+
+        const { next } = await safeNextImport();
+        const { join, basename } = await import("path");
+        const { createServer } = await import("http");
+        const { default: loadConfig } = (
+          await import("next/dist/server/config.js")
+        ).default as any;
+
+        const opts = cleanOptions(options);
 
       // Load environment variables
       const envVars = loadEnv(
@@ -436,7 +620,7 @@ cli
       let base = templateLess ? pathPagePrefix : pathTemplatePrefix;
       base += `/${templateName}`;
 
-      const app = next({
+      nextApp = next({
         dev: true,
         hostname: (opts.host as string) || "localhost",
         port: opts.port,
@@ -448,7 +632,7 @@ cli
         },
       });
 
-      await app.prepare();
+      await nextApp.prepare();
 
       // Default to templateLess = true for Next.js development
       // const templateLess =
@@ -481,17 +665,17 @@ cli
       }
 
       // Get the Next.js request handler
-      const handle = app.getRequestHandler();
+      const handle = nextApp.getRequestHandler();
 
       // Start the server
       const port = typeof opts.port === "number" ? opts.port : 3000;
-      const host = typeof opts.host === "string" ? opts.host : "localhost";
+      const host = typeof opts.host === "string" ? (opts.host || '0.0.0.0') : "localhost";
 
       // Track open sockets for proper cleanup
       const openSockets = new Set<any>();
 
       // Create HTTP server with base path handling and pp-dev middlewares
-      const server = createServer(async (req: any, res: any) => {
+      httpServer = createServer(async (req: any, res: any) => {
         try {
           const originalUrl = req.url || "/";
           const originalPathname = originalUrl.split("?")[0];
@@ -775,7 +959,7 @@ cli
         logger.info(colors.blue(`🔧 Portal Page ID: ${portalPageId}`));
       }
 
-      server.listen(port, host, () => {
+      httpServer.listen(port, host, () => {
         logger.info(
           colors.green(
             `✅ pp-dev Next.js server running at http://${host}:${port}`
@@ -788,8 +972,14 @@ cli
         );
         logger.info(colors.blue(`🔧 Base path handling active`));
 
+        // Set up config watcher
+        if (!configWatcher) {
+          configWatcher = createConfigWatcher(projectRoot, startNextServer, logger.info);
+          logger.info(colors.blue("🔧 Config file watcher started"));
+        }
+
         // Track open sockets for proper cleanup
-        server.on("connection", (socket: any) => {
+        httpServer.on("connection", (socket: any) => {
           openSockets.add(socket);
           socket.on("close", () => openSockets.delete(socket));
         });
@@ -811,6 +1001,12 @@ cli
           }, 5000);
 
           try {
+            // Clean up config watcher
+            if (configWatcher) {
+              cleanupConfigWatcher(configWatcher);
+              configWatcher = null;
+            }
+
             // Close all open sockets first
             for (const socket of Array.from(openSockets)) {
               socket.destroy();
@@ -819,15 +1015,15 @@ cli
 
             // Stop accepting new connections and wait for server to close
             await new Promise<void>((resolve) => {
-              server.close(() => {
+              httpServer.close(() => {
                 logger.info(colors.yellow("🛑 HTTP server closed"));
                 resolve();
               });
             });
 
             // Close the Next.js app properly
-            if (app && typeof app.close === "function") {
-              await app.close();
+            if (nextApp && typeof nextApp.close === "function") {
+              await nextApp.close();
               logger.info(colors.yellow("🛑 Next.js app closed"));
             }
 
@@ -902,9 +1098,12 @@ cli
           );
         }
       });
-    } catch (error) {
-      const logger = createLogger("error");
 
+      isRestarting = false;
+    } catch (error) {
+      isRestarting = false;
+      logger.error(colors.red(`❌ Failed to start Next.js server: ${error}`));
+      
       // Special handling for Next.js peer dependency errors
       if (
         error instanceof Error &&
@@ -921,12 +1120,69 @@ cli
         logger.error(colors.white("      pnpm add next@^15"));
         logger.error(colors.yellow("\n📖 For more information, see:"));
         logger.error(colors.blue("   https://nextjs.org/docs/getting-started"));
-      } else {
-        logger.error(colors.red(`❌ Failed to start Next.js server: ${error}`));
       }
 
       process.exit(1);
     }
+  };
+
+  // Handle graceful shutdown
+  const gracefulShutdown = async (signal: string) => {
+    logger.info(
+      colors.yellow(
+        `\n🛑 Received ${signal}, shutting down gracefully...`
+      )
+    );
+
+    try {
+      // Clean up config watcher
+      if (configWatcher) {
+        cleanupConfigWatcher(configWatcher);
+        configWatcher = null;
+      }
+
+      // Clean up server
+      if (httpServer) {
+        await new Promise<void>((resolve) => {
+          httpServer.close(() => {
+            httpServer = null;
+            resolve();
+          });
+        });
+      }
+
+      // Clean up Next.js app
+      if (nextApp && typeof nextApp.close === "function") {
+        await nextApp.close();
+        nextApp = null;
+      }
+
+      logger.info(colors.green("✅ Graceful shutdown completed"));
+      process.exit(0);
+    } catch (error) {
+      logger.error(colors.red(`❌ Error during graceful shutdown: ${error}`));
+      process.exit(1);
+    }
+  };
+
+  // Set up process signal handlers
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("uncaughtException", (error) => {
+    logger.error(colors.red(`❌ Uncaught Exception: ${error}`));
+    gracefulShutdown("uncaughtException");
+  });
+  process.on("unhandledRejection", (reason, promise) => {
+    logger.error(
+      colors.red(
+        `❌ Unhandled Rejection at: ${promise}, reason: ${reason}`
+      )
+    );
+    gracefulShutdown("unhandledRejection");
+  });
+
+  // Start the server
+  await startNextServer();
   });
 
 // build

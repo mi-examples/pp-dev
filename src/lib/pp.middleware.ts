@@ -93,6 +93,8 @@ export class MiAPI {
       this.#axios = axiosInstanceCache.get(cacheKey)!;
     } else {
       if (disableSSLValidation) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
         axios.defaults.httpsAgent = new Agent({ rejectUnauthorized: false });
       }
 
