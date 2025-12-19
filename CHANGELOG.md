@@ -1,3 +1,10 @@
+# [@metricinsights/pp-dev-v0.12.3-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.12.2...v0.12.3-beta.1) (2025-12-19)
+
+
+### Bug Fixes
+
+* **pp-dev:** improve node compatibility for SSL and buffer handling ([fcef21f](https://github.com/mi-examples/pp-dev-js/commit/fcef21f22936aeabb3a4c40711a76631246e80b4))
+
 # [@metricinsights/pp-dev-v0.12.2](https://github.com/mi-examples/pp-dev-js/compare/v0.12.1...v0.12.2) (2025-01-15)
 
 ### Bug Fixes
