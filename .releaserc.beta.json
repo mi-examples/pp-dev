@@ -1,5 +1,11 @@
 {
-  "branches": ["main"],
+  "branches": [
+    {
+      "name": "develop",
+      "prerelease": "beta",
+      "channel": "beta"
+    }
+  ],
   "tagFormat": "v${version}",
   "plugins": [
     [
@@ -18,7 +24,7 @@
     [
       "@semantic-release/npm",
       {
-        "npmPublish": true
+        "npmPublish": false
       }
     ],
     [
@@ -31,3 +37,4 @@
     "@semantic-release/github"
   ]
 }
+
