@@ -6,10 +6,10 @@
     "build": "pp-dev build --changelog",
     "changelog": "pp-dev changelog backups/test-changelog.zip dist --destination dist-zip",
     "dev": "pp-dev",
-    "reinstall": "npm i ../../metricinsights-pp-dev-latest.tgz"
+    "reinstall": "npm i ../../packages/pp-dev/metricinsights-pp-dev-latest.tgz"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../../metricinsights-pp-dev-latest.tgz",
+    "@metricinsights/pp-dev": "file:../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
     "luxon": "^3.3.0"
   },
   "devDependencies": {
