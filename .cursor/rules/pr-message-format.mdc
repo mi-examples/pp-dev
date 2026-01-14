@@ -1,0 +1,36 @@
+﻿---
+description: Generate PR messages in markdown format for easy copy-paste to GitHub
+globs: *.md,*.mdc
+---
+
+# PR Message Generation Rules
+
+When generating PR messages, always follow these formatting guidelines for optimal GitHub compatibility.
+
+## Emoji Guidelines
+- 🚀 for new features
+- 🔧 for fixes/improvements
+- ⚡ for performance optimizations
+- 🔐 for security/auth features
+- 🧹 for cleanup/maintenance
+- 📊 for metrics/analytics
+- 🧪 for testing
+- 🔄 for breaking changes
+- ✅ for completion/readiness
+
+## Content Requirements
+- Always include a clear summary
+- List specific technical improvements
+- Mention file counts and code changes
+- Include commit references
+- Specify breaking changes or compatibility
+- Use bullet points for readability
+- Keep language professional but engaging
+
+## GitHub Compatibility
+- Use proper markdown headers (##, ###)
+- Include horizontal rules (---) for separation
+- Use bold text (**text**) for emphasis
+- Use code blocks for technical details
+- Ensure proper line breaks for readability
+- Use checkboxes for status indicators

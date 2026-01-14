@@ -1,16 +1,16 @@
 {
-  "name": "test-nextjs",
+  "name": "test-nextjs-cjs",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npx pp-dev next",
+    "dev": "pp-dev next",
     "build": "next build",
     "start": "next start",
-    "reinstall": "npm i ../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
+    "reinstall": "npm i ../../metricinsights-pp-dev-latest.tgz",
     "lint": "next lint"
   },
   "dependencies": {
-    "@metricinsights/pp-dev": "file:../../packages/pp-dev/metricinsights-pp-dev-latest.tgz",
+    "@metricinsights/pp-dev": "file:../../metricinsights-pp-dev-latest.tgz",
     "next": "14.0.3",
     "react": "^18",
     "react-dom": "^18",
