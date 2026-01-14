@@ -7,17 +7,17 @@ export function miTopBarPlugin(): Plugin {
       return [
         {
           tag: "script",
-          injectTo: "head-prepend",
+          injectTo: "body",
           attrs: { src: "/auth/info.js" },
         },
         {
           tag: "script",
-          injectTo: "head-prepend",
+          injectTo: "body",
           attrs: { src: "/js/main.js", defer: "defer" },
         },
         {
           tag: "link",
-          injectTo: "head-prepend",
+          injectTo: "head",
           attrs: { href: "/css/main.css", rel: "stylesheet" },
         },
         {
