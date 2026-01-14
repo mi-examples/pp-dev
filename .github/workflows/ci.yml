@@ -58,3 +58,4 @@ jobs:
       - name: Run E2E tests
         run: npx playwright test
         continue-on-error: true
+
