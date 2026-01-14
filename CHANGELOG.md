@@ -1,3 +1,10 @@
+## [0.12.4-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.12.3...v0.12.4-beta.1) (2026-01-14)
+
+
+### Bug Fixes
+
+* **plugin:** move topbar scripts injection to head-prepend ([a248f91](https://github.com/mi-examples/pp-dev/commit/a248f91b14817a36a37d56e9107762b514bf90ac))
+
 # [@metricinsights/pp-dev-v0.12.3-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.12.2...v0.12.3-beta.1) (2025-12-19)
 
 
