@@ -210,7 +210,7 @@ export default config;
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `miHudLess` | boolean | `false` | Disables Metric Insights navigation bar in development |
-| `integrateMiTopBar` | boolean | `false` | Integrates MI Top Bar and script into the App build (requires `miHudLess: true`) |
+| `integrateMiTopBar` | boolean \| object | `false` | Integrates MI Top Bar and scripts into the App build (requires `miHudLess: true`). When `true`, enables both `addRootElement` and `addSharedComponentsScripts`. When an object, allows selective enabling: `{ addRootElement?: boolean, addSharedComponentsScripts?: boolean }` |
 | `templateLess` | boolean | `false` | Disables template variable transformation |
 | `enableProxyCache` | boolean | `true` | Enables caching of proxied requests |
 | `proxyCacheTTL` | number | `600000` | Cache TTL in milliseconds (10 minutes) |
@@ -232,7 +232,24 @@ The `integrateMiTopBar` option allows you to integrate the Metric Insights Top B
 
 **Important**: This option can only be enabled when `miHudLess` is set to `true`.
 
-Example configuration:
+#### Configuration Options
+
+`integrateMiTopBar` can be configured in two ways:
+
+**1. Boolean (Simple)**
+- `true`: Enables both `addRootElement` and `addSharedComponentsScripts`
+- `false`: Disables integration (default)
+
+**2. Object (Advanced)**
+- `addRootElement`: Adds `<div id="mi-react-root">` element to the body for React mounting
+- `addSharedComponentsScripts`: Adds MI shared component scripts and styles:
+  - `/auth/info.js` - Authentication info script
+  - `/js/main.js` - Main MI JavaScript bundle
+  - `/css/main.css` - MI stylesheet
+
+#### Examples
+
+**Simple boolean configuration:**
 ```javascript
 // pp-dev.config.js
 module.exports = {
@@ -240,6 +257,34 @@ module.exports = {
   appId: 1,
   miHudLess: true,           // Required: Disable dynamic MI scripts
   integrateMiTopBar: true,    // Enable: Integrate Top Bar into build
+};
+```
+
+**Advanced object configuration (selective features):**
+```javascript
+// pp-dev.config.js
+module.exports = {
+  backendBaseURL: 'https://mi.company.com',
+  appId: 1,
+  miHudLess: true,
+  integrateMiTopBar: {
+    addRootElement: true,              // Add root element for React
+    addSharedComponentsScripts: true,  // Add MI scripts and styles
+  },
+};
+```
+
+**Partial integration (scripts only, manual root element):**
+```javascript
+// pp-dev.config.js
+module.exports = {
+  backendBaseURL: 'https://mi.company.com',
+  appId: 1,
+  miHudLess: true,
+  integrateMiTopBar: {
+    addRootElement: false,             // Don't add root element
+    addSharedComponentsScripts: true,  // Add MI scripts and styles
+  },
 };
 ```
 
