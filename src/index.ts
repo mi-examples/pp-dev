@@ -50,7 +50,7 @@ export async function getViteConfig() {
     normalizedPPDevConfig;
 
   if (integrateMiTopBar) {
-    plugins.push(miTopBarPlugin());
+    plugins.push(miTopBarPlugin(integrateMiTopBar));
   }
 
   if (imageOptimizer) {
