@@ -360,6 +360,15 @@ describe('normalizeVitePPDevConfig', () => {
       ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
     });
 
+    it('should throw error when integrateMiTopBar is null', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: null as any,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
     it('should allow integrateMiTopBar: true when miHudLess is true', () => {
       const config = normalizeVitePPDevConfig({
         templateName: 'test',

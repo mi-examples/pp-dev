@@ -239,6 +239,10 @@ function validateConfig(config: VitePPDevOptions): ValidationResult {
           return true;
         }
 
+        if (integrate === null) {
+          return false;
+        }
+
         if (typeof integrate !== "boolean" && typeof integrate !== "object") {
           return false;
         }
@@ -248,7 +252,7 @@ function validateConfig(config: VitePPDevOptions): ValidationResult {
           return false;
         }
 
-        if (typeof integrate === "object") {
+        if (typeof integrate === "object" && integrate !== null) {
           if (
             integrate.addRootElement !== undefined &&
             typeof integrate.addRootElement !== "boolean"
