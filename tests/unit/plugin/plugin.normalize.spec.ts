@@ -288,7 +288,85 @@ describe('normalizeVitePPDevConfig', () => {
           integrateMiTopBar: true,
           miHudLess: false,
         })
-      ).toThrow('integrateMiTopBar can only be true when miHudLess is true');
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar object has addRootElement true but miHudLess is false', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: { addRootElement: true },
+          miHudLess: false,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar object has addSharedComponentsScripts true but miHudLess is false', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: { addSharedComponentsScripts: true },
+          miHudLess: false,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar object has both properties true but miHudLess is false', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: {
+            addRootElement: true,
+            addSharedComponentsScripts: true,
+          },
+          miHudLess: false,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar is invalid type (string)', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: 'invalid' as any,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar is invalid type (number)', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: 123 as any,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar object has invalid addRootElement type', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: { addRootElement: 'invalid' as any },
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar object has invalid addSharedComponentsScripts type', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: { addSharedComponentsScripts: 123 as any },
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
+    });
+
+    it('should throw error when integrateMiTopBar is null', () => {
+      expect(() =>
+        normalizeVitePPDevConfig({
+          templateName: 'test',
+          integrateMiTopBar: null as any,
+        })
+      ).toThrow('VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans');
     });
 
     it('should allow integrateMiTopBar: true when miHudLess is true', () => {
@@ -300,6 +378,106 @@ describe('normalizeVitePPDevConfig', () => {
 
       expect(config.integrateMiTopBar).toBe(true);
       expect(config.miHudLess).toBe(true);
+    });
+
+    it('should allow integrateMiTopBar: false when miHudLess is false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: false,
+        miHudLess: false,
+      });
+
+      expect(config.integrateMiTopBar).toBe(false);
+      expect(config.miHudLess).toBe(false);
+    });
+
+    it('should allow integrateMiTopBar object with addRootElement true when miHudLess is true', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: { addRootElement: true },
+        miHudLess: true,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({ addRootElement: true });
+      expect(config.miHudLess).toBe(true);
+    });
+
+    it('should allow integrateMiTopBar object with addSharedComponentsScripts true when miHudLess is true', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: { addSharedComponentsScripts: true },
+        miHudLess: true,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({ addSharedComponentsScripts: true });
+      expect(config.miHudLess).toBe(true);
+    });
+
+    it('should allow integrateMiTopBar object with both properties true when miHudLess is true', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: {
+          addRootElement: true,
+          addSharedComponentsScripts: true,
+        },
+        miHudLess: true,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({
+        addRootElement: true,
+        addSharedComponentsScripts: true,
+      });
+      expect(config.miHudLess).toBe(true);
+    });
+
+    it('should allow integrateMiTopBar object with both properties false when miHudLess is false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: {
+          addRootElement: false,
+          addSharedComponentsScripts: false,
+        },
+        miHudLess: false,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({
+        addRootElement: false,
+        addSharedComponentsScripts: false,
+      });
+      expect(config.miHudLess).toBe(false);
+    });
+
+    it('should allow integrateMiTopBar empty object when miHudLess is false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: {},
+        miHudLess: false,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({});
+      expect(config.miHudLess).toBe(false);
+    });
+
+    it('should allow integrateMiTopBar object with addRootElement false when miHudLess is false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: { addRootElement: false },
+        miHudLess: false,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({ addRootElement: false });
+      expect(config.miHudLess).toBe(false);
+    });
+
+    it('should allow integrateMiTopBar object with addSharedComponentsScripts false when miHudLess is false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        integrateMiTopBar: { addSharedComponentsScripts: false },
+        miHudLess: false,
+      });
+
+      expect(config.integrateMiTopBar).toEqual({ addSharedComponentsScripts: false });
+      expect(config.miHudLess).toBe(false);
     });
   });
 
