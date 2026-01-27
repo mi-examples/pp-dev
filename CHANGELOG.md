@@ -1,3 +1,15 @@
+# [0.13.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.12.4...v0.13.0-beta.1) (2026-01-22)
+
+
+### Bug Fixes
+
+* **plugin:** add null check for integrateMiTopBar validation ([df35e2a](https://github.com/mi-examples/pp-dev/commit/df35e2a8a265bd4a6445ec78c9ae94d4c24f105d))
+
+
+### Features
+
+* **plugin:** enhance integrateMiTopBar with selective configuration options ([cbb9a6c](https://github.com/mi-examples/pp-dev/commit/cbb9a6c59db401201fb2530f46ca47eaaa585526))
+
 ## [0.12.4-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.12.3...v0.12.4-beta.1) (2026-01-14)
 
 
