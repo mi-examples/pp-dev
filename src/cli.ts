@@ -125,6 +125,10 @@ function cleanupConfigWatcher(watcher: ConfigWatcher) {
   }
 }
 
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 interface PPDevBuildOptions extends BuildOptions {
   changelog?: boolean | string;
 }
@@ -533,8 +537,8 @@ cli
         if (!isNextAvailable()) {
           throw new Error(
             'Next.js is required but not available. Please install Next.js as a dependency:\n' +
-              'npm install next@^13\n\n' +
-              'This package requires Next.js >=13 <16 as a peer dependency.',
+              'npm install next@^16\n\n' +
+              'This package requires Next.js >=13 <17 as a peer dependency.',
           );
         }
 
@@ -930,7 +934,7 @@ cli
           fullMiddlewareChain.push(proxyPassWrapper);
 
           // 4. Load PP Data middleware (only for non-internal routes)
-          const isIndexRegExp = new RegExp(`^((${base})|/)$`);
+          const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
           const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, {
             base,
             v7Features,
