@@ -1,3 +1,16 @@
+# [0.13.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.13.0-beta.1...v0.13.0-beta.2) (2026-02-11)
+
+
+### Bug Fixes
+
+* **plugin:** correct DIRNAME path resolution in client injection ([dce83d7](https://github.com/mi-examples/pp-dev/commit/dce83d78e987e0555060552a51bf6d1d32154853))
+
+
+### Features
+
+* **cli:** support Next.js 16 and fix base path regex escaping ([9182d2a](https://github.com/mi-examples/pp-dev/commit/9182d2a1d319239abf1b7b61cd40f03bbdf312fd))
+* **cli:** watch .env and pp-dev config files, await Next.js check ([69a07f0](https://github.com/mi-examples/pp-dev/commit/69a07f0cbf0d3613fd1e6cdbf892cf0905005b51))
+
 # [0.13.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.12.4...v0.13.0-beta.1) (2026-01-22)
 
 

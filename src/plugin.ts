@@ -842,3 +842,4 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 }
 
 export default vitePPDev;
+export { vitePPDev };

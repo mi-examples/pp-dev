@@ -1,7 +1,21 @@
-const { withPPDev } = require('@metricinsights/pp-dev');
+// const { withPPDev } = require('@metricinsights/pp-dev');
 
-/** @type {import('next').NextConfig} */
-const nextConfig = withPPDev({
+// /** @type {import('next').NextConfig} */
+// const nextConfig = withPPDev({
+//   output: 'export',
+//   cleanDistDir: true,
+//   reactStrictMode: true,
+//   distDir: 'dist',
+//   images: {
+//     unoptimized: true,
+//   },
+//   assetPrefix: '/pt/next-with-template',
+//   basePath: '/p/next-with-template',
+//   experimental: {
+//     esmExternals: true
+//   }
+// });
+const nextConfig = {
   output: 'export',
   cleanDistDir: true,
   reactStrictMode: true,
@@ -9,11 +23,6 @@ const nextConfig = withPPDev({
   images: {
     unoptimized: true,
   },
-  assetPrefix: '/pt/next-with-template',
-  basePath: '/p/next-with-template',
-  experimental: {
-    esmExternals: true
-  }
-});
+};
 
 module.exports = nextConfig;

@@ -38,7 +38,7 @@ const defaultConfig: RollupOptions = {
     warn(warning);
   },
   // Preserve Node.js globals
-  context: 'globalThis'
+  context: 'globalThis',
 };
 
 const configs: RollupOptions[] = [
@@ -74,11 +74,11 @@ const configs: RollupOptions[] = [
       assetFileNames: '[name][extname]',
       sourcemap: true,
       exports: 'named',
-              generatedCode: {
-          constBindings: true,
-          objectShorthand: true,
-          arrowFunctions: true,
-        },
+      generatedCode: {
+        constBindings: true,
+        objectShorthand: true,
+        arrowFunctions: true,
+      },
       // Better chunking for code splitting
       chunkFileNames: '[name]-[hash].js',
       entryFileNames: '[name].js',
@@ -119,12 +119,13 @@ const configs: RollupOptions[] = [
       format: 'cjs',
       assetFileNames: '[name][extname]',
       sourcemap: true,
-      exports: 'named',
-              generatedCode: {
-          constBindings: true,
-          objectShorthand: true,
-          arrowFunctions: true,
-        },
+      exports: 'auto',
+      interop: 'compat',
+      generatedCode: {
+        constBindings: true,
+        objectShorthand: true,
+        arrowFunctions: true,
+      },
       chunkFileNames: '[name]-[hash].js',
       entryFileNames: '[name].js',
     },
