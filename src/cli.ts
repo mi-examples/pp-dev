@@ -1171,11 +1171,11 @@ cli
           logger.error(colors.red(error.message));
           logger.error(colors.yellow('\n💡 To fix this issue:'));
           logger.error(colors.blue('   1. Install Next.js in your project:'));
-          logger.error(colors.white('      npm install next@^15'));
+          logger.error(colors.white('      npm install next@^16'));
           logger.error(colors.blue('   2. Or use yarn:'));
-          logger.error(colors.white('      yarn add next@^15'));
+          logger.error(colors.white('      yarn add next@^16'));
           logger.error(colors.blue('   3. Or use pnpm:'));
-          logger.error(colors.white('      pnpm add next@^15'));
+          logger.error(colors.white('      pnpm add next@^16'));
           logger.error(colors.yellow('\n📖 For more information, see:'));
           logger.error(
             colors.blue('   https://nextjs.org/docs/getting-started'),
