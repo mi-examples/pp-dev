@@ -69,7 +69,7 @@
     "chokidar": "^4.0.3"
   },
   "peerDependencies": {
-    "next": ">= 13 < 16"
+    "next": ">= 13 < 17"
   },
   "peerDependenciesMeta": {
     "next": {
@@ -78,7 +78,7 @@
     }
   },
   "dependencies": {
-    "axios": "^1.7.8",
+    "axios": "^1.13.4",
     "cac": "^6.7.14",
     "chokidar": "^4.0.3",
     "deepmerge-ts": "^7.1.3",

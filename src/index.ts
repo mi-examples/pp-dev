@@ -1,8 +1,8 @@
 import { InlineConfig, PluginOption } from "vite";
-import vitePPDev, {
+import type {
   NormalizedVitePPDevOptions,
-  normalizeVitePPDevConfig,
 } from "./plugin.js";
+import { normalizeVitePPDevConfig } from "./plugin.js";
 import { clientInjectionPlugin, miTopBarPlugin } from "./plugins/index.js";
 import header from "./banner/header.js";
 import type { NextConfig } from "next";
@@ -40,6 +40,9 @@ export async function getViteConfig() {
   const normalizedPPDevConfig = normalizeVitePPDevConfig(
     Object.assign(ppDevConfig, { templateName })
   );
+
+  // Lazy import vitePPDev to avoid loading plugin module during Next.js config evaluation
+  const { default: vitePPDev } = await import("./plugin.js");
 
   const plugins: InlineConfig["plugins"] = [
     vitePPDev(normalizedPPDevConfig),

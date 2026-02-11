@@ -28,11 +28,12 @@ declare module "vite" {
 
 // Simple LRU Cache implementation for better memory management
 class LRUCache<K, V> {
-  private cache = new Map<K, V>();
+  private cache: Map<K, V>;
   private _maxSize: number;
 
   constructor(maxSize: number = 10) {
     this._maxSize = maxSize;
+    this.cache = new Map<K, V>();
   }
 
   get maxSize(): number {
@@ -79,14 +80,32 @@ class LRUCache<K, V> {
 }
 
 // Cache for template compilation and file reading with LRU strategy
-const templateCache = new LRUCache<string, AsyncTemplateFunction>(5);
-const fileCache = new Map<string, string>();
+// Initialize with explicit type to ensure CJS compatibility
+const templateCache: LRUCache<string, AsyncTemplateFunction> = new LRUCache<string, AsyncTemplateFunction>(5);
+const fileCache: Map<string, string> = new Map<string, string>();
 
 // Memoized path resolution
-const DIRNAME = path.dirname(
-  (typeof __filename !== "undefined" && __filename) ||
-    fileURLToPath(new URL(".", import.meta.url))
-);
+// Support both CJS and ESM contexts
+let DIRNAME: string;
+try {
+  // @ts-ignore - __filename is available in CJS
+  if (typeof __filename !== "undefined" && __filename) {
+    // @ts-ignore - __filename is available in CJS
+    DIRNAME = path.dirname(__filename);
+  } else if (
+    typeof import.meta !== "undefined" &&
+    import.meta &&
+    import.meta.url
+  ) {
+    DIRNAME = path.dirname(fileURLToPath(new URL(".", import.meta.url)));
+  } else {
+    // Fallback to current working directory
+    DIRNAME = process.cwd();
+  }
+} catch {
+  // Fallback to current working directory if all else fails
+  DIRNAME = process.cwd();
+}
 
 // Pre-computed constants
 const PACKAGE_IMPORT = `/${PACKAGE_NAME}/client`;

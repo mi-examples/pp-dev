@@ -26,7 +26,7 @@
     "isbinaryfile": "^5.0.4",
     "jsdom": "^25.0.1",
     "memory-cache": "^0.2.0",
-    "next": "^14.0.3",
+    "next": "^16.1.6",
     "picocolors": "^1.1.1",
     "react": "^18",
     "react-dom": "^18",

@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@metricinsights/pp-dev": "file:../../metricinsights-pp-dev-latest.tgz",
-    "next": "14.0.3",
+    "next": "^16.1.6",
     "react": "^18",
     "react-dom": "^18",
     "sharp": "^0.32.6"
