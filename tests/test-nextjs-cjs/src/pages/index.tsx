@@ -1,7 +1,7 @@
 /* eslint-disable max-len */
 import Image from 'next/image';
-import vercelIcon from 'public/vercel.svg';
-import nextIcon from 'public/next.svg';
+import vercelIcon from '../../public/vercel.svg';
+import nextIcon from '../../public/next.svg';
 import { useEffect, useState } from 'react';
 import { getCurrentUser } from '@/api/user';
 
