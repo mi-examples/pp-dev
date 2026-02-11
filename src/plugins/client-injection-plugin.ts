@@ -97,7 +97,7 @@ try {
     import.meta &&
     import.meta.url
   ) {
-    DIRNAME = path.dirname(fileURLToPath(new URL(".", import.meta.url)));
+    DIRNAME = fileURLToPath(new URL(".", import.meta.url));
   } else {
     // Fallback to current working directory
     DIRNAME = process.cwd();
