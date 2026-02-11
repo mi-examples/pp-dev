@@ -72,7 +72,16 @@ function createConfigWatcher(
   const watchPatterns = configFiles.map((file) => path.join(projectRoot, file));
 
   const watcher = watch(watchPatterns, {
-    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    ignored: (filePath) => {
+      const base = path.basename(filePath);
+
+      return (
+        /(^|[\/\\])\../.test(filePath) &&
+        !base.startsWith('.env') &&
+        !base.startsWith('.pp-dev') &&
+        !base.startsWith('.pp-watch')
+      );
+    }, // ignore dotfiles except .env*
     persistent: true,
     ignoreInitial: true,
     followSymlinks: false,
@@ -534,7 +543,7 @@ cli
         clearConfigCache();
 
         // Check if Next.js is available before proceeding
-        if (!isNextAvailable()) {
+        if (!(await isNextAvailable())) {
           throw new Error(
             'Next.js is required but not available. Please install Next.js as a dependency:\n' +
               'npm install next@^16\n\n' +
