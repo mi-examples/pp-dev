@@ -78,7 +78,7 @@
     }
   },
   "dependencies": {
-    "axios": "^1.13.4",
+    "axios": "^1.13.5",
     "cac": "^6.7.14",
     "chokidar": "^4.0.3",
     "deepmerge-ts": "^7.1.3",
