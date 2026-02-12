@@ -1,3 +1,10 @@
+## [0.13.2-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.13.1...v0.13.2-beta.1) (2026-02-12)
+
+
+### Bug Fixes
+
+* **client-injection:** resolve DIRNAME to parent directory for correct resource paths ([606fd91](https://github.com/mi-examples/pp-dev/commit/606fd919ffda4988f4e1a0c11ce805cacfd75f1e))
+
 # [0.13.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.13.0-beta.1...v0.13.0-beta.2) (2026-02-11)
 
 
