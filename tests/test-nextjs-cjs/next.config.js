@@ -23,6 +23,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  assetPrefix: '/pt/next-with-template',
 };
 
 module.exports = nextConfig;
