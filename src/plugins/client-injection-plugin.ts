@@ -1,14 +1,14 @@
-import { IndexHtmlTransformResult, normalizePath, Plugin } from "vite";
-import * as path from "path";
+import { IndexHtmlTransformResult, normalizePath, Plugin } from 'vite';
+import * as path from 'path';
 import {
   PP_DEV_CLIENT_ENTRY,
   PACKAGE_NAME,
   VERSION,
   PP_DEV_PACKAGE_DIR,
-} from "../constants.js";
-import * as fs from "fs";
-import { AsyncTemplateFunction, compile } from "ejs";
-import { fileURLToPath } from "url";
+} from '../constants.js';
+import * as fs from 'fs';
+import { AsyncTemplateFunction, compile } from 'ejs';
+import { fileURLToPath } from 'url';
 
 export interface ClientInjectionPluginOpts {
   backendBaseURL?: string;
@@ -20,7 +20,7 @@ export interface ClientInjectionPluginOpts {
   maxCacheSize?: number;
 }
 
-declare module "vite" {
+declare module 'vite' {
   interface UserConfig {
     clientInjectionPlugin?: ClientInjectionPluginOpts;
   }
@@ -81,7 +81,10 @@ class LRUCache<K, V> {
 
 // Cache for template compilation and file reading with LRU strategy
 // Initialize with explicit type to ensure CJS compatibility
-const templateCache: LRUCache<string, AsyncTemplateFunction> = new LRUCache<string, AsyncTemplateFunction>(5);
+const templateCache: LRUCache<string, AsyncTemplateFunction> = new LRUCache<
+  string,
+  AsyncTemplateFunction
+>(5);
 const fileCache: Map<string, string> = new Map<string, string>();
 
 // Memoized path resolution
@@ -89,15 +92,15 @@ const fileCache: Map<string, string> = new Map<string, string>();
 let DIRNAME: string;
 try {
   // @ts-ignore - __filename is available in CJS
-  if (typeof __filename !== "undefined" && __filename) {
+  if (typeof __filename !== 'undefined' && __filename) {
     // @ts-ignore - __filename is available in CJS
-    DIRNAME = path.dirname(__filename);
+    DIRNAME = path.resolve(path.dirname(__filename), '..');
   } else if (
-    typeof import.meta !== "undefined" &&
+    typeof import.meta !== 'undefined' &&
     import.meta &&
     import.meta.url
   ) {
-    DIRNAME = fileURLToPath(new URL(".", import.meta.url));
+    DIRNAME = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
   } else {
     // Fallback to current working directory
     DIRNAME = process.cwd();
@@ -115,7 +118,7 @@ const PACKAGE_REGEXP = new RegExp(`^\\/?${PACKAGE_NAME}\\/client\\/(.*)$`);
 // Memoized function to get template with caching
 function getTemplate(
   base: string,
-  enableCache: boolean = true
+  enableCache: boolean = true,
 ): AsyncTemplateFunction {
   const cacheKey = base;
 
@@ -124,32 +127,32 @@ function getTemplate(
   }
 
   // Read template file with caching
-  const templatePath = path.resolve(DIRNAME, "client", "index.html");
+  const templatePath = path.resolve(DIRNAME, 'client', 'index.html');
   let templateContent: string;
 
   if (fileCache.has(templatePath)) {
     templateContent = fileCache.get(templatePath)!;
   } else {
-    templateContent = fs.readFileSync(templatePath, { encoding: "utf8" });
+    templateContent = fs.readFileSync(templatePath, { encoding: 'utf8' });
     fileCache.set(templatePath, templateContent);
   }
 
   // Compile template with optimized replacement and better regex escaping
-  const escapedClientPath = CLIENT_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedClientPath = CLIENT_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const compiledTemplate = compile(
     templateContent.replace(
-      new RegExp(escapedClientPath, "g"),
-      path.posix.join(base, PACKAGE_IMPORT)
+      new RegExp(escapedClientPath, 'g'),
+      path.posix.join(base, PACKAGE_IMPORT),
     ),
     {
-      openDelimiter: "{",
-      closeDelimiter: "}",
+      openDelimiter: '{',
+      closeDelimiter: '}',
       async: true,
       cache: true, // Enable EJS internal caching
       filename: templatePath, // For better error reporting
       rmWhitespace: true, // Remove unnecessary whitespace
       compileDebug: false, // Disable debug info in production
-    }
+    },
   );
 
   if (enableCache) {
@@ -162,8 +165,8 @@ function getTemplate(
 // Memoized function to get CSS and JS paths
 function getAssetPaths(base: string) {
   return {
-    css: path.posix.join(base, PACKAGE_NAME, "client/client.css"),
-    js: path.posix.join(base, PACKAGE_NAME, "client/client.js"),
+    css: path.posix.join(base, PACKAGE_NAME, 'client/client.css'),
+    js: path.posix.join(base, PACKAGE_NAME, 'client/client.js'),
   };
 }
 
@@ -175,7 +178,7 @@ const performanceMetrics = {
 };
 
 export function clientInjectionPlugin(
-  opts?: ClientInjectionPluginOpts
+  opts?: ClientInjectionPluginOpts,
 ): Plugin {
   const enableCache = opts?.enableCache ?? true;
   const maxCacheSize = opts?.maxCacheSize ?? 5;
@@ -185,13 +188,13 @@ export function clientInjectionPlugin(
     templateCache.maxSize = maxCacheSize;
   }
 
-  let base = "";
+  let base = '';
   let baseChanged = false;
   let currentTemplate: AsyncTemplateFunction | null = null;
 
   return {
-    name: "pp-dev:client",
-    apply: "serve",
+    name: 'pp-dev:client',
+    apply: 'serve',
 
     config: (config) => {
       config.optimizeDeps?.exclude?.push(`${PACKAGE_NAME}/client`);
@@ -205,9 +208,9 @@ export function clientInjectionPlugin(
           id: normalizePath(
             path.join(
               PP_DEV_PACKAGE_DIR,
-              "dist/client",
-              source.replace(PACKAGE_REGEXP, "$1")
-            )
+              'dist/client',
+              source.replace(PACKAGE_REGEXP, '$1'),
+            ),
           ),
         };
       }
@@ -216,7 +219,7 @@ export function clientInjectionPlugin(
     transformIndexHtml: async (html, ctx) => {
       performanceMetrics.totalRequests++;
 
-      const serverBase = ctx.server?.config.base || "";
+      const serverBase = ctx.server?.config.base || '';
 
       if (serverBase !== base) {
         base = serverBase;
@@ -243,10 +246,10 @@ export function clientInjectionPlugin(
         html,
         tags: [
           {
-            tag: "link",
-            injectTo: "head",
+            tag: 'link',
+            injectTo: 'head',
             attrs: {
-              rel: "stylesheet",
+              rel: 'stylesheet',
               href: assetPaths.css,
             },
           },
@@ -271,17 +274,17 @@ export function clientInjectionPlugin(
       };
 
       result.tags.push({
-        tag: "div",
-        injectTo: "body-prepend",
+        tag: 'div',
+        injectTo: 'body-prepend',
         children: await currentTemplate(templateData),
       });
 
       result.tags.push({
-        tag: "script",
-        injectTo: "body-prepend",
+        tag: 'script',
+        injectTo: 'body-prepend',
         attrs: {
           src: assetPaths.js,
-          type: "module",
+          type: 'module',
         },
       });
 
@@ -290,7 +293,7 @@ export function clientInjectionPlugin(
 
     configureServer(server) {
       const clientDir = normalizePath(
-        path.resolve(server.config.root, path.dirname(PP_DEV_CLIENT_ENTRY))
+        path.resolve(server.config.root, path.dirname(PP_DEV_CLIENT_ENTRY)),
       );
 
       if (server.config.server?.fs?.allow) {
@@ -299,7 +302,7 @@ export function clientInjectionPlugin(
 
       // Log performance metrics in development
       server.middlewares.use(`/@api/__pp-dev-metrics`, (req, res) => {
-        res.setHeader("Content-Type", "application/json");
+        res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(performanceMetrics, null, 2));
       });
     },
