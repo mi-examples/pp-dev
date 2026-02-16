@@ -87,7 +87,7 @@
     "ejs": "^4.0.1",
     "express": "^5.2.1",
     "extract-zip": "^2.0.1",
-    "file-type": "^19.6.0",
+    "file-type": "^21.3.0",
     "formdata-node": "^6.0.3",
     "http-proxy-middleware": "^3.0.3",
     "isbinaryfile": "^5.0.4",
