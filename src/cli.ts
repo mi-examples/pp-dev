@@ -36,7 +36,7 @@ import { ChangelogGenerator } from './lib/changelog-generator.js';
 import { IconFontGenerator } from './lib/icon-font-generator.js';
 // Remove the explicit process import since it's globally available
 import internalServer from './lib/internal.middleware';
-import { safeNextImport, isNextAvailable } from './lib/next-import.js';
+import { safeNextImport } from './lib/next-import.js';
 import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
 
 const cli = cac('pp-dev');
@@ -505,10 +505,8 @@ cli
   )
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
-    const { next, constants } = await safeNextImport();
-    const { PHASE_DEVELOPMENT_SERVER } = constants;
 
-    let nextApp: null | ReturnType<typeof next> = null;
+    let nextApp: ReturnType<typeof import('next').default> | null = null;
     let httpServer: any = null;
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
@@ -516,10 +514,17 @@ cli
     const logger = createLogger();
 
     const startNextServer = async () => {
-      if (isRestarting) return;
+      if (isRestarting) {
+        return;
+      }
+      
       isRestarting = true;
 
       try {
+        // Import Next.js first – with logger available for error reporting
+        const { next, constants } = await safeNextImport();
+        const { PHASE_DEVELOPMENT_SERVER } = constants;
+
         // Clean up existing server if any
         if (httpServer) {
           logger.info(colors.yellow('🛑 Stopping existing Next.js server...'));
@@ -541,15 +546,6 @@ cli
         // Clear config cache
         const { clearConfigCache } = await import('./config.js');
         clearConfigCache();
-
-        // Check if Next.js is available before proceeding
-        if (!(await isNextAvailable())) {
-          throw new Error(
-            'Next.js is required but not available. Please install Next.js as a dependency:\n' +
-              'npm install next@^16\n\n' +
-              'This package requires Next.js >=13 <17 as a peer dependency.',
-          );
-        }
 
         const { join, basename } = await import('path');
         const { createServer } = await import('http');
@@ -802,10 +798,7 @@ cli
                 parsedUrl = parse(originalUrl, true);
               } else if (originalPathname === base.replace(/\/$/, '')) {
                 // Path without trailing slash - redirect to canonical URL with trailing slash
-                const redirectUrl = originalUrl.replace(
-                  originalPathname,
-                  base
-                );
+                const redirectUrl = originalUrl.replace(originalPathname, base);
                 res.writeHead(302, { Location: redirectUrl });
                 res.end();
                 return;
