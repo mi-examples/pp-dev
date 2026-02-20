@@ -505,16 +505,14 @@ cli
   )
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
-    const { next } = await safeNextImport();
+    const { next, constants } = await safeNextImport();
+    const { PHASE_DEVELOPMENT_SERVER } = constants;
 
     let nextApp: null | ReturnType<typeof next> = null;
     let httpServer: any = null;
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
 
-    const projectRoot = root
-      ? path.resolve(process.cwd(), root)
-      : process.cwd();
     const logger = createLogger();
 
     const startNextServer = async () => {
@@ -586,7 +584,7 @@ cli
         logger.info(projectRoot);
 
         // Get pp-dev config from Next.js app config
-        const config = await loadConfig('development', projectRoot);
+        const config = await loadConfig(PHASE_DEVELOPMENT_SERVER, projectRoot);
 
         // Extract pp-dev configuration from Next.js config
         let ppDevConfig = config?.ppDev || {};

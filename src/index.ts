@@ -167,7 +167,7 @@ function createBasePath(
     }
   }
 
-  return `${templateLess ? pathPagePrefix : pathTemplatePrefix}/${templateName}`;
+  return `/p/${templateName}`;
 }
 
 /**
