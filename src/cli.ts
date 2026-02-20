@@ -505,8 +505,9 @@ cli
   )
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
+    const { next } = await safeNextImport();
 
-    let nextApp: any = null;
+    let nextApp: null | ReturnType<typeof next> = null;
     let httpServer: any = null;
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
@@ -535,6 +536,7 @@ cli
         // Clean up existing Next.js app if any
         if (nextApp && typeof nextApp.close === 'function') {
           await nextApp.close();
+
           nextApp = null;
         }
 
@@ -551,16 +553,15 @@ cli
           );
         }
 
-        const { next } = await safeNextImport();
         const { join, basename } = await import('path');
         const { createServer } = await import('http');
 
         const importConfig = await import('next/dist/server/config.js');
 
-        const loadConfig =
-          importConfig.default.default ||
-          importConfig['module.exports'].default ||
-          importConfig.default;
+        const loadConfig: typeof import('next/dist/server/config.js').default =
+          (importConfig as any).default.default ||
+          (importConfig as any)['module.exports'].default ||
+          (importConfig as any).default;
 
         const opts = cleanOptions(options);
 
@@ -588,7 +589,7 @@ cli
         const config = await loadConfig('development', projectRoot);
 
         // Extract pp-dev configuration from Next.js config
-        let ppDevConfig = config?.experimental?.ppDev || config?.ppDev || {};
+        let ppDevConfig = config?.ppDev || {};
 
         // If no pp-dev config found in Next.js config, try to load from standalone config file
         if (Object.keys(ppDevConfig).length === 0) {
@@ -628,25 +629,36 @@ cli
         const {
           backendBaseURL = process.env.MI_BACKEND_URL ||
             'http://localhost:8080',
-          portalPageId = parseInt(process.env.MI_PORTAL_PAGE_ID || '1'),
+          appId: originalAppId,
+          portalPageId,
           templateLess = true,
           v7Features = true,
           disableSSLValidation = false,
           enableProxyCache = true,
           proxyCacheTTL = 600000,
           personalAccessToken = process.env.MI_ACCESS_TOKEN,
-          distZip = false,
-          syncBackupsDir = './backups',
           miHudLess = false,
         } = ppDevConfig;
 
+        const appId: number =
+          originalAppId ??
+          portalPageId ??
+          (process.env.MI_APP_ID
+            ? parseInt(process.env.MI_APP_ID)
+            : undefined) ??
+          (process.env.MI_PORTAL_PAGE_ID
+            ? parseInt(process.env.MI_PORTAL_PAGE_ID)
+            : undefined) ??
+          1;
+
         // Get template name from config, package.json, or fallback to project directory name
-        let templateName = ppDevConfig.templateName;
+        let templateName = null;
 
         if (!templateName) {
           try {
             const { getPkg } = await import('./config.js');
             const pkg = getPkg();
+
             templateName = pkg.name;
           } catch (error) {
             // Fallback to project directory name
@@ -658,8 +670,15 @@ cli
         const pathPagePrefix = '/p'; // templateLess = true - use /p
         const pathTemplatePrefix = '/pl'; // templateLess = false && v7Features = true - use /pl
 
-        let base = templateLess ? pathPagePrefix : pathTemplatePrefix;
-        base += `/${templateName}`;
+        const configBasePath = config?.basePath;
+        let base = '';
+
+        if (configBasePath) {
+          base = configBasePath;
+        } else {
+          base = templateLess ? pathPagePrefix : pathTemplatePrefix;
+          base += `/${templateName}`;
+        }
 
         nextApp = next({
           dev: true,
@@ -669,17 +688,11 @@ cli
           conf: {
             ...config,
             basePath: base,
-            assetPrefix: base, // Fixed: Make assetPrefix consistent with basePath
+            assetPrefix: `${templateLess ? pathPagePrefix : '/pt'}/${templateName}`, // Fixed: Make assetPrefix consistent with basePath
           },
         });
 
         await nextApp.prepare();
-
-        // Default to templateLess = true for Next.js development
-        // const templateLess =
-        //   typeof ppDevConfig.templateLess === "boolean"
-        //     ? ppDevConfig.templateLess
-        //     : true;
 
         if (!base.endsWith('/')) {
           base += '/';
@@ -690,11 +703,6 @@ cli
             'basePath cannot be equal to "/" or equal to empty string',
           );
         }
-
-        const baseWithoutTrailingSlash = base.substring(
-          0,
-          base.lastIndexOf('/'),
-        );
 
         // Log the configuration
         logger.info(colors.green('✅ Next.js app prepared successfully'));
@@ -707,7 +715,7 @@ cli
 
         if (backendBaseURL) {
           logger.info(colors.blue(`🌐 Backend URL: ${backendBaseURL}`));
-          logger.info(colors.blue(`🆔 Portal Page ID: ${portalPageId}`));
+          logger.info(colors.blue(`🆔 Custom App ID: ${appId}`));
         }
 
         // Get the Next.js request handler
@@ -735,8 +743,7 @@ cli
               const isInternalNextRoute =
                 originalPathname.startsWith('/_next/') ||
                 originalPathname === '/favicon.ico' ||
-                originalPathname.startsWith('/__nextjs_') ||
-                originalPathname.startsWith('/api/');
+                originalPathname.startsWith('/__nextjs_');
 
               if (isInternalNextRoute) {
                 // For internal routes, only apply essential middlewares (skip proxy, cache, etc.)
@@ -791,17 +798,19 @@ cli
             processNextJSRequest();
 
             async function processNextJSRequest() {
-              // Handle base path requests
+              // Handle base path requests - pass full path to Next.js so it can apply basePath routing
               if (originalPathname.startsWith(base)) {
-                // Strip the base path for Next.js
-                const nextPath = originalPathname.substring(base.length);
-
-                req.url = nextPath || '/';
-                parsedUrl = parse(nextPath, true);
+                // Keep full path - Next.js expects req.url to include basePath for proper routing
+                parsedUrl = parse(originalUrl, true);
               } else if (originalPathname === base.replace(/\/$/, '')) {
-                // Handle base path without trailing slash
-                req.url = '/';
-                parsedUrl = parse('/', true);
+                // Path without trailing slash - redirect to canonical URL with trailing slash
+                const redirectUrl = originalUrl.replace(
+                  originalPathname,
+                  base
+                );
+                res.writeHead(302, { Location: redirectUrl });
+                res.end();
+                return;
               } else if (
                 originalPathname.startsWith('/_next/') ||
                 originalPathname === '/favicon.ico' ||
@@ -849,8 +858,8 @@ cli
                 '$1$2',
               ),
             },
-            portalPageId,
-            appId: portalPageId,
+            portalPageId: appId,
+            appId,
             templateLess,
             disableSSLValidation,
             v7Features,
@@ -931,7 +940,7 @@ cli
               '/_next',
               '/favicon.ico',
               '/__nextjs_',
-              '/api',
+              '/installHook.js.map',
             ],
             disableSSLValidation,
             miAPI: mi,
@@ -1011,7 +1020,7 @@ cli
           logger.info(
             colors.blue(`🔧 MiAPI initialized for backend: ${backendBaseURL}`),
           );
-          logger.info(colors.blue(`🔧 Portal Page ID: ${portalPageId}`));
+          logger.info(colors.blue(`🔧 Custom App ID: ${appId}`));
         }
 
         httpServer.listen(port, host, () => {
