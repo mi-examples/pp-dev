@@ -24,7 +24,7 @@ const nextConfig = withPPDev({
     unoptimized: true,
   },
   // assetPrefix: '/pt/test-nextjs-cjs',
-  // basePath: '',
+  // basePath: '/pl/test-nextjs-cjs',
 });
 
 module.exports = nextConfig;
