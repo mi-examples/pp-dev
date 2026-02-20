@@ -791,6 +791,18 @@ cli
             // If no middlewares, process normally
             processNextJSRequest();
 
+            /**
+             * Apply basePath-aware routing for an incoming HTTP request, performing canonical redirects when needed and delegating handling to Next.js.
+             *
+             * This function:
+             * - Preserves the full request URL when it starts with the configured `base` so Next.js can apply basePath routing.
+             * - Redirects requests that target the base without a trailing slash to the canonical trailing-slash URL (302).
+             * - Redirects requests for the root path `/` to the configured `base` (302).
+             * - Allows Next.js internal asset and runtime routes (e.g., `/_next/`, `/favicon.ico`, `/__nextjs_`) to pass through unchanged.
+             * - Delegates all non-redirect requests to the Next.js request handler, which will complete the response.
+             *
+             * Side effects: may send one or more 302 responses and end the HTTP response stream.
+             */
             async function processNextJSRequest() {
               // Handle base path requests - pass full path to Next.js so it can apply basePath routing
               if (originalPathname.startsWith(base)) {

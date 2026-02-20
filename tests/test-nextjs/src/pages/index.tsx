@@ -6,6 +6,13 @@ import { useEffect, useState } from 'react';
 import { getCurrentUser } from '@/api/user';
 import { getDatasetData } from '@/api/dataset-data';
 
+/**
+ * Render the application's home page, display the current user, and present navigation links and branding.
+ *
+ * This component fetches the current user and dataset data (on mount) and stores them in local state for display.
+ *
+ * @returns The JSX element representing the Home page.
+ */
 export default function Home() {
   const [user, setUser] = useState<{ first_name: string; last_name: string } | null>(null);
   const [datasetData, setDatasetData] = useState<any>(null);

@@ -26,6 +26,19 @@ const pathPagePrefix = '/p';
 const pathTemplatePrefix = '/pt';
 const pathTemplateLocalPrefix = '/pl';
 
+/**
+ * Constructs a Vite InlineConfig configured for the current project using its package name and PP-Dev settings.
+ *
+ * The returned config includes:
+ * - a base path derived from the package name and `templateLess` setting,
+ * - a dev server listening on port 3000,
+ * - build options (no minification, assets inline limit, rollup banner, and output directory),
+ * - CSS options for modules and modern SCSS API,
+ * - the normalized PP-Dev configuration under `ppDevConfig`,
+ * - a plugins array that always includes the core PP-Dev plugin and client injection plugin and may include the MI top bar, image optimizer, and zip packaging plugins depending on configuration.
+ *
+ * @returns A Vite InlineConfig tailored to the project's PP-Dev configuration and package name.
+ */
 export async function getViteConfig() {
   const pkg = getPkg();
 
@@ -105,23 +118,10 @@ export async function getViteConfig() {
 }
 
 /**
- * Gets pp-dev configuration from Next.js config.
+ * Extracts the PP-Dev configuration from a Next.js configuration object.
  *
- * We no longer use experimental.ppDev (triggers Next.js "Unrecognized key" warning).
- * Config is read from: (1) top-level ppDev, (2) standalone pp-dev.config.js via getConfig().
- *
- * @param nextConfig - Next.js configuration object
- * @returns PP-Dev configuration or empty object if not found
- *
- * @example
- * ```ts
- * // In next.config.js - use withPPDev to avoid validation warnings
- * const { withPPDev } = require('@metricinsights/pp-dev');
- * module.exports = withPPDev({ ... }, { backendBaseURL: '...' });
- *
- * // Or use standalone pp-dev.config.js (preferred - no Next.js config pollution)
- * module.exports = { ... };  // your next config
- * ```
+ * @param nextConfig - The Next.js config object to read from
+ * @returns The `ppDev` configuration object found on the top-level of `nextConfig`, or an empty object if none is present
  */
 export function getPPDevConfigFromNextConfig(nextConfig: any): PPDevConfig {
   return nextConfig?.ppDev || {};
@@ -139,11 +139,13 @@ export { authProvider, AuthProvider } from './lib/auth.provider.js';
 export type { AuthState } from './lib/auth.provider.js';
 
 /**
- * Creates the appropriate base path for the template based on configuration and environment
- * @param templateName - Name of the template
- * @param templateLess - Whether the template is template-less
- * @param isDevelopment - Whether running in development mode
- * @returns The base path string
+ * Determine the base path for a template given the template name and environment/feature flags.
+ *
+ * @param templateName - Template identifier used in the returned path
+ * @param templateLess - When true, prefer the page-style path (`/p/{templateName}`) instead of template paths
+ * @param isDevelopment - When true, compute development-specific local paths
+ * @param v7Features - When true, apply v7 feature rules for development path selection
+ * @returns The computed base path (for example `/p/{templateName}`, `/pt/{templateName}`, or `/pl/{templateName}`)
  */
 function createBasePath(
   templateName: string,
@@ -171,11 +173,12 @@ function createBasePath(
 }
 
 /**
- * Merges multiple configuration objects with proper typing and order
- * @param baseConfig - Base configuration to start with
- * @param nextConfiguration - Next.js configuration to merge
- * @param additionalConfig - Additional configuration to merge last
- * @returns Merged configuration object
+ * Merge Next.js configuration objects so later inputs override earlier ones.
+ *
+ * @param baseConfig - Base configuration whose values have lowest precedence
+ * @param nextConfiguration - Next.js configuration whose values override `baseConfig`
+ * @param additionalConfig - Optional configuration whose values override both previous configs
+ * @returns The combined NextConfig with precedence: `additionalConfig` > `nextConfiguration` > `baseConfig`
  */
 function mergeConfigs(
   baseConfig: NextConfig,
@@ -186,17 +189,18 @@ function mergeConfigs(
 }
 
 /**
- * Higher-order function that wraps Next.js configuration with PP-Dev specific settings
+ * Wraps a Next.js configuration (or config factory) to apply PP-Dev-specific basePath and assetPrefix.
  *
- * This function enhances Next.js configuration by:
- * - Adding appropriate base paths for different environments
- * - Injecting runtime configuration for PP-Dev
- * - Handling development vs production configurations
- * - Providing fallback behavior on errors
+ * The returned function resolves the original Next.js configuration (calling it if it's a factory),
+ * merges PP-Dev settings (from ppDevConfig, the project's pp-dev config file, or next.config.ppDev) to
+ * determine template-related options, and returns a NextConfig with an appropriate `basePath` and,
+ * when applicable, `assetPrefix`. In development the PP-Dev settings are not injected into the Next.js
+ * config to avoid unrecognized-key warnings; the original Next.js config is returned with the computed
+ * basePath merged.
  *
- * @param nextjsConfig - Next.js configuration object or function
- * @param ppDevConfig - Optional PP-Dev specific configuration
- * @returns Function that returns enhanced Next.js configuration
+ * @param nextjsConfig - A Next.js config object or a function that receives (phase, nextConfig) and returns a NextConfig
+ * @param ppDevConfig - Optional PP-Dev configuration that overrides values from the project's pp-dev config and next.config.ppDev
+ * @returns A function that accepts (phase, nextConfig) and yields a NextConfig with PP-Dev basePath and assetPrefix applied where appropriate
  */
 export function withPPDev(
   nextjsConfig:

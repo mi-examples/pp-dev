@@ -116,7 +116,13 @@ const PACKAGE_IMPORT = `/${PACKAGE_NAME}/client`;
 const CLIENT_PATH = `/${PACKAGE_IMPORT}`;
 const PACKAGE_REGEXP = new RegExp(`^\\/?${PACKAGE_NAME}\\/client\\/(.*)$`);
 
-// Memoized function to get template with caching
+/**
+ * Load and compile the client HTML EJS template for the specified base URL, using in-memory caching when enabled.
+ *
+ * @param base - Base URL used to resolve injected package asset paths
+ * @param enableCache - Whether to reuse a previously compiled template from the internal cache
+ * @returns The compiled asynchronous EJS template function for rendering the client injection HTML
+ */
 function getTemplate(
   base: string,
   enableCache: boolean = true,

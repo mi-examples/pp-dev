@@ -25,7 +25,12 @@ export interface ProxyOpts {
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 export const PROXY_HEADER = 'X-PP-Proxy';
 
-// TODO: Implement interceptor for streaming responses
+/**
+ * Creates a streaming response handler that marks the response as proxied, copies headers from the proxy response, and pipes the proxy response body to the client.
+ *
+ * @param interceptor - Optional transform function for streamed data chunks. Note: the current implementation accepts this argument but does not apply it to the streamed data.
+ * @returns An async function suitable as a proxy response handler which sets the `PROXY_HEADER`, copies proxy response headers to the server response, and pipes `proxyRes` into `res`.
+ */
 function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: BufferEncoding) => Buffer) {
   return async <T extends IncomingMessage>(proxyRes: T, req: T, res: ServerResponse<T>) => {
     res.setHeader(PROXY_HEADER, 1);
@@ -36,6 +41,16 @@ function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: Buffer
   };
 }
 
+/**
+ * Creates and returns a configured HTTP proxy middleware that rewrites and forwards matching requests to a target base URL.
+ *
+ * @param opts - Configuration options for the proxy:
+ *   - `baseURL` (required): the target origin to which matching requests will be proxied.
+ *   - `rewritePath`: path matching rule used to select requests for proxying; defaults to `^\/(?!p[tl]).*` (paths not starting with `/pt` or `/pl`).
+ *   - `proxyIgnore`: list of path prefixes or RegExp values to exclude from proxying.
+ *   - `disableSSLValidation`: when true, TLS certificate validation for the target is disabled.
+ *   - `miAPI`: optional MiAPI instance; if it contains a personalAccessToken it is added as a Bearer Authorization header.
+ * @returns The configured proxy middleware instance suitable for use with Express/Vite dev server.
 export function initProxy(opts: ProxyOpts) {
   const { rewritePath = /^\/(?!p[tl]).*/i, baseURL = '', devServer, disableSSLValidation = false, miAPI } = opts;
 
