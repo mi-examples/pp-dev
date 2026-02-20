@@ -517,7 +517,7 @@ cli
       if (isRestarting) {
         return;
       }
-      
+
       isRestarting = true;
 
       try {
@@ -638,10 +638,10 @@ cli
           originalAppId ??
           portalPageId ??
           (process.env.MI_APP_ID
-            ? parseInt(process.env.MI_APP_ID)
+            ? parseInt(process.env.MI_APP_ID, 10) || undefined
             : undefined) ??
           (process.env.MI_PORTAL_PAGE_ID
-            ? parseInt(process.env.MI_PORTAL_PAGE_ID)
+            ? parseInt(process.env.MI_PORTAL_PAGE_ID, 10) || undefined
             : undefined) ??
           1;
 
@@ -662,7 +662,7 @@ cli
 
         // Calculate base path using the same logic as the plugin
         const pathPagePrefix = '/p'; // templateLess = true - use /p
-        const pathTemplatePrefix = '/pl'; // templateLess = false && v7Features = true - use /pl
+        const pathTemplateLocalPrefix = '/pl'; // templateLess = false && v7Features = true - use /pl
 
         const configBasePath = config?.basePath;
         let base = '';
@@ -670,7 +670,11 @@ cli
         if (configBasePath) {
           base = configBasePath;
         } else {
-          base = templateLess ? pathPagePrefix : pathTemplatePrefix;
+          base = templateLess
+            ? pathPagePrefix
+            : v7Features
+              ? pathTemplateLocalPrefix
+              : '/pt';
           base += `/${templateName}`;
         }
 
