@@ -1,4 +1,4 @@
-// import { withPPDev } from '@metricinsights/pp-dev';
+import { withPPDev } from '@metricinsights/pp-dev';
 
 /** @type {import('next').NextConfig} */
 // const nextConfig = withPPDev({
@@ -11,7 +11,7 @@
 //   },
 // });
 
-const nextConfig = {
+const nextConfig = withPPDev({
   output: 'export',
   cleanDistDir: true,
   reactStrictMode: true,
@@ -19,6 +19,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-};
+  assetPrefix: '/pt/test-nextjs',
+  basePath: '/p/test-nextjs',
+});
 
 export default nextConfig;

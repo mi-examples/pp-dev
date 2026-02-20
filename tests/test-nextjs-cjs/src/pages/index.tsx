@@ -4,9 +4,11 @@ import vercelIcon from '../../public/vercel.svg';
 import nextIcon from '../../public/next.svg';
 import { useEffect, useState } from 'react';
 import { getCurrentUser } from '@/api/user';
+import { getDatasetData } from '@/api/dataset-data';
 
 export default function Home() {
   const [user, setUser] = useState<{ first_name: string; last_name: string } | null>(null);
+  const [datasetData, setDatasetData] = useState<any>(null);
 
   useEffect(() => {
     if (!user) {
@@ -15,6 +17,14 @@ export default function Home() {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!datasetData) {
+      getDatasetData(1).then((datasetData) => {
+        setDatasetData(datasetData);
+      });
+    }
+  }, [datasetData]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
