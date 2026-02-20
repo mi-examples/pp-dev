@@ -1,3 +1,17 @@
+# [0.14.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.13.2...v0.14.0-beta.1) (2026-02-20)
+
+
+### Bug Fixes
+
+* ejs v4 default import for ESM compatibility ([e64f4c8](https://github.com/mi-examples/pp-dev/commit/e64f4c8fe1344a00daf575521215b0f82ec539ee))
+* improve dev server restart reliability and config change detection ([3edd020](https://github.com/mi-examples/pp-dev/commit/3edd0206ab5d9e27e8088a8a55fc925f5a586f7f))
+
+
+### Features
+
+* **cli:** appId support, base path handling ([63ec031](https://github.com/mi-examples/pp-dev/commit/63ec0318a18a14b06803a59e8ac2d4be225d4631))
+* **cli:** appId support, base path handling, API routes passthrough ([2c16dae](https://github.com/mi-examples/pp-dev/commit/2c16daea94e11d72a0ce93be0f40ed9f29eb4d6a))
+
 ## [0.13.2-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.13.1...v0.13.2-beta.1) (2026-02-12)
 
 

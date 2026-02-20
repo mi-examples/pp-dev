@@ -121,6 +121,10 @@ const configs: RollupOptions[] = [
       sourcemap: true,
       exports: 'auto',
       interop: 'compat',
+      // Fix: avoid _interopNamespaceCompat crash when processing Node.js built-ins
+      // (path, child_process, etc.) that have inherited prototype properties.
+      // getOwnPropertyDescriptor returns undefined for inherited props → d.get throws.
+      externalLiveBindings: false,
       generatedCode: {
         constBindings: true,
         objectShorthand: true,
