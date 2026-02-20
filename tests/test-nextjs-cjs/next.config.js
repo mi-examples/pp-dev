@@ -1,4 +1,4 @@
-// const { withPPDev } = require('@metricinsights/pp-dev');
+const { withPPDev } = require('@metricinsights/pp-dev');
 
 // /** @type {import('next').NextConfig} */
 // const nextConfig = withPPDev({
@@ -15,7 +15,7 @@
 //     esmExternals: true
 //   }
 // });
-const nextConfig = {
+const nextConfig = withPPDev({
   output: 'export',
   cleanDistDir: true,
   reactStrictMode: true,
@@ -23,7 +23,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  assetPrefix: '/pt/next-with-template',
-};
+  // assetPrefix: '/pt/test-nextjs-cjs',
+  // basePath: '',
+});
 
 module.exports = nextConfig;
