@@ -7,7 +7,8 @@ import {
   PP_DEV_PACKAGE_DIR,
 } from '../constants.js';
 import * as fs from 'fs';
-import { AsyncTemplateFunction, compile } from 'ejs';
+import ejs from 'ejs';
+import type { AsyncTemplateFunction } from 'ejs';
 import { fileURLToPath } from 'url';
 
 export interface ClientInjectionPluginOpts {
@@ -139,7 +140,7 @@ function getTemplate(
 
   // Compile template with optimized replacement and better regex escaping
   const escapedClientPath = CLIENT_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const compiledTemplate = compile(
+  const compiledTemplate = ejs.compile(
     templateContent.replace(
       new RegExp(escapedClientPath, 'g'),
       path.posix.join(base, PACKAGE_IMPORT),

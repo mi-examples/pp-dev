@@ -37,7 +37,7 @@ function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: Buffer
 }
 
 export function initProxy(opts: ProxyOpts) {
-  const { rewritePath = /^\/(?!pt).*/i, baseURL = '', devServer, disableSSLValidation = false, miAPI } = opts;
+  const { rewritePath = /^\/(?!p[tl]).*/i, baseURL = '', devServer, disableSSLValidation = false, miAPI } = opts;
 
   if (!baseURL) {
     throw new Error('Base url is required');
