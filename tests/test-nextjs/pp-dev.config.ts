@@ -5,6 +5,7 @@ const ppDevConfig: PPDevConfig = {
   portalPageId: 733,
   v7Features: true,
   templateLess: false,
+  miHudLess: true,
 };
 
 export default ppDevConfig;
