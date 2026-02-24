@@ -1,3 +1,10 @@
+## [0.14.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.14.0...v0.14.1-beta.1) (2026-02-24)
+
+
+### Bug Fixes
+
+* **nextjs:** rewrite response middleware for Next.js page URLs ([3e80f41](https://github.com/mi-examples/pp-dev/commit/3e80f413c3106d9be918604ae0a5e28eeafc98d5))
+
 # [0.14.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.13.2...v0.14.0-beta.1) (2026-02-20)
 
 
