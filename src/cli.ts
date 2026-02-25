@@ -833,9 +833,11 @@ cli
 
         // Initialize pp-dev middlewares
         let mi: MiAPI | null = null;
+        /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
         let fullMiddlewareChain: Array<
           (req: any, res: any, next: () => void) => void
         > = [];
+        /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
         let essentialMiddlewareChain: Array<
           (req: any, res: any, next: () => void) => void
         > = [];
@@ -980,7 +982,10 @@ cli
           // 6. Rewrite Response middleware (only for non-internal routes)
           const rewriteResponseMiddleware = initRewriteResponse(
             (url) => {
-              return url.split('?')[0].endsWith('index.html');
+              const pathname = url.split('?')[0];
+              // Next.js serves page HTML at base path or subpaths (e.g. /p/test-nextjs/, /p/test-nextjs/dashboard),
+              // not at index.html. Match page requests under base, excluding /_next/ static assets.
+              return pathname.startsWith(base) && !pathname.includes('/_next/');
             },
             (response, req) => {
               return Buffer.from(

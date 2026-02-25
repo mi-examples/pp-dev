@@ -2,7 +2,8 @@
 
 <p align="center">
    <a href="https://www.npmjs.com/package/@metricinsights/pp-dev"><img alt="npm" src="https://img.shields.io/npm/v/%40metricinsights%2Fpp-dev?logo=npm&label=npm%20package"></a>
-   <a href="https://github.com/mi-examples/pp-dev-js/actions/workflows/publish.yml"><img alt="GitHub Workflow Status (with event)" src="https://img.shields.io/github/actions/workflow/status/mi-examples/pp-dev-js/publish.yml?logo=github"></a>
+   <a href="https://github.com/mi-examples/pp-dev/actions/workflows/release.yml"><img alt="GitHub Workflow Status (with event)" src="https://github.com/mi-examples/pp-dev/actions/workflows/release.yml/badge.svg"></a>
+   <a href="https://github.com/mi-examples/pp-dev/actions/workflows/ci.yml"><img alt="GitHub Workflow CI Status (with event)" src="https://github.com/mi-examples/pp-dev/actions/workflows/ci.yml/badge.svg?branch=develop"></a>
 </p>
 
 The PP Dev Helper is a development framework and build tool for Metric Insights' Portal Pages, designed to make the
