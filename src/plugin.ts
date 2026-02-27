@@ -9,7 +9,7 @@ import { initRewriteResponse } from "./lib/rewrite-response.middleware.js";
 import { initPPRedirect } from "./lib/pp-redirect.middleware.js";
 import { initLoadPPData } from "./lib/load-pp-data.middleware.js";
 import type { ViteImageOptimizer } from "vite-plugin-image-optimizer";
-import internalServer from "./lib/internal.middleware";
+import { createInternalServer } from "./lib/internal.middleware.js";
 import { getTokenErrorInfo } from "./lib/helpers/index.js";
 
 type RequiredSelection<T, K extends keyof T> = Required<Pick<T, K>> &
@@ -461,6 +461,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     backendBaseURL,
     miHudLess,
     portalPageId,
+    appId,
     enableProxyCache,
     proxyCacheTTL,
     disableSSLValidation,
@@ -473,6 +474,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   // Avoid server caching for index.html file when first loading
   let isFirstRequest = true;
   let baseDir = process.cwd();
+
+  const normalizedAppId = appId ?? portalPageId;
 
   return {
     name: "vite-pp-dev",
@@ -491,7 +494,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
       config.clientInjectionPlugin = {
         backendBaseURL,
-        portalPageId: portalPageId,
+        portalPageId: normalizedAppId,
         templateLess,
         v7Features,
       };
@@ -544,8 +547,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
               "$1$2"
             ),
           },
-          portalPageId,
-          appId: portalPageId,
+          portalPageId: normalizedAppId,
+          appId: normalizedAppId,
           templateLess,
           disableSSLValidation,
           v7Features,
@@ -703,6 +706,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           return null;
         };
 
+        const internalServer = createInternalServer();
         internalServer.post("/@api/login", async (req, res, next) => {
           const { token, tokenType } = req.body;
 
