@@ -67,7 +67,8 @@
   },
   "overrides": {
     "chokidar": "^4.0.3",
-    "minimatch": ">=10.2.1"
+    "minimatch": ">=10.2.4",
+    "npm": ">=11.11.0"
   },
   "peerDependencies": {
     "next": ">= 13 < 17"
@@ -95,7 +96,7 @@
     "jsdom": "^25.0.1",
     "memory-cache": "^0.2.0",
     "picocolors": "^1.1.1",
-    "rollup": "^4.58.0",
+    "rollup": "^4.59.0",
     "sass": "^1.97.3",
     "sharp": "^0.34.5",
     "source-map-support": "^0.5.21",
