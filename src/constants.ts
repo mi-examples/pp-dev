@@ -22,10 +22,6 @@ export const PP_DEV_PACKAGE_DIR = existsSync(
   ? afterBundlePath
   : beforeBundlePath;
 
-console.log('PP_DEV_PACKAGE_DIR', PP_DEV_PACKAGE_DIR);
-console.log('afterBundlePath', afterBundlePath);
-console.log('beforeBundlePath', beforeBundlePath);
-
 export const PP_DEV_CLIENT_ENTRY = resolve(
   PP_DEV_PACKAGE_DIR,
   'dist/client/client.js',

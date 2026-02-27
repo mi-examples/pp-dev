@@ -589,7 +589,10 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         // Get portal page variables from the backend (also, redirect magic)
         server.middlewares.use(
-          initLoadPPData(isIndexRegExp, mi, Object.assign({}, options)),
+          initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, {
+            appId: normalizedAppId,
+            portalPageId: normalizedAppId,
+          })),
         );
 
         server.middlewares.use(
