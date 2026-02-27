@@ -19,9 +19,13 @@ export default function Document() {
           dangerouslySetInnerHTML={{
             __html: `window.PP_VARIABLES = {
             TEST: '[Data Classification]',
+            VARIABLE_TEST: '[variable-test]',
           }`,
           }}
         ></Script>
+        <div>
+          {process.env.NEXT_PUBLIC_TEST ?? 'No test variable'}
+        </div>
         <NextScript />
       </body>
     </Html>

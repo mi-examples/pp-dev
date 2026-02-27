@@ -6,7 +6,9 @@ export const stringIsAValidUrl = (s: string, protocols: string[]) => {
     const parsed = new URL(s);
 
     if (protocols) {
-      return parsed.protocol ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol) : false;
+      return parsed.protocol
+        ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol)
+        : false;
     }
 
     return true;
@@ -15,8 +17,15 @@ export const stringIsAValidUrl = (s: string, protocols: string[]) => {
   }
 };
 
-export const urlReplacer = (originalHost: string, destinationHost: string, content: string) => {
-  const urlReplaceRegExp = new RegExp(`(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`, 'gi');
+export const urlReplacer = (
+  originalHost: string,
+  destinationHost: string,
+  content: string,
+) => {
+  const urlReplaceRegExp = new RegExp(
+    `(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`,
+    'gi',
+  );
 
   return content.replace(urlReplaceRegExp, (substring, ...args) => {
     if (substring.startsWith('!!')) {
@@ -27,8 +36,15 @@ export const urlReplacer = (originalHost: string, destinationHost: string, conte
   });
 };
 
-export const urlPathReplacer = (urlPath: string, destinationPath: string, content: string) => {
-  const urlReplaceRegExp = new RegExp(`${urlPath.replace(/\\*\//gi, '\\\\/')}`, 'gi');
+export const urlPathReplacer = (
+  urlPath: string,
+  destinationPath: string,
+  content: string,
+) => {
+  const urlReplaceRegExp = new RegExp(
+    `${urlPath.replace(/\\*\//gi, '\\\\/')}`,
+    'gi',
+  );
   const unescapedUrlReplaceRegExp = new RegExp(`${urlPath}`, 'gi');
 
   const replacedContent = content.replace(urlReplaceRegExp, destinationPath);
@@ -38,7 +54,11 @@ export const urlPathReplacer = (urlPath: string, destinationPath: string, conten
     : replacedContent;
 };
 
-export const redirect = (res: ServerResponse, url: string, statusCode?: number) => {
+export const redirect = (
+  res: ServerResponse,
+  url: string,
+  statusCode?: number,
+) => {
   res.setHeader('location', url);
   res.statusCode = statusCode || 302;
 

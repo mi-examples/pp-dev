@@ -1,4 +1,7 @@
-import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
+import {
+  createProxyMiddleware,
+  responseInterceptor,
+} from 'http-proxy-middleware';
 import { urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
 import { ViteDevServer } from 'vite';
 import { Express } from 'express';
@@ -26,8 +29,14 @@ const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 export const PROXY_HEADER = 'X-PP-Proxy';
 
 // TODO: Implement interceptor for streaming responses
-function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: BufferEncoding) => Buffer) {
-  return async <T extends IncomingMessage>(proxyRes: T, req: T, res: ServerResponse<T>) => {
+function streamResponseInterceptor(
+  interceptor?: (data: Buffer, encoding: BufferEncoding) => Buffer,
+) {
+  return async <T extends IncomingMessage>(
+    proxyRes: T,
+    req: T,
+    res: ServerResponse<T>,
+  ) => {
     res.setHeader(PROXY_HEADER, 1);
 
     res.setHeaders(new Map(Object.entries(proxyRes.headers)) as any);
@@ -37,7 +46,13 @@ function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: Buffer
 }
 
 export function initProxy(opts: ProxyOpts) {
-  const { rewritePath = /^\/(?!p[tl]).*/i, baseURL = '', devServer, disableSSLValidation = false, miAPI } = opts;
+  const {
+    rewritePath = /^\/(?!p[tl]).*/i,
+    baseURL = '',
+    devServer,
+    disableSSLValidation = false,
+    miAPI,
+  } = opts;
 
   if (!baseURL) {
     throw new Error('Base url is required');
@@ -121,11 +136,17 @@ export function initProxy(opts: ProxyOpts) {
         );
 
         if (host && referer && typeof referer === 'string') {
-          proxyReq.setHeader('referer', referer.replace(new RegExp(`https?://${host}`), baseURL));
+          proxyReq.setHeader(
+            'referer',
+            referer.replace(new RegExp(`https?://${host}`), baseURL),
+          );
         }
 
         if (miAPI.personalAccessToken) {
-          proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
+          proxyReq.setHeader(
+            'Authorization',
+            `Bearer ${miAPI.personalAccessToken}`,
+          );
         }
 
         req.socket.on('close', () => {
@@ -144,83 +165,137 @@ export function initProxy(opts: ProxyOpts) {
           (serverRes.headers['transfer-encoding']?.includes('chunked') &&
             serverRes.headers['x-accel-buffering'] === 'no')
         ) {
-          logger.info(`${colors.blue('Start streaming for request:')} ${colors.green(req.method)} ${req.url}`);
+          logger.info(
+            `${colors.blue('Start streaming for request:')} ${colors.green(req.method)} ${req.url}`,
+          );
 
-          const streamInterceptor = streamResponseInterceptor((data, encoding) => {
-            return Buffer.from(urlReplacer(host, req.headers.host ?? '', data.toString(encoding)), encoding);
-          });
+          const streamInterceptor = streamResponseInterceptor(
+            (data, encoding) => {
+              return Buffer.from(
+                urlReplacer(
+                  host,
+                  req.headers.host ?? '',
+                  data.toString(encoding),
+                ),
+                encoding,
+              );
+            },
+          );
 
           return streamInterceptor(serverRes, req, res);
         }
 
-        const rewriteInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
-          res.setHeader(PROXY_HEADER, 1);
+        const rewriteInterceptor = responseInterceptor(
+          async (responseBuffer, proxyRes, req, res) => {
+            res.setHeader(PROXY_HEADER, 1);
 
-          const type = await (await fileType).fileTypeFromBuffer(responseBuffer as unknown as Uint8Array);
+            const type = await (
+              await fileType
+            ).fileTypeFromBuffer(responseBuffer as unknown as Uint8Array);
 
-          if (type) {
-            return responseBuffer;
-          } else {
-            let response = responseBuffer.toString('utf8'); // convert buffer to string
+            if (type) {
+              return responseBuffer;
+            } else {
+              let response = responseBuffer.toString('utf8'); // convert buffer to string
 
-            try {
-              const reqUrl = new URL(req.url ?? '', `http://${host}`);
+              try {
+                const reqUrl = new URL(req.url ?? '', `http://${host}`);
 
-              if (reqUrl.searchParams && reqUrl.searchParams.has('proxyRedirect')) {
-                const redirectToFunction = function () {
-                  const storageKey = 'pp-dev::redirectCount' as const;
-                  const lastRedirectKey = 'pp-dev::lastRedirect' as const;
+                if (
+                  reqUrl.searchParams &&
+                  reqUrl.searchParams.has('proxyRedirect')
+                ) {
+                  const redirectToFunction = function () {
+                    const storageKey = 'pp-dev::redirectCount' as const;
+                    const lastRedirectKey = 'pp-dev::lastRedirect' as const;
 
-                  let redirectCount = +(localStorage.getItem(storageKey) ?? 0);
-                  let lastRedirect = localStorage.getItem(lastRedirectKey);
+                    let redirectCount = +(
+                      localStorage.getItem(storageKey) ?? 0
+                    );
+                    let lastRedirect = localStorage.getItem(lastRedirectKey);
 
-                  if (Number.isNaN(redirectCount)) {
-                    redirectCount = 0;
-                  }
-
-                  let url = window.location.href;
-
-                  const func = function () {
-                    const params = new URLSearchParams(window.location.search);
-
-                    if (!params.has('proxyRedirect')) {
-                      console.debug('No proxyRedirect param. Cleaning up.');
-                      localStorage.removeItem(storageKey);
-
-                      return;
+                    if (Number.isNaN(redirectCount)) {
+                      redirectCount = 0;
                     }
 
-                    if (url !== window.location.href) {
-                      url = window.location.href;
+                    let url = window.location.href;
 
-                      setTimeout(func, redirectCount < 3 ? 3000 : 5000);
-                    } else {
-                      window.location.href = params.get('proxyRedirect') as string;
-                    }
+                    const func = function () {
+                      const params = new URLSearchParams(
+                        window.location.search,
+                      );
 
-                    localStorage.setItem(storageKey, `${++redirectCount}`);
-                    localStorage.setItem(lastRedirectKey, new Date().toISOString());
+                      if (!params.has('proxyRedirect')) {
+                        console.debug('No proxyRedirect param. Cleaning up.');
+                        localStorage.removeItem(storageKey);
+
+                        return;
+                      }
+
+                      if (url !== window.location.href) {
+                        url = window.location.href;
+
+                        setTimeout(func, redirectCount < 3 ? 3000 : 5000);
+                      } else {
+                        window.location.href = params.get(
+                          'proxyRedirect',
+                        ) as string;
+                      }
+
+                      localStorage.setItem(storageKey, `${++redirectCount}`);
+                      localStorage.setItem(
+                        lastRedirectKey,
+                        new Date().toISOString(),
+                      );
+                    };
+
+                    setTimeout(func, 3000);
                   };
 
-                  setTimeout(func, 3000);
-                };
+                  response +=
+                    '<script>' +
+                    `(${redirectToFunction.toString()})()` +
+                    '</script>';
+                }
 
-                response += '<script>' + `(${redirectToFunction.toString()})()` + '</script>';
+                if (reqUrl.pathname.startsWith('/login')) {
+                  //disable cache
+                  res.setHeader(
+                    'Cache-Control',
+                    'no-cache, no-store, must-revalidate',
+                  );
+                  res.setHeader('Pragma', 'no-cache');
+                  res.setHeader('Expires', '0');
+                }
+
+                const slice = response.slice(0, 100);
+
+                if (
+                  slice.includes('<html') ||
+                  slice.includes('<body') ||
+                  slice.includes('<head') ||
+                  slice.includes('html>')
+                ) {
+                  response +=
+                    '<script>' +
+                    `const host = "${host}";\n(${tokenLoginFunction.toString()})()` +
+                    '</script>';
+                }
+              } catch {
+                //
               }
 
-              if (reqUrl.pathname.startsWith('/login')) {
-                response += '<script>' + `const host = "${host}";\n(${tokenLoginFunction.toString()})()` + '</script>';
-              }
-            } catch {
-              //
+              const reqHost = req.headers.host ?? '';
+
+              // manipulate response and return the result
+              return urlPathReplacer(
+                '/auth/saml/login',
+                '/login',
+                urlReplacer(host, reqHost, response),
+              );
             }
-
-            const reqHost = req.headers.host ?? '';
-
-            // manipulate response and return the result
-            return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
-          }
-        });
+          },
+        );
 
         return rewriteInterceptor(serverRes, req, res);
       },

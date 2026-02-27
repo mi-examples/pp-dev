@@ -12,7 +12,10 @@ import { colors } from './helpers/color.helper.js';
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
 
-const DIRNAME = path.dirname((typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url));
+const DIRNAME = path.dirname(
+  (typeof __filename !== 'undefined' && __filename) ||
+    fileURLToPath(import.meta.url),
+);
 
 const pluginPath = path.resolve(DIRNAME, '..', '..');
 const node_modules_path = path.resolve(pluginPath, '..', '..');
@@ -54,7 +57,8 @@ export class DistService {
       distZipFolder = path.resolve(process.cwd(), 'dist-zip'),
       distZipFilename = `${this.pageName}.zip`,
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
-      dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
+      dateFormat = (date: Date) =>
+        date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
     } = syncOptions || {};
 
     this.backupFolder = backupFolder;
@@ -143,7 +147,10 @@ export class DistService {
       throw new Error('Backup file is not a ZIP file');
     }
 
-    const backupFileHash = crypto.createHash('md5').update(backupFile).digest('hex');
+    const backupFileHash = crypto
+      .createHash('md5')
+      .update(backupFile)
+      .digest('hex');
     const lastSavedBackup = await this.getLatestSavedBackup();
 
     if (lastSavedBackup) {
@@ -164,9 +171,11 @@ export class DistService {
 
     await this.syncMeta();
 
-    return await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile).finally(() => {
-      this.logger.info(`Backup saved to ${filename}`);
-    });
+    return await fs
+      .writeFile(path.resolve(this.backupFolder, filename), backupFile)
+      .finally(() => {
+        this.logger.info(`Backup saved to ${filename}`);
+      });
   }
 
   async buildNewAssets() {
@@ -176,11 +185,15 @@ export class DistService {
       // Colorized log output with message about build start
       this.logger.info(colors.cyan('[DistService] Build started'));
 
-      const proc = child_process.spawn('node', [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'], {
-        cwd: process.cwd(),
-        env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
-        stdio: 'inherit',
-      });
+      const proc = child_process.spawn(
+        'node',
+        [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'],
+        {
+          cwd: process.cwd(),
+          env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
+          stdio: 'inherit',
+        },
+      );
 
       proc.on('message', (msg) => {
         data += msg;
@@ -207,7 +220,11 @@ export class DistService {
         this.logger.info(colors.cyan('[DistService] Build finished'));
       });
 
-      const assetFile = path.resolve(process.cwd(), this.distZipFolder, this.distZipFilename);
+      const assetFile = path.resolve(
+        process.cwd(),
+        this.distZipFolder,
+        this.distZipFilename,
+      );
 
       if (!(await fs.stat(assetFile))) {
         throw new Error(`File ${assetFile} not found`);
