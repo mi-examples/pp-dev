@@ -15,6 +15,7 @@ export type Headers = Record<string, string | undefined>;
 
 export interface MiAPIOptions {
   portalPageId?: number;
+  appId?: number;
   headers?: Headers;
   templateLess: boolean;
   disableSSLValidation?: boolean;
@@ -26,16 +27,6 @@ export const TEMPLATE_PAGE_NAME = "[DEV PAGE. DO NOT DELETE]";
 
 // Performance optimization: Connection pool for axios instances
 const axiosInstanceCache = new Map<string, Axios>();
-
-// Performance optimization: Lazy JSDOM import
-let jsdomModule: typeof import("jsdom") | null = null;
-
-async function getJSDOM() {
-  if (!jsdomModule) {
-    jsdomModule = await import("jsdom");
-  }
-  return jsdomModule;
-}
 
 export class MiAPI {
   #headers: Headers;

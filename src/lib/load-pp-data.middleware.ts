@@ -28,6 +28,7 @@ function getCachedResponse(key: string): any | null {
 
   if (Date.now() - cached.timestamp > CACHE_TTL) {
     apiResponseCache.delete(key);
+    
     return null;
   }
 
@@ -61,7 +62,7 @@ export function initLoadPPData(
     authState = state;
   });
 
-  return async (req, res, next) => {
+  return async (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
     try {
       const isNeedTemplateLoad = !(templateLess && miHudLess);
       const isApplyRequest = applyUrlRegExp.test(cutUrlParams(req.url ?? ''));
