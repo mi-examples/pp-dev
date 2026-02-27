@@ -66,6 +66,7 @@
     "node": ">=22.14"
   },
   "overrides": {
+    "chokidar": "^5.0.0",
     "minimatch": ">=10.2.4",
     "npm": ">=11.11.0"
   },
