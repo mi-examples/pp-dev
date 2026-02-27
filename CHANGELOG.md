@@ -1,3 +1,17 @@
+# [0.15.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.14.1...v0.15.0-beta.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* add chokidar override to resolve npm ci sync ([3e24d40](https://github.com/mi-examples/pp-dev/commit/3e24d4020a33a5693f8aa442a0add6e80208719b))
+* pass appId to initLoadPPData, remove debug logs, update lock file ([079c13b](https://github.com/mi-examples/pp-dev/commit/079c13bc3db2ea018d377ed01240ff7ffaea253d))
+* proxy middleware - add cache headers for login page, inject token for HTML ([452755f](https://github.com/mi-examples/pp-dev/commit/452755f73391a0a6e2e19223db8f703219f6d993))
+
+
+### Features
+
+* add appId option and fix internal server restart ([ee74beb](https://github.com/mi-examples/pp-dev/commit/ee74beb07d0ffe091302c7af4b56b090ea5cb383))
+
 ## [0.14.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.14.0...v0.14.1-beta.1) (2026-02-24)
 
 
