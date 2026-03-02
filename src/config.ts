@@ -1,4 +1,10 @@
-import { readdirSync, readFileSync, unlink, writeFileSync, existsSync } from 'fs';
+import {
+  readdirSync,
+  readFileSync,
+  unlink,
+  writeFileSync,
+  existsSync,
+} from 'fs';
 import path from 'path';
 import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
@@ -23,8 +29,11 @@ const PACKAGE_CACHE_TTL = 60 * 1000; // 1 minute cache
 
 function getPackageJson(): any {
   const now = Date.now();
-  
-  if (packageJsonCache && (now - packageJsonCache.timestamp) < PACKAGE_CACHE_TTL) {
+
+  if (
+    packageJsonCache &&
+    now - packageJsonCache.timestamp < PACKAGE_CACHE_TTL
+  ) {
     return packageJsonCache.data;
   }
 
@@ -36,7 +45,7 @@ function getPackageJson(): any {
         flag: 'r',
       }),
     );
-    
+
     packageJsonCache = { data, timestamp: now };
     return data;
   } catch {
@@ -53,6 +62,7 @@ async function getEsbuild() {
   if (!esbuildModule) {
     esbuildModule = await import('esbuild');
   }
+
   return esbuildModule;
 }
 
@@ -62,11 +72,13 @@ async function loadTsConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `ts:${filePath}`;
   const cached = configCache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
 
   let isESM = false;
+
   if (/\.m[jt]s$/.test(filePath)) {
     isESM = true;
   } else if (/\.c[jt]s$/.test(filePath)) {
@@ -78,7 +90,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
   }
 
   const esbuild = await getEsbuild();
-  
+
   const result = await esbuild.build({
     absWorkingDir: cwd,
     entryPoints: [filePath],
@@ -108,7 +120,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
     const conf = (await import(fileUrl)).default;
 
     config = conf?.default || conf;
-    
+
     // Cache the result
     configCache.set(cacheKey, {
       data: config,
@@ -131,19 +143,20 @@ async function loadJsConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `js:${filePath}`;
   const cached = configCache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
 
-  const config = (await import(pathToFileURL(filePath).toString())).default as T;
-  
+  const config = (await import(pathToFileURL(filePath).toString()))
+    .default as T;
+
   // Cache the result
   configCache.set(cacheKey, {
     data: config,
     timestamp: Date.now(),
     filePath,
   });
-  
+
   return config;
 }
 
@@ -151,19 +164,19 @@ async function loadJSONConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `json:${filePath}`;
   const cached = configCache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
 
   const config = JSON.parse(readFileSync(filePath, { encoding: 'utf-8' })) as T;
-  
+
   // Cache the result
   configCache.set(cacheKey, {
     data: config,
     timestamp: Date.now(),
     filePath,
   });
-  
+
   return config;
 }
 
@@ -173,8 +186,8 @@ const DIR_CACHE_TTL = 10 * 1000; // 10 seconds cache
 
 function getDirectoryContent(): string[] {
   const now = Date.now();
-  
-  if (dirContentCache && (now - dirContentCache.timestamp) < DIR_CACHE_TTL) {
+
+  if (dirContentCache && now - dirContentCache.timestamp < DIR_CACHE_TTL) {
     return dirContentCache.files;
   }
 
@@ -188,7 +201,10 @@ function getDirectoryContent(): string[] {
   return files;
 }
 
-async function loadConfig<T extends object>(dirFiles: string[], configNames: string[]) {
+async function loadConfig<T extends object>(
+  dirFiles: string[],
+  configNames: string[],
+) {
   for (const configName of configNames) {
     if (dirFiles.includes(configName)) {
       if (/\.[cm]?ts$/i.test(configName)) {
@@ -214,7 +230,10 @@ export async function getConfig() {
   let config: PPDevConfig = {};
   let configFound = false;
 
-  const newConfig = await loadConfig<PPDevConfig>(dirContent, PP_DEV_CONFIG_NAMES as never as string[]);
+  const newConfig = await loadConfig<PPDevConfig>(
+    dirContent,
+    PP_DEV_CONFIG_NAMES as never as string[],
+  );
 
   if (newConfig) {
     config = newConfig;
@@ -223,7 +242,10 @@ export async function getConfig() {
 
   if (dirContent.length) {
     if (!configFound) {
-      const watchConfig = await loadConfig<PPWatchConfig>(dirContent, PP_WATCH_CONFIG_NAMES as never as string[]);
+      const watchConfig = await loadConfig<PPWatchConfig>(
+        dirContent,
+        PP_WATCH_CONFIG_NAMES as never as string[],
+      );
 
       if (watchConfig) {
         config = {

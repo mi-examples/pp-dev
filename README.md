@@ -2,7 +2,7 @@
 
 <p align="center">
    <a href="https://www.npmjs.com/package/@metricinsights/pp-dev"><img alt="npm" src="https://img.shields.io/npm/v/%40metricinsights%2Fpp-dev?logo=npm&label=npm%20package"></a>
-   <a href="https://github.com/mi-examples/pp-dev/actions/workflows/release.yml"><img alt="GitHub Workflow Status (with event)" src="https://github.com/mi-examples/pp-dev/actions/workflows/release.yml/badge.svg"></a>
+   <a href="https://github.com/mi-examples/pp-dev/releases"><img alt="Release" src="https://img.shields.io/github/v/release/mi-examples/pp-dev?label=release"></a>
    <a href="https://github.com/mi-examples/pp-dev/actions/workflows/ci.yml"><img alt="GitHub Workflow CI Status (with event)" src="https://github.com/mi-examples/pp-dev/actions/workflows/ci.yml/badge.svg?branch=develop"></a>
 </p>
 

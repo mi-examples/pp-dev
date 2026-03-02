@@ -1,6 +1,6 @@
 /**
  * Global Authentication Provider
- * 
+ *
  * This provider manages the global authentication state across the application.
  * It provides a centralized way to track and manage authentication status.
  */
@@ -61,7 +61,9 @@ class AuthProvider {
   /**
    * Update both authentication and redirect status
    */
-  updateState(updates: Partial<Pick<AuthState, 'isAuthenticated' | 'isRedirected'>>): void {
+  updateState(
+    updates: Partial<Pick<AuthState, 'isAuthenticated' | 'isRedirected'>>,
+  ): void {
     if (updates.isAuthenticated !== undefined) {
       this.state.isAuthenticated = updates.isAuthenticated;
     }
@@ -89,7 +91,7 @@ class AuthProvider {
    */
   subscribe(listener: (state: AuthState) => void): () => void {
     this.listeners.add(listener);
-    
+
     // Return unsubscribe function
     return () => {
       this.listeners.delete(listener);
@@ -100,7 +102,7 @@ class AuthProvider {
    * Notify all listeners of state changes
    */
   private notifyListeners(): void {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       try {
         listener(this.getState());
       } catch (error) {

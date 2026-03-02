@@ -20,8 +20,9 @@ export interface TokenErrorInfo {
  */
 export function getTokenErrorInfo(error: any): TokenErrorInfo {
   const status = error.response?.status || 0;
-  const message = error.response?.data?.message || error.message || 'Unknown error';
-  
+  const message =
+    error.response?.data?.message || error.message || 'Unknown error';
+
   switch (status) {
     case 412:
       if (message.toLowerCase().includes('session expired')) {
@@ -34,8 +35,8 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
             'Refresh your token in the portal',
             'Re-authenticate with the portal',
             'Check if your token has been revoked',
-            'Ensure your token has the correct permissions'
-          ]
+            'Ensure your token has the correct permissions',
+          ],
         };
       }
       return {
@@ -46,11 +47,11 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
         suggestions: [
           'Verify your token is correct',
           'Check token permissions',
-          'Ensure the token hasn\'t expired',
-          'Try generating a new token'
-        ]
+          "Ensure the token hasn't expired",
+          'Try generating a new token',
+        ],
       };
-      
+
     case 401:
       return {
         status,
@@ -60,11 +61,11 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
         suggestions: [
           'Check if your token is valid',
           'Verify you have the required permissions',
-          'Ensure the token hasn\'t been revoked',
-          'Try logging in again'
-        ]
+          "Ensure the token hasn't been revoked",
+          'Try logging in again',
+        ],
       };
-      
+
     case 403:
       return {
         status,
@@ -75,10 +76,10 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
           'Check your user permissions',
           'Verify the portal page ID is correct',
           'Ensure your token has the right scope',
-          'Contact your administrator'
-        ]
+          'Contact your administrator',
+        ],
       };
-      
+
     default:
       return {
         status,
@@ -89,8 +90,8 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
           'Check your network connection',
           'Verify the portal URL is correct',
           'Try again in a few moments',
-          'Check the portal status'
-        ]
+          'Check the portal status',
+        ],
       };
   }
 }
@@ -101,11 +102,11 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
 export function logTokenError(logger: any, error: any, context?: string): void {
   const errorInfo = getTokenErrorInfo(error);
   const contextPrefix = context ? `[${context}] ` : '';
-  
+
   logger.error(colors.red(`${contextPrefix}${errorInfo.userFriendlyMessage}`));
   logger.error(colors.red(`Status: ${errorInfo.status} (${errorInfo.code})`));
   logger.error(colors.red(`Details: ${errorInfo.message}`));
-  
+
   if (errorInfo.suggestions.length > 0) {
     logger.info(colors.yellow('Suggestions:'));
     errorInfo.suggestions.forEach((suggestion, index) => {
@@ -126,6 +127,8 @@ export function isTokenError(error: any): boolean {
  * Check if an error indicates an expired session
  */
 export function isSessionExpiredError(error: any): boolean {
-  return error.response?.status === 412 && 
-         error.response?.data?.message?.toLowerCase().includes('session expired');
+  return (
+    error.response?.status === 412 &&
+    error.response?.data?.message?.toLowerCase().includes('session expired')
+  );
 }

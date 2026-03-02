@@ -1,11 +1,11 @@
-import { ViteDevServer } from "vite";
-import * as memoryCache from "memory-cache";
-import { PROXY_HEADER } from "./proxy-pass.middleware.js";
-import type { NextHandleFunction } from "connect";
-import { Express } from "express";
-import { createLogger } from "./logger.js";
-import { colors } from "./helpers/color.helper.js";
-import { ServerResponse } from "http";
+import { ViteDevServer } from 'vite';
+import * as memoryCache from 'memory-cache';
+import { PROXY_HEADER } from './proxy-pass.middleware.js';
+import type { NextHandleFunction } from 'connect';
+import { Express } from 'express';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
+import { ServerResponse } from 'http';
 
 export interface CacheItem {
   headers: Record<string, any>;
@@ -21,7 +21,7 @@ export interface ProxyCacheOpts {
   maxItems?: number; // Maximum number of cache items
 }
 
-declare module "vite" {
+declare module 'vite' {
   interface ViteDevServer {
     cache?: memoryCache.CacheClass<string, CacheItem>;
   }
@@ -127,15 +127,15 @@ const cache = new EnhancedCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
  */
 function generateCacheKey(url: string): string {
   // Remove query parameters for better cache hit rates
-  const cleanUrl = url.split("?")[0];
+  const cleanUrl = url.split('?')[0];
 
   // Only cache files with extensions
   if (!FILE_EXTENSION_REGEX.test(cleanUrl)) {
-    return "";
+    return '';
   }
 
-  if (cleanUrl.includes("/auth/info.js")) {
-    return "";
+  if (cleanUrl.includes('/auth/info.js')) {
+    return '';
   }
 
   return url;
@@ -153,7 +153,10 @@ function createResponseBuffer(chunks: Buffer[]): Buffer {
     return chunks[0];
   }
 
-  const totalLength = chunks.reduce((sum, chunk) => Buffer.byteLength(chunk) + sum, 0);
+  const totalLength = chunks.reduce(
+    (sum, chunk) => Buffer.byteLength(chunk) + sum,
+    0,
+  );
 
   return Buffer.concat(chunks as unknown as Uint8Array[], totalLength);
 }
@@ -163,7 +166,7 @@ function createResponseBuffer(chunks: Buffer[]): Buffer {
  */
 function setResponseHeaders(
   res: ServerResponse,
-  headers: Record<string, any>
+  headers: Record<string, any>,
 ): void {
   try {
     for (const [header, value] of Object.entries(headers)) {
@@ -173,7 +176,7 @@ function setResponseHeaders(
     }
   } catch (error) {
     // Log header setting errors but don't fail the request
-    console.warn("Failed to set some response headers:", error);
+    console.warn('Failed to set some response headers:', error);
   }
 }
 
@@ -196,7 +199,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
   devServer.cache = cache;
 
   return (req, res, next) => {
-    const url = req.originalUrl || req.url || "";
+    const url = req.originalUrl || req.url || '';
     const cacheKey = generateCacheKey(url);
 
     // Skip caching if no valid cache key
@@ -209,9 +212,9 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
     if (cacheItem) {
       logger.info(
-        `${colors.blue("Proxies request:")} ${colors.green(
-          req.method
-        )} ${url} -> ${colors.blue("Cache")} ${cacheKey}`
+        `${colors.blue('Proxies request:')} ${colors.green(
+          req.method,
+        )} ${url} -> ${colors.blue('Cache')} ${cacheKey}`,
       );
 
       setResponseHeaders(res, cacheItem.headers);
@@ -231,25 +234,25 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     (res as any).write = function (
       data: any,
       encoding?: BufferEncoding,
-      callback?: (error?: Error | null) => void
+      callback?: (error?: Error | null) => void,
     ): boolean {
       if (!res.hasHeader(PROXY_HEADER)) {
         return originalWrite.call(
           this,
           data,
           encoding as BufferEncoding,
-          callback
+          callback,
         );
       }
 
       // Convert data to Buffer and store
-      if (typeof data === "string") {
-        const safeEncoding: BufferEncoding = encoding || "utf8";
+      if (typeof data === 'string') {
+        const safeEncoding: BufferEncoding = encoding || 'utf8';
         chunks.push(Buffer.from(data, safeEncoding));
       } else if (Buffer.isBuffer(data)) {
         chunks.push(data);
       } else if (data !== null && data !== undefined) {
-        chunks.push(Buffer.from(String(data), "utf8"));
+        chunks.push(Buffer.from(String(data), 'utf8'));
       }
 
       return true;
@@ -259,26 +262,26 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     (res as any).end = function (
       chunk?: any,
       encoding?: BufferEncoding,
-      callback?: () => void
+      callback?: () => void,
     ): ServerResponse {
       if (!res.hasHeader(PROXY_HEADER)) {
         return originalEnd.call(
           this,
           chunk,
           encoding as BufferEncoding,
-          callback
+          callback,
         );
       }
 
       // Add final chunk if provided
       if (chunk !== undefined && chunk !== null) {
-        if (typeof chunk === "string") {
-          const safeEncoding: BufferEncoding = encoding || "utf8";
+        if (typeof chunk === 'string') {
+          const safeEncoding: BufferEncoding = encoding || 'utf8';
           chunks.push(Buffer.from(chunk, safeEncoding));
         } else if (Buffer.isBuffer(chunk)) {
           chunks.push(chunk);
         } else {
-          chunks.push(Buffer.from(String(chunk), "utf8"));
+          chunks.push(Buffer.from(String(chunk), 'utf8'));
         }
       }
 
@@ -287,7 +290,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
       try {
         finalBuffer = createResponseBuffer(chunks);
-        
+
         const responseSize = Buffer.byteLength(finalBuffer);
 
         // Only cache if response is not empty and reasonable size
@@ -303,9 +306,9 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
           cache.put(cacheKey, cacheItem, ttl);
 
           logger.info(
-            `${colors.blue("[Cached]")} ${cacheKey} (${(
+            `${colors.blue('[Cached]')} ${cacheKey} (${(
               responseSize / 1024
-            ).toFixed(1)}KB)`
+            ).toFixed(1)}KB)`,
           );
         }
       } catch (error) {
@@ -314,13 +317,13 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       }
 
       // Send response with proper encoding handling
-      const finalEncoding = encoding || "utf8";
+      const finalEncoding = encoding || 'utf8';
 
       return originalEnd.call(
         this,
         finalBuffer,
         finalEncoding as BufferEncoding,
-        callback
+        callback,
       );
     };
 

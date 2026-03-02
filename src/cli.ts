@@ -25,7 +25,7 @@ import {
 import { parse } from 'url';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import { initPPRedirect } from './lib/pp-redirect.middleware.js';
-import { MiAPI } from './lib/pp.middleware.js';
+import { MiAPI, MiAPIOptions } from './lib/pp.middleware.js';
 import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
@@ -846,7 +846,7 @@ cli
           const baseUrlHost = new URL(backendBaseURL).host;
 
           // Initialize MiAPI
-          const miConfig = {
+          const miConfig: MiAPIOptions = {
             headers: {
               host: baseUrlHost,
               referer: backendBaseURL,
@@ -950,13 +950,15 @@ cli
 
           // 4. Load PP Data middleware (only for non-internal routes)
           const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
-          const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, {
-            base,
-            v7Features,
-          });
+          const loadPPDataMiddleware = initLoadPPData(
+            isIndexRegExp,
+            mi,
+            Object.assign({ base }, miConfig),
+          );
           const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
             loadPPDataMiddleware(req, res, next);
           };
+          
           fullMiddlewareChain.push(loadPPDataWrapper);
 
           // 5. Internal Server middleware (API endpoints) - essential for all routes

@@ -1,9 +1,9 @@
-import { createLogger } from "./logger.js";
-import { colors, getTokenErrorInfo, logTokenError } from "./helpers/index.js";
-import { DistService } from "./dist.service.js";
-import { MiAPI } from "./pp.middleware.js";
-import { Logger, ViteDevServer } from "vite";
-import { isAxiosError } from "axios";
+import { createLogger } from './logger.js';
+import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
+import { DistService } from './dist.service.js';
+import { MiAPI } from './pp.middleware.js';
+import { Logger, ViteDevServer } from 'vite';
+import { isAxiosError } from 'axios';
 
 export interface ClientServiceOptions {
   distService?: DistService;
@@ -13,7 +13,10 @@ export interface ClientServiceOptions {
 export class ClientService {
   private readonly server: ViteDevServer;
   private readonly opts: ClientServiceOptions;
-  private readonly eventMap: Map<string, (this: ClientService, ...attrs: any[]) => void>;
+  private readonly eventMap: Map<
+    string,
+    (this: ClientService, ...attrs: any[]) => void
+  >;
 
   private logger: Logger;
 
@@ -21,7 +24,10 @@ export class ClientService {
     this.server = server;
     this.opts = opts || {};
 
-    this.eventMap = new Map<string, (this: ClientService, ...attrs: any[]) => void>();
+    this.eventMap = new Map<
+      string,
+      (this: ClientService, ...attrs: any[]) => void
+    >();
 
     this.eventMap.set('info-data:request', this.onInfoDataRequest.bind(this));
     this.eventMap.set('template:sync', this.onTemplateSync.bind(this));
@@ -74,34 +80,40 @@ export class ClientService {
         if (isAxiosError(err)) {
           // Use the token helper for better error handling
           const errorInfo = getTokenErrorInfo(err);
-          
+
           if (errorInfo.code === 'SESSION_EXPIRED') {
-            this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
-            
+            this.logger.info(
+              colors.yellow(
+                'Session expired - attempting to validate credentials',
+              ),
+            );
+
             // Try to validate credentials to get more specific error information
             try {
               const validation = await miAPI?.validateCredentials();
               if (validation && !validation.isValid) {
-                this.logger.error(colors.red(`Authentication error: ${validation.error}`));
-                this.server.ws.send('template:sync:response', { 
-                  error: validation.error, 
+                this.logger.error(
+                  colors.red(`Authentication error: ${validation.error}`),
+                );
+                this.server.ws.send('template:sync:response', {
+                  error: validation.error,
                   code: validation.code,
-                  refresh: true 
+                  refresh: true,
                 });
               } else {
                 this.logger.info(colors.yellow('Session expired'));
-                this.server.ws.send('template:sync:response', { 
-                  error: 'Session expired', 
+                this.server.ws.send('template:sync:response', {
+                  error: 'Session expired',
                   code: 'SESSION_EXPIRED',
-                  refresh: true 
+                  refresh: true,
                 });
               }
             } catch (validationError) {
               this.logger.info(colors.yellow('Session expired'));
-              this.server.ws.send('template:sync:response', { 
-                error: 'Session expired', 
+              this.server.ws.send('template:sync:response', {
+                error: 'Session expired',
                 code: 'SESSION_EXPIRED',
-                refresh: true 
+                refresh: true,
               });
             }
 
@@ -115,12 +127,15 @@ export class ClientService {
               (err.cause as { code: string } & Error).code === 'ENOTFOUND')
           ) {
             this.logger.info(
-              colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
+              colors.yellow(
+                'Server in maintenance mode, VPN connection is needed or no internet connection',
+              ),
             );
 
             this.server.ws.send('template:sync:response', {
-              error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-              code: 'CONNECTION_ERROR'
+              error:
+                'Server in maintenance mode, VPN connection is needed or no internet connection',
+              code: 'CONNECTION_ERROR',
             });
 
             return err;
@@ -135,14 +150,16 @@ export class ClientService {
       }
 
       const newAssets = currentAssets
-        ? await distService?.saveBackupAndBuild(currentAssets).catch((err: Error) => {
-            if (err.message === 'Backup file is not a ZIP file') {
-              this.logger.error(colors.red('Backup file is not a ZIP file'));
+        ? await distService
+            ?.saveBackupAndBuild(currentAssets)
+            .catch((err: Error) => {
+              if (err.message === 'Backup file is not a ZIP file') {
+                this.logger.error(colors.red('Backup file is not a ZIP file'));
 
-              return err;
-            }
-          })
-        : await distService?.buildNewAssets()
+                return err;
+              }
+            })
+        : await distService?.buildNewAssets();
 
       if (newAssets && newAssets instanceof Buffer) {
         const updateResult = await miAPI?.updateAssets(newAssets);
@@ -154,7 +171,11 @@ export class ClientService {
             lastBackupName: backupFilename,
             lastBackupHash: currentHash,
             lastBackupDate: backupDate,
-          } = backupMeta || { lastBackupName: '', lastBackupHash: '', lastBackupDate: new Date().toISOString() };
+          } = backupMeta || {
+            lastBackupName: '',
+            lastBackupHash: '',
+            lastBackupDate: new Date().toISOString(),
+          };
 
           this.server.ws.send('template:sync:response', {
             syncedAt: new Date(backupDate),
@@ -164,27 +185,35 @@ export class ClientService {
 
           this.logger.info(colors.green('Template synced'));
         } else {
-          this.server.ws.send('template:sync:response', { error: 'Failed to update assets' });
+          this.server.ws.send('template:sync:response', {
+            error: 'Failed to update assets',
+          });
 
           this.logger.error(colors.red('Failed to update assets'));
         }
       } else {
         if (newAssets instanceof Error) {
-          this.server.ws.send('template:sync:response', { error: newAssets.message });
+          this.server.ws.send('template:sync:response', {
+            error: newAssets.message,
+          });
 
           this.logger.error(colors.red(newAssets.message));
 
           return;
         }
 
-        this.server.ws.send('template:sync:response', { error: 'Failed to build new assets' });
+        this.server.ws.send('template:sync:response', {
+          error: 'Failed to build new assets',
+        });
 
         this.logger.error(colors.red('Failed to build new assets'));
 
         return;
       }
     } else {
-      this.server.ws.send('template:sync:response', { error: 'Dist service or MiAPI is not defined' });
+      this.server.ws.send('template:sync:response', {
+        error: 'Dist service or MiAPI is not defined',
+      });
 
       this.logger.error(colors.red('Dist service or MiAPI is not defined'));
 

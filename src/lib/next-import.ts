@@ -1,5 +1,5 @@
-import type next from "next";
-import type * as nextConstants from "next/constants";
+import type next from 'next';
+import type * as nextConstants from 'next/constants';
 
 /**
  * Safe Next.js import utility
@@ -18,8 +18,8 @@ export interface NextJSImports {
 export async function safeNextImport(): Promise<NextJSImports> {
   try {
     const [next, constants] = await Promise.all([
-      import("next"),
-      import("next/constants.js"),
+      import('next'),
+      import('next/constants.js'),
     ]);
 
     return {
@@ -31,7 +31,7 @@ export async function safeNextImport(): Promise<NextJSImports> {
       `Next.js is required but not available. Please install Next.js as a dependency:\n` +
         `npm install next@^15\n` +
         `\nThis package requires Next.js >=15 <17 as a peer dependency.\n\n` +
-        `Error: ${error}`
+        `Error: ${error}`,
     );
   }
 }
@@ -41,8 +41,8 @@ export async function safeNextImport(): Promise<NextJSImports> {
  */
 export async function isNextAvailable(): Promise<boolean> {
   try {
-    await import("next");
-    
+    await import('next');
+
     return true;
   } catch (error) {
     console.log(error);
@@ -55,7 +55,7 @@ export async function isNextAvailable(): Promise<boolean> {
  */
 export async function getNextVersion(): Promise<string | null> {
   try {
-    const nextPkg = await import("next/package.json");
+    const nextPkg = await import('next/package.json');
 
     return nextPkg.version;
   } catch {

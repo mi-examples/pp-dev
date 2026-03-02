@@ -10,9 +10,9 @@ import { authProvider } from './auth.provider.js';
 
 // Types for better type safety
 interface LoadPPDataOptions {
+  appId: number;
   templateLess: boolean;
   miHudLess: boolean;
-  portalPageId?: number;
   redirectOnAuthFailure?: boolean;
   redirectUrl?: string;
   timeout?: number;
@@ -28,6 +28,7 @@ function getCachedResponse(key: string): any | null {
 
   if (Date.now() - cached.timestamp > CACHE_TTL) {
     apiResponseCache.delete(key);
+    
     return null;
   }
 
@@ -46,13 +47,13 @@ export function initLoadPPData(
   mi: MiAPI,
   opts: PPDevConfig & { base?: string },
 ): NextHandleFunction {
-  const { templateLess = false, miHudLess = false, portalPageId, base, v7Features } = opts;
+  const { templateLess = false, miHudLess = false, appId, base, v7Features } = opts;
 
   const logger = createLogger();
 
   // Validate required configuration
-  if (templateLess && miHudLess && typeof portalPageId === 'undefined') {
-    throw new Error('Portal page ID is required when both templateLess and miHudLess are true');
+  if (templateLess && miHudLess && typeof appId === 'undefined') {
+    throw new Error('Custom App ID is required when both templateLess and miHudLess are true');
   }
 
   let authState = authProvider.getState();
@@ -61,7 +62,7 @@ export function initLoadPPData(
     authState = state;
   });
 
-  return async (req, res, next) => {
+  return async (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
     try {
       const isNeedTemplateLoad = !(templateLess && miHudLess);
       const isApplyRequest = applyUrlRegExp.test(cutUrlParams(req.url ?? ''));
@@ -84,7 +85,7 @@ export function initLoadPPData(
               {
                 templateLess,
                 miHudLess,
-                portalPageId,
+                appId: appId!,
                 redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
               },
               req,
@@ -98,7 +99,7 @@ export function initLoadPPData(
               {
                 templateLess,
                 miHudLess,
-                portalPageId,
+                appId: appId!,
                 redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
               },
               req,
@@ -130,7 +131,7 @@ export function initLoadPPData(
           {
             templateLess,
             miHudLess,
-            portalPageId,
+            appId: appId!,
             redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
           },
           req,
@@ -147,7 +148,7 @@ export function initLoadPPData(
         {
           templateLess,
           miHudLess,
-          portalPageId,
+          appId: appId!,
           redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
         },
         req,
@@ -182,10 +183,10 @@ async function handlePageInfoOnly(
   next: NextFunction,
   logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
-  const { portalPageId, redirectOnAuthFailure, redirectUrl } = options;
+  const { appId, redirectOnAuthFailure, redirectUrl } = options;
 
-  if (typeof portalPageId === 'undefined') {
-    const error = new Error('Portal page ID is required for page info only mode');
+  if (typeof appId === 'undefined') {
+    const error = new Error('Custom App ID is required for page info only mode');
 
     logger.error(colors.red(error.message));
 
@@ -198,7 +199,7 @@ async function handlePageInfoOnly(
 
   try {
     // Performance optimization: Check cache first
-    const cacheKey = `pageInfo:${portalPageId}`;
+    const cacheKey = `pageInfo:${appId}`;
     const cachedData = getCachedResponse(cacheKey);
 
     if (cachedData) {
@@ -206,7 +207,7 @@ async function handlePageInfoOnly(
       return next();
     }
 
-    await mi.getPageInfo(portalPageId, headers);
+    await mi.getPageInfo(appId, headers);
 
     logger.info(colors.blue('Clearing proxy cache after successful login'));
     cache.clear();
@@ -245,14 +246,14 @@ async function handleTemplateLoad(
   next: NextFunction,
   logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
-  const { templateLess, portalPageId, redirectOnAuthFailure, redirectUrl } = options;
+  const { templateLess, appId, redirectOnAuthFailure, redirectUrl } = options;
   const headers = (req.headers ?? {}) as Headers;
 
   logger.info(colors.green('Start loading page data'));
 
   try {
     // Performance optimization: Check cache first
-    const cacheKey = `pageData:${templateLess}:${portalPageId}`;
+    const cacheKey = `pageData:${templateLess}:${appId}`;
     const cachedData = getCachedResponse(cacheKey);
 
     if (cachedData) {
@@ -261,8 +262,8 @@ async function handleTemplateLoad(
     }
 
     const loadPageData =
-      !templateLess && typeof portalPageId !== 'undefined'
-        ? mi.getPageVariables(portalPageId, headers)
+      !templateLess && typeof appId !== 'undefined'
+        ? mi.getPageVariables(appId, headers)
         : mi.getPageTemplate(headers);
 
     await loadPageData;
