@@ -1,3 +1,10 @@
+# [0.15.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.15.0-beta.1...v0.15.0-beta.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* add overrides to fix serialize-javascript and minimatch vulnerabilities ([3f79b97](https://github.com/mi-examples/pp-dev/commit/3f79b970b604f8e5656d15f743f51c6902b2e0d5))
+
 # [0.15.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.14.1...v0.15.0-beta.1) (2026-02-27)
 
 
