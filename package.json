@@ -67,8 +67,9 @@
   },
   "overrides": {
     "chokidar": "^5.0.0",
-    "minimatch": ">=10.2.4",
-    "npm": ">=11.11.0"
+    "minimatch": "10.2.4",
+    "npm": ">=11.11.0",
+    "serialize-javascript": ">=7.0.3"
   },
   "peerDependencies": {
     "next": ">= 13 < 17"
