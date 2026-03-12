@@ -1,4 +1,11 @@
-import { unzipSync, brotliDecompressSync, deflateSync, gzipSync, brotliCompressSync, inflateSync } from 'zlib';
+import {
+  unzipSync,
+  brotliDecompressSync,
+  deflateSync,
+  gzipSync,
+  brotliCompressSync,
+  inflateSync,
+} from 'zlib';
 
 export function decodeContent(content: Buffer, contentEncoding?: string) {
   switch (contentEncoding) {
@@ -9,7 +16,7 @@ export function decodeContent(content: Buffer, contentEncoding?: string) {
       return brotliDecompressSync(content);
 
     case 'deflate':
-      return deflateSync(content);
+      return inflateSync(content);
 
     default:
       return content;
@@ -25,7 +32,7 @@ export function encodeContent(content: Buffer, contentEncoding?: string) {
       return brotliCompressSync(content);
 
     case 'deflate':
-      return inflateSync(content);
+      return deflateSync(content);
 
     default:
       return content;

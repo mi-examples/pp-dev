@@ -1,3 +1,10 @@
+## [0.15.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.15.0...v0.15.1-beta.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* resolve all package vulnerabilities ([79d7e24](https://github.com/mi-examples/pp-dev/commit/79d7e245b94d0be8c133803842329309f0e1b432))
+
 # [0.15.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.15.0-beta.1...v0.15.0-beta.2) (2026-03-02)
 
 
