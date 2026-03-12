@@ -25,7 +25,12 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
 
   switch (status) {
     case 412:
-      if (message.toLowerCase().includes('session expired')) {
+      const lowerMessage = message.toLowerCase();
+
+      if (
+        lowerMessage.includes('session expired') ||
+        lowerMessage.includes('session has expired')
+      ) {
         return {
           status,
           message,
@@ -127,8 +132,10 @@ export function isTokenError(error: any): boolean {
  * Check if an error indicates an expired session
  */
 export function isSessionExpiredError(error: any): boolean {
+  const message = error.response?.data?.message?.toLowerCase() ?? '';
   return (
     error.response?.status === 412 &&
-    error.response?.data?.message?.toLowerCase().includes('session expired')
+    (message.includes('session expired') ||
+      message.includes('session has expired'))
   );
 }
