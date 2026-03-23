@@ -44,7 +44,7 @@ function computeChecksum(files: Record<string, string>): string {
   const sortedPaths = Object.keys(files).sort();
   const hashesConcatenated = sortedPaths.map((p) => files[p]).join('');
 
-  return createHash('sha256').update(hashesConcatenated, 'hex').digest('hex');
+  return createHash('sha256').update(hashesConcatenated).digest('hex');
 }
 
 function resolveVersionFileName(
