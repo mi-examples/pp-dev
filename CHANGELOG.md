@@ -1,3 +1,15 @@
+# [0.16.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.15.1...v0.16.0-beta.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* **version-plugin:** hash concatenated digests without hex input encoding ([1ea5e5a](https://github.com/mi-examples/pp-dev/commit/1ea5e5aed6b78b3bd67110d173a5195b75434e9c))
+
+
+### Features
+
+* version manifest plugin and upgrade to Vite 8 ([ad8c4ac](https://github.com/mi-examples/pp-dev/commit/ad8c4ac5b6bc7813d04947b418a5d3b77d2d75fb))
+
 ## [0.15.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.15.0...v0.15.1-beta.1) (2026-03-12)
 
 
