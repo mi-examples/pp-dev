@@ -15,10 +15,12 @@
   "devDependencies": {
     "@types/luxon": "^3.7.1",
     "typescript": "^5.9.3",
-    "vite": "^6.4.1"
+    "vite": "^8.0.1"
   },
   "overrides": {
-    "file-type": "^21.3.1",
-    "minimatch": "10.2.4"
+    "file-type": "^21.3.3",
+    "flatted": ">=3.4.2",
+    "minimatch": "10.2.4",
+    "undici": ">=6.24.0"
   }
 }

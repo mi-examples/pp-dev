@@ -6,6 +6,8 @@ const ppDevConfig = {
   portalPageId: 733,
   v7Features: true,
   templateLess: false,
+  miHudLess: true,
+  disableSSLValidation: true,
 };
 
 module.exports = ppDevConfig;

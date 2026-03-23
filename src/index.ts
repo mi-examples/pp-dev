@@ -26,7 +26,7 @@ const pathPagePrefix = '/p';
 const pathTemplatePrefix = '/pt';
 const pathTemplateLocalPrefix = '/pl';
 
-export async function getViteConfig() {
+export async function getViteConfig(): Promise<InlineConfig> {
   const pkg = getPkg();
 
   const templateName = pkg.name;
@@ -44,8 +44,14 @@ export async function getViteConfig() {
     clientInjectionPlugin(),
   ];
 
-  const { outDir, distZip, imageOptimizer, templateLess, integrateMiTopBar } =
-    normalizedPPDevConfig;
+  const {
+    outDir,
+    distZip,
+    versionPlugin,
+    imageOptimizer,
+    templateLess,
+    integrateMiTopBar,
+  } = normalizedPPDevConfig;
 
   if (integrateMiTopBar) {
     plugins.push(miTopBarPlugin(integrateMiTopBar));
@@ -58,6 +64,19 @@ export async function getViteConfig() {
       ViteImageOptimizer(
         typeof imageOptimizer === 'object' ? imageOptimizer : undefined,
       ),
+    );
+  }
+
+  if (versionPlugin) {
+    const { versionPlugin: versionPluginFn } =
+      await import('./plugins/version-plugin.js');
+
+    plugins.push(
+      versionPluginFn({
+        outDir,
+        packageVersion: pkg.version ?? '0.0.0',
+        ...(typeof versionPlugin === 'object' ? versionPlugin : {}),
+      }),
     );
   }
 
@@ -95,13 +114,10 @@ export async function getViteConfig() {
     },
     css: {
       modules: { localsConvention: 'dashes' },
-      scss: {
-        api: 'modern',
-      },
     },
     ppDevConfig: normalizedPPDevConfig,
     plugins,
-  } as InlineConfig;
+  };
 }
 
 /**

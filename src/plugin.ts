@@ -36,6 +36,21 @@ interface DistZipOptions {
   inDir?: string;
 }
 
+export interface VersionPluginOptions {
+  /**
+   * Version file filename template.
+   * Placeholders: {packageversion}, {currentDate}
+   * @default "VERSION-v{packageversion}-{currentDate}.json"
+   */
+  versionFileTemplate?: string;
+
+  /**
+   * Enable or disable the version plugin.
+   * @default true
+   */
+  enabled?: boolean;
+}
+
 export interface VitePPDevOptions {
   /**
    * Backend base URL to MI instance for the local proxy.
@@ -132,6 +147,12 @@ export interface VitePPDevOptions {
   distZip?: boolean | DistZipOptions;
 
   /**
+   * Create a VERSION JSON file with SHA256 hashes of all build output files.
+   * @default true
+   */
+  versionPlugin?: boolean | VersionPluginOptions;
+
+  /**
    * Backups an asset directory path for sync with the MI instance.
    * @default backups
    */
@@ -173,6 +194,7 @@ export type NormalizedVitePPDevOptions = RequiredSelection<
   | 'imageOptimizer'
   | 'outDir'
   | 'distZip'
+  | 'versionPlugin'
   | 'syncBackupsDir'
   | 'v7Features'
   | 'personalAccessToken'
@@ -309,6 +331,7 @@ export function normalizeVitePPDevConfig(
     templateLess = false,
     outDir = 'dist',
     distZip = true,
+    versionPlugin = true,
     syncBackupsDir = 'backups',
     v7Features = false,
     personalAccessToken = process.env.MI_ACCESS_TOKEN,
@@ -343,6 +366,25 @@ export function normalizeVitePPDevConfig(
     imageOptimizerConfig = false;
   }
 
+  const versionPluginDefaultTemplate =
+    'VERSION-v{packageversion}-{currentDate}.json';
+  let versionPluginConfig: false | VersionPluginOptions;
+
+  if (versionPlugin === false) {
+    versionPluginConfig = false;
+  } else if (versionPlugin === true) {
+    versionPluginConfig = {
+      versionFileTemplate: versionPluginDefaultTemplate,
+      enabled: true,
+    };
+  } else {
+    versionPluginConfig = {
+      versionFileTemplate:
+        versionPlugin.versionFileTemplate ?? versionPluginDefaultTemplate,
+      enabled: versionPlugin.enabled ?? true,
+    };
+  }
+
   return {
     enableProxyCache,
     proxyCacheTTL,
@@ -352,6 +394,7 @@ export function normalizeVitePPDevConfig(
     miHudLess,
     outDir,
     distZip: distZipConfig,
+    versionPlugin: versionPluginConfig,
     syncBackupsDir,
     v7Features,
     personalAccessToken,

@@ -6,6 +6,7 @@ const ppDevConfig: PPDevConfig = {
   v7Features: true,
   templateLess: false,
   miHudLess: true,
+  disableSSLValidation: true,
 };
 
 export default ppDevConfig;
