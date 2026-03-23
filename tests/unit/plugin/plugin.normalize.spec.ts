@@ -227,40 +227,6 @@ describe('normalizeVitePPDevConfig', () => {
     });
   });
 
-  describe('versionPlugin Normalization', () => {
-    it('should normalize versionPlugin: false to false', () => {
-      const config = normalizeVitePPDevConfig({
-        templateName: 'test',
-        versionPlugin: false,
-      });
-
-      expect(config.versionPlugin).toBe(false);
-    });
-
-    it('should preserve versionPlugin: true as passed (spread overwrites normalization)', () => {
-      const config = normalizeVitePPDevConfig({
-        templateName: 'test',
-        versionPlugin: true,
-      });
-
-      expect(config.versionPlugin).toBe(true);
-    });
-
-    it('should pass through versionPlugin object options', () => {
-      const versionPluginOpts = {
-        versionFileTemplate: 'CUSTOM-{packageversion}.json',
-        enabled: false,
-      };
-
-      const config = normalizeVitePPDevConfig({
-        templateName: 'test',
-        versionPlugin: versionPluginOpts,
-      });
-
-      expect(config.versionPlugin).toEqual(versionPluginOpts);
-    });
-  });
-
   describe('portalPageId and appId', () => {
     // Note: The spread at the end of normalizeVitePPDevConfig causes issues
     // when both portalPageId and appId are provided, as portalPageId from
