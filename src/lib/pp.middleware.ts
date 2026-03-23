@@ -48,6 +48,8 @@ export class MiAPI {
   #templateLoaded: Promise<boolean>;
   #templateLoadedResolve!: (value: boolean) => void;
 
+  public internalPageName: string | undefined;
+
   private portalPageId?: number;
   private templateLess?: boolean;
 
@@ -80,6 +82,7 @@ export class MiAPI {
 
     // Performance optimization: Use cached axios instance
     const cacheKey = `${baseURL}:${disableSSLValidation}`;
+
     if (axiosInstanceCache.has(cacheKey)) {
       this.#axios = axiosInstanceCache.get(cacheKey)!;
     } else {
@@ -231,6 +234,8 @@ export class MiAPI {
       if (typeof page.template_id !== "undefined") {
         this.#isV710OrHigher = true;
       }
+
+      this.internalPageName = page.internal_name;
 
       this.#pageTemplate = this.localTemplateHTML;
 

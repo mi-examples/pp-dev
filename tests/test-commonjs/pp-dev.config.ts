@@ -7,6 +7,7 @@ const ppDevConfig: PPDevConfig = {
   integrateMiTopBar: true,
   v7Features: true,
   templateLess: true,
+  disableSSLValidation: true,
 };
 
 export default ppDevConfig;
