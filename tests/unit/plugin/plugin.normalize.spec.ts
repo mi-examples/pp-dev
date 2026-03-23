@@ -143,6 +143,53 @@ describe('normalizeVitePPDevConfig', () => {
     });
   });
 
+  describe('versionPlugin Normalization', () => {
+    it('should normalize versionPlugin: false to false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: false,
+      });
+
+      expect(config.versionPlugin).toBe(false);
+    });
+
+    it('should preserve versionPlugin: true as passed (spread overwrites normalization)', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: true,
+      });
+
+      // Due to ...config spread at end, the original value is preserved
+      expect(config.versionPlugin).toBe(true);
+    });
+
+    it('should pass through versionPlugin object options', () => {
+      const opts = {
+        versionFileTemplate: 'CUSTOM-{packageversion}.json',
+        enabled: false,
+      };
+
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: opts,
+      });
+
+      expect(config.versionPlugin).toEqual(opts);
+    });
+
+    it('should normalize versionPlugin object with defaults when not fully specified', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: { versionFileTemplate: 'custom.json' },
+      });
+
+      // Normalization runs before spread; object gets versionFileTemplate merged with defaults
+      expect(config.versionPlugin).toMatchObject({
+        versionFileTemplate: 'custom.json',
+      });
+    });
+  });
+
   describe('imageOptimizer Normalization', () => {
     // Note: The current implementation has a bug where ...config at the end
     // overwrites the normalized imageOptimizer value. These tests document actual behavior.
@@ -177,6 +224,40 @@ describe('normalizeVitePPDevConfig', () => {
       });
 
       expect(config.imageOptimizer).toEqual(optimizerOptions);
+    });
+  });
+
+  describe('versionPlugin Normalization', () => {
+    it('should normalize versionPlugin: false to false', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: false,
+      });
+
+      expect(config.versionPlugin).toBe(false);
+    });
+
+    it('should preserve versionPlugin: true as passed (spread overwrites normalization)', () => {
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: true,
+      });
+
+      expect(config.versionPlugin).toBe(true);
+    });
+
+    it('should pass through versionPlugin object options', () => {
+      const versionPluginOpts = {
+        versionFileTemplate: 'CUSTOM-{packageversion}.json',
+        enabled: false,
+      };
+
+      const config = normalizeVitePPDevConfig({
+        templateName: 'test',
+        versionPlugin: versionPluginOpts,
+      });
+
+      expect(config.versionPlugin).toEqual(versionPluginOpts);
     });
   });
 

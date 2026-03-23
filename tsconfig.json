@@ -8,7 +8,7 @@
     ],
     "types": ["node"],
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "removeComments": false,
     "sourceMap": true,
     "strict": true,
