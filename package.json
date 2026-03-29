@@ -70,7 +70,7 @@
     "file-type": "^21.3.3",
     "minimatch": "10.2.4",
     "npm": ">=11.11.0",
-    "serialize-javascript": ">=7.0.3",
+    "serialize-javascript": ">=7.0.5",
     "undici": ">=6.24.0"
   },
   "peerDependencies": {
