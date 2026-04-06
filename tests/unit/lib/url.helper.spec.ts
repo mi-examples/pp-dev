@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { urlReplacer, redirect } from '../../../src/lib/helpers/url.helper.js';
+import {
+  redirect,
+  rewriteDataPagePathForV7Proxy,
+  urlReplacer,
+} from '../../../src/lib/helpers/url.helper.js';
 
 describe('URL Helper', () => {
   describe('urlReplacer', () => {
@@ -78,6 +82,62 @@ describe('URL Helper', () => {
 
       expect(result).not.toContain('api.com');
       expect(result.match(/localhost/g)?.length).toBe(3);
+    });
+  });
+
+  describe('rewriteDataPagePathForV7Proxy', () => {
+    it('should rewrite first /data/page/ segment when v7 and names differ', () => {
+      expect(
+        rewriteDataPagePathForV7Proxy(
+          '/data/page/npm-name/auth/info',
+          true,
+          'npm-name',
+          'real-internal',
+        ),
+      ).toBe('/data/page/real-internal/auth/info');
+    });
+
+    it('should preserve query string', () => {
+      expect(
+        rewriteDataPagePathForV7Proxy(
+          '/data/page/npm-name/x?a=1',
+          true,
+          'npm-name',
+          'real-internal',
+        ),
+      ).toBe('/data/page/real-internal/x?a=1');
+    });
+
+    it('should not rewrite when v7Features is false', () => {
+      const url = '/data/page/npm-name/x';
+      expect(
+        rewriteDataPagePathForV7Proxy(url, false, 'npm-name', 'real-internal'),
+      ).toBe(url);
+    });
+
+    it('should not rewrite when template and internal name match', () => {
+      const url = '/data/page/same/x';
+      expect(rewriteDataPagePathForV7Proxy(url, true, 'same', 'same')).toBe(
+        url,
+      );
+    });
+
+    it('should not rewrite when path segment does not match templateName', () => {
+      const url = '/data/page/index/auth/info';
+      expect(
+        rewriteDataPagePathForV7Proxy(url, true, 'my-app', 'internal-slug'),
+      ).toBe(url);
+    });
+
+    it('should match URL-encoded segment to templateName', () => {
+      expect(
+        rewriteDataPagePathForV7Proxy(
+          '/data/page/foo%20bar/x',
+          true,
+          'foo bar',
+          'internal',
+        ),
+      ).toBe('/data/page/internal/x');
     });
   });
 

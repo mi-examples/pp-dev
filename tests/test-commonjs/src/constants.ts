@@ -1,0 +1,1 @@
+export const internalPageName = window.location.pathname.replace(/\/p[tl]?\/([^/]+)\/?.*/, '$1');

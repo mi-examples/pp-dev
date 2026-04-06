@@ -5,6 +5,7 @@ import nextIcon from '../../public/next.svg';
 import { useEffect, useState } from 'react';
 import { getCurrentUser } from '@/api/user';
 import { getDatasetData } from '@/api/dataset-data';
+import { getEntities } from '@/api/entity';
 
 export default function Home() {
   const [user, setUser] = useState<{ first_name: string; last_name: string } | null>(null);
@@ -25,6 +26,12 @@ export default function Home() {
       });
     }
   }, [datasetData]);
+
+  useEffect(() => {
+    void getEntities().catch(() => {
+      /* optional proxy warm-up */
+    });
+  }, []);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
