@@ -1,3 +1,10 @@
+# [0.18.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.17.0...v0.18.0-beta.1) (2026-04-06)
+
+
+### Features
+
+* rewrite /data/page/ path for v7 proxy when template differs from internal name ([a060da2](https://github.com/mi-examples/pp-dev/commit/a060da26e4d4cb9e80625f2015e5ab19b82a398d))
+
 # [0.17.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.16.1...v0.17.0-beta.1) (2026-04-06)
 
 
