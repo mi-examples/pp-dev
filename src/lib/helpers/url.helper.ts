@@ -76,3 +76,54 @@ export function cutUrlHash(url: string) {
 
   return urlParts[0];
 }
+
+/**
+ * v7 only: dev URLs may use {@link templateName} in `/data/page/<name>/...` while the portal
+ * resolves a different `internal_name`. Rewrites the first segment after `/data/page/` for
+ * proxied requests to the backend. {@link internalPageName} is a plain path segment from the
+ * API (no reserved characters); it is inserted as-is without encoding.
+ */
+export function rewriteDataPagePathForV7Proxy(
+  requestUrl: string,
+  v7Features: boolean,
+  templateName: string | undefined,
+  internalPageName: string | undefined,
+): string {
+  if (
+    !v7Features ||
+    !templateName ||
+    !internalPageName ||
+    templateName === internalPageName
+  ) {
+    return requestUrl;
+  }
+
+  try {
+    const u = new URL(requestUrl, 'http://localhost');
+    const m = u.pathname.match(/^\/data\/page\/([^/]+)(\/.*)?$/);
+
+    if (!m) {
+      return requestUrl;
+    }
+
+    let segmentDecoded: string;
+
+    try {
+      segmentDecoded = decodeURIComponent(m[1]);
+    } catch {
+      segmentDecoded = m[1];
+    }
+
+    if (segmentDecoded !== templateName) {
+      return requestUrl;
+    }
+
+    const tail = m[2] ?? '';
+    const newPath =
+      `/data/page/${internalPageName}${tail}` + u.search + u.hash;
+
+    return newPath;
+  } catch {
+    return requestUrl;
+  }
+}

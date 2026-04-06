@@ -1,4 +1,228 @@
+/* Light theme only (no prefers-color-scheme) so the page stays readable in OS dark mode. */
+:root {
+  --fg: #171717;
+  --bg: #ffffff;
+  --border: #e5e5e5;
+  --card-hover-bg: #f9fafb;
+  --muted: #737373;
+  --hint-bg: #f4f4f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-    color: black;
-    background-color: darkblue;
+  margin: 0;
+  min-height: 100vh;
+  color: var(--fg);
+  background: var(--bg);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 72rem;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 2rem 1.25rem 3rem;
+  gap: 2rem;
+}
+
+.app__header {
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.app__lead {
+  margin: 0;
+  max-width: 40rem;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+.app__hint {
+  margin: 0;
+  flex: 1 1 12rem;
+  max-width: 42rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--hint-bg);
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.app__hint code {
+  font-size: 0.8125rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.app__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+}
+
+.app__env {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.app__user {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.app__user--loading {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.app__grid {
+  display: grid;
+  width: 100%;
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .app__grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.app__card {
+  display: block;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  color: inherit;
+  text-decoration: none;
+  background: var(--bg);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.app__card:hover {
+  border-color: #d4d4d8;
+  background: var(--card-hover-bg);
+}
+
+.app__card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.app__card p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.app__arrow {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.app__card:hover .app__arrow {
+  transform: translateX(4px);
+}
+
+.app__legacy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.app__helpers {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.app__helpers-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.app__helpers-desc {
+  margin: 0 0 1rem;
+  max-width: 42rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.app__helpers-desc code {
+  font-size: 0.8125rem;
+}
+
+.app__helpers-root {
+  max-width: 36rem;
+}
+
+/* Sample layout for pp-dev `html` helper output (styles live here; `css` helper is string-only). */
+.helpers-demo {
+  display: flex;
+  flex-direction: column;
+  min-height: 8rem;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.helpers-demo__header {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--hint-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.helpers-demo__body {
+  flex: 1;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.helpers-demo__footer {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  background: #fafafa;
+  border-top: 1px solid var(--border);
 }

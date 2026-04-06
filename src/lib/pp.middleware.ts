@@ -124,6 +124,10 @@ export class MiAPI {
     return this.#isV710OrHigher;
   }
 
+  get v7Features(): boolean {
+    return this.#v7Features;
+  }
+
   #clearHeaders(headers: Headers) {
     const obj = Object.assign({}, headers, {
       host: undefined,
@@ -230,6 +234,10 @@ export class MiAPI {
             throw e;
           }
         });
+
+      if (!page) {
+        throw new Error("Something went wrong when fetching page data");
+      }
 
       if (typeof page.template_id !== "undefined") {
         this.#isV710OrHigher = true;
@@ -420,9 +428,15 @@ export class MiAPI {
 
     this.logger.info(colors.green("Page fetched"));
 
+    if (!page) {
+      throw new Error("Something went wrong when fetching page data");
+    }
+
     if (typeof page.template_id !== "undefined") {
       this.#isV710OrHigher = true;
     }
+
+    this.internalPageName = page.internal_name;
 
     return page;
   }

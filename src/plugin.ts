@@ -650,6 +650,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             ],
             disableSSLValidation,
             miAPI: mi,
+            templateName,
           }) as any,
         );
 
