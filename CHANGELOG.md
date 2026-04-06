@@ -1,3 +1,15 @@
+# [0.17.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.16.1...v0.17.0-beta.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* **tests:** align sandbox overrides with audited dependency policy ([5841aa8](https://github.com/mi-examples/pp-dev/commit/5841aa831833d74342e9bc134141f9913c1c0bab))
+
+
+### Features
+
+* **cli:** Webpack fallback for Next dev when Turbopack native SWC fails ([5940f31](https://github.com/mi-examples/pp-dev/commit/5940f316cf86056196ad3f69a8b3667460866aeb))
+
 # [0.16.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.15.1...v0.16.0-beta.1) (2026-03-23)
 
 
