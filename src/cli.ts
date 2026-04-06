@@ -160,6 +160,61 @@ interface GlobalCLIOptions {
   force?: boolean;
 }
 
+/** Extra flags for `pp-dev next` (Next.js custom server bundler selection; Next 15+). */
+interface NextCommandCLIOptions extends GlobalCLIOptions {
+  /** Use Webpack for dev (same idea as `next dev --webpack`). */
+  webpack?: boolean;
+  /** Use Turbopack when native bindings are available. */
+  turbopack?: boolean;
+}
+
+type NextBundlerChoice = { webpack?: boolean; turbopack?: boolean };
+
+function parseNextBundlerCli(opts: NextCommandCLIOptions): NextBundlerChoice {
+  const envWebpack =
+    process.env.PP_DEV_NEXT_WEBPACK === '1' ||
+    process.env.PP_DEV_NEXT_WEBPACK === 'true';
+
+  if (envWebpack && (opts.webpack || opts.turbopack)) {
+    throw new Error(
+      'Do not combine PP_DEV_NEXT_WEBPACK with --webpack or --turbopack',
+    );
+  }
+
+  if (envWebpack) {
+    return { webpack: true };
+  }
+
+  if (opts.webpack && opts.turbopack) {
+    throw new Error('Use only one of --webpack or --turbopack');
+  }
+
+  if (opts.webpack) {
+    return { webpack: true };
+  }
+
+  if (opts.turbopack) {
+    return { turbopack: true };
+  }
+
+  return {};
+}
+
+/** Next dev chose Turbopack but native @next/swc bindings failed (e.g. WDAC on Windows). */
+function isNextTurbopackNativeBindingsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('message' in error)) {
+    return false;
+  }
+
+  const msg = String((error as Error).message);
+
+  return (
+    /Turbopack is not supported/i.test(msg) ||
+    /native bindings are not available/i.test(msg) ||
+    /Only WebAssembly \(WASM\) bindings were loaded/i.test(msg)
+  );
+}
+
 interface ChangelogOptions {
   oldAssetsPath?: string;
   newAssetsPath?: string;
@@ -503,7 +558,15 @@ cli
     '--force',
     `[boolean] force the optimizer to ignore the cache and re-bundle`,
   )
-  .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
+  .option(
+    '--webpack',
+    `[boolean] use Webpack for Next dev (use when Turbopack/native SWC is unavailable)`,
+  )
+  .option(
+    '--turbopack',
+    `[boolean] use Turbopack for Next dev when native bindings work`,
+  )
+  .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
     filterDuplicateOptions(options);
 
     let nextApp: ReturnType<typeof import('next').default> | null = null;
@@ -646,7 +709,7 @@ cli
           1;
 
         // Get template name from config, package.json, or fallback to project directory name
-        let templateName = null;
+        let templateName: string | null = null;
 
         if (!templateName) {
           try {
@@ -678,19 +741,77 @@ cli
           base += `/${templateName}`;
         }
 
-        nextApp = next({
-          dev: true,
-          hostname: (opts.host as string) || 'localhost',
-          port: opts.port,
-          dir: projectRoot,
-          conf: {
-            ...config,
-            basePath: base,
-            assetPrefix: `${templateLess ? pathPagePrefix : '/pt'}/${templateName}`, // Fixed: Make assetPrefix consistent with basePath
-          },
-        });
+        const bundlerChoice = parseNextBundlerCli(options);
 
-        await nextApp.prepare();
+        const createAndPrepareNext = async (bundler: NextBundlerChoice) => {
+          // Next's createServer() mutates process.env.TURBOPACK. Clear it before each
+          // attempt so a failed "auto" run does not leave TURBOPACK=auto and block Webpack.
+          delete process.env.TURBOPACK;
+
+          if (nextApp && typeof nextApp.close === 'function') {
+            await nextApp.close();
+
+            nextApp = null;
+          }
+
+          const nextOptions: Parameters<typeof next>[0] = {
+            dev: true,
+            customServer: true,
+            hostname: (opts.host as string) || 'localhost',
+            port: opts.port,
+            dir: projectRoot,
+            conf: {
+              ...config,
+              basePath: base,
+              assetPrefix: `${templateLess ? pathPagePrefix : '/pt'}/${templateName}`,
+            },
+          };
+
+          if (bundler.webpack) {
+            nextOptions.webpack = true;
+          } else if (bundler.turbopack) {
+            nextOptions.turbopack = true;
+          }
+
+          nextApp = next(nextOptions);
+          await nextApp!.prepare();
+        };
+
+        if (bundlerChoice.webpack) {
+          await createAndPrepareNext({ webpack: true });
+        } else if (bundlerChoice.turbopack) {
+          try {
+            await createAndPrepareNext({ turbopack: true });
+          } catch (e) {
+            if (!isNextTurbopackNativeBindingsError(e)) {
+              throw e;
+            }
+            logger.warn(
+              colors.yellow(
+                '⚠ Turbopack is unavailable (native bindings). Falling back to Webpack.',
+              ),
+            );
+            await createAndPrepareNext({ webpack: true });
+          }
+        } else {
+          try {
+            await createAndPrepareNext({});
+          } catch (e) {
+            if (!isNextTurbopackNativeBindingsError(e)) {
+              throw e;
+            }
+            logger.warn(
+              colors.yellow(
+                '⚠ Turbopack cannot run (native Next.js bindings unavailable). Falling back to Webpack.',
+              ),
+            );
+            await createAndPrepareNext({ webpack: true });
+          }
+        }
+
+        if (!nextApp) {
+          throw new Error('Next.js app failed to initialize');
+        }
 
         if (!base.endsWith('/')) {
           base += '/';
@@ -870,7 +991,10 @@ cli
           // Note: We need to adapt Express middlewares to work with raw HTTP requests
 
           // 1. PP Redirect middleware (essential for all routes)
-          const ppRedirectMiddleware = initPPRedirect(base, templateName);
+          const ppRedirectMiddleware = initPPRedirect(
+            base,
+            templateName ?? undefined,
+          );
           const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
             ppRedirectMiddleware(req, res, next);
           };
