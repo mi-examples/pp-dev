@@ -17,7 +17,7 @@
     "@types/jquery": "^3.5.34",
     "@types/luxon": "^3.7.1",
     "typescript": "^6.0.2",
-    "vite": "^8.0.3"
+    "vite": "^8.0.5"
   },
   "overrides": {
     "@xmldom/xmldom": ">=0.8.12",
