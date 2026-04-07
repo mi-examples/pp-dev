@@ -1,1 +1,1 @@
-console.log('test.js');
+console.log('test.js (side asset module)');

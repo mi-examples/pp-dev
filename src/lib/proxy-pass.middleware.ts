@@ -2,7 +2,11 @@ import {
   createProxyMiddleware,
   responseInterceptor,
 } from 'http-proxy-middleware';
-import { urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
+import {
+  rewriteDataPagePathForV7Proxy,
+  urlReplacer,
+  urlPathReplacer,
+} from './helpers/url.helper.js';
 import { ViteDevServer } from 'vite';
 import { Express } from 'express';
 import { createLogger } from './logger.js';
@@ -23,6 +27,9 @@ export interface ProxyOpts {
   disableSSLValidation?: boolean;
 
   miAPI: MiAPI;
+
+  /** Local template name (e.g. package name); used with {@link MiAPI.internalPageName} for v7 `/data/page/` proxy rewrites. */
+  templateName?: string;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
@@ -52,6 +59,7 @@ export function initProxy(opts: ProxyOpts) {
     devServer,
     disableSSLValidation = false,
     miAPI,
+    templateName,
   } = opts;
 
   if (!baseURL) {
@@ -129,12 +137,6 @@ export function initProxy(opts: ProxyOpts) {
         const host = req.headers.host;
         const referer = proxyReq.getHeader('referer');
 
-        logger.info(
-          `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${req.url} -> ${colors.green(
-            proxyReq.method,
-          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
-        );
-
         if (host && referer && typeof referer === 'string') {
           proxyReq.setHeader(
             'referer',
@@ -148,6 +150,30 @@ export function initProxy(opts: ProxyOpts) {
             `Bearer ${miAPI.personalAccessToken}`,
           );
         }
+
+        const originalUrl = req.url ?? '/';
+        const rewritten = rewriteDataPagePathForV7Proxy(
+          originalUrl,
+          miAPI.v7Features,
+          templateName,
+          miAPI.internalPageName,
+        );
+
+        if (rewritten !== originalUrl) {
+          req.url = rewritten;
+          (proxyReq as { path?: string }).path = rewritten;
+          console.info(
+            `${colors.cyan('Rewrites data page to correct internal page name')}: ${colors.yellow(
+              originalUrl,
+            )} ${colors.blue('→')} ${colors.green(rewritten)}`,
+          );
+        }
+
+        logger.info(
+          `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${req.url} -> ${colors.green(
+            proxyReq.method,
+          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
+        );
 
         req.socket.on('close', () => {
           setTimeout(() => {

@@ -31,7 +31,7 @@ export class PageAPI extends BaseAPI {
   }
 
   async get(id: number | string, headers?: Headers) {
-    return (
+    const data = (
       await this.axios.get<{ page: Page }>(`/api/page/id/${id}`, {
         withCredentials: true,
         headers: Object.assign({}, headers, {
@@ -39,7 +39,16 @@ export class PageAPI extends BaseAPI {
           'content-type': 'application/json',
         }),
       })
-    ).data.page;
+    ).data;
+
+    // Not a JSON response
+    if (typeof data !== 'object' || data === null) {
+      throw new Error(
+        'Something went wrong when fetching page data. The instance may be down or in maintenance mode. Please try again later.',
+      );
+    }
+
+    return data.page;
   }
 
   async getPageContent(internalPageName: string, headers?: Headers) {

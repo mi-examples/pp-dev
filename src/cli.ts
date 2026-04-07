@@ -1036,7 +1036,20 @@ cli
             );
           }
 
-          // 3. Proxy Pass middleware (only for non-internal routes)
+          // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
+          const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
+          const loadPPDataMiddleware = initLoadPPData(
+            isIndexRegExp,
+            mi,
+            Object.assign({ base }, miConfig),
+          );
+          const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
+            loadPPDataMiddleware(req, res, next);
+          };
+
+          fullMiddlewareChain.push(loadPPDataWrapper);
+
+          // 4. Proxy Pass middleware (only for non-internal routes)
           const baseWithoutTrailingSlash = base.endsWith('/')
             ? base.substring(0, base.length - 1)
             : base;
@@ -1065,25 +1078,13 @@ cli
             ],
             disableSSLValidation,
             miAPI: mi,
+            templateName: templateName ?? undefined,
           }) as any;
 
           const proxyPassWrapper = (req: any, res: any, next: () => void) => {
             proxyPassMiddlewareInstance(req, res, next);
           };
           fullMiddlewareChain.push(proxyPassWrapper);
-
-          // 4. Load PP Data middleware (only for non-internal routes)
-          const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
-          const loadPPDataMiddleware = initLoadPPData(
-            isIndexRegExp,
-            mi,
-            Object.assign({ base }, miConfig),
-          );
-          const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
-            loadPPDataMiddleware(req, res, next);
-          };
-          
-          fullMiddlewareChain.push(loadPPDataWrapper);
 
           // 5. Internal Server middleware (API endpoints) - essential for all routes
           const internalServerMiddleware = internalServer;

@@ -1,17 +1,84 @@
-<link rel="stylesheet" href="/src/assets/css/main.css" />
-<link rel="stylesheet" href="/src/assets/css/scss.scss" />
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>test-commonjs</title>
+    <link rel="stylesheet" href="/src/assets/css/main.css" />
+    <link rel="stylesheet" href="/src/assets/css/scss.scss" />
+  </head>
+  <body>
+    <script>
+      window.PP_VARIABLES = {
+        TEST: '[Data Classification]',
+        VARIABLE_TEST: '[variable-test]',
+      };
+    </script>
 
-<div id="root">
-  Test color
+    <main class="app">
+      <header class="app__header">
+        <p class="app__hint">
+          Vite + pp-dev test app — edit <code>src/main.ts</code> and <code>index.html</code>
+        </p>
+      </header>
 
-  <div>
-    <span> new test text here (hello) </span>
-  </div>
+      <p class="app__lead">
+        Uses <strong>jQuery 3</strong> for DOM updates and API calls (<code>$.ajax</code> with credentials).
+      </p>
 
-  <img src="/test.svg" alt="Vite.js" />
-  <a href="https://vitejs.dev" target="_blank">
-    <img src="/vite.svg" />
-  </a>
-</div>
-<script type="module" src="/src/main.ts"></script>
-<script src="/src/assets/js/test.js" type="module"></script>
+      <div class="app__status">
+        <div id="public-env" class="app__env"></div>
+        <div id="current-user" class="app__user app__user--loading">Current user: loading…</div>
+      </div>
+
+      <section class="app__grid" aria-label="Resources">
+        <a class="app__card" href="https://vitejs.dev/guide/" target="_blank" rel="noopener noreferrer">
+          <h2>Vite <span class="app__arrow">-&gt;</span></h2>
+          <p>Dev server and build tool for this project.</p>
+        </a>
+        <a
+          class="app__card"
+          href="https://api.jquery.com/jQuery.ajax/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <h2>jQuery.ajax <span class="app__arrow">-&gt;</span></h2>
+          <p>How requests are made for auth and dataset endpoints.</p>
+        </a>
+        <a
+          class="app__card"
+          href="https://www.typescriptlang.org/docs/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <h2>TypeScript <span class="app__arrow">-&gt;</span></h2>
+          <p>Typed entry (<code>main.ts</code>) compiled by Vite.</p>
+        </a>
+        <a class="app__card" href="https://help.metricinsights.com/" target="_blank" rel="noopener noreferrer">
+          <h2>Metric Insights <span class="app__arrow">-&gt;</span></h2>
+          <p>Help center and documentation for the Metric Insights platform.</p>
+        </a>
+      </section>
+
+      <section class="app__legacy" aria-label="Vite asset checks">
+        <p class="scss-demo"><span> new test text here (hello) </span></p>
+        <img src="/test.svg" alt="test" />
+        <a href="https://vitejs.dev" target="_blank" rel="noopener noreferrer">
+          <img src="/vite.svg" alt="Vite logo" width="96" height="96" />
+        </a>
+      </section>
+
+      <section class="app__helpers" aria-labelledby="helpers-heading">
+        <h2 id="helpers-heading" class="app__helpers-title">pp-dev template helpers</h2>
+        <p class="app__helpers-desc">
+          Layout below is rendered from the <code>html</code> tagged template in
+          <code>src/main.ts</code> (<code>@metricinsights/pp-dev/helpers</code>).
+        </p>
+        <div id="helpers-html-root" class="app__helpers-root"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/assets/js/test.js"></script>
+  </body>
+</html>
