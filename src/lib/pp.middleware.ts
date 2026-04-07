@@ -235,10 +235,6 @@ export class MiAPI {
           }
         });
 
-      if (!page) {
-        throw new Error("Something went wrong when fetching page data");
-      }
-
       if (typeof page.template_id !== "undefined") {
         this.#isV710OrHigher = true;
       }
@@ -427,10 +423,6 @@ export class MiAPI {
     const page = await this.pageApi.get(pageId, headers);
 
     this.logger.info(colors.green("Page fetched"));
-
-    if (!page) {
-      throw new Error("Something went wrong when fetching page data");
-    }
 
     if (typeof page.template_id !== "undefined") {
       this.#isV710OrHigher = true;
