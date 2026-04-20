@@ -20,6 +20,8 @@ export type CLIShortcut = {
   action(server: ViteDevServer): void | Promise<void>;
 };
 
+let cleanupActiveShortcutBinding: (() => void) | null = null;
+
 export function bindShortcuts(
   server: ViteDevServer,
   opts: BindShortcutsOptions,
@@ -44,12 +46,27 @@ export function bindShortcuts(
     .filter(isDefined)
     .concat(BASE_SHORTCUTS);
 
+  // Ensure previous server bindings are fully detached before rebinding.
+  cleanupActiveShortcutBinding?.();
+  cleanupActiveShortcutBinding = null;
+
   let actionRunning = false;
+  const wasPaused = process.stdin.isPaused();
+  const stdinWithRawMode = process.stdin as NodeJS.ReadStream & {
+    isRaw?: boolean;
+  };
+  const hadRawModeEnabled = Boolean(stdinWithRawMode.isRaw);
 
   const onInput = async (input: string) => {
     // ctrl+c or ctrl+d
-    if (input === '\x03' || input === '\x04') {
-      await server.close().finally(() => process.exit(1));
+    if (input === '\x03') {
+      // Re-emit SIGINT so the CLI graceful shutdown handlers run.
+      process.kill(process.pid, 'SIGINT');
+      return;
+    }
+
+    if (input === '\x04') {
+      await server.close().finally(() => process.exit(0));
 
       return;
     }
@@ -88,9 +105,24 @@ export function bindShortcuts(
 
   process.stdin.on('data', onInput).setEncoding('utf8').resume();
 
-  server.httpServer.on('close', () => {
-    process.stdin.off('data', onInput).pause();
-  });
+  const cleanupBinding = () => {
+    process.stdin.off('data', onInput);
+
+    if (!hadRawModeEnabled) {
+      process.stdin.setRawMode(false);
+    }
+
+    if (wasPaused) {
+      process.stdin.pause();
+    }
+
+    if (cleanupActiveShortcutBinding === cleanupBinding) {
+      cleanupActiveShortcutBinding = null;
+    }
+  };
+
+  cleanupActiveShortcutBinding = cleanupBinding;
+  server.httpServer.on('close', cleanupBinding);
 }
 
 const BASE_SHORTCUTS: CLIShortcut[] = [

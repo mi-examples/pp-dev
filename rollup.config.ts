@@ -1,4 +1,4 @@
-import { defineConfig, RollupOptions } from 'rollup';
+import { defineConfig, Plugin, RollupOptions } from 'rollup';
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
 import terser from '@rollup/plugin-terser';
@@ -32,14 +32,68 @@ const defaultConfig: RollupOptions = {
     if (warning.code === 'CIRCULAR_DEPENDENCY') {
       return;
     }
+
     if (warning.code === 'UNUSED_EXTERNAL_IMPORT') {
       return;
     }
+    
     warn(warning);
   },
   // Preserve Node.js globals
   context: 'globalThis',
 };
+
+function typeDefsTracePlugin(): Plugin {
+  let transformCount = 0;
+  const startedAt = Date.now();
+  const logTrace = (message: string) => {
+    const elapsedMs = Date.now() - startedAt;
+    console.info(`[rollup:dts:trace] +${elapsedMs}ms ${message}`);
+  };
+
+  return {
+    name: 'type-defs-trace',
+    buildStart() {
+      logTrace('buildStart');
+    },
+    resolveId(source, importer) {
+      if (source === 'src/index.ts') {
+        logTrace(`resolveId source=${source} importer=${importer ?? 'entry'}`);
+      }
+      return null;
+    },
+    transform(_, id) {
+      transformCount += 1;
+      if (transformCount === 1 || transformCount % 25 === 0) {
+        logTrace(`transform count=${transformCount} file=${id}`);
+      }
+      return null;
+    },
+    buildEnd(error) {
+      if (error) {
+        logTrace(`buildEnd with error=${error.message}`);
+      } else {
+        logTrace('buildEnd');
+      }
+    },
+    outputOptions() {
+      logTrace('outputOptions');
+      return null;
+    },
+    renderStart() {
+      logTrace('renderStart');
+    },
+    generateBundle() {
+      logTrace('generateBundle');
+    },
+    writeBundle() {
+      logTrace('writeBundle');
+    },
+    closeBundle() {
+      logTrace('closeBundle');
+    },
+  };
+}
 
 const configs: RollupOptions[] = [
   // ESM Build
@@ -141,6 +195,7 @@ const configs: RollupOptions[] = [
   defineConfig({
     input: 'src/index.ts',
     plugins: [
+      typeDefsTracePlugin(),
       dts({
         tsconfig: './tsconfig.types.json',
         compilerOptions: {
