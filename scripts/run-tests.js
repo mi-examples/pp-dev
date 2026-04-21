@@ -110,7 +110,9 @@ const runCommandChild = (command, args = [], options = {}, callback) => {
         console.log(`✅ Command ${command} had SIGSEGV (exit code 139)`);
         callback(null, { exitCode: code });
       } else {
-        callback(new Error(`Command failed with exit code ${code}`), { exitCode: code });
+        callback(new Error(`Command failed with exit code ${code}`), {
+          exitCode: code,
+        });
       }
     });
 
@@ -192,7 +194,11 @@ const main = async () => {
 
     // Run playwright tests
     await runCommand('npx', ['playwright', 'test', 'e2e/config.spec.ts'], {
-      env: { ...process.env, BASE_URL: `http://localhost:${configPort}`, TEST_TYPE: 'config' },
+      env: {
+        ...process.env,
+        BASE_URL: `http://localhost:${configPort}`,
+        TEST_TYPE: 'config',
+      },
     }).catch(async (error) => {
       await runCommand('docker', ['stop', 'pp-dev-tests']);
       await runCommand('docker', ['rmi', 'pp-dev-tests', '--force']);
@@ -278,7 +284,11 @@ const main = async () => {
 
       // Run playwright tests
       await runCommand('npx', ['playwright', 'test'], {
-        env: { ...process.env, BASE_URL: `http://localhost:${port}`, TEST_TYPE: folder },
+        env: {
+          ...process.env,
+          BASE_URL: `http://localhost:${port}`,
+          TEST_TYPE: folder,
+        },
       });
 
       await runCommand('docker', ['stop', testFolders.get(folder)]);
