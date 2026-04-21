@@ -1,3 +1,10 @@
+## [0.18.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.0...v0.18.1-beta.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **cli:** harden shortcut cleanup and add dts trace logging ([4de05ed](https://github.com/mi-examples/pp-dev/commit/4de05ed2469933007aa654e370a84d90aecf3df3))
+
 # [0.18.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.17.0...v0.18.0-beta.1) (2026-04-06)
 
 ### Features
