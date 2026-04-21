@@ -23,9 +23,7 @@ function setUserLine(text: string, loading: boolean): void {
 }
 
 $(() => {
-  $('#public-env').text(
-    `VITE_PUBLIC_TEST: ${import.meta.env.VITE_PUBLIC_TEST ?? 'No test variable'}`,
-  );
+  $('#public-env').text(`VITE_PUBLIC_TEST: ${import.meta.env.VITE_PUBLIC_TEST ?? 'No test variable'}`);
 
   $('#helpers-html-root').append(htmlPart);
 
@@ -33,15 +31,9 @@ $(() => {
 
   void getCurrentUser()
     .then((user) => {
-      const name = [user?.first_name, user?.last_name]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
+      const name = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
 
-      setUserLine(
-        name ? `Current user: ${name}` : 'Current user: (signed out or empty)',
-        false,
-      );
+      setUserLine(name ? `Current user: ${name}` : 'Current user: (signed out or empty)', false);
     })
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : String(err);

@@ -153,10 +153,7 @@ function createResponseBuffer(chunks: Buffer[]): Buffer {
     return chunks[0];
   }
 
-  const totalLength = chunks.reduce(
-    (sum, chunk) => Buffer.byteLength(chunk) + sum,
-    0,
-  );
+  const totalLength = chunks.reduce((sum, chunk) => Buffer.byteLength(chunk) + sum, 0);
 
   return Buffer.concat(chunks as unknown as Uint8Array[], totalLength);
 }
@@ -164,10 +161,7 @@ function createResponseBuffer(chunks: Buffer[]): Buffer {
 /**
  * Safely sets response headers
  */
-function setResponseHeaders(
-  res: ServerResponse,
-  headers: Record<string, any>,
-): void {
+function setResponseHeaders(res: ServerResponse, headers: Record<string, any>): void {
   try {
     for (const [header, value] of Object.entries(headers)) {
       if (value !== undefined && value !== null) {
@@ -181,12 +175,7 @@ function setResponseHeaders(
 }
 
 export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
-  const {
-    devServer,
-    ttl = DEFAULT_TTL,
-    maxSize = DEFAULT_MAX_SIZE,
-    maxItems = DEFAULT_MAX_ITEMS,
-  } = opts;
+  const { devServer, ttl = DEFAULT_TTL, maxSize = DEFAULT_MAX_SIZE, maxItems = DEFAULT_MAX_ITEMS } = opts;
 
   const logger = createLogger();
 
@@ -212,9 +201,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
     if (cacheItem) {
       logger.info(
-        `${colors.blue('Proxies request:')} ${colors.green(
-          req.method,
-        )} ${url} -> ${colors.blue('Cache')} ${cacheKey}`,
+        `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${url} -> ${colors.blue('Cache')} ${cacheKey}`,
       );
 
       setResponseHeaders(res, cacheItem.headers);
@@ -237,12 +224,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       callback?: (error?: Error | null) => void,
     ): boolean {
       if (!res.hasHeader(PROXY_HEADER)) {
-        return originalWrite.call(
-          this,
-          data,
-          encoding as BufferEncoding,
-          callback,
-        );
+        return originalWrite.call(this, data, encoding as BufferEncoding, callback);
       }
 
       // Convert data to Buffer and store
@@ -259,18 +241,9 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     };
 
     // Override end method to finalize response and cache
-    (res as any).end = function (
-      chunk?: any,
-      encoding?: BufferEncoding,
-      callback?: () => void,
-    ): ServerResponse {
+    (res as any).end = function (chunk?: any, encoding?: BufferEncoding, callback?: () => void): ServerResponse {
       if (!res.hasHeader(PROXY_HEADER)) {
-        return originalEnd.call(
-          this,
-          chunk,
-          encoding as BufferEncoding,
-          callback,
-        );
+        return originalEnd.call(this, chunk, encoding as BufferEncoding, callback);
       }
 
       // Add final chunk if provided
@@ -305,11 +278,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
           cache.put(cacheKey, cacheItem, ttl);
 
-          logger.info(
-            `${colors.blue('[Cached]')} ${cacheKey} (${(
-              responseSize / 1024
-            ).toFixed(1)}KB)`,
-          );
+          logger.info(`${colors.blue('[Cached]')} ${cacheKey} (${(responseSize / 1024).toFixed(1)}KB)`);
         }
       } catch (error) {
         logger.error(`Failed to cache response for ${cacheKey}: ${error}`);
@@ -319,12 +288,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       // Send response with proper encoding handling
       const finalEncoding = encoding || 'utf8';
 
-      return originalEnd.call(
-        this,
-        finalBuffer,
-        finalEncoding as BufferEncoding,
-        callback,
-      );
+      return originalEnd.call(this, finalBuffer, finalEncoding as BufferEncoding, callback);
     };
 
     next();

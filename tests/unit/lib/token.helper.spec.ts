@@ -232,9 +232,7 @@ describe('Token Helper', () => {
 
       expect(mockLogger.error).toHaveBeenCalled();
       const calls = mockLogger.error.mock.calls;
-      expect(calls.some((c) => c[0].includes('Unauthorized access'))).toBe(
-        true,
-      );
+      expect(calls.some((c) => c[0].includes('Unauthorized access'))).toBe(true);
     });
 
     it('should include context prefix when provided', () => {

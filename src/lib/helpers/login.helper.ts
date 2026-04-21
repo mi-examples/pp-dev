@@ -192,11 +192,7 @@ export const tokenLoginFunction = function () {
 </div>`;
   }
 
-  function updateTokenUI(
-    type: TokenType,
-    tokenInput: HTMLInputElement,
-    tokenCaption: HTMLSpanElement,
-  ) {
+  function updateTokenUI(type: TokenType, tokenInput: HTMLInputElement, tokenCaption: HTMLSpanElement) {
     const info = TOKEN_TYPE_CONFIG[type];
 
     if (info) {
@@ -219,8 +215,7 @@ export const tokenLoginFunction = function () {
     tokenInput: HTMLInputElement,
     tokenCaption: HTMLSpanElement,
   ) {
-    const tokenTypeOptions =
-      tokenTypeSwitcher.querySelectorAll<HTMLDivElement>('.token-type-option');
+    const tokenTypeOptions = tokenTypeSwitcher.querySelectorAll<HTMLDivElement>('.token-type-option');
 
     const handleTokenTypeChange = (target: HTMLDivElement) => {
       const value = target.dataset.value as TokenType;
@@ -279,11 +274,7 @@ export const tokenLoginFunction = function () {
 
       const url = response.url && new URL(response.url, window.location.origin);
 
-      if (
-        url &&
-        !url.pathname.startsWith('/login') &&
-        !url.pathname.startsWith('/@api/')
-      ) {
+      if (url && !url.pathname.startsWith('/login') && !url.pathname.startsWith('/@api/')) {
         // Successful login - redirect
         window.location.href = response.url;
       } else {
@@ -298,10 +289,7 @@ export const tokenLoginFunction = function () {
         }
       }
     } catch (networkError) {
-      showError(
-        'Login failed: Network error. Please check your connection.',
-        errorElement,
-      );
+      showError('Login failed: Network error. Please check your connection.', errorElement);
     } finally {
       // Remove loading state
       formWrapper.classList.remove('loading');
@@ -327,18 +315,10 @@ export const tokenLoginFunction = function () {
       }
 
       const tokenTypeSwitcher = document.getElementById('token-type-switcher');
-      const activeOption = tokenTypeSwitcher?.querySelector(
-        '.token-type-option.active',
-      ) as HTMLDivElement;
-      const tokenType = (activeOption?.dataset.value ||
-        'personal') as TokenType;
+      const activeOption = tokenTypeSwitcher?.querySelector('.token-type-option.active') as HTMLDivElement;
+      const tokenType = (activeOption?.dataset.value || 'personal') as TokenType;
 
-      await handleFormSubmission(
-        tokenInput.value.trim(),
-        tokenType,
-        formWrapper,
-        errorElement,
-      );
+      await handleFormSubmission(tokenInput.value.trim(), tokenType, formWrapper, errorElement);
     });
 
     // Enter key handler for input
@@ -363,9 +343,7 @@ export const tokenLoginFunction = function () {
     }
 
     // Create form elements
-    const rowTemplate = (contentWrapper.lastChild as HTMLDivElement)?.cloneNode(
-      true,
-    ) as HTMLDivElement;
+    const rowTemplate = (contentWrapper.lastChild as HTMLDivElement)?.cloneNode(true) as HTMLDivElement;
 
     if (!rowTemplate) {
       return;
@@ -397,30 +375,13 @@ export const tokenLoginFunction = function () {
 
     // Get form elements
     const tokenTypeSwitcher = document.getElementById('token-type-switcher');
-    const tokenInput = document.getElementById(
-      'helper-token',
-    ) as HTMLInputElement;
-    const tokenCaption = document.getElementById(
-      'token-caption',
-    ) as HTMLSpanElement;
-    const submitButton = document.getElementById(
-      'helper-token-submit',
-    ) as HTMLButtonElement;
-    const errorElement = document.getElementById(
-      'error-message',
-    ) as HTMLDivElement;
-    const formWrapper = formContent.querySelector(
-      '.helper-login-wrapper',
-    ) as HTMLElement;
+    const tokenInput = document.getElementById('helper-token') as HTMLInputElement;
+    const tokenCaption = document.getElementById('token-caption') as HTMLSpanElement;
+    const submitButton = document.getElementById('helper-token-submit') as HTMLButtonElement;
+    const errorElement = document.getElementById('error-message') as HTMLDivElement;
+    const formWrapper = formContent.querySelector('.helper-login-wrapper') as HTMLElement;
 
-    if (
-      !tokenTypeSwitcher ||
-      !tokenInput ||
-      !tokenCaption ||
-      !submitButton ||
-      !errorElement ||
-      !formWrapper
-    ) {
+    if (!tokenTypeSwitcher || !tokenInput || !tokenCaption || !submitButton || !errorElement || !formWrapper) {
       console.error('Failed to find required form elements');
 
       return;
@@ -434,17 +395,18 @@ export const tokenLoginFunction = function () {
     updateTokenUI('personal', tokenInput, tokenCaption);
   }
 
+  const formSelector = '#mi-react-root form:not([id]):has(input[name="login"]):has(input[name="password"])';
+
   // Main logic - use MutationObserver instead of setInterval for better performance
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
-        const loginForm = document.querySelector<HTMLFormElement>(
-          '#mi-react-root form',
-        );
+        const loginForm = document.querySelector<HTMLFormElement>(formSelector);
 
         if (loginForm) {
           observer.disconnect();
           initializeLoginForm(loginForm);
+
           break;
         }
       }
@@ -458,9 +420,7 @@ export const tokenLoginFunction = function () {
   });
 
   // Fallback: check if form already exists
-  const existingForm = document.querySelector<HTMLFormElement>(
-    '#mi-react-root form',
-  );
+  const existingForm = document.querySelector<HTMLFormElement>(formSelector);
 
   if (existingForm) {
     observer.disconnect();

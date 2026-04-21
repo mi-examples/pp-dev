@@ -11,7 +11,11 @@
   <div class="pp-dev-info__content">
     <div class="pp-dev-info__section">
       <span class="pp-dev-info__item">
-        <a href="https://www.npmjs.com/package/{%= PACKAGE_NAME %}/v/{%= VERSION %}" target="_blank" class="pp-dev-info__link">
+        <a
+          href="https://www.npmjs.com/package/{%= PACKAGE_NAME %}/v/{%= VERSION %}"
+          target="_blank"
+          class="pp-dev-info__link"
+        >
           <span class="pp-dev-info__label">Package:</span>
           <span class="pp-dev-info__value primary">{%= PACKAGE_NAME %}</span>
           <span class="pp-dev-info__value warning">{%= VERSION %}</span>
@@ -43,7 +47,12 @@
     <div class="pp-dev-info__section">
       <span class="pp-dev-info__item">
         <span class="pp-dev-info__label">Portal page ID:</span>
-        <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}" target="_blank" class="pp-dev-info__link">{%= portalPageId %}</a>
+        <a
+          href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}"
+          target="_blank"
+          class="pp-dev-info__link"
+          >{%= portalPageId %}</a
+        >
       </span>
     </div>
     {% } %}
@@ -51,13 +60,7 @@
 
   {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
   <button id="sync-template" class="sync-button" title="Sync template">
-    <svg
-      fill="currentColor"
-      width="20px"
-      height="20px"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
+    <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       <path
         d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"
       />

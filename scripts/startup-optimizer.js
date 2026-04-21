@@ -24,7 +24,7 @@ class PerformanceMonitor {
   measure(name, startMark, endMark) {
     const start = this.marks.get(startMark);
     const end = this.marks.get(endMark);
-    
+
     if (start && end) {
       const duration = end - start;
       this.measures.set(name, duration);
@@ -41,11 +41,11 @@ class PerformanceMonitor {
   getSummary() {
     console.log('\n📈 Performance Summary:');
     console.log('========================');
-    
+
     for (const [name, duration] of this.measures) {
       console.log(`${name}: ${duration.toFixed(2)}ms`);
     }
-    
+
     const totalTime = performance.now() - this.startTime;
     console.log(`\nTotal optimization time: ${totalTime.toFixed(2)}ms`);
   }
@@ -62,15 +62,15 @@ class CacheOptimizer {
 
   async optimizeCaches() {
     console.log('\n🔧 Optimizing caches...');
-    
+
     try {
       // Clear existing caches
       const { clearConfigCache } = await import('../dist/esm/config.js');
       const { clearAPICache } = await import('../dist/esm/lib/load-pp-data.middleware.js');
-      
+
       clearConfigCache();
       clearAPICache();
-      
+
       console.log('✅ Caches cleared successfully');
     } catch (error) {
       console.log('⚠️  Could not clear caches (build may be needed)');
@@ -88,14 +88,14 @@ class DependencyAnalyzer {
   constructor() {
     // Based on profiling data from isolate log
     this.heavyStartupDeps = [
-      'source-map-support',  // Loaded immediately in bin/pp-dev.js
-      'source-map',          // Heavy dependency chain
-      'esbuild',            // TypeScript compilation overhead
-      'jsdom',              // HTML parsing (lazy loaded)
-      'vite',               // Large framework
-      'rollup',             // Build system
+      'source-map-support', // Loaded immediately in bin/pp-dev.js
+      'source-map', // Heavy dependency chain
+      'esbuild', // TypeScript compilation overhead
+      'jsdom', // HTML parsing (lazy loaded)
+      'vite', // Large framework
+      'rollup', // Build system
     ];
-    
+
     this.performanceBottlenecks = [
       'TypeScript config compilation with esbuild',
       'Multiple file system operations for config discovery',
@@ -107,19 +107,19 @@ class DependencyAnalyzer {
 
   analyzeDependencies() {
     console.log('\n📦 Analyzing dependencies based on profiling data...');
-    
+
     const packagePath = path.resolve(__dirname, '../package.json');
     const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-    
+
     const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    
+
     console.log('Heavy dependencies identified in profiling:');
     for (const dep of this.heavyStartupDeps) {
       if (deps[dep]) {
         console.log(`  - ${dep}: ${deps[dep]}`);
       }
     }
-    
+
     return deps;
   }
 
@@ -137,7 +137,7 @@ class DependencyAnalyzer {
   identifyBottlenecks() {
     console.log('\n🚨 Performance bottlenecks from profiling:');
     console.log('==========================================');
-    
+
     this.performanceBottlenecks.forEach((bottleneck, index) => {
       console.log(`${index + 1}. ${bottleneck}`);
     });

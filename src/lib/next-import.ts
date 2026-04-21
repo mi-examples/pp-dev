@@ -17,10 +17,7 @@ export interface NextJSImports {
  */
 export async function safeNextImport(): Promise<NextJSImports> {
   try {
-    const [next, constants] = await Promise.all([
-      import('next'),
-      import('next/constants.js'),
-    ]);
+    const [next, constants] = await Promise.all([import('next'), import('next/constants.js')]);
 
     return {
       next: next.default,

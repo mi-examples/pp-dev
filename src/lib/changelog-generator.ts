@@ -60,7 +60,14 @@ export const changelogTemplate = /* HTML */ `<!DOCTYPE html>
           width: 1%;
           min-width: 50px;
           padding: 0 10px;
-          font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+          font-family:
+            ui-monospace,
+            SFMono-Regular,
+            SF Mono,
+            Menlo,
+            Consolas,
+            Liberation Mono,
+            monospace;
           font-size: 12px;
           line-height: 20px;
           text-align: right;
@@ -106,7 +113,14 @@ export const changelogTemplate = /* HTML */ `<!DOCTYPE html>
         .blob-code-inner {
           display: table-cell;
           overflow: visible;
-          font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+          font-family:
+            ui-monospace,
+            SFMono-Regular,
+            SF Mono,
+            Menlo,
+            Consolas,
+            Liberation Mono,
+            monospace;
           font-size: 12px;
           word-wrap: anywhere;
           white-space: pre-wrap;
@@ -560,7 +574,11 @@ export class ChangelogGenerator {
         const lines = lineContent
           .split('\n')
           .map((line, index) => {
-            return { lineContent: line, lineNumber: lineNumber + index + 1, lineType } as ChangelogDiffLine;
+            return {
+              lineContent: line,
+              lineNumber: lineNumber + index + 1,
+              lineType,
+            } as ChangelogDiffLine;
           })
           .slice(0, linesCount);
 

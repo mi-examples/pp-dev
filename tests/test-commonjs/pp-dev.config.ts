@@ -2,11 +2,11 @@ import { PPDevConfig } from '@metricinsights/pp-dev';
 
 const ppDevConfig: PPDevConfig = {
   backendBaseURL: 'https://stg7x.metricinsights.com',
-  appId: 733,
+  appId: 937,
   miHudLess: true,
   integrateMiTopBar: true,
   v7Features: true,
-  templateLess: true,
+  templateLess: false,
   disableSSLValidation: true,
 };
 

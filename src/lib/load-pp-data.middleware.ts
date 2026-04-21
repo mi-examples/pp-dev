@@ -28,7 +28,7 @@ function getCachedResponse(key: string): any | null {
 
   if (Date.now() - cached.timestamp > CACHE_TTL) {
     apiResponseCache.delete(key);
-    
+
     return null;
   }
 
@@ -262,9 +262,7 @@ async function handleTemplateLoad(
     }
 
     const loadPageData =
-      !templateLess && typeof appId !== 'undefined'
-        ? mi.getPageVariables(appId, headers)
-        : mi.getPageTemplate(headers);
+      !templateLess && typeof appId !== 'undefined' ? mi.getPageVariables(appId, headers) : mi.getPageTemplate(headers);
 
     await loadPageData;
 

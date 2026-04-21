@@ -1,187 +1,162 @@
 # [0.18.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.17.0...v0.18.0-beta.1) (2026-04-06)
 
-
 ### Features
 
-* rewrite /data/page/ path for v7 proxy when template differs from internal name ([a060da2](https://github.com/mi-examples/pp-dev/commit/a060da26e4d4cb9e80625f2015e5ab19b82a398d))
+- rewrite /data/page/ path for v7 proxy when template differs from internal name ([a060da2](https://github.com/mi-examples/pp-dev/commit/a060da26e4d4cb9e80625f2015e5ab19b82a398d))
 
 # [0.17.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.16.1...v0.17.0-beta.1) (2026-04-06)
 
-
 ### Bug Fixes
 
-* **tests:** align sandbox overrides with audited dependency policy ([5841aa8](https://github.com/mi-examples/pp-dev/commit/5841aa831833d74342e9bc134141f9913c1c0bab))
-
+- **tests:** align sandbox overrides with audited dependency policy ([5841aa8](https://github.com/mi-examples/pp-dev/commit/5841aa831833d74342e9bc134141f9913c1c0bab))
 
 ### Features
 
-* **cli:** Webpack fallback for Next dev when Turbopack native SWC fails ([5940f31](https://github.com/mi-examples/pp-dev/commit/5940f316cf86056196ad3f69a8b3667460866aeb))
+- **cli:** Webpack fallback for Next dev when Turbopack native SWC fails ([5940f31](https://github.com/mi-examples/pp-dev/commit/5940f316cf86056196ad3f69a8b3667460866aeb))
 
 # [0.16.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.15.1...v0.16.0-beta.1) (2026-03-23)
 
-
 ### Bug Fixes
 
-* **version-plugin:** hash concatenated digests without hex input encoding ([1ea5e5a](https://github.com/mi-examples/pp-dev/commit/1ea5e5aed6b78b3bd67110d173a5195b75434e9c))
-
+- **version-plugin:** hash concatenated digests without hex input encoding ([1ea5e5a](https://github.com/mi-examples/pp-dev/commit/1ea5e5aed6b78b3bd67110d173a5195b75434e9c))
 
 ### Features
 
-* version manifest plugin and upgrade to Vite 8 ([ad8c4ac](https://github.com/mi-examples/pp-dev/commit/ad8c4ac5b6bc7813d04947b418a5d3b77d2d75fb))
+- version manifest plugin and upgrade to Vite 8 ([ad8c4ac](https://github.com/mi-examples/pp-dev/commit/ad8c4ac5b6bc7813d04947b418a5d3b77d2d75fb))
 
 ## [0.15.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.15.0...v0.15.1-beta.1) (2026-03-12)
 
-
 ### Bug Fixes
 
-* resolve all package vulnerabilities ([79d7e24](https://github.com/mi-examples/pp-dev/commit/79d7e245b94d0be8c133803842329309f0e1b432))
+- resolve all package vulnerabilities ([79d7e24](https://github.com/mi-examples/pp-dev/commit/79d7e245b94d0be8c133803842329309f0e1b432))
 
 # [0.15.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.15.0-beta.1...v0.15.0-beta.2) (2026-03-02)
 
-
 ### Bug Fixes
 
-* add overrides to fix serialize-javascript and minimatch vulnerabilities ([3f79b97](https://github.com/mi-examples/pp-dev/commit/3f79b970b604f8e5656d15f743f51c6902b2e0d5))
+- add overrides to fix serialize-javascript and minimatch vulnerabilities ([3f79b97](https://github.com/mi-examples/pp-dev/commit/3f79b970b604f8e5656d15f743f51c6902b2e0d5))
 
 # [0.15.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.14.1...v0.15.0-beta.1) (2026-02-27)
 
-
 ### Bug Fixes
 
-* add chokidar override to resolve npm ci sync ([3e24d40](https://github.com/mi-examples/pp-dev/commit/3e24d4020a33a5693f8aa442a0add6e80208719b))
-* pass appId to initLoadPPData, remove debug logs, update lock file ([079c13b](https://github.com/mi-examples/pp-dev/commit/079c13bc3db2ea018d377ed01240ff7ffaea253d))
-* proxy middleware - add cache headers for login page, inject token for HTML ([452755f](https://github.com/mi-examples/pp-dev/commit/452755f73391a0a6e2e19223db8f703219f6d993))
-
+- add chokidar override to resolve npm ci sync ([3e24d40](https://github.com/mi-examples/pp-dev/commit/3e24d4020a33a5693f8aa442a0add6e80208719b))
+- pass appId to initLoadPPData, remove debug logs, update lock file ([079c13b](https://github.com/mi-examples/pp-dev/commit/079c13bc3db2ea018d377ed01240ff7ffaea253d))
+- proxy middleware - add cache headers for login page, inject token for HTML ([452755f](https://github.com/mi-examples/pp-dev/commit/452755f73391a0a6e2e19223db8f703219f6d993))
 
 ### Features
 
-* add appId option and fix internal server restart ([ee74beb](https://github.com/mi-examples/pp-dev/commit/ee74beb07d0ffe091302c7af4b56b090ea5cb383))
+- add appId option and fix internal server restart ([ee74beb](https://github.com/mi-examples/pp-dev/commit/ee74beb07d0ffe091302c7af4b56b090ea5cb383))
 
 ## [0.14.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.14.0...v0.14.1-beta.1) (2026-02-24)
 
-
 ### Bug Fixes
 
-* **nextjs:** rewrite response middleware for Next.js page URLs ([3e80f41](https://github.com/mi-examples/pp-dev/commit/3e80f413c3106d9be918604ae0a5e28eeafc98d5))
+- **nextjs:** rewrite response middleware for Next.js page URLs ([3e80f41](https://github.com/mi-examples/pp-dev/commit/3e80f413c3106d9be918604ae0a5e28eeafc98d5))
 
 # [0.14.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.13.2...v0.14.0-beta.1) (2026-02-20)
 
-
 ### Bug Fixes
 
-* ejs v4 default import for ESM compatibility ([e64f4c8](https://github.com/mi-examples/pp-dev/commit/e64f4c8fe1344a00daf575521215b0f82ec539ee))
-* improve dev server restart reliability and config change detection ([3edd020](https://github.com/mi-examples/pp-dev/commit/3edd0206ab5d9e27e8088a8a55fc925f5a586f7f))
-
+- ejs v4 default import for ESM compatibility ([e64f4c8](https://github.com/mi-examples/pp-dev/commit/e64f4c8fe1344a00daf575521215b0f82ec539ee))
+- improve dev server restart reliability and config change detection ([3edd020](https://github.com/mi-examples/pp-dev/commit/3edd0206ab5d9e27e8088a8a55fc925f5a586f7f))
 
 ### Features
 
-* **cli:** appId support, base path handling ([63ec031](https://github.com/mi-examples/pp-dev/commit/63ec0318a18a14b06803a59e8ac2d4be225d4631))
-* **cli:** appId support, base path handling, API routes passthrough ([2c16dae](https://github.com/mi-examples/pp-dev/commit/2c16daea94e11d72a0ce93be0f40ed9f29eb4d6a))
+- **cli:** appId support, base path handling ([63ec031](https://github.com/mi-examples/pp-dev/commit/63ec0318a18a14b06803a59e8ac2d4be225d4631))
+- **cli:** appId support, base path handling, API routes passthrough ([2c16dae](https://github.com/mi-examples/pp-dev/commit/2c16daea94e11d72a0ce93be0f40ed9f29eb4d6a))
 
 ## [0.13.2-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.13.1...v0.13.2-beta.1) (2026-02-12)
 
-
 ### Bug Fixes
 
-* **client-injection:** resolve DIRNAME to parent directory for correct resource paths ([606fd91](https://github.com/mi-examples/pp-dev/commit/606fd919ffda4988f4e1a0c11ce805cacfd75f1e))
+- **client-injection:** resolve DIRNAME to parent directory for correct resource paths ([606fd91](https://github.com/mi-examples/pp-dev/commit/606fd919ffda4988f4e1a0c11ce805cacfd75f1e))
 
 # [0.13.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.13.0-beta.1...v0.13.0-beta.2) (2026-02-11)
 
-
 ### Bug Fixes
 
-* **plugin:** correct DIRNAME path resolution in client injection ([dce83d7](https://github.com/mi-examples/pp-dev/commit/dce83d78e987e0555060552a51bf6d1d32154853))
-
+- **plugin:** correct DIRNAME path resolution in client injection ([dce83d7](https://github.com/mi-examples/pp-dev/commit/dce83d78e987e0555060552a51bf6d1d32154853))
 
 ### Features
 
-* **cli:** support Next.js 16 and fix base path regex escaping ([9182d2a](https://github.com/mi-examples/pp-dev/commit/9182d2a1d319239abf1b7b61cd40f03bbdf312fd))
-* **cli:** watch .env and pp-dev config files, await Next.js check ([69a07f0](https://github.com/mi-examples/pp-dev/commit/69a07f0cbf0d3613fd1e6cdbf892cf0905005b51))
+- **cli:** support Next.js 16 and fix base path regex escaping ([9182d2a](https://github.com/mi-examples/pp-dev/commit/9182d2a1d319239abf1b7b61cd40f03bbdf312fd))
+- **cli:** watch .env and pp-dev config files, await Next.js check ([69a07f0](https://github.com/mi-examples/pp-dev/commit/69a07f0cbf0d3613fd1e6cdbf892cf0905005b51))
 
 # [0.13.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.12.4...v0.13.0-beta.1) (2026-01-22)
 
-
 ### Bug Fixes
 
-* **plugin:** add null check for integrateMiTopBar validation ([df35e2a](https://github.com/mi-examples/pp-dev/commit/df35e2a8a265bd4a6445ec78c9ae94d4c24f105d))
-
+- **plugin:** add null check for integrateMiTopBar validation ([df35e2a](https://github.com/mi-examples/pp-dev/commit/df35e2a8a265bd4a6445ec78c9ae94d4c24f105d))
 
 ### Features
 
-* **plugin:** enhance integrateMiTopBar with selective configuration options ([cbb9a6c](https://github.com/mi-examples/pp-dev/commit/cbb9a6c59db401201fb2530f46ca47eaaa585526))
+- **plugin:** enhance integrateMiTopBar with selective configuration options ([cbb9a6c](https://github.com/mi-examples/pp-dev/commit/cbb9a6c59db401201fb2530f46ca47eaaa585526))
 
 ## [0.12.4-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.12.3...v0.12.4-beta.1) (2026-01-14)
 
-
 ### Bug Fixes
 
-* **plugin:** move topbar scripts injection to head-prepend ([a248f91](https://github.com/mi-examples/pp-dev/commit/a248f91b14817a36a37d56e9107762b514bf90ac))
+- **plugin:** move topbar scripts injection to head-prepend ([a248f91](https://github.com/mi-examples/pp-dev/commit/a248f91b14817a36a37d56e9107762b514bf90ac))
 
 # [@metricinsights/pp-dev-v0.12.3-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.12.2...v0.12.3-beta.1) (2025-12-19)
 
-
 ### Bug Fixes
 
-* **pp-dev:** improve node compatibility for SSL and buffer handling ([fcef21f](https://github.com/mi-examples/pp-dev-js/commit/fcef21f22936aeabb3a4c40711a76631246e80b4))
+- **pp-dev:** improve node compatibility for SSL and buffer handling ([fcef21f](https://github.com/mi-examples/pp-dev-js/commit/fcef21f22936aeabb3a4c40711a76631246e80b4))
 
 # [@metricinsights/pp-dev-v0.12.2](https://github.com/mi-examples/pp-dev-js/compare/v0.12.1...v0.12.2) (2025-01-15)
 
 ### Bug Fixes
 
-* **release:** prepare v0.12.2 patch release
+- **release:** prepare v0.12.2 patch release
 
 # [@metricinsights/pp-dev-v0.12.1](https://github.com/mi-examples/pp-dev-js/compare/v0.12.0...v0.12.1) (2025-01-15)
 
 ### Bug Fixes
 
-* **release:** prepare v0.12.1 patch release
+- **release:** prepare v0.12.1 patch release
 
 # [@metricinsights/pp-dev-v0.12.0](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0...v0.12.0) (2025-01-15)
 
-
 ### Features
 
-* **auth:** add global authentication provider ([2b1e00d](https://github.com/mi-examples/pp-dev-js/commit/2b1e00d20cbfd21284aa871c47bc149829a2f865))
-* **pp-dev:** enhance CLI and core functionality ([14a3772](https://github.com/mi-examples/pp-dev-js/commit/14a3772a4955aabad6b0fa0986a7047445e0cc5b))
+- **auth:** add global authentication provider ([2b1e00d](https://github.com/mi-examples/pp-dev-js/commit/2b1e00d20cbfd21284aa871c47bc149829a2f865))
+- **pp-dev:** enhance CLI and core functionality ([14a3772](https://github.com/mi-examples/pp-dev-js/commit/14a3772a4955aabad6b0fa0986a7047445e0cc5b))
 
 # [@metricinsights/pp-dev-v0.11.0-beta.4](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.3...v0.11.0-beta.4) (2025-08-29)
 
-
 ### Features
 
-* **pp-dev:** add postbuild script and package renaming utility ([afdc0d6](https://github.com/mi-examples/pp-dev-js/commit/afdc0d6aefd4545b536090c363dad21308683777))
-* **pp-dev:** refactor CLI and core functionality ([98ce2d2](https://github.com/mi-examples/pp-dev-js/commit/98ce2d282abc83759b96b76e3502a0db99835404))
-* **test-commonjs:** moved test commonjs folder to new location ([9480d77](https://github.com/mi-examples/pp-dev-js/commit/9480d77d9dfc5ccafb0f4b0159fedd484143d754))
-* **test-nextjs:** add initial Next.js project files and configuration ([a5da0fd](https://github.com/mi-examples/pp-dev-js/commit/a5da0fdb5ab6f50b9605663706e88f62300aaea3))
-* **test-nextjs:** initialize Next.js test project structure ([2a6155d](https://github.com/mi-examples/pp-dev-js/commit/2a6155dc94f3b27a7b9c3535d5e8699fc9da655c))
+- **pp-dev:** add postbuild script and package renaming utility ([afdc0d6](https://github.com/mi-examples/pp-dev-js/commit/afdc0d6aefd4545b536090c363dad21308683777))
+- **pp-dev:** refactor CLI and core functionality ([98ce2d2](https://github.com/mi-examples/pp-dev-js/commit/98ce2d282abc83759b96b76e3502a0db99835404))
+- **test-commonjs:** moved test commonjs folder to new location ([9480d77](https://github.com/mi-examples/pp-dev-js/commit/9480d77d9dfc5ccafb0f4b0159fedd484143d754))
+- **test-nextjs:** add initial Next.js project files and configuration ([a5da0fd](https://github.com/mi-examples/pp-dev-js/commit/a5da0fdb5ab6f50b9605663706e88f62300aaea3))
+- **test-nextjs:** initialize Next.js test project structure ([2a6155d](https://github.com/mi-examples/pp-dev-js/commit/2a6155dc94f3b27a7b9c3535d5e8699fc9da655c))
 
 # [@metricinsights/pp-dev-v0.11.0-beta.3](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.2...v0.11.0-beta.3) (2025-08-14)
 
-
 ### Bug Fixes
 
-* **ci:** improve package detection and JSON validation ([f787a1c](https://github.com/mi-examples/pp-dev-js/commit/f787a1c2bf47c091c275d09317745b924c45f53f))
-
+- **ci:** improve package detection and JSON validation ([f787a1c](https://github.com/mi-examples/pp-dev-js/commit/f787a1c2bf47c091c275d09317745b924c45f53f))
 
 ### Features
 
-* **pp-dev:** add startup optimization and enhance authentication helpers ([a29e311](https://github.com/mi-examples/pp-dev-js/commit/a29e31136e0c27d221fc26028fd5c4970654e386))
+- **pp-dev:** add startup optimization and enhance authentication helpers ([a29e311](https://github.com/mi-examples/pp-dev-js/commit/a29e31136e0c27d221fc26028fd5c4970654e386))
 
 # [@metricinsights/pp-dev-v0.11.0-beta.2](https://github.com/mi-examples/pp-dev-js/compare/v0.11.0-beta.1...v0.11.0-beta.2) (2025-08-12)
 
-
 ### Bug Fixes
 
-* remove issue number references from semantic-release configs ([f532226](https://github.com/mi-examples/pp-dev-js/commit/f532226b1ecc4cf9d2cfac6e92cb1c101468a329))
+- remove issue number references from semantic-release configs ([f532226](https://github.com/mi-examples/pp-dev-js/commit/f532226b1ecc4cf9d2cfac6e92cb1c101468a329))
 
 # [@metricinsights/pp-dev-v0.11.0-beta.1](https://github.com/mi-examples/pp-dev-js/compare/v0.10.1...v0.11.0-beta.1) (2025-08-12)
 
-
 ### Features
 
-* **pp-dev:** add dependency version synchronization for create-pp-dev releases ([2597b01](https://github.com/mi-examples/pp-dev-js/commit/2597b017a59b1359753e85953648e2ce1674253c))
-* **pp-dev:** add esbuild configuration and build optimization scripts ([bbe1791](https://github.com/mi-examples/pp-dev-js/commit/bbe1791e9eb2e220f1552618a9a534a80ddd2f96))
-* **pp-dev:** add semantic release configuration and update dependencies ([5962bcc](https://github.com/mi-examples/pp-dev-js/commit/5962bccbb76fb684415f731f85f372cdd109d8f1))
+- **pp-dev:** add dependency version synchronization for create-pp-dev releases ([2597b01](https://github.com/mi-examples/pp-dev-js/commit/2597b017a59b1359753e85953648e2ce1674253c))
+- **pp-dev:** add esbuild configuration and build optimization scripts ([bbe1791](https://github.com/mi-examples/pp-dev-js/commit/bbe1791e9eb2e220f1552618a9a534a80ddd2f96))
+- **pp-dev:** add semantic release configuration and update dependencies ([5962bcc](https://github.com/mi-examples/pp-dev-js/commit/5962bccbb76fb684415f731f85f372cdd109d8f1))
 
 # Changelog
 
@@ -190,112 +165,132 @@ All notable changes to the `@metricinsights/pp-dev` package will be documented i
 ## [0.10.0] - 2024-03-21
 
 ### Changed
+
 - Removed unused `pino` and `pino-pretty` dependencies
 
 ## [0.9.0] - 2025-01-31
 
 ### Added
+
 - Added support for MI v7.1.0 instances
 - Added new API endpoints for v7 instances
 
 ## [0.8.0] - 2024-11-15
 
 ### Changed
+
 - Updated package dependencies to latest versions
 - Improved template loading mechanism
 
 ## [0.7.0] - 2024-02-28
 
 ### Added
+
 - Added icon font generation tool
 - Added changelog generator for assets
 - Added image optimization tool
 
 ### Changed
+
 - Improved helper logging system
 
 ## [0.6.0] - 2024-01-18
 
 ### Added
+
 - Added support for React.js, TypeScript, and Next.js templates
 - Added new npm package structure
 - Added documentation for templates
 
 ### Changed
+
 - Updated template code structure
 - Improved helper info panel
 
 ## [0.5.0] - 2023-10-16
 
 ### Added
+
 - Added Next.js support (beta)
 - Added SSL validation support
 - Added shields for package information
 
 ### Changed
+
 - Fixed Next.js dependency versions
 - Improved helper UI
 
 ## [0.4.0] - 2023-05-29
 
 ### Added
+
 - Added CI/CD support
 - Added package for CI/CD
 - Added documentation
 
 ### Changed
+
 - Updated publish configuration
 - Improved installation command
 
 ## [0.3.3] - 2023-11-14
 
 ### Changed
+
 - Fixed URL parameters handling in helper
 - Improved helper UI
 
 ## [0.3.2] - 2023-11-14
 
 ### Changed
+
 - Fixed Next.js dependency versions
 - Improved helper UI
 
 ## [0.3.1] - 2023-12-04
 
 ### Changed
+
 - Fixed URL parameters handling in helper
 - Improved helper UI
 
 ## [0.3.0] - 2023-11-08
 
 ### Added
+
 - Added Next.js support
 - Added helper info panel
 - Added support for React.js templates
 
 ### Changed
+
 - Improved helper UI
 - Updated template loading mechanism
 
 ## [0.2.0] - 2023-05-25
 
 ### Added
+
 - Added support for React.js templates
 - Added helper info panel
 - Added documentation
 
 ### Changed
+
 - Improved template loading mechanism
 - Updated package structure
 
 ## [0.1.1] - 2023-05-23
 
 ### Changed
+
 - Fixed template loading issues
 - Improved helper UI
 
 ## [0.1.0] - 2023-05-17
 
 ### Added
+
 - Initial release
 - Basic template support
 - Helper UI implementation
@@ -303,20 +298,24 @@ All notable changes to the `@metricinsights/pp-dev` package will be documented i
 ## [0.0.3] - 2023-05-17
 
 ### Added
+
 - Added basic template support
 - Added helper UI
 
 ### Changed
+
 - Improved package structure
 
 ## [0.0.2] - 2023-05-17
 
 ### Added
+
 - Added basic package structure
 - Added helper implementation
 
 ## [0.0.1] - 2023-05-17
 
 ### Added
+
 - Initial package setup
 - Basic helper functionality

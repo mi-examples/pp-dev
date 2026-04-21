@@ -10,6 +10,6 @@ export async function getEntities(): Promise<unknown> {
   });
 
   const body = await res.json();
-  
+
   return (body as { data?: unknown }).data;
 }

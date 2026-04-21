@@ -1,5 +1,6 @@
-import { BaseAPI } from './base';
-import { Headers } from './constants';
+import { BaseAPI } from './base.js';
+import { Headers } from './constants.js';
+import { unavailablePageTemplateDataError } from './unavailable-json-api.js';
 
 export interface PageTemplate {
   id: number;
@@ -18,7 +19,7 @@ export interface PageTemplateExtended extends PageTemplate {
 
 export class PageTemplateAPI extends BaseAPI {
   public async getAll(internal_name?: string, headers?: Headers) {
-    return (
+    const data = (
       await this.axios.get<{ page_templates: PageTemplate[] }>(`/api/page_template`, {
         withCredentials: true,
         headers: Object.assign({}, headers, {
@@ -32,11 +33,17 @@ export class PageTemplateAPI extends BaseAPI {
           internal_name,
         },
       })
-    ).data.page_templates;
+    ).data;
+
+    if (typeof data !== 'object' || data === null || !Array.isArray(data.page_templates)) {
+      throw unavailablePageTemplateDataError();
+    }
+
+    return data.page_templates;
   }
 
   public async get(id: number, headers?: Headers) {
-    return (
+    const data = (
       await this.axios.get<{ page_template: PageTemplateExtended }>(`/api/page_template/id/${id}`, {
         withCredentials: true,
         headers: Object.assign({}, headers, {
@@ -44,6 +51,17 @@ export class PageTemplateAPI extends BaseAPI {
           'content-type': 'application/json',
         }),
       })
-    ).data.page_template;
+    ).data;
+
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      typeof data.page_template !== 'object' ||
+      data.page_template === null
+    ) {
+      throw unavailablePageTemplateDataError();
+    }
+
+    return data.page_template;
   }
 }
