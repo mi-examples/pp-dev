@@ -33,6 +33,6 @@ export const createTempDir = async (prefix: string = 'pp-dev-test') => {
 // Helper to clean up temporary directories
 export const cleanupTempDir = async (dir: string) => {
   const { rm } = await import('fs/promises');
-  
+
   await rm(dir, { recursive: true, force: true });
 };

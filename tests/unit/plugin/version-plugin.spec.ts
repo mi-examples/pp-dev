@@ -1,12 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  existsSync,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
@@ -64,25 +57,33 @@ describe('versionPlugin', () => {
 
       const versionFile = join(outDir, 'VERSION-v1.2.3-');
       const files = require('fs').readdirSync(outDir);
-      const versionFilename = files.find(
-        (f: string) => f.startsWith('VERSION-') && f.endsWith('.json'),
-      );
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const buildManifestFilename = files.find((f: string) => f === 'BUILD-MANIFEST.json');
 
       expect(versionFilename).toBeDefined();
+      expect(buildManifestFilename).toBeDefined();
 
-      const manifest = JSON.parse(
-        readFileSync(join(outDir, versionFilename!), 'utf-8'),
-      );
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
+      const buildManifest = JSON.parse(readFileSync(join(outDir, buildManifestFilename!), 'utf-8'));
 
+      expect(manifest.schemaVersion).toBe(1);
       expect(manifest.version).toBe('v1.2.3');
-      expect(manifest.date).toMatch(
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
-      );
+      expect(manifest.date).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(manifest.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(manifest.files).toHaveProperty('index.html');
       expect(manifest.files).toHaveProperty('asset.js');
       expect(manifest.files['index.html']).toMatch(/^[a-f0-9]{64}$/);
       expect(manifest.files['asset.js']).toMatch(/^[a-f0-9]{64}$/);
+      expect(manifest.helperVersion).toBeDefined();
+
+      expect(buildManifest.schemaVersion).toBe(1);
+      expect(buildManifest.manifestType).toBe('pp-dev-build-manifest');
+      expect(buildManifest.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(buildManifest.versionFile).toBe(versionFilename);
+      expect(buildManifest.versionFileTemplate).toBe('VERSION-v{packageversion}-{currentDate}.json');
+      expect(buildManifest.versionFileSchemaVersion).toBe(1);
+      expect(buildManifest.buildFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(buildManifest.compat).toEqual({ versionFileRequired: true });
     });
 
     it('should hash file content only (deterministic for same content)', () => {
@@ -92,21 +93,15 @@ describe('versionPlugin', () => {
       writeFileSync(join(outDir, 'a.txt'), content, 'utf-8');
       writeFileSync(join(outDir, 'b.txt'), content, 'utf-8');
 
-      const expectedHash = createHash('sha256')
-        .update(content, 'utf-8')
-        .digest('hex');
+      const expectedHash = createHash('sha256').update(content, 'utf-8').digest('hex');
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
       invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
-      const versionFilename = files.find(
-        (f: string) => f.startsWith('VERSION-') && f.endsWith('.json'),
-      );
-      const manifest = JSON.parse(
-        readFileSync(join(outDir, versionFilename!), 'utf-8'),
-      );
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
 
       expect(manifest.files['a.txt']).toBe(expectedHash);
       expect(manifest.files['b.txt']).toBe(expectedHash);
@@ -123,23 +118,15 @@ describe('versionPlugin', () => {
       invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
-      const versionFilename = files.find(
-        (f: string) => f.startsWith('VERSION-') && f.endsWith('.json'),
-      );
-      const manifest1 = JSON.parse(
-        readFileSync(join(outDir, versionFilename!), 'utf-8'),
-      );
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest1 = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
 
       rmSync(join(outDir, versionFilename!));
       invokeCloseBundle(plugin);
 
       const filesAfter = require('fs').readdirSync(outDir);
-      const versionFilename2 = filesAfter.find(
-        (f: string) => f.startsWith('VERSION-') && f.endsWith('.json'),
-      );
-      const manifest2 = JSON.parse(
-        readFileSync(join(outDir, versionFilename2!), 'utf-8'),
-      );
+      const versionFilename2 = filesAfter.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest2 = JSON.parse(readFileSync(join(outDir, versionFilename2!), 'utf-8'));
 
       expect(manifest1.checksum).toBe(manifest2.checksum);
     });
@@ -159,16 +146,77 @@ describe('versionPlugin', () => {
       invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
-      const manifestFilename = files.find(
-        (f: string) =>
-          f.startsWith('manifest-2.0.0-beta-') && f.endsWith('.json'),
-      );
+      const manifestFilename = files.find((f: string) => f.startsWith('manifest-2.0.0-beta-') && f.endsWith('.json'));
       expect(manifestFilename).toBeDefined();
-      const manifest = JSON.parse(
-        readFileSync(join(outDir, manifestFilename!), 'utf-8'),
-      );
+      const manifest = JSON.parse(readFileSync(join(outDir, manifestFilename!), 'utf-8'));
+      const buildManifest = JSON.parse(readFileSync(join(outDir, 'BUILD-MANIFEST.json'), 'utf-8'));
 
       expect(manifest.version).toBe('v2.0.0-beta');
+      expect(buildManifest.versionFile).toBe(manifestFilename);
+      expect(buildManifest.versionFileTemplate).toBe('manifest-{packageversion}-{currentDate}.json');
+    });
+
+    it('should include normalized repository URL when provided', () => {
+      const outDir = join(tempDir, 'dist');
+
+      mkdirSync(outDir, { recursive: true });
+      writeFileSync(join(outDir, 'index.html'), '<html>test</html>', 'utf-8');
+
+      const plugin = versionPlugin({
+        outDir,
+        packageVersion: '3.0.0',
+        packageRepositoryUrl: 'git+https://github.com/example/template.git',
+      });
+
+      invokeCloseBundle(plugin);
+
+      const files = require('fs').readdirSync(outDir);
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
+
+      expect(manifest.repositoryUrl).toBe('https://github.com/example/template');
+    });
+
+    it('should convert SSH repository URL to HTTPS when possible', () => {
+      const outDir = join(tempDir, 'dist');
+
+      mkdirSync(outDir, { recursive: true });
+      writeFileSync(join(outDir, 'index.html'), '<html>test</html>', 'utf-8');
+
+      const plugin = versionPlugin({
+        outDir,
+        packageVersion: '3.0.0',
+        packageRepositoryUrl: 'git@github.com:example/template.git',
+      });
+
+      invokeCloseBundle(plugin);
+
+      const files = require('fs').readdirSync(outDir);
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
+
+      expect(manifest.repositoryUrl).toBe('https://github.com/example/template');
+    });
+
+    it('should include branch name when provided', () => {
+      const outDir = join(tempDir, 'dist');
+
+      mkdirSync(outDir, { recursive: true });
+      writeFileSync(join(outDir, 'index.html'), '<html>test</html>', 'utf-8');
+
+      const plugin = versionPlugin({
+        outDir,
+        packageVersion: '3.0.0',
+        packageBranchName: 'feature/version-metadata',
+      });
+
+      invokeCloseBundle(plugin);
+
+      const files = require('fs').readdirSync(outDir);
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
+
+      expect(manifest.branchName).toBe('feature/version-metadata');
     });
 
     it('should not run when enabled is false', () => {
@@ -185,9 +233,7 @@ describe('versionPlugin', () => {
       invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
-      const versionFile = files.find(
-        (f: string) => f.includes('VERSION') || f.includes('manifest'),
-      );
+      const versionFile = files.find((f: string) => f.includes('VERSION') || f.includes('manifest'));
 
       expect(versionFile).toBeUndefined();
     });
@@ -198,23 +244,15 @@ describe('versionPlugin', () => {
       mkdirSync(join(outDir, 'assets', 'nested'), { recursive: true });
       writeFileSync(join(outDir, 'index.html'), 'x', 'utf-8');
       writeFileSync(join(outDir, 'assets', 'style.css'), 'body{}', 'utf-8');
-      writeFileSync(
-        join(outDir, 'assets', 'nested', 'script.js'),
-        '()=>{}',
-        'utf-8',
-      );
+      writeFileSync(join(outDir, 'assets', 'nested', 'script.js'), '()=>{}', 'utf-8');
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
       invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
-      const versionFilename = files.find(
-        (f: string) => f.startsWith('VERSION-') && f.endsWith('.json'),
-      );
-      const manifest = JSON.parse(
-        readFileSync(join(outDir, versionFilename!), 'utf-8'),
-      );
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
 
       expect(manifest.files).toHaveProperty('index.html');
       expect(manifest.files).toHaveProperty('assets/style.css');
@@ -232,12 +270,8 @@ describe('versionPlugin', () => {
       invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
-      const versionFilename = files.find(
-        (f: string) => f.startsWith('VERSION-') && f.endsWith('.json'),
-      );
-      const manifest = JSON.parse(
-        readFileSync(join(outDir, versionFilename!), 'utf-8'),
-      );
+      const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
+      const manifest = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
 
       expect(Object.keys(manifest.files)).not.toContain(versionFilename);
       expect(Object.keys(manifest.files)).toEqual(['only.txt']);

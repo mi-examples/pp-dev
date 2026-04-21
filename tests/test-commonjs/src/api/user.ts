@@ -23,9 +23,7 @@ export async function getCurrentUser(): Promise<AuthUser | undefined> {
     const jq = xhr as JQuery.jqXHR;
 
     const msg = jq.statusText || 'request failed';
-    
-    throw new Error(
-      `auth/info ${jq.status || '?'} (${internalPageName}): ${msg}`,
-    );
+
+    throw new Error(`auth/info ${jq.status || '?'} (${internalPageName}): ${msg}`);
   }
 }

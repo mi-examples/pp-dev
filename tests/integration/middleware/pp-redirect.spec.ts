@@ -15,8 +15,8 @@ function createTestServer(middleware: any): Promise<{ server: Server; port: numb
 
     server.listen(0, () => {
       const address = server.address();
-      const port = typeof address === 'object' ? address?.port ?? 0 : 0;
-      
+      const port = typeof address === 'object' ? (address?.port ?? 0) : 0;
+
       resolve({ server, port });
     });
   });
@@ -42,7 +42,7 @@ async function makeRequest(port: number, path: string): Promise<{ status: number
             body,
           });
         });
-      }
+      },
     );
     req.end();
   });

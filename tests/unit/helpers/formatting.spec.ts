@@ -72,7 +72,9 @@ line2`;
 
     it('should work with CSS content', () => {
       const color = 'red';
-      const result = css`.container { color: ${color}; }`;
+      const result =
+        // prettier-ignore
+        css`.container { color: ${color}; }`;
       expect(result).toBe('.container { color: red; }');
     });
 

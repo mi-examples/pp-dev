@@ -54,7 +54,7 @@ describe('Config Loader', () => {
             backendBaseURL: 'https://pkg.example.com',
             portalPageId: 456,
           },
-        })
+        }),
       );
 
       const { getConfig, clearConfigCache } = await import('../../../src/config.js');
@@ -73,7 +73,7 @@ describe('Config Loader', () => {
         JSON.stringify({
           baseURL: 'https://watch.example.com',
           portalPageId: 789,
-        })
+        }),
       );
 
       const { getConfig, clearConfigCache } = await import('../../../src/config.js');
@@ -93,7 +93,7 @@ describe('Config Loader', () => {
           backendBaseURL: 'https://json.example.com',
           portalPageId: 111,
           templateLess: true,
-        })
+        }),
       );
 
       const { getConfig, clearConfigCache } = await import('../../../src/config.js');
@@ -115,14 +115,14 @@ describe('Config Loader', () => {
         JSON.stringify({
           backendBaseURL: 'https://pp-dev.example.com',
           portalPageId: 100,
-        })
+        }),
       );
       writeFileSync(
         join(testDir, '.pp-watch.config.json'),
         JSON.stringify({
           baseURL: 'https://pp-watch.example.com',
           portalPageId: 200,
-        })
+        }),
       );
 
       const { getConfig, clearConfigCache } = await import('../../../src/config.js');
@@ -144,14 +144,14 @@ describe('Config Loader', () => {
             backendBaseURL: 'https://pkg.example.com',
             portalPageId: 1,
           },
-        })
+        }),
       );
       writeFileSync(
         join(testDir, 'pp-dev.config.json'),
         JSON.stringify({
           backendBaseURL: 'https://file.example.com',
           portalPageId: 2,
-        })
+        }),
       );
 
       const { getConfig, clearConfigCache } = await import('../../../src/config.js');
@@ -173,7 +173,7 @@ describe('Config Loader', () => {
           name: 'test-package',
           version: '1.0.0',
           description: 'Test package',
-        })
+        }),
       );
 
       const { getPkg, clearConfigCache } = await import('../../../src/config.js');
@@ -199,10 +199,7 @@ describe('Config Loader', () => {
 
   describe('Config Caching', () => {
     it('should cache package.json reads', async () => {
-      writeFileSync(
-        join(testDir, 'package.json'),
-        JSON.stringify({ name: 'test', version: '1.0.0' })
-      );
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', version: '1.0.0' }));
 
       const { getPkg, clearConfigCache, getConfigCacheStats } = await import('../../../src/config.js');
       clearConfigCache();

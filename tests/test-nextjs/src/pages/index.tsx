@@ -8,9 +8,12 @@ import { getDatasetData } from '@/api/dataset-data';
 import { getEntities } from '@/api/entity';
 
 export default function Home() {
-  const [user, setUser] = useState<{ first_name: string; last_name: string } | null>(null);
+  const [user, setUser] = useState<{
+    first_name: string;
+    last_name: string;
+  } | null>(null);
   const [datasetData, setDatasetData] = useState<any>(null);
-  
+
   useEffect(() => {
     if (!user) {
       getCurrentUser().then((user) => {
