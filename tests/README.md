@@ -22,6 +22,7 @@ This creates `metricinsights-pp-dev-latest.tgz` which is used by the test projec
 ### 2. Running Tests
 
 #### Run All Tests
+
 ```bash
 npm test
 # or
@@ -29,6 +30,7 @@ npm test -- --all
 ```
 
 #### Run Specific Tests
+
 ```bash
 # Only CommonJS tests
 npm test -- -t dev-commonjs
@@ -43,11 +45,13 @@ npm test -- -t dev-nextjs-cjs
 ### 3. Manual Docker Commands
 
 #### Building Docker Image
+
 ```bash
 docker build -f Dockerfile -t pp-dev-tests .
 ```
 
 #### Run Dev Servers in Docker
+
 ```bash
 # CommonJS dev server
 docker run --rm -p 3000:3000 pp-dev-tests dev-commonjs
@@ -62,6 +66,7 @@ docker run --rm -p 3000:3000 pp-dev-tests dev-nextjs-cjs
 ## Available Test Types
 
 ### Development Servers
+
 - `dev-commonjs` - Start CommonJS/Vite dev server (port 3000)
 - `dev-nextjs` - Start Next.js dev server (port 3000)
 - `dev-nextjs-cjs` - Start Next.js CJS dev server (port 3000)
@@ -80,6 +85,7 @@ docker run --rm -p 3000:3000 pp-dev-tests dev-nextjs-cjs
 ## Configuration
 
 Dockerfile automatically:
+
 1. Uses Node.js 22 Alpine
 2. Copies the built pp-dev package
 3. Copies test folders

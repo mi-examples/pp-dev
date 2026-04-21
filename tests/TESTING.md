@@ -25,6 +25,7 @@ tests/unit/
 ```
 
 **Run unit tests:**
+
 ```bash
 npm run test:unit           # Run once
 npm run test:unit:watch     # Watch mode
@@ -44,6 +45,7 @@ tests/integration/
 ```
 
 **Run integration tests:**
+
 ```bash
 npm run test:integration        # Run once
 npm run test:integration:watch  # Watch mode
@@ -68,6 +70,7 @@ e2e/
 ```
 
 **Run E2E tests:**
+
 ```bash
 npm run test:e2e     # Run all E2E tests via Docker
 npm run test:e2e:ui  # Run with Playwright UI
@@ -81,17 +84,18 @@ npm run test:all  # Runs unit, integration, and E2E tests
 
 ## Test Configuration Files
 
-| File | Purpose |
-|------|---------|
-| `vitest.config.ts` | Unit test configuration |
+| File                           | Purpose                        |
+| ------------------------------ | ------------------------------ |
+| `vitest.config.ts`             | Unit test configuration        |
 | `vitest.integration.config.ts` | Integration test configuration |
-| `playwright.config.ts` | E2E test configuration |
-| `tests/tsconfig.json` | TypeScript config for tests |
-| `tests/setup.ts` | Global test setup |
+| `playwright.config.ts`         | E2E test configuration         |
+| `tests/tsconfig.json`          | TypeScript config for tests    |
+| `tests/setup.ts`               | Global test setup              |
 
 ## Test Environment Variables
 
 For E2E tests:
+
 - `TEST_TYPE` - Type of test (dev-commonjs, dev-nextjs, dev-nextjs-cjs, config)
 - `BASE_URL` - Base URL for the test server
 
@@ -138,6 +142,7 @@ test('should display toolbar', async ({ page, baseURL }) => {
 ## Coverage Reports
 
 Coverage reports are generated in:
+
 - `coverage/unit/` - Unit test coverage
 - `coverage/integration/` - Integration test coverage
 - `playwright-report/` - E2E test reports
@@ -159,12 +164,14 @@ See `tests/README.md` for more details on Docker testing.
 ## Debugging Tests
 
 ### Unit/Integration Tests
+
 ```bash
 npm run test:unit -- --reporter=verbose
 npm run test:integration -- --reporter=verbose
 ```
 
 ### E2E Tests
+
 ```bash
 npx playwright test --debug
 npx playwright test --ui
@@ -173,6 +180,7 @@ npx playwright test --ui
 ## Test Fixtures
 
 Test fixtures and mock data are located in:
+
 - `tests/test-commonjs/` - CommonJS/Vite test project
 - `tests/test-nextjs/` - Next.js ESM test project
 - `tests/test-nextjs-cjs/` - Next.js CJS test project
