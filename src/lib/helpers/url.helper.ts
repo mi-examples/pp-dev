@@ -6,9 +6,7 @@ export const stringIsAValidUrl = (s: string, protocols: string[]) => {
     const parsed = new URL(s);
 
     if (protocols) {
-      return parsed.protocol
-        ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol)
-        : false;
+      return parsed.protocol ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol) : false;
     }
 
     return true;
@@ -17,15 +15,8 @@ export const stringIsAValidUrl = (s: string, protocols: string[]) => {
   }
 };
 
-export const urlReplacer = (
-  originalHost: string,
-  destinationHost: string,
-  content: string,
-) => {
-  const urlReplaceRegExp = new RegExp(
-    `(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`,
-    'gi',
-  );
+export const urlReplacer = (originalHost: string, destinationHost: string, content: string) => {
+  const urlReplaceRegExp = new RegExp(`(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`, 'gi');
 
   return content.replace(urlReplaceRegExp, (substring, ...args) => {
     if (substring.startsWith('!!')) {
@@ -36,15 +27,8 @@ export const urlReplacer = (
   });
 };
 
-export const urlPathReplacer = (
-  urlPath: string,
-  destinationPath: string,
-  content: string,
-) => {
-  const urlReplaceRegExp = new RegExp(
-    `${urlPath.replace(/\\*\//gi, '\\\\/')}`,
-    'gi',
-  );
+export const urlPathReplacer = (urlPath: string, destinationPath: string, content: string) => {
+  const urlReplaceRegExp = new RegExp(`${urlPath.replace(/\\*\//gi, '\\\\/')}`, 'gi');
   const unescapedUrlReplaceRegExp = new RegExp(`${urlPath}`, 'gi');
 
   const replacedContent = content.replace(urlReplaceRegExp, destinationPath);
@@ -54,11 +38,7 @@ export const urlPathReplacer = (
     : replacedContent;
 };
 
-export const redirect = (
-  res: ServerResponse,
-  url: string,
-  statusCode?: number,
-) => {
+export const redirect = (res: ServerResponse, url: string, statusCode?: number) => {
   res.setHeader('location', url);
   res.statusCode = statusCode || 302;
 
@@ -89,12 +69,7 @@ export function rewriteDataPagePathForV7Proxy(
   templateName: string | undefined,
   internalPageName: string | undefined,
 ): string {
-  if (
-    !v7Features ||
-    !templateName ||
-    !internalPageName ||
-    templateName === internalPageName
-  ) {
+  if (!v7Features || !templateName || !internalPageName || templateName === internalPageName) {
     return requestUrl;
   }
 
@@ -119,8 +94,7 @@ export function rewriteDataPagePathForV7Proxy(
     }
 
     const tail = m[2] ?? '';
-    const newPath =
-      `/data/page/${internalPageName}${tail}` + u.search + u.hash;
+    const newPath = `/data/page/${internalPageName}${tail}` + u.search + u.hash;
 
     return newPath;
   } catch {

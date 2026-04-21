@@ -1,10 +1,4 @@
-import {
-  readdirSync,
-  readFileSync,
-  unlink,
-  writeFileSync,
-  existsSync,
-} from 'fs';
+import { readdirSync, readFileSync, unlink, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
@@ -30,10 +24,7 @@ const PACKAGE_CACHE_TTL = 60 * 1000; // 1 minute cache
 function getPackageJson(): any {
   const now = Date.now();
 
-  if (
-    packageJsonCache &&
-    now - packageJsonCache.timestamp < PACKAGE_CACHE_TTL
-  ) {
+  if (packageJsonCache && now - packageJsonCache.timestamp < PACKAGE_CACHE_TTL) {
     return packageJsonCache.data;
   }
 
@@ -147,8 +138,7 @@ async function loadJsConfig<T extends object>(filePath: string) {
     return cached.data as T;
   }
 
-  const config = (await import(pathToFileURL(filePath).toString()))
-    .default as T;
+  const config = (await import(pathToFileURL(filePath).toString())).default as T;
 
   // Cache the result
   configCache.set(cacheKey, {
@@ -201,10 +191,7 @@ function getDirectoryContent(): string[] {
   return files;
 }
 
-async function loadConfig<T extends object>(
-  dirFiles: string[],
-  configNames: string[],
-) {
+async function loadConfig<T extends object>(dirFiles: string[], configNames: string[]) {
   for (const configName of configNames) {
     if (dirFiles.includes(configName)) {
       if (/\.[cm]?ts$/i.test(configName)) {
@@ -230,10 +217,7 @@ export async function getConfig() {
   let config: PPDevConfig = {};
   let configFound = false;
 
-  const newConfig = await loadConfig<PPDevConfig>(
-    dirContent,
-    PP_DEV_CONFIG_NAMES as never as string[],
-  );
+  const newConfig = await loadConfig<PPDevConfig>(dirContent, PP_DEV_CONFIG_NAMES as never as string[]);
 
   if (newConfig) {
     config = newConfig;
@@ -242,10 +226,7 @@ export async function getConfig() {
 
   if (dirContent.length) {
     if (!configFound) {
-      const watchConfig = await loadConfig<PPWatchConfig>(
-        dirContent,
-        PP_WATCH_CONFIG_NAMES as never as string[],
-      );
+      const watchConfig = await loadConfig<PPWatchConfig>(dirContent, PP_WATCH_CONFIG_NAMES as never as string[]);
 
       if (watchConfig) {
         config = {

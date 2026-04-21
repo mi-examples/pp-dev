@@ -10,7 +10,7 @@ export function createInternalServer(): express.Application {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-  
+
   return app;
 }
 

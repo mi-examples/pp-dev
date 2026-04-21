@@ -12,8 +12,7 @@ import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createInternalServer } from './lib/internal.middleware.js';
 import { getTokenErrorInfo } from './lib/helpers/index.js';
 
-type RequiredSelection<T, K extends keyof T> = Required<Pick<T, K>> &
-  Omit<T, K>;
+type RequiredSelection<T, K extends keyof T> = Required<Pick<T, K>> & Omit<T, K>;
 
 interface DistZipOptions {
   /**
@@ -203,14 +202,8 @@ export type NormalizedVitePPDevOptions = RequiredSelection<
 // Add more specific types for validation
 type ValidationResult = { isValid: true } | { isValid: false; error: string };
 
-function validateConfigValue<T>(
-  value: T,
-  validator: (v: T) => boolean,
-  errorMessage: string,
-): ValidationResult {
-  return validator(value)
-    ? { isValid: true }
-    : { isValid: false, error: errorMessage };
+function validateConfigValue<T>(value: T, validator: (v: T) => boolean, errorMessage: string): ValidationResult {
+  return validator(value) ? { isValid: true } : { isValid: false, error: errorMessage };
 }
 
 function validateConfig(config: VitePPDevOptions): ValidationResult {
@@ -227,36 +220,29 @@ function validateConfig(config: VitePPDevOptions): ValidationResult {
     ),
     validateConfigValue(
       config.backendBaseURL,
-      (url): url is string | undefined =>
-        url === undefined || (typeof url === 'string' && url.length > 0),
+      (url): url is string | undefined => url === undefined || (typeof url === 'string' && url.length > 0),
       'VitePPDevOptions.backendBaseURL must be a non-empty string if provided',
     ),
     validateConfigValue(
       config.portalPageId,
-      (id): id is number | undefined =>
-        id === undefined || (typeof id === 'number' && id > 0),
+      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
       'VitePPDevOptions.portalPageId must be a positive number if provided',
     ),
     validateConfigValue(
       config.appId,
-      (id): id is number | undefined =>
-        id === undefined || (typeof id === 'number' && id > 0),
+      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
       'VitePPDevOptions.appId must be a positive number if provided',
     ),
     validateConfigValue(
       config.proxyCacheTTL,
-      (ttl): ttl is number | undefined =>
-        ttl === undefined || (typeof ttl === 'number' && ttl > 0),
+      (ttl): ttl is number | undefined => ttl === undefined || (typeof ttl === 'number' && ttl > 0),
       'VitePPDevOptions.proxyCacheTTL must be a positive number if provided',
     ),
     validateConfigValue(
       config.integrateMiTopBar,
       (
         integrate,
-      ): integrate is
-        | boolean
-        | { addRootElement?: boolean; addSharedComponentsScripts?: boolean }
-        | undefined => {
+      ): integrate is boolean | { addRootElement?: boolean; addSharedComponentsScripts?: boolean } | undefined => {
         if (integrate === undefined) {
           return true;
         }
@@ -275,10 +261,7 @@ function validateConfig(config: VitePPDevOptions): ValidationResult {
         }
 
         if (typeof integrate === 'object' && integrate !== null) {
-          if (
-            integrate.addRootElement !== undefined &&
-            typeof integrate.addRootElement !== 'boolean'
-          ) {
+          if (integrate.addRootElement !== undefined && typeof integrate.addRootElement !== 'boolean') {
             return false;
           }
 
@@ -291,8 +274,7 @@ function validateConfig(config: VitePPDevOptions): ValidationResult {
 
           if (
             config.miHudLess !== true &&
-            (integrate.addRootElement === true ||
-              integrate.addSharedComponentsScripts === true)
+            (integrate.addRootElement === true || integrate.addSharedComponentsScripts === true)
           ) {
             return false;
           }
@@ -309,9 +291,7 @@ function validateConfig(config: VitePPDevOptions): ValidationResult {
   return invalidResult || { isValid: true };
 }
 
-export function normalizeVitePPDevConfig(
-  config: VitePPDevOptions,
-): NormalizedVitePPDevOptions {
+export function normalizeVitePPDevConfig(config: VitePPDevOptions): NormalizedVitePPDevOptions {
   const validationResult = validateConfig(config);
 
   if (!validationResult.isValid) {
@@ -366,8 +346,7 @@ export function normalizeVitePPDevConfig(
     imageOptimizerConfig = false;
   }
 
-  const versionPluginDefaultTemplate =
-    'VERSION-v{packageversion}-{currentDate}.json';
+  const versionPluginDefaultTemplate = 'VERSION-v{packageversion}-{currentDate}.json';
   let versionPluginConfig: false | VersionPluginOptions;
 
   if (versionPlugin === false) {
@@ -379,8 +358,7 @@ export function normalizeVitePPDevConfig(
     };
   } else {
     versionPluginConfig = {
-      versionFileTemplate:
-        versionPlugin.versionFileTemplate ?? versionPluginDefaultTemplate,
+      versionFileTemplate: versionPlugin.versionFileTemplate ?? versionPluginDefaultTemplate,
       enabled: versionPlugin.enabled ?? true,
     };
   }
@@ -404,21 +382,17 @@ export function normalizeVitePPDevConfig(
   } as NormalizedVitePPDevOptions;
 }
 
-function validateServerConfig(
-  config: ServerOptions & { base: string },
-): ValidationResult {
+function validateServerConfig(config: ServerOptions & { base: string }): ValidationResult {
   const validations: ValidationResult[] = [
     validateConfigValue(
       config.base,
-      (base): base is string =>
-        typeof base === 'string' && base.length > 0 && base !== '/',
+      (base): base is string => typeof base === 'string' && base.length > 0 && base !== '/',
       'Server base path cannot be empty or "/"',
     ),
     validateConfigValue(
       config.port,
       (port): port is number | undefined =>
-        port === undefined ||
-        (typeof port === 'number' && port > 0 && port < 65536),
+        port === undefined || (typeof port === 'number' && port > 0 && port < 65536),
       'Server port must be a valid port number (1-65535)',
     ),
   ];
@@ -455,20 +429,17 @@ function validateMiAPIConfig(config: MiAPIConfig): ValidationResult {
     ),
     validateConfigValue(
       config.portalPageId,
-      (id): id is number | undefined =>
-        id === undefined || (typeof id === 'number' && id > 0),
+      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
       'MiAPI portalPageId must be a positive number if provided',
     ),
     validateConfigValue(
       config.appId,
-      (id): id is number | undefined =>
-        id === undefined || (typeof id === 'number' && id > 0),
+      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
       'MiAPI appId must be a positive number if provided',
     ),
     validateConfigValue(
       config.personalAccessToken,
-      (token): token is string | undefined =>
-        token === undefined || typeof token === 'string',
+      (token): token is string | undefined => token === undefined || typeof token === 'string',
       'MiAPI personalAccessToken must be a string if provided',
     ),
   ];
@@ -509,6 +480,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     proxyCacheTTL,
     disableSSLValidation,
     distZip,
+    versionPlugin,
     syncBackupsDir,
     v7Features,
     personalAccessToken,
@@ -585,18 +557,14 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           headers: {
             host: baseUrlHost,
             referer: backendBaseURL,
-            origin: backendBaseURL.replace(
-              /^(https?:\/\/)([^/]+)(\/.*)?$/i,
-              '$1$2',
-            ),
+            origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
           },
           portalPageId: normalizedAppId,
           appId: normalizedAppId,
           templateLess,
           disableSSLValidation,
           v7Features,
-          personalAccessToken:
-            personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
+          personalAccessToken: personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
         };
 
         const validationResult = validateMiAPIConfig(miConfig);
@@ -632,22 +600,21 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         // Get portal page variables from the backend (also, redirect magic)
         server.middlewares.use(
-          initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, {
-            appId: normalizedAppId,
-            portalPageId: normalizedAppId,
-          })),
+          initLoadPPData(
+            isIndexRegExp,
+            mi,
+            Object.assign({}, options, {
+              appId: normalizedAppId,
+              portalPageId: normalizedAppId,
+            }),
+          ),
         );
 
         server.middlewares.use(
           proxyPassMiddleware({
             devServer: server,
             baseURL: backendBaseURL,
-            proxyIgnore: [
-              '/@vite',
-              '/@metricinsights',
-              '/@',
-              baseWithoutTrailingSlash,
-            ],
+            proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
             disableSSLValidation,
             miAPI: mi,
             templateName,
@@ -655,13 +622,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         );
 
         // Helper function to send error responses consistently
-        const sendErrorResponse = (
-          res: any,
-          status: number,
-          error: string,
-          details?: string,
-          code?: string,
-        ) => {
+        const sendErrorResponse = (res: any, status: number, error: string, details?: string, code?: string) => {
           const response: any = { error };
 
           if (details) {
@@ -676,16 +637,9 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         };
 
         // Helper function to handle token validation errors
-        const handleTokenValidationError = (
-          res: any,
-          error: any,
-          tokenType: string,
-        ) => {
+        const handleTokenValidationError = (res: any, error: any, tokenType: string) => {
           // Log the error for debugging
-          server.config.logger.error(
-            `${tokenType} token validation error:`,
-            error,
-          );
+          server.config.logger.error(`${tokenType} token validation error:`, error);
 
           // Use the token helper for better error handling
           const errorInfo = getTokenErrorInfo(error);
@@ -717,12 +671,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             switch (errorInfo.code) {
               case 'SESSION_EXPIRED':
                 status = 412;
-                errorMessage =
-                  tokenType === 'personal'
-                    ? 'Personal access token expired'
-                    : 'Session expired';
-                errorCode =
-                  tokenType === 'personal' ? 'PAT_EXPIRED' : 'SESSION_EXPIRED';
+                errorMessage = tokenType === 'personal' ? 'Personal access token expired' : 'Session expired';
+                errorCode = tokenType === 'personal' ? 'PAT_EXPIRED' : 'SESSION_EXPIRED';
                 break;
               case 'UNAUTHORIZED':
                 status = 401;
@@ -764,9 +714,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           }
 
           // Log token validation attempt
-          server.config.logger.info(
-            `Attempting to validate ${tokenType} token...`,
-          );
+          server.config.logger.info(`Attempting to validate ${tokenType} token...`);
 
           if (tokenType === 'personal') {
             const testRequest = await mi
@@ -793,9 +741,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                 sendErrorResponse(res, 400, 'Token expired or invalid');
                 return null;
               })
-              .catch((error: any) =>
-                handleTokenValidationError(res, error, 'personal'),
-              );
+              .catch((error: any) => handleTokenValidationError(res, error, 'personal'));
 
             if (!testRequest) {
               return;
@@ -821,10 +767,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                     `Regular token validated successfully for ${response.data.users.length} user(s)`,
                   );
 
-                  res.setHeader(
-                    'set-cookie',
-                    response.headers['set-cookie'] ?? '',
-                  );
+                  res.setHeader('set-cookie', response.headers['set-cookie'] ?? '');
 
                   return response;
                 }
@@ -832,15 +775,21 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                 sendErrorResponse(res, 400, 'Token expired or invalid');
                 return null;
               })
-              .catch((error: any) =>
-                handleTokenValidationError(res, error, 'regular'),
-              );
+              .catch((error: any) => handleTokenValidationError(res, error, 'regular'));
 
             if (!testRequest) {
               return;
             }
 
             redirect(res, '/', 302);
+          } else {
+            sendErrorResponse(
+              res,
+              400,
+              'Invalid tokenType',
+              'tokenType must be "personal" or "regular".',
+              'INVALID_TOKEN_TYPE',
+            );
           }
         });
 
@@ -856,6 +805,11 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                     ? {
                         distZipFolder: distZip.outDir,
                         distZipFilename: distZip.outFileName,
+                      }
+                    : undefined,
+                  typeof versionPlugin === 'object'
+                    ? {
+                        versionFileTemplate: versionPlugin.versionFileTemplate,
                       }
                     : undefined,
                 ),
@@ -876,13 +830,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                 return url.split('?')[0].endsWith('index.html');
               },
               (response, req) => {
-                return Buffer.from(
-                  urlReplacer(
-                    baseUrlHost,
-                    req.headers.host ?? '',
-                    mi.buildPage(response, miHudLess),
-                  ),
-                );
+                return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
               },
             ),
           );

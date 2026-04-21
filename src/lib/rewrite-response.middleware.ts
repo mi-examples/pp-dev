@@ -10,11 +10,7 @@ import { createLogger } from './logger.js';
  * @param rewrite Rewrite response content handler
  */
 export function initRewriteResponse(
-  predicate: (
-    url: string,
-    req: IncomingMessage,
-    res: ServerResponse<IncomingMessage>,
-  ) => Promise<boolean> | boolean,
+  predicate: (url: string, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Promise<boolean> | boolean,
   rewrite: (response: Buffer, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Buffer,
 ): NextHandleFunction {
   return async (req, res, next) => {
