@@ -1,3 +1,10 @@
+## [0.18.1-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.18.1-beta.1...v0.18.1-beta.2) (2026-04-22)
+
+
+### Bug Fixes
+
+* harden sync prompt lifecycle and metadata safety ([3aaaeb6](https://github.com/mi-examples/pp-dev/commit/3aaaeb6a2a706f7f2ba6639c5ce87a320626eb32))
+
 ## [0.18.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.0...v0.18.1-beta.1) (2026-04-21)
 
 
