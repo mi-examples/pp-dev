@@ -1256,16 +1256,22 @@ cli
             return;
           }
 
-          const latestBackup = backups
-            .filter((value) => {
-              return value.isFile() && value.name.endsWith('.zip');
-            })
-            .reduce((latest, current) => {
-              const latestTime = fs.statSync(path.resolve(backupsDirPath, latest.name)).mtimeMs;
-              const currentTime = fs.statSync(path.resolve(backupsDirPath, current.name)).mtimeMs;
+          const zipBackups = backups.filter((value) => {
+            return value.isFile() && value.name.endsWith('.zip');
+          });
 
-              return latestTime > currentTime ? latest : current;
-            }, backups[0]).name;
+          if (!zipBackups.length) {
+            createLogger(options.logLevel).warn(colors.yellow(`no ZIP backups found, skipping changelog generation`));
+
+            return;
+          }
+
+          const latestBackup = zipBackups.reduce((latest, current) => {
+            const latestTime = fs.statSync(path.resolve(backupsDirPath, latest.name)).mtimeMs;
+            const currentTime = fs.statSync(path.resolve(backupsDirPath, current.name)).mtimeMs;
+
+            return latestTime > currentTime ? latest : current;
+          }).name;
 
           oldAssetsPath = path.resolve(backupsDirPath, latestBackup);
         }

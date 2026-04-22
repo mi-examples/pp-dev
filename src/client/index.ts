@@ -64,6 +64,25 @@ const POPUP_HEIGHT = 100;
 const ANIMATION_DURATION = 300;
 const CONFIRM_MODAL_OVERLAY_CLASS = 'pp-dev-info__confirm-overlay';
 
+const activeConfirmModals = new Map<
+  HTMLDivElement,
+  { resolve: (value: boolean) => void; onKeyDown: (event: KeyboardEvent) => void }
+>();
+
+function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
+  const entry = activeConfirmModals.get(overlay);
+
+  if (!entry) {
+    return;
+  }
+
+  document.removeEventListener('keydown', entry.onKeyDown);
+  
+  activeConfirmModals.delete(overlay);
+  overlay.remove();
+  entry.resolve(result);
+}
+
 function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   const $popup = document.createElement('div');
 
@@ -220,13 +239,10 @@ function infoPopup(opts: InfoPopupOptions) {
   }
 }
 
-function closeConfirmModalByResult(overlay: HTMLDivElement, resolve: (value: boolean) => void, value: boolean) {
-  overlay.remove();
-  resolve(value);
-}
-
 function closeAllConfirmModals() {
-  document.querySelectorAll(`.${CONFIRM_MODAL_OVERLAY_CLASS}`).forEach((element) => element.remove());
+  for (const overlay of [...activeConfirmModals.keys()]) {
+    teardownConfirmModal(overlay, false);
+  }
 }
 
 function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
@@ -234,50 +250,62 @@ function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
 
   return new Promise<boolean>((resolve) => {
     const $overlay = document.createElement('div');
+
     $overlay.classList.add('pp-dev-info-namespace', CONFIRM_MODAL_OVERLAY_CLASS);
+
     const $confirm = document.createElement('div');
+
     $confirm.classList.add('pp-dev-info__confirm');
+
     const $title = document.createElement('div');
+
     $title.classList.add('pp-dev-info__confirm-title');
     $title.textContent = opts.title;
+
     const $content = document.createElement('div');
+
     $content.classList.add('pp-dev-info__confirm-content');
     $content.textContent = opts.content;
+
     const $actions = document.createElement('div');
+
     $actions.classList.add('pp-dev-info__confirm-actions');
+
     const $cancelButton = document.createElement('button');
+
     $cancelButton.type = 'button';
     $cancelButton.classList.add('pp-dev-info__confirm-btn', 'pp-dev-info__confirm-btn--cancel');
     $cancelButton.textContent = opts.cancelText;
+
     const $confirmButton = document.createElement('button');
+
     $confirmButton.type = 'button';
     $confirmButton.classList.add('pp-dev-info__confirm-btn', 'pp-dev-info__confirm-btn--confirm');
     $confirmButton.textContent = opts.confirmText;
+
     $actions.append($cancelButton, $confirmButton);
     $confirm.append($title, $content, $actions);
     $overlay.appendChild($confirm);
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        document.removeEventListener('keydown', onKeyDown);
-        closeConfirmModalByResult($overlay, resolve, false);
+        teardownConfirmModal($overlay, false);
       }
     };
 
+    activeConfirmModals.set($overlay, { resolve, onKeyDown });
+
     $confirmButton.addEventListener('click', () => {
-      document.removeEventListener('keydown', onKeyDown);
-      closeConfirmModalByResult($overlay, resolve, true);
+      teardownConfirmModal($overlay, true);
     });
 
     $cancelButton.addEventListener('click', () => {
-      document.removeEventListener('keydown', onKeyDown);
-      closeConfirmModalByResult($overlay, resolve, false);
+      teardownConfirmModal($overlay, false);
     });
 
     $overlay.addEventListener('click', (event) => {
       if (event.target === $overlay) {
-        document.removeEventListener('keydown', onKeyDown);
-        closeConfirmModalByResult($overlay, resolve, false);
+        teardownConfirmModal($overlay, false);
       }
     });
 

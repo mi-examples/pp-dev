@@ -24,6 +24,12 @@ interface SyncActionResponsePayload {
 export interface ClientServiceOptions {
   distService?: DistService;
   miAPI?: MiAPI;
+  /**
+   * Max time to wait for the browser to respond to `template:sync:action-required`.
+   * After this, the pending promise resolves to `false` and the resolver is removed.
+   * @default 120_000
+   */
+  syncActionTimeoutMs?: number;
 }
 
 export class ClientService {
@@ -32,7 +38,10 @@ export class ClientService {
   private readonly eventMap: Map<string, (this: ClientService, ...attrs: any[]) => void>;
 
   private logger: Logger;
-  private readonly syncActionResolvers: Map<string, (approved: boolean) => void> = new Map();
+  private readonly syncActionResolvers = new Map<
+    string,
+    { resolve: (approved: boolean) => void; timeoutId: ReturnType<typeof setTimeout> }
+  >();
 
   constructor(server: ViteDevServer, opts?: ClientServiceOptions) {
     this.server = server;
@@ -55,6 +64,33 @@ export class ClientService {
     for (const [event, handler] of this.eventMap) {
       ws.on(event, handler);
     }
+
+    ws.on('close', () => {
+      this.clearAllPendingSyncActions(false);
+    });
+
+    ws.on('error', () => {
+      this.clearAllPendingSyncActions(false);
+    });
+  }
+
+  private resolveSyncAction(requestId: string, approved: boolean) {
+    const entry = this.syncActionResolvers.get(requestId);
+
+    if (!entry) {
+      return;
+    }
+
+    clearTimeout(entry.timeoutId);
+    this.syncActionResolvers.delete(requestId);
+    entry.resolve(approved);
+  }
+
+  /** Resolves every pending `requestSyncAction` promise and clears timeouts (e.g. WebSocket closed). */
+  private clearAllPendingSyncActions(approved: boolean) {
+    for (const requestId of [...this.syncActionResolvers.keys()]) {
+      this.resolveSyncAction(requestId, approved);
+    }
   }
 
   onInfoDataRequest() {
@@ -70,21 +106,19 @@ export class ClientService {
       return;
     }
 
-    const resolver = this.syncActionResolvers.get(payload.requestId);
-
-    if (!resolver) {
-      return;
-    }
-
-    this.syncActionResolvers.delete(payload.requestId);
-    resolver(payload.approved);
+    this.resolveSyncAction(payload.requestId, payload.approved);
   }
 
   async requestSyncAction(payload: Omit<SyncActionRequestPayload, 'requestId'>) {
     const requestId = randomUUID();
+    const timeoutMs = this.opts.syncActionTimeoutMs ?? 120_000;
 
     return await new Promise<boolean>((resolve) => {
-      this.syncActionResolvers.set(requestId, resolve);
+      const timeoutId = setTimeout(() => {
+        this.resolveSyncAction(requestId, false);
+      }, timeoutMs);
+
+      this.syncActionResolvers.set(requestId, { resolve, timeoutId });
 
       this.server.ws.send('template:sync:action-required', {
         ...payload,

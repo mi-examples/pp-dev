@@ -94,8 +94,14 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
   process.stdin.setRawMode(true);
 
   process.stdin.on('data', onInput).setEncoding('utf8').resume();
+  const boundServer = server.httpServer;
 
   const cleanupBinding = () => {
+    if (cleanupActiveShortcutBinding !== cleanupBinding) {
+      return;
+    }
+
+    boundServer.removeListener('close', cleanupBinding);
     process.stdin.off('data', onInput);
 
     if (!hadRawModeEnabled) {
@@ -106,13 +112,11 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
       process.stdin.pause();
     }
 
-    if (cleanupActiveShortcutBinding === cleanupBinding) {
-      cleanupActiveShortcutBinding = null;
-    }
+    cleanupActiveShortcutBinding = null;
   };
 
   cleanupActiveShortcutBinding = cleanupBinding;
-  server.httpServer.on('close', cleanupBinding);
+  boundServer.on('close', cleanupBinding);
 }
 
 const BASE_SHORTCUTS: CLIShortcut[] = [

@@ -152,6 +152,10 @@ export class MiAPI {
     return obj;
   }
 
+  #escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+  }
+
   get personalAccessToken(): string | undefined {
     return this.#personalAccessToken;
   }
@@ -474,7 +478,10 @@ export class MiAPI {
     let result = typeof content === 'string' ? content : content.toString('utf-8');
 
     for (const v of this.#pageVars) {
-      result = result.replace(new RegExp(`\\[${v.name}\\]`, 'g'), v.value);
+      const escapedName = this.#escapeRegExp(v.name);
+      const pageVarRegex = new RegExp(`\\[${escapedName}\\]`, 'g');
+
+      result = result.replace(pageVarRegex, () => v.value);
     }
 
     const dom = new JSDOM(miHudLess ? result : this.#pageTemplate!);

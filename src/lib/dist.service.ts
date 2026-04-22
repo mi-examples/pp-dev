@@ -370,6 +370,12 @@ export class DistService {
         if (resolvedCandidates.length === 1) {
           versionManifestPath = resolvedCandidates[0]!;
         }
+
+        if (buildManifest.compat?.versionFileRequired === true && versionManifestPath === null) {
+          throw new Error(
+            `Build manifest requires version file "${buildManifest.versionFile}", but it is missing in backup ZIP`,
+          );
+        }
       } else {
         const versionFileMatcher = this.versionFileTemplateMatcher();
         const versionManifestCandidates = relativePaths.filter((filePath) =>
