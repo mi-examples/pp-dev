@@ -86,6 +86,10 @@ function resolveVersionFileName(template: string, packageVersion: string, curren
   return template.replace(/\{packageversion\}/g, packageVersion).replace(/\{currentDate\}/g, currentDate);
 }
 
+function stripUrlUserInfo(value: string): string {
+  return value.replace(/^([a-z][a-z\d+.-]*:\/\/)(?:[^/?#@]+(?::[^/?#@]*)?@)/i, '$1');
+}
+
 function normalizeRepositoryUrl(url: string): string {
   const normalizedUrl = url
     .trim()
@@ -96,7 +100,7 @@ function normalizeRepositoryUrl(url: string): string {
   if (scpLikeMatch) {
     const [, , host, repositoryPath] = scpLikeMatch;
 
-    return `https://${host}/${repositoryPath.replace(/^\/+/, '')}`;
+    return stripUrlUserInfo(`https://${host}/${repositoryPath.replace(/^\/+/, '')}`);
   }
 
   const sshProtocolMatch = normalizedUrl.match(/^ssh:\/\/(?:[^@]+@)?([^/:]+)(?::\d+)?\/(.+)$/i);
@@ -104,7 +108,7 @@ function normalizeRepositoryUrl(url: string): string {
   if (sshProtocolMatch) {
     const [, host, repositoryPath] = sshProtocolMatch;
 
-    return `https://${host}/${repositoryPath.replace(/^\/+/, '')}`;
+    return stripUrlUserInfo(`https://${host}/${repositoryPath.replace(/^\/+/, '')}`);
   }
 
   const gitProtocolMatch = normalizedUrl.match(/^git:\/\/([^/]+)\/(.+)$/i);
@@ -112,10 +116,10 @@ function normalizeRepositoryUrl(url: string): string {
   if (gitProtocolMatch) {
     const [, host, repositoryPath] = gitProtocolMatch;
 
-    return `https://${host}/${repositoryPath.replace(/^\/+/, '')}`;
+    return stripUrlUserInfo(`https://${host}/${repositoryPath.replace(/^\/+/, '')}`);
   }
 
-  return normalizedUrl;
+  return stripUrlUserInfo(normalizedUrl);
 }
 
 function resolveHelperVersion(): string {
