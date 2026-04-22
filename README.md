@@ -53,6 +53,7 @@ import '@metricinsights/pp-dev/client/css/client.css';
 ```
 
 **Available Exports**:
+
 - **Main**: Complete pp-dev functionality with CLI and plugins
 - **Plugin**: Vite plugin for integration with build tools
 - **Helpers**: Utility functions for authentication and configuration
@@ -63,6 +64,7 @@ import '@metricinsights/pp-dev/client/css/client.css';
 The pp-dev package includes optimized startup performance and build system with multiple strategies:
 
 ### Quick Start
+
 ```bash
 # Standard build (parallel)
 npm run build
@@ -84,6 +86,7 @@ npm run startup:optimize
 ```
 
 ### Performance Features
+
 - **40-50% faster startup** with intelligent caching
 - **60-70% faster subsequent starts** with connection pooling
 - **Lazy loading** of heavy modules (jsdom, esbuild)
@@ -93,6 +96,7 @@ npm run startup:optimize
 - **Intelligent dependency optimization** based on profiling data
 
 ### Build Features
+
 - **Parallel builds** for 40-60% faster build times
 - **Enhanced tree-shaking** for smaller bundles
 - **Multiple output formats** (ESM, CJS, Types)
@@ -110,6 +114,7 @@ The new startup optimization system in v0.11.0 provides:
 - **Optimization Suggestions**: Automated recommendations for performance improvements
 
 Run the startup optimizer to analyze and improve your development environment:
+
 ```bash
 npm run startup:optimize
 ```
@@ -122,6 +127,7 @@ npm run startup:optimize
 ### Configuration File
 
 Create a configuration file named `pp-dev.config` with one of these extensions:
+
 - `.js` or `.cjs` (for CommonJS)
 - `.ts` (for TypeScript)
 - `.json`
@@ -200,28 +206,28 @@ export default config;
 
 ### Required Options
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `backendBaseURL` | string | URL of the Metric Insights instance for API proxying |
-| `portalPageId` | number | ID of the Portal Page for variable values (deprecated, use `appId` instead) |
-| `appId` | number | ID of the Portal Page for variable values (synonym for `portalPageId`) |
+| Option           | Type   | Description                                                                 |
+| ---------------- | ------ | --------------------------------------------------------------------------- |
+| `backendBaseURL` | string | URL of the Metric Insights instance for API proxying                        |
+| `portalPageId`   | number | ID of the Portal Page for variable values (deprecated, use `appId` instead) |
+| `appId`          | number | ID of the Portal Page for variable values (synonym for `portalPageId`)      |
 
 ### Optional Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `miHudLess` | boolean | `false` | Disables Metric Insights navigation bar in development |
-| `integrateMiTopBar` | boolean \| object | `false` | Integrates MI Top Bar and scripts into the App build (requires `miHudLess: true`). When `true`, enables both `addRootElement` and `addSharedComponentsScripts`. When an object, allows selective enabling: `{ addRootElement?: boolean, addSharedComponentsScripts?: boolean }` |
-| `templateLess` | boolean | `false` | Disables template variable transformation |
-| `enableProxyCache` | boolean | `true` | Enables caching of proxied requests |
-| `proxyCacheTTL` | number | `600000` | Cache TTL in milliseconds (10 minutes) |
-| `disableSSLValidation` | boolean | `false` | Disables SSL certificate validation for proxy requests |
-| `imageOptimizer` | boolean \| object | `true` | Controls image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options |
-| `outDir` | string | `dist` | Output directory for builds |
-| `distZip` | boolean \| object | `true` | Controls build output zipping. Object options: `{ outDir?: string, outFileName?: string }` |
-| `syncBackupsDir` | string | `backups` | Directory for asset backups from MI server |
-| `v7Features` | boolean | `false` | Enables Metric Insights v7 features |
-| `personalAccessToken` | string | `process.env.MI_ACCESS_TOKEN` | Personal Access Token for the MI instance |
+| Option                 | Type              | Default                       | Description                                                                                                                                                                                                                                                                     |
+| ---------------------- | ----------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `miHudLess`            | boolean           | `false`                       | Disables Metric Insights navigation bar in development                                                                                                                                                                                                                          |
+| `integrateMiTopBar`    | boolean \| object | `false`                       | Integrates MI Top Bar and scripts into the App build (requires `miHudLess: true`). When `true`, enables both `addRootElement` and `addSharedComponentsScripts`. When an object, allows selective enabling: `{ addRootElement?: boolean, addSharedComponentsScripts?: boolean }` |
+| `templateLess`         | boolean           | `false`                       | Disables template variable transformation                                                                                                                                                                                                                                       |
+| `enableProxyCache`     | boolean           | `true`                        | Enables caching of proxied requests                                                                                                                                                                                                                                             |
+| `proxyCacheTTL`        | number            | `600000`                      | Cache TTL in milliseconds (10 minutes)                                                                                                                                                                                                                                          |
+| `disableSSLValidation` | boolean           | `false`                       | Disables SSL certificate validation for proxy requests                                                                                                                                                                                                                          |
+| `imageOptimizer`       | boolean \| object | `true`                        | Controls image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options                                                                                                                     |
+| `outDir`               | string            | `dist`                        | Output directory for builds                                                                                                                                                                                                                                                     |
+| `distZip`              | boolean \| object | `true`                        | Controls build output zipping. Object options: `{ outDir?: string, outFileName?: string }`                                                                                                                                                                                      |
+| `syncBackupsDir`       | string            | `backups`                     | Directory for asset backups from MI server                                                                                                                                                                                                                                      |
+| `v7Features`           | boolean           | `false`                       | Enables Metric Insights v7 features                                                                                                                                                                                                                                             |
+| `personalAccessToken`  | string            | `process.env.MI_ACCESS_TOKEN` | Personal Access Token for the MI instance                                                                                                                                                                                                                                       |
 
 ### integrateMiTopBar Details
 
@@ -238,10 +244,12 @@ The `integrateMiTopBar` option allows you to integrate the Metric Insights Top B
 `integrateMiTopBar` can be configured in two ways:
 
 **1. Boolean (Simple)**
+
 - `true`: Enables both `addRootElement` and `addSharedComponentsScripts`
 - `false`: Disables integration (default)
 
 **2. Object (Advanced)**
+
 - `addRootElement`: Adds `<div id="mi-react-root">` element to the body for React mounting
 - `addSharedComponentsScripts`: Adds MI shared component scripts and styles:
   - `/auth/info.js` - Authentication info script
@@ -251,17 +259,19 @@ The `integrateMiTopBar` option allows you to integrate the Metric Insights Top B
 #### Examples
 
 **Simple boolean configuration:**
+
 ```javascript
 // pp-dev.config.js
 module.exports = {
   backendBaseURL: 'https://mi.company.com',
   appId: 1,
-  miHudLess: true,           // Required: Disable dynamic MI scripts
-  integrateMiTopBar: true,    // Enable: Integrate Top Bar into build
+  miHudLess: true, // Required: Disable dynamic MI scripts
+  integrateMiTopBar: true, // Enable: Integrate Top Bar into build
 };
 ```
 
 **Advanced object configuration (selective features):**
+
 ```javascript
 // pp-dev.config.js
 module.exports = {
@@ -269,13 +279,14 @@ module.exports = {
   appId: 1,
   miHudLess: true,
   integrateMiTopBar: {
-    addRootElement: true,              // Add root element for React
-    addSharedComponentsScripts: true,  // Add MI scripts and styles
+    addRootElement: true, // Add root element for React
+    addSharedComponentsScripts: true, // Add MI scripts and styles
   },
 };
 ```
 
 **Partial integration (scripts only, manual root element):**
+
 ```javascript
 // pp-dev.config.js
 module.exports = {
@@ -283,8 +294,8 @@ module.exports = {
   appId: 1,
   miHudLess: true,
   integrateMiTopBar: {
-    addRootElement: false,             // Don't add root element
-    addSharedComponentsScripts: true,  // Add MI scripts and styles
+    addRootElement: false, // Don't add root element
+    addSharedComponentsScripts: true, // Add MI scripts and styles
   },
 };
 ```
@@ -292,6 +303,7 @@ module.exports = {
 ### v7Features Details
 
 When enabled (`true`), this option:
+
 1. Changes development path from `/pt/<portal-page-name>` to `/pl/<portal-page-name>`
 2. Updates Code Sync feature to use v7.1.0+ URLs
 
@@ -300,6 +312,7 @@ When enabled (`true`), this option:
 The `personalAccessToken` option allows you to authenticate with the Metric Insights instance. You can set it in your configuration or use the `MI_ACCESS_TOKEN` environment variable.
 
 Example with authentication and Top Bar integration:
+
 ```javascript
 // pp-dev.config.js
 module.exports = {
@@ -312,9 +325,15 @@ module.exports = {
 ```
 
 **Environment Variable**: Set `MI_ACCESS_TOKEN` in your `.env` file:
+
 ```bash
 MI_ACCESS_TOKEN=your_token_here
 ```
+
+**Local development and network exposure**: pp-dev is a **development** tool. It assumes a trusted machine. Personal access tokens and session helpers are still sensitive: they can authenticate to your Metric Insights backend as you.
+
+- Prefer binding the dev server to **`localhost`** when you do not need access from other devices. If you use **`--host`** (or equivalent) so the app listens on **all interfaces** or your LAN, other machines on the same network can reach the dev server and its dev-only routes (for example the in-browser token login flow). Treat that like exposing credentials: use only on networks you trust, or restrict access with your OS firewall.
+- Do not commit real tokens; keep them in `.env` (gitignored) or your secret store. Avoid sharing screen recordings or logs that contain `MI_ACCESS_TOKEN` or bearer tokens.
 
 ### Enhanced Authentication (v0.11.0+)
 
@@ -326,11 +345,13 @@ The new authentication system in v0.11.0 provides:
 - **Connection Pooling**: Optimized HTTP connections for better performance
 
 **Supported Environment Variables**:
+
 - `MI_ACCESS_TOKEN`: Personal access token for authentication
 - `MI_BACKEND_URL`: Alternative to `backendBaseURL` in config
 - `MI_APP_ID`: Alternative to `appId` in config
 
 **Automatic Loading**: pp-dev automatically detects and loads these variables from your project's `.env` file:
+
 ```bash
 # .env
 MI_ACCESS_TOKEN=your_personal_access_token
@@ -342,13 +363,13 @@ MI_APP_ID=123
 
 ### Global Options
 
-| Option | Description |
-|--------|-------------|
-| `-c, --config <file>` | Path to configuration file (default: `pp-dev.config.js`) |
-| `--base <path>` | Public base path (default: `/`) |
+| Option                   | Description                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                         |
+| `--base <path>`          | Public base path (default: `/`)                                                  |
 | `-l, --logLevel <level>` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `silent` (default: `info`) |
-| `--clearScreen` | Clear screen before logging |
-| `--mode <mode>` | Environment mode: `development`, `production`, `test` (default: `development`) |
+| `--clearScreen`          | Clear screen before logging                                                      |
+| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`)   |
 
 ### Development Server
 
@@ -357,15 +378,16 @@ pp-dev [root] [options]
 # Aliases: pp-dev dev, pp-dev serve
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[root]` | `.` | Root directory of the application |
-| `--host <host>` | `localhost` | Server hostname |
-| `--port <port>` | `3000` | Server port |
-| `--open [path]` | - | Open browser on server start |
-| `--strictPort` | - | Exit if port is already in use |
+| Option          | Default     | Description                       |
+| --------------- | ----------- | --------------------------------- |
+| `[root]`        | `.`         | Root directory of the application |
+| `--host <host>` | `localhost` | Server hostname                   |
+| `--port <port>` | `3000`      | Server port                       |
+| `--open [path]` | -           | Open browser on server start      |
+| `--strictPort`  | -           | Exit if port is already in use    |
 
 **Development Shortcuts**:
+
 - `p` - Start/stop performance profiler (v0.11.0+)
 - `l` - Proxy re-login (refresh authentication)
 - `r` - Restart dev server
@@ -381,11 +403,11 @@ pp-dev next [options]
 # Aliases: pp-dev next-server, pp-dev next-dev
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[root]` | `.` | Root directory of the application |
-| `--port <port>` | `3000` | Server port |
-| `--host <host>` | `localhost` | Server hostname |
+| Option          | Default     | Description                       |
+| --------------- | ----------- | --------------------------------- |
+| `[root]`        | `.`         | Root directory of the application |
+| `--port <port>` | `3000`      | Server port                       |
+| `--host <host>` | `localhost` | Server hostname                   |
 
 ### Build
 
@@ -393,13 +415,13 @@ pp-dev next [options]
 pp-dev build [options]
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[root]` | `.` | Root directory of the application |
-| `--target <target>` | `modules` | Transpile target |
-| `--outDir <dir>` | `dist` | Output directory |
-| `--assetsDir <dir>` | `assets` | Assets directory under outDir |
-| `--changelog [file]` | `true` | Create changelog file |
+| Option               | Default   | Description                       |
+| -------------------- | --------- | --------------------------------- |
+| `[root]`             | `.`       | Root directory of the application |
+| `--target <target>`  | `modules` | Transpile target                  |
+| `--outDir <dir>`     | `dist`    | Output directory                  |
+| `--assetsDir <dir>`  | `assets`  | Assets directory under outDir     |
+| `--changelog [file]` | `true`    | Create changelog file             |
 
 ### Changelog Generation
 
@@ -407,14 +429,14 @@ pp-dev build [options]
 pp-dev changelog [oldAssetPath] [newAssetPath] [options]
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[oldAssetPath]` | - | Path to previous assets |
-| `[newAssetPath]` | - | Path to current assets |
-| `--oldAssetsPath <path>` | - | Path to previous assets |
-| `--newAssetsPath <path>` | - | Path to current assets |
-| `--destination <path>` | `.` | Changelog output directory |
-| `--filename <name>` | `CHANGELOG.html` | Changelog filename |
+| Option                   | Default          | Description                |
+| ------------------------ | ---------------- | -------------------------- |
+| `[oldAssetPath]`         | -                | Path to previous assets    |
+| `[newAssetPath]`         | -                | Path to current assets     |
+| `--oldAssetsPath <path>` | -                | Path to previous assets    |
+| `--newAssetsPath <path>` | -                | Path to current assets     |
+| `--destination <path>`   | `.`              | Changelog output directory |
+| `--filename <name>`      | `CHANGELOG.html` | Changelog filename         |
 
 ### Icon Font Generation
 
@@ -422,13 +444,13 @@ pp-dev changelog [oldAssetPath] [newAssetPath] [options]
 pp-dev generate-icon-font [source] [destination] [options]
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[source]` | - | Source directory with SVG icons |
-| `[destination]` | - | Output directory |
-| `--source <path>` | - | Source directory with SVG icons |
-| `--destination <path>` | - | Output directory |
-| `--fontName <name>` | `icon-font` | Font name |
+| Option                 | Default     | Description                     |
+| ---------------------- | ----------- | ------------------------------- |
+| `[source]`             | -           | Source directory with SVG icons |
+| `[destination]`        | -           | Output directory                |
+| `--source <path>`      | -           | Source directory with SVG icons |
+| `--destination <path>` | -           | Output directory                |
+| `--fontName <name>`    | `icon-font` | Font name                       |
 
 ## Next.js Integration
 
@@ -442,12 +464,13 @@ pp-dev generate-icon-font [source] [destination] [options]
    }
    ```
 3. Wrap your Next.js config:
+
 ```javascript
 // next.config.js
 const { withPPDev } = require('@metricinsights/pp-dev');
 
 module.exports = withPPDev({
-     // your Next.js config
+  // your Next.js config
 });
 ```
 
@@ -464,11 +487,13 @@ For custom build configuration, create a `vite.config` file. See [Vite Configura
 If you encounter an error like "Next.js is required but not available":
 
 1. **Install Next.js in your project:**
+
    ```bash
    npm install next@^15
    ```
 
 2. **Verify the installation:**
+
    ```bash
    npm list next
    ```

@@ -43,10 +43,45 @@ interface InfoPopupOptions {
   type?: 'success' | 'danger' | 'info' | 'warning';
 }
 
+interface SyncActionRequiredPayload {
+  requestId: string;
+  title: string;
+  content: string;
+  confirmText: string;
+  cancelText: string;
+}
+
+interface ConfirmModalOptions {
+  title: string;
+  content: string;
+  confirmText: string;
+  cancelText: string;
+}
+
 let activePopups = 0;
 const POPUP_OFFSET = 10;
 const POPUP_HEIGHT = 100;
 const ANIMATION_DURATION = 300;
+const CONFIRM_MODAL_OVERLAY_CLASS = 'pp-dev-info__confirm-overlay';
+
+const activeConfirmModals = new Map<
+  HTMLDivElement,
+  { resolve: (value: boolean) => void; onKeyDown: (event: KeyboardEvent) => void }
+>();
+
+function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
+  const entry = activeConfirmModals.get(overlay);
+
+  if (!entry) {
+    return;
+  }
+
+  document.removeEventListener('keydown', entry.onKeyDown);
+  
+  activeConfirmModals.delete(overlay);
+  overlay.remove();
+  entry.resolve(result);
+}
 
 function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   const $popup = document.createElement('div');
@@ -86,15 +121,13 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
 }
 
 function updatePopupPositions() {
-  const popups = document.querySelectorAll(
-    '.pp-dev-info-namespace:not(.pp-dev-info)'
-  );
+  const popups = document.querySelectorAll<HTMLElement>('.pp-dev-info-namespace:not(.pp-dev-info)');
   const $devPanel = document.querySelector('.pp-dev-info');
-  
+
   // Update popup positions
-  popups.forEach((popup, index) => {
-    const top = POPUP_OFFSET + (index * (POPUP_HEIGHT + POPUP_OFFSET));
-    (popup as HTMLElement).style.top = `${top}px`;
+  popups.forEach((popup, index: number) => {
+    const top = POPUP_OFFSET + index * (POPUP_HEIGHT + POPUP_OFFSET);
+    popup.style.top = `${top}px`;
   });
 
   // Ensure dev panel stays at the bottom
@@ -206,6 +239,81 @@ function infoPopup(opts: InfoPopupOptions) {
   }
 }
 
+function closeAllConfirmModals() {
+  for (const overlay of [...activeConfirmModals.keys()]) {
+    teardownConfirmModal(overlay, false);
+  }
+}
+
+function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
+  closeAllConfirmModals();
+
+  return new Promise<boolean>((resolve) => {
+    const $overlay = document.createElement('div');
+
+    $overlay.classList.add('pp-dev-info-namespace', CONFIRM_MODAL_OVERLAY_CLASS);
+
+    const $confirm = document.createElement('div');
+
+    $confirm.classList.add('pp-dev-info__confirm');
+
+    const $title = document.createElement('div');
+
+    $title.classList.add('pp-dev-info__confirm-title');
+    $title.textContent = opts.title;
+
+    const $content = document.createElement('div');
+
+    $content.classList.add('pp-dev-info__confirm-content');
+    $content.textContent = opts.content;
+
+    const $actions = document.createElement('div');
+
+    $actions.classList.add('pp-dev-info__confirm-actions');
+
+    const $cancelButton = document.createElement('button');
+
+    $cancelButton.type = 'button';
+    $cancelButton.classList.add('pp-dev-info__confirm-btn', 'pp-dev-info__confirm-btn--cancel');
+    $cancelButton.textContent = opts.cancelText;
+
+    const $confirmButton = document.createElement('button');
+
+    $confirmButton.type = 'button';
+    $confirmButton.classList.add('pp-dev-info__confirm-btn', 'pp-dev-info__confirm-btn--confirm');
+    $confirmButton.textContent = opts.confirmText;
+
+    $actions.append($cancelButton, $confirmButton);
+    $confirm.append($title, $content, $actions);
+    $overlay.appendChild($confirm);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        teardownConfirmModal($overlay, false);
+      }
+    };
+
+    activeConfirmModals.set($overlay, { resolve, onKeyDown });
+
+    $confirmButton.addEventListener('click', () => {
+      teardownConfirmModal($overlay, true);
+    });
+
+    $cancelButton.addEventListener('click', () => {
+      teardownConfirmModal($overlay, false);
+    });
+
+    $overlay.addEventListener('click', (event) => {
+      if (event.target === $overlay) {
+        teardownConfirmModal($overlay, false);
+      }
+    });
+
+    document.addEventListener('keydown', onKeyDown);
+    document.body.appendChild($overlay);
+  });
+}
+
 if (import.meta.hot) {
   const { hot } = import.meta;
 
@@ -251,7 +359,7 @@ if (import.meta.hot) {
       $minimizeButtonSVG.classList.add(CLOSED_CLASS);
     }
 
-    $minimizeButtonWrap.addEventListener('click', (e) => {
+    $minimizeButtonWrap.addEventListener('click', (e: Event) => {
       e.preventDefault();
 
       $infoPanel.classList.toggle(CLOSED_CLASS);
@@ -266,16 +374,45 @@ if (import.meta.hot) {
   const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
 
   if ($syncButton) {
+    hot.on('template:sync:action-required', async (payload: SyncActionRequiredPayload) => {
+      $syncButton.classList.remove('syncing');
+
+      const approved = await confirmModal({
+        title: payload.title,
+        content: payload.content,
+        confirmText: payload.confirmText,
+        cancelText: payload.cancelText,
+      });
+
+      hot.send('template:sync:action-response', {
+        requestId: payload.requestId,
+        approved,
+      });
+
+      if (approved) {
+        $syncButton.classList.add('syncing');
+      }
+    });
+
     hot.on(
       'template:sync:response',
       (
         payload:
           | { syncedAt: string; currentHash: string; backupFilename: string }
-          | { error: string; config?: { [p: string]: any }; refresh?: boolean },
+          | { error: string; config?: { [p: string]: any }; refresh?: boolean }
+          | { cancelled: boolean; message: string },
       ) => {
+        closeAllConfirmModals();
         $syncButton.classList.remove('syncing');
 
-        if ('error' in payload && typeof payload.error !== 'undefined') {
+        if ('cancelled' in payload && payload.cancelled) {
+          infoPopup({
+            title: 'Sync cancelled',
+            content: payload.message,
+            className: 'pp-dev-info__popup--warning',
+            type: 'warning',
+          });
+        } else if ('error' in payload && typeof payload.error !== 'undefined') {
           infoPopup({
             title: 'Sync error',
             content: payload.error,
@@ -303,7 +440,7 @@ if (import.meta.hot) {
       },
     );
 
-    $syncButton.addEventListener('click', (ev) => {
+    $syncButton.addEventListener('click', (ev: Event) => {
       ev.preventDefault();
 
       $syncButton.classList.add('syncing');

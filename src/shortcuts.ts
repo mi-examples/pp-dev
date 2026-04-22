@@ -20,10 +20,9 @@ export type CLIShortcut = {
   action(server: ViteDevServer): void | Promise<void>;
 };
 
-export function bindShortcuts(
-  server: ViteDevServer,
-  opts: BindShortcutsOptions,
-): void {
+let cleanupActiveShortcutBinding: (() => void) | null = null;
+
+export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions): void {
   if (!server.httpServer || !process.stdin.isTTY || process.env.CI) {
     return;
   }
@@ -33,23 +32,33 @@ export function bindShortcuts(
 
   if (opts.print) {
     logger.info(
-      colors.dim(colors.green('  ➜')) +
-        colors.dim('  press ') +
-        colors.bold('h') +
-        colors.dim(' to show help'),
+      colors.dim(colors.green('  ➜')) + colors.dim('  press ') + colors.bold('h') + colors.dim(' to show help'),
     );
   }
 
-  const shortcuts = (opts.customShortcuts ?? [])
-    .filter(isDefined)
-    .concat(BASE_SHORTCUTS);
+  const shortcuts = (opts.customShortcuts ?? []).filter(isDefined).concat(BASE_SHORTCUTS);
+
+  // Ensure previous server bindings are fully detached before rebinding.
+  cleanupActiveShortcutBinding?.();
+  cleanupActiveShortcutBinding = null;
 
   let actionRunning = false;
+  const wasPaused = process.stdin.isPaused();
+  const stdinWithRawMode = process.stdin as NodeJS.ReadStream & {
+    isRaw?: boolean;
+  };
+  const hadRawModeEnabled = Boolean(stdinWithRawMode.isRaw);
 
   const onInput = async (input: string) => {
     // ctrl+c or ctrl+d
-    if (input === '\x03' || input === '\x04') {
-      await server.close().finally(() => process.exit(1));
+    if (input === '\x03') {
+      // Re-emit SIGINT so the CLI graceful shutdown handlers run.
+      process.kill(process.pid, 'SIGINT');
+      return;
+    }
+
+    if (input === '\x04') {
+      await server.close().finally(() => process.exit(0));
 
       return;
     }
@@ -65,9 +74,7 @@ export function bindShortcuts(
           colors.bold('  Shortcuts'),
           ...shortcuts.map(
             (shortcut) =>
-              colors.dim('  press ') +
-              colors.bold(shortcut.key) +
-              colors.dim(` to ${shortcut.description}`),
+              colors.dim('  press ') + colors.bold(shortcut.key) + colors.dim(` to ${shortcut.description}`),
           ),
         ].join('\n'),
       );
@@ -87,10 +94,29 @@ export function bindShortcuts(
   process.stdin.setRawMode(true);
 
   process.stdin.on('data', onInput).setEncoding('utf8').resume();
+  const boundServer = server.httpServer;
 
-  server.httpServer.on('close', () => {
-    process.stdin.off('data', onInput).pause();
-  });
+  const cleanupBinding = () => {
+    if (cleanupActiveShortcutBinding !== cleanupBinding) {
+      return;
+    }
+
+    boundServer.removeListener('close', cleanupBinding);
+    process.stdin.off('data', onInput);
+
+    if (!hadRawModeEnabled) {
+      process.stdin.setRawMode(false);
+    }
+
+    if (wasPaused) {
+      process.stdin.pause();
+    }
+
+    cleanupActiveShortcutBinding = null;
+  };
+
+  cleanupActiveShortcutBinding = cleanupBinding;
+  boundServer.on('close', cleanupBinding);
 }
 
 const BASE_SHORTCUTS: CLIShortcut[] = [

@@ -61,9 +61,7 @@ class AuthProvider {
   /**
    * Update both authentication and redirect status
    */
-  updateState(
-    updates: Partial<Pick<AuthState, 'isAuthenticated' | 'isRedirected'>>,
-  ): void {
+  updateState(updates: Partial<Pick<AuthState, 'isAuthenticated' | 'isRedirected'>>): void {
     if (updates.isAuthenticated !== undefined) {
       this.state.isAuthenticated = updates.isAuthenticated;
     }

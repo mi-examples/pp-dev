@@ -30,6 +30,7 @@ We follow the [Conventional Commits](https://www.conventionalcommits.org/) speci
 The scope should be the name of the component or feature affected (as perceived by the person reading the changelog).
 
 Examples:
+
 - `feat(helper)`: New feature in the helper component
 - `fix(api)`: Bug fix in the API
 - `docs(readme)`: Documentation changes in README
@@ -55,6 +56,7 @@ The release process is automated using GitHub Actions and semantic-release. When
    - Runs semantic-release
 
 semantic-release will then:
+
 1. Analyze your commits
 2. Determine the next version number
 3. Generate a changelog
@@ -73,4 +75,4 @@ The following secrets need to be configured in your GitHub repository:
 
 ### Skipping CI
 
-If you need to make changes to the release commit (like updating the changelog), you can skip the CI by including `[skip ci]` in your commit message. 
+If you need to make changes to the release commit (like updating the changelog), you can skip the CI by including `[skip ci]` in your commit message.

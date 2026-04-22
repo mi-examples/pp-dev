@@ -102,4 +102,3 @@ export class AssetsAPI extends BaseAPI {
       .then((res) => res.data);
   }
 }
-

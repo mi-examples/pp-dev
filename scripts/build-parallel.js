@@ -10,7 +10,7 @@ async function runCommand(command, args, cwd) {
     const child = spawn(command, args, {
       cwd,
       stdio: 'inherit',
-      shell: true
+      shell: true,
     });
 
     child.on('close', (code) => {
@@ -29,19 +29,18 @@ async function runCommand(command, args, cwd) {
 
 async function buildParallel() {
   const projectRoot = resolve(__dirname, '..');
-  
+
   try {
     console.log('🚀 Starting parallel build...');
-    
+
     // Start both builds concurrently
     const nodeBuild = runCommand('npm', ['run', 'build:node'], projectRoot);
     const clientBuild = runCommand('npm', ['run', 'build:client'], projectRoot);
-    
+
     // Wait for both to complete
     await Promise.all([nodeBuild, clientBuild]);
-    
+
     console.log('✅ Parallel build completed successfully!');
-    
   } catch (error) {
     console.error('❌ Parallel build failed:', error.message);
     process.exit(1);

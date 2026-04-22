@@ -1,4 +1,5 @@
 import { InlineConfig, PluginOption } from 'vite';
+import { execSync } from 'child_process';
 import type { NormalizedVitePPDevOptions } from './plugin.js';
 import { normalizeVitePPDevConfig } from './plugin.js';
 import { clientInjectionPlugin, miTopBarPlugin } from './plugins/index.js';
@@ -26,32 +27,95 @@ const pathPagePrefix = '/p';
 const pathTemplatePrefix = '/pt';
 const pathTemplateLocalPrefix = '/pl';
 
+function resolveRepositoryUrl(repository: unknown): string | undefined {
+  if (typeof repository === 'string') {
+    return repository;
+  }
+
+  if (
+    repository &&
+    typeof repository === 'object' &&
+    'url' in repository &&
+    typeof (repository as { url?: unknown }).url === 'string'
+  ) {
+    return (repository as { url: string }).url;
+  }
+
+  const directCiRepositoryUrlEnvVars = [
+    'CI_REPOSITORY_URL',
+    'GIT_URL',
+    'BUILD_REPOSITORY_URI',
+    'CI_PROJECT_URL',
+    'BITBUCKET_GIT_HTTP_ORIGIN',
+    'BUILDKITE_REPO',
+  ] as const;
+
+  for (const variableName of directCiRepositoryUrlEnvVars) {
+    const ciRepositoryUrl = process.env[variableName];
+
+    if (typeof ciRepositoryUrl === 'string' && ciRepositoryUrl.trim()) {
+      return ciRepositoryUrl;
+    }
+  }
+
+  const githubRepository = process.env.GITHUB_REPOSITORY;
+
+  if (typeof githubRepository === 'string' && githubRepository.trim()) {
+    const githubServerUrl = process.env.GITHUB_SERVER_URL || 'https://github.com';
+
+    return `${githubServerUrl.replace(/\/+$/, '')}/${githubRepository.replace(/^\/+/, '')}`;
+  }
+
+  const gitlabProjectPath = process.env.CI_PROJECT_PATH;
+
+  if (typeof gitlabProjectPath === 'string' && gitlabProjectPath.trim()) {
+    const gitlabServerUrl = process.env.CI_SERVER_URL || 'https://gitlab.com';
+
+    return `${gitlabServerUrl.replace(/\/+$/, '')}/${gitlabProjectPath.replace(/^\/+/, '')}`;
+  }
+
+  const bitbucketRepositoryFullName = process.env.BITBUCKET_REPO_FULL_NAME;
+
+  if (typeof bitbucketRepositoryFullName === 'string' && bitbucketRepositoryFullName.trim()) {
+    return `https://bitbucket.org/${bitbucketRepositoryFullName.replace(/^\/+/, '')}`;
+  }
+
+  const travisRepositorySlug = process.env.TRAVIS_REPO_SLUG;
+
+  if (typeof travisRepositorySlug === 'string' && travisRepositorySlug.trim()) {
+    return `https://github.com/${travisRepositorySlug.replace(/^\/+/, '')}`;
+  }
+
+  try {
+    const gitRemoteOriginUrl = execSync('git config --get remote.origin.url', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+
+    if (gitRemoteOriginUrl) {
+      return gitRemoteOriginUrl;
+    }
+  } catch {
+    // Ignore git failures (not a git repo, git missing, or no origin remote).
+  }
+
+  return undefined;
+}
+
 export async function getViteConfig(): Promise<InlineConfig> {
   const pkg = getPkg();
 
   const templateName = pkg.name;
 
   const ppDevConfig = await getConfig();
-  const normalizedPPDevConfig = normalizeVitePPDevConfig(
-    Object.assign(ppDevConfig, { templateName }),
-  );
+  const normalizedPPDevConfig = normalizeVitePPDevConfig(Object.assign(ppDevConfig, { templateName }));
 
   // Lazy import vitePPDev to avoid loading plugin module during Next.js config evaluation
   const { default: vitePPDev } = await import('./plugin.js');
 
-  const plugins: InlineConfig['plugins'] = [
-    vitePPDev(normalizedPPDevConfig),
-    clientInjectionPlugin(),
-  ];
+  const plugins: InlineConfig['plugins'] = [vitePPDev(normalizedPPDevConfig), clientInjectionPlugin()];
 
-  const {
-    outDir,
-    distZip,
-    versionPlugin,
-    imageOptimizer,
-    templateLess,
-    integrateMiTopBar,
-  } = normalizedPPDevConfig;
+  const { outDir, distZip, versionPlugin, imageOptimizer, templateLess, integrateMiTopBar } = normalizedPPDevConfig;
 
   if (integrateMiTopBar) {
     plugins.push(miTopBarPlugin(integrateMiTopBar));
@@ -60,21 +124,17 @@ export async function getViteConfig(): Promise<InlineConfig> {
   if (imageOptimizer) {
     const { ViteImageOptimizer } = await import('vite-plugin-image-optimizer');
 
-    plugins.push(
-      ViteImageOptimizer(
-        typeof imageOptimizer === 'object' ? imageOptimizer : undefined,
-      ),
-    );
+    plugins.push(ViteImageOptimizer(typeof imageOptimizer === 'object' ? imageOptimizer : undefined));
   }
 
   if (versionPlugin) {
-    const { versionPlugin: versionPluginFn } =
-      await import('./plugins/version-plugin.js');
+    const { versionPlugin: versionPluginFn } = await import('./plugins/version-plugin.js');
 
     plugins.push(
       versionPluginFn({
         outDir,
         packageVersion: pkg.version ?? '0.0.0',
+        packageRepositoryUrl: resolveRepositoryUrl(pkg.repository),
         ...(typeof versionPlugin === 'object' ? versionPlugin : {}),
       }),
     );
@@ -96,9 +156,7 @@ export async function getViteConfig(): Promise<InlineConfig> {
   }
 
   return {
-    base: templateLess
-      ? `${pathPagePrefix}/${templateName}`
-      : `${pathTemplatePrefix}/${templateName}`,
+    base: templateLess ? `${pathPagePrefix}/${templateName}` : `${pathTemplatePrefix}/${templateName}`,
     server: {
       port: 3000,
     },
@@ -144,11 +202,7 @@ export function getPPDevConfigFromNextConfig(nextConfig: any): PPDevConfig {
 }
 
 // Export the safe import utility for consumers who need it
-export {
-  safeNextImport,
-  isNextAvailable,
-  getNextVersion,
-} from './lib/next-import.js';
+export { safeNextImport, isNextAvailable, getNextVersion } from './lib/next-import.js';
 
 // Export authentication provider for global state management
 export { authProvider, AuthProvider } from './lib/auth.provider.js';
@@ -217,16 +271,10 @@ function mergeConfigs(
 export function withPPDev(
   nextjsConfig:
     | NextConfig
-    | ((
-        phase: string,
-        nextConfig?: { defaultConfig?: any },
-      ) => NextConfig | Promise<NextConfig>),
+    | ((phase: string, nextConfig?: { defaultConfig?: any }) => NextConfig | Promise<NextConfig>),
   ppDevConfig?: PPDevConfig,
 ) {
-  return async (
-    phase: string,
-    nextConfig: { defaultConfig?: any } = {},
-  ): Promise<NextConfig> => {
+  return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {
     try {
       const { constants } = await safeNextImport();
       const { PHASE_DEVELOPMENT_SERVER } = constants;
@@ -237,19 +285,12 @@ export function withPPDev(
 
       // Resolve the Next.js configuration
       const nextConfiguration =
-        typeof nextjsConfig === 'function'
-          ? await nextjsConfig(phase, nextConfig)
-          : nextjsConfig;
+        typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
 
       // Get pp-dev config from Next.js config if available
       // Priority order: file config -> Next.js config -> function parameter config
       const nextConfigPPDev = getPPDevConfigFromNextConfig(nextConfiguration);
-      const mergedConfig = Object.assign(
-        {},
-        config,
-        nextConfigPPDev,
-        ppDevConfig ?? {},
-      );
+      const mergedConfig = Object.assign({}, config, nextConfigPPDev, ppDevConfig ?? {});
 
       // Create base configuration with appropriate base path
       const isDevelopment = phase === PHASE_DEVELOPMENT_SERVER;
@@ -285,9 +326,7 @@ export function withPPDev(
       // Fallback to original config if something goes wrong
       try {
         const fallbackConfig =
-          typeof nextjsConfig === 'function'
-            ? await nextjsConfig(phase, nextConfig)
-            : nextjsConfig;
+          typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
         return fallbackConfig;
       } catch (fallbackError) {
         console.error('Error in fallback configuration:', fallbackError);

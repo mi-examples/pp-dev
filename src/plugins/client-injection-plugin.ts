@@ -1,11 +1,6 @@
 import { IndexHtmlTransformResult, normalizePath, Plugin } from 'vite';
 import * as path from 'path';
-import {
-  PP_DEV_CLIENT_ENTRY,
-  PACKAGE_NAME,
-  VERSION,
-  PP_DEV_PACKAGE_DIR,
-} from '../constants.js';
+import { PP_DEV_CLIENT_ENTRY, PACKAGE_NAME, VERSION, PP_DEV_PACKAGE_DIR } from '../constants.js';
 import * as fs from 'fs';
 import ejs from 'ejs';
 import type { AsyncTemplateFunction } from 'ejs';
@@ -82,10 +77,7 @@ class LRUCache<K, V> {
 
 // Cache for template compilation and file reading with LRU strategy
 // Initialize with explicit type to ensure CJS compatibility
-const templateCache: LRUCache<string, AsyncTemplateFunction> = new LRUCache<
-  string,
-  AsyncTemplateFunction
->(5);
+const templateCache: LRUCache<string, AsyncTemplateFunction> = new LRUCache<string, AsyncTemplateFunction>(5);
 const fileCache: Map<string, string> = new Map<string, string>();
 
 // Memoized path resolution
@@ -96,11 +88,7 @@ try {
   if (typeof __filename !== 'undefined' && __filename) {
     // @ts-ignore - __filename is available in CJS
     DIRNAME = path.resolve(path.dirname(__filename), '..');
-  } else if (
-    typeof import.meta !== 'undefined' &&
-    import.meta &&
-    import.meta.url
-  ) {
+  } else if (typeof import.meta !== 'undefined' && import.meta && import.meta.url) {
     DIRNAME = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
   } else {
     // Fallback to current working directory
@@ -117,10 +105,7 @@ const CLIENT_PATH = `/${PACKAGE_IMPORT}`;
 const PACKAGE_REGEXP = new RegExp(`^\\/?${PACKAGE_NAME}\\/client\\/(.*)$`);
 
 // Memoized function to get template with caching
-function getTemplate(
-  base: string,
-  enableCache: boolean = true,
-): AsyncTemplateFunction {
+function getTemplate(base: string, enableCache: boolean = true): AsyncTemplateFunction {
   const cacheKey = base;
 
   if (enableCache && templateCache.has(cacheKey)) {
@@ -141,10 +126,7 @@ function getTemplate(
   // Compile template with optimized replacement and better regex escaping
   const escapedClientPath = CLIENT_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const compiledTemplate = ejs.compile(
-    templateContent.replace(
-      new RegExp(escapedClientPath, 'g'),
-      path.posix.join(base, PACKAGE_IMPORT),
-    ),
+    templateContent.replace(new RegExp(escapedClientPath, 'g'), path.posix.join(base, PACKAGE_IMPORT)),
     {
       openDelimiter: '{',
       closeDelimiter: '}',
@@ -178,9 +160,7 @@ const performanceMetrics = {
   totalRequests: 0,
 };
 
-export function clientInjectionPlugin(
-  opts?: ClientInjectionPluginOpts,
-): Plugin {
+export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin {
   const enableCache = opts?.enableCache ?? true;
   const maxCacheSize = opts?.maxCacheSize ?? 5;
 
@@ -206,13 +186,7 @@ export function clientInjectionPlugin(
     resolveId(source) {
       if (PACKAGE_REGEXP.test(source)) {
         return {
-          id: normalizePath(
-            path.join(
-              PP_DEV_PACKAGE_DIR,
-              'dist/client',
-              source.replace(PACKAGE_REGEXP, '$1'),
-            ),
-          ),
+          id: normalizePath(path.join(PP_DEV_PACKAGE_DIR, 'dist/client', source.replace(PACKAGE_REGEXP, '$1'))),
         };
       }
     },
@@ -293,9 +267,7 @@ export function clientInjectionPlugin(
     },
 
     configureServer(server) {
-      const clientDir = normalizePath(
-        path.resolve(server.config.root, path.dirname(PP_DEV_CLIENT_ENTRY)),
-      );
+      const clientDir = normalizePath(path.resolve(server.config.root, path.dirname(PP_DEV_CLIENT_ENTRY)));
 
       if (server.config.server?.fs?.allow) {
         server.config.server.fs.allow.push(clientDir);

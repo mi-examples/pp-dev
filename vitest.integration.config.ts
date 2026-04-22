@@ -11,11 +11,7 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       reportsDirectory: './coverage/integration',
       include: ['src/**/*.ts'],
-      exclude: [
-        'src/client/**',
-        'src/**/*.d.ts',
-        'src/banner/**',
-      ],
+      exclude: ['src/client/**', 'src/**/*.d.ts', 'src/banner/**'],
     },
     setupFiles: ['tests/setup.ts'],
     testTimeout: 30000,

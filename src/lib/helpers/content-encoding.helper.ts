@@ -1,11 +1,4 @@
-import {
-  unzipSync,
-  brotliDecompressSync,
-  deflateSync,
-  gzipSync,
-  brotliCompressSync,
-  inflateSync,
-} from 'zlib';
+import { unzipSync, brotliDecompressSync, deflateSync, gzipSync, brotliCompressSync, inflateSync } from 'zlib';
 
 export function decodeContent(content: Buffer, contentEncoding?: string) {
   switch (contentEncoding) {

@@ -1,5 +1,6 @@
 import { Headers } from './constants.js';
 import { BaseAPI } from './base.js';
+import { unavailablePageDataError } from './unavailable-json-api.js';
 
 export interface Page {
   name: string;
@@ -43,9 +44,7 @@ export class PageAPI extends BaseAPI {
 
     // Not a JSON response
     if (typeof data !== 'object' || data === null) {
-      throw new Error(
-        'Something went wrong when fetching page data. The instance may be down or in maintenance mode. Please try again later.',
-      );
+      throw unavailablePageDataError();
     }
 
     return data.page;

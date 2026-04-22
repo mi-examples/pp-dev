@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { gzipSync, brotliCompressSync, deflateSync, inflateSync } from 'zlib';
-import {
-  decodeContent,
-  encodeContent,
-} from '../../../src/lib/helpers/content-encoding.helper.js';
+import { decodeContent, encodeContent } from '../../../src/lib/helpers/content-encoding.helper.js';
 
 describe('Content Encoding Helper', () => {
   const plainContent = Buffer.from('Hello, World!', 'utf-8');

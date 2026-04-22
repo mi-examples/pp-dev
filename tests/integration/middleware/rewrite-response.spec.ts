@@ -113,7 +113,7 @@ describe('Rewrite Response Middleware', () => {
     it('should be a function that accepts req, res, and next', () => {
       const middleware = initRewriteResponse(
         () => false,
-        (body) => Buffer.from(body)
+        (body) => Buffer.from(body),
       );
 
       expect(typeof middleware).toBe('function');
@@ -123,7 +123,7 @@ describe('Rewrite Response Middleware', () => {
     it('should process requests without throwing', () => {
       const middleware = initRewriteResponse(
         (url) => url.includes('special'),
-        (body) => Buffer.from(body)
+        (body) => Buffer.from(body),
       );
 
       mockReq.url = '/normal/path';

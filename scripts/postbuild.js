@@ -45,7 +45,7 @@ fs.writeFileSync(distCjsPackageJsonPath, JSON.stringify(cjsPackageJson, null, 2)
 
 // Copy README and LICENSE to dist for better package distribution
 const filesToCopy = ['README.md', 'LICENSE.md', 'CHANGELOG.md'];
-filesToCopy.forEach(file => {
+filesToCopy.forEach((file) => {
   const sourcePath = path.resolve(appDirectory, file);
   const targetPath = path.resolve(distPath, file);
   if (fs.existsSync(sourcePath)) {

@@ -12,10 +12,7 @@ const commonOptions = {
   sourcemap: true,
   target: 'node20' as const,
   platform: 'node' as const,
-  external: [
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.peerDependencies || {}),
-  ],
+  external: [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.peerDependencies || {})],
   outdir: 'dist/esbuild',
   format: 'esm' as const,
   splitting: true,
@@ -27,7 +24,7 @@ const commonOptions = {
 async function buildWithEsbuild() {
   try {
     console.log('🚀 Starting esbuild build...');
-    
+
     // Build main package
     const result = await build({
       ...commonOptions,
@@ -48,7 +45,6 @@ async function buildWithEsbuild() {
 
     console.log('✅ Esbuild build completed successfully!');
     console.log('📊 Build metadata:', result.metafile);
-    
   } catch (error) {
     console.error('❌ Esbuild build failed:', error);
     process.exit(1);

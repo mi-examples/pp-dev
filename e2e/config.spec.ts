@@ -11,7 +11,7 @@ if (testType !== 'config') {
     command: string,
     args: string[] = [],
     options: Record<string, unknown> = {},
-    callback: ((error: Error | null, result: { exitCode: number }) => void) | null
+    callback: ((error: Error | null, result: { exitCode: number }) => void) | null,
   ) => {
     const child = spawn(command, args, {
       stdio: ['pipe', 'inherit', 'inherit'],
@@ -34,7 +34,9 @@ if (testType !== 'config') {
         } else if (code === null) {
           callback?.(null, { exitCode: 0 });
         } else {
-          callback(new Error(`Command failed with exit code ${code}`), { exitCode: code });
+          callback(new Error(`Command failed with exit code ${code}`), {
+            exitCode: code,
+          });
         }
       });
 
@@ -95,7 +97,6 @@ if (testType !== 'config') {
       (error: Error | null, _result: { exitCode: number }) => {
         if (error) {
           console.error('❌ Server failed to start:', error);
-
         } else {
           console.log('✅ Server stopped successfully');
         }

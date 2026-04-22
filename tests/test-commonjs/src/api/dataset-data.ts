@@ -10,6 +10,6 @@ export async function getDatasetData(datasetId: number): Promise<unknown> {
     xhrFields: { withCredentials: true },
     timeout: 25000,
   });
-  
+
   return (data as { data?: unknown }).data;
 }

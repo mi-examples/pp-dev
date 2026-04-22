@@ -23,9 +23,7 @@ export default function Document() {
           }`,
           }}
         ></Script>
-        <div>
-          {process.env.NEXT_PUBLIC_TEST ?? 'No test variable'}
-        </div>
+        <div>{process.env.NEXT_PUBLIC_TEST ?? 'No test variable'}</div>
         <NextScript />
       </body>
     </Html>

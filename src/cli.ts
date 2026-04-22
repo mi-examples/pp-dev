@@ -1,27 +1,14 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
 import { watch } from 'chokidar';
 import { cac } from 'cac';
-import {
-  ServerOptions,
-  BuildOptions,
-  LogLevel,
-  InlineConfig,
-  loadEnv,
-} from 'vite';
+import { ServerOptions, BuildOptions, LogLevel, InlineConfig, loadEnv } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
 import { getViteConfig } from './index.js';
-import {
-  mergeConfig,
-  build,
-  optimizeDeps,
-  resolveConfig,
-  preview,
-  ViteDevServer,
-  loadConfigFromFile,
-} from 'vite';
+import { mergeConfig, build, optimizeDeps, resolveConfig, preview, ViteDevServer, loadConfigFromFile } from 'vite';
 import { parse } from 'url';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import { initPPRedirect } from './lib/pp-redirect.middleware.js';
@@ -90,11 +77,7 @@ function createConfigWatcher(
   let restartTimeout: NodeJS.Timeout | null = null;
 
   watcher.on('change', (filePath) => {
-    logger(
-      colors.blue(
-        `🔧 Config file changed: ${path.relative(projectRoot, filePath)}`,
-      ),
-    );
+    logger(colors.blue(`🔧 Config file changed: ${path.relative(projectRoot, filePath)}`));
 
     // Debounce restart to avoid multiple rapid restarts
     if (restartTimeout) {
@@ -103,16 +86,10 @@ function createConfigWatcher(
 
     restartTimeout = setTimeout(async () => {
       try {
-        logger(
-          colors.yellow(`🔄 Restarting dev server due to config change...`),
-        );
+        logger(colors.yellow(`🔄 Restarting dev server due to config change...`));
         await restartCallback();
       } catch (error: any) {
-        logger(
-          colors.red(
-            `❌ Failed to restart dev server: ${error?.message}. Stack: ${error?.stack}`,
-          ),
-        );
+        logger(colors.red(`❌ Failed to restart dev server: ${error?.message}. Stack: ${error?.stack}`));
       }
     }, 500); // 500ms debounce
   });
@@ -171,14 +148,10 @@ interface NextCommandCLIOptions extends GlobalCLIOptions {
 type NextBundlerChoice = { webpack?: boolean; turbopack?: boolean };
 
 function parseNextBundlerCli(opts: NextCommandCLIOptions): NextBundlerChoice {
-  const envWebpack =
-    process.env.PP_DEV_NEXT_WEBPACK === '1' ||
-    process.env.PP_DEV_NEXT_WEBPACK === 'true';
+  const envWebpack = process.env.PP_DEV_NEXT_WEBPACK === '1' || process.env.PP_DEV_NEXT_WEBPACK === 'true';
 
   if (envWebpack && (opts.webpack || opts.turbopack)) {
-    throw new Error(
-      'Do not combine PP_DEV_NEXT_WEBPACK with --webpack or --turbopack',
-    );
+    throw new Error('Do not combine PP_DEV_NEXT_WEBPACK with --webpack or --turbopack');
   }
 
   if (envWebpack) {
@@ -231,9 +204,7 @@ interface IconFontOptions {
 let profileSession = (global as any).__pp_dev_profile_session;
 let profileCount = 0;
 
-export const stopProfiler = (
-  log: (message: string) => void,
-): void | Promise<void> => {
+export const stopProfiler = (log: (message: string) => void): void | Promise<void> => {
   if (!profileSession) {
     return;
   }
@@ -242,15 +213,9 @@ export const stopProfiler = (
     profileSession!.post('Profiler.stop', (err: any, { profile }: any) => {
       // Write profile to disk, upload, etc.
       if (!err) {
-        const outPath = path.resolve(
-          `./pp-dev-profile-${profileCount++}.cpuprofile`,
-        );
+        const outPath = path.resolve(`./pp-dev-profile-${profileCount++}.cpuprofile`);
         fs.writeFileSync(outPath, JSON.stringify(profile));
-        log(
-          colors.yellow(
-            `CPU profile written to ${colors.white(colors.dim(outPath))}`,
-          ),
-        );
+        log(colors.yellow(`CPU profile written to ${colors.white(colors.dim(outPath))}`));
         profileSession = undefined;
         res();
       } else {
@@ -270,9 +235,7 @@ const filterDuplicateOptions = <T extends object>(options: T) => {
 /**
  * removing global flags before passing as command specific sub-configs
  */
-function cleanOptions<Options extends GlobalCLIOptions>(
-  options: Options,
-): Omit<Options, keyof GlobalCLIOptions> {
+function cleanOptions<Options extends GlobalCLIOptions>(options: Options): Omit<Options, keyof GlobalCLIOptions> {
   const ret = { ...options };
   delete ret['--'];
   delete ret.c;
@@ -311,10 +274,7 @@ cli
   .option('--open [path]', `[boolean | string] open browser on startup`)
   .option('--cors', `[boolean] enable CORS`)
   .option('--strictPort', `[boolean] exit if specified port is already in use`)
-  .option(
-    '--force',
-    `[boolean] force the optimizer to ignore the cache and re-bundle`,
-  )
+  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
 
@@ -322,9 +282,7 @@ cli
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
 
-    const projectRoot = root
-      ? path.resolve(process.cwd(), root)
-      : process.cwd();
+    const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
     const logger = createLogger(options.logLevel);
 
     const startServer = async () => {
@@ -356,11 +314,7 @@ cli
 
         let config = await getViteConfig();
 
-        const envVars = loadEnv(
-          options.mode || 'development',
-          root ?? process.cwd(),
-          '',
-        );
+        const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
 
         if (envVars) {
           Object.keys(envVars).forEach((key) => {
@@ -406,18 +360,10 @@ cli
 
         const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
         const startupDurationString = ppDevStartTime
-          ? colors.dim(
-              `ready in ${colors.reset(
-                colors.bold(Math.ceil(performance.now() - ppDevStartTime)),
-              )} ms`,
-            )
+          ? colors.dim(`ready in ${colors.reset(colors.bold(Math.ceil(performance.now() - ppDevStartTime)))} ms`)
           : '';
 
-        logger.info(
-          `\n  ${colors.green(
-            `${colors.bold('PP-DEV')} v${VERSION}`,
-          )}  ${startupDurationString}\n`,
-        );
+        logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`);
 
         server.printUrls();
         bindShortcuts(server, {
@@ -432,9 +378,7 @@ cli
                       if (profileSession) {
                         await stopProfiler(logger.info);
                       } else {
-                        const inspector = await import('node:inspector').then(
-                          (r) => (r as any).default,
-                        );
+                        const inspector = await import('node:inspector').then((r) => (r as any).default);
 
                         await new Promise<void>((res) => {
                           profileSession = new inspector.Session();
@@ -460,9 +404,7 @@ cli
                   type: 'custom',
                   event: 'redirect',
                   data: {
-                    url: `/auth/index/logout?proxyRedirect=${encodeURIComponent(
-                      '/',
-                    )}`,
+                    url: `/auth/index/logout?proxyRedirect=${encodeURIComponent('/')}`,
                   },
                 });
               },
@@ -472,23 +414,16 @@ cli
 
         // Set up config watcher
         if (!configWatcher) {
-          configWatcher = createConfigWatcher(
-            projectRoot,
-            startServer,
-            logger.info,
-          );
+          configWatcher = createConfigWatcher(projectRoot, startServer, logger.info);
           logger.info(colors.blue('🔧 Config file watcher started'));
         }
 
         isRestarting = false;
       } catch (e: any) {
         isRestarting = false;
-        logger.error(
-          colors.red(`error when starting dev server:\n${e.stack}`),
-          {
-            error: e,
-          },
-        );
+        logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
+          error: e,
+        });
         stopProfiler(logger.info);
         process.exit(1);
       }
@@ -496,9 +431,7 @@ cli
 
     // Handle graceful shutdown
     const gracefulShutdown = async (signal: string) => {
-      logger.info(
-        colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`),
-      );
+      logger.info(colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`));
 
       try {
         // Clean up config watcher
@@ -530,9 +463,7 @@ cli
       gracefulShutdown('uncaughtException');
     });
     process.on('unhandledRejection', (reason, promise) => {
-      logger.error(
-        colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`),
-      );
+      logger.error(colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`));
       gracefulShutdown('unhandledRejection');
     });
 
@@ -542,10 +473,7 @@ cli
 
 // Next.js development server
 cli
-  .command(
-    'next [root]',
-    'start Next.js development server with pp-dev integration',
-  )
+  .command('next [root]', 'start Next.js development server with pp-dev integration')
   .alias('next-serve')
   .alias('next-dev')
   .option('--host [host]', `[string] specify hostname`)
@@ -554,18 +482,9 @@ cli
   .option('--open [path]', `[boolean | string] open browser on startup`)
   .option('--cors', `[boolean] enable CORS`)
   .option('--strictPort', `[boolean] exit if specified port is already in use`)
-  .option(
-    '--force',
-    `[boolean] force the optimizer to ignore the cache and re-bundle`,
-  )
-  .option(
-    '--webpack',
-    `[boolean] use Webpack for Next dev (use when Turbopack/native SWC is unavailable)`,
-  )
-  .option(
-    '--turbopack',
-    `[boolean] use Turbopack for Next dev when native bindings work`,
-  )
+  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+  .option('--webpack', `[boolean] use Webpack for Next dev (use when Turbopack/native SWC is unavailable)`)
+  .option('--turbopack', `[boolean] use Turbopack for Next dev when native bindings work`)
   .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
     filterDuplicateOptions(options);
 
@@ -623,11 +542,7 @@ cli
         const opts = cleanOptions(options);
 
         // Load environment variables
-        const envVars = loadEnv(
-          options.mode || 'development',
-          root ?? process.cwd(),
-          '',
-        );
+        const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
 
         if (envVars) {
           Object.keys(envVars).forEach((key) => {
@@ -656,36 +571,23 @@ cli
 
             if (Object.keys(standaloneConfig).length > 0) {
               ppDevConfig = standaloneConfig;
-              logger.info(
-                colors.blue(
-                  `🔧 Loaded pp-dev config from standalone config file`,
-                ),
-              );
+              logger.info(colors.blue(`🔧 Loaded pp-dev config from standalone config file`));
             } else {
               logger.info(
-                colors.yellow(
-                  '⚠️  No pp-dev config found in Next.js config or standalone file, using defaults',
-                ),
+                colors.yellow('⚠️  No pp-dev config found in Next.js config or standalone file, using defaults'),
               );
             }
           } catch (error) {
-            logger.info(
-              colors.yellow(
-                '⚠️  Failed to load standalone pp-dev config, using defaults',
-              ),
-            );
+            logger.info(colors.yellow('⚠️  Failed to load standalone pp-dev config, using defaults'));
             console.debug('Error loading standalone config:', error);
           }
         } else {
-          logger.info(
-            colors.blue(`🔧 Loaded pp-dev config from Next.js config`),
-          );
+          logger.info(colors.blue(`🔧 Loaded pp-dev config from Next.js config`));
         }
 
         // Extract configuration values with defaults
         const {
-          backendBaseURL = process.env.MI_BACKEND_URL ||
-            'http://localhost:8080',
+          backendBaseURL = process.env.MI_BACKEND_URL || 'http://localhost:8080',
           appId: originalAppId,
           portalPageId,
           templateLess = true,
@@ -700,12 +602,8 @@ cli
         const appId: number =
           originalAppId ??
           portalPageId ??
-          (process.env.MI_APP_ID
-            ? parseInt(process.env.MI_APP_ID, 10) || undefined
-            : undefined) ??
-          (process.env.MI_PORTAL_PAGE_ID
-            ? parseInt(process.env.MI_PORTAL_PAGE_ID, 10) || undefined
-            : undefined) ??
+          (process.env.MI_APP_ID ? parseInt(process.env.MI_APP_ID, 10) || undefined : undefined) ??
+          (process.env.MI_PORTAL_PAGE_ID ? parseInt(process.env.MI_PORTAL_PAGE_ID, 10) || undefined : undefined) ??
           1;
 
         // Get template name from config, package.json, or fallback to project directory name
@@ -733,11 +631,7 @@ cli
         if (configBasePath) {
           base = configBasePath;
         } else {
-          base = templateLess
-            ? pathPagePrefix
-            : v7Features
-              ? pathTemplateLocalPrefix
-              : '/pt';
+          base = templateLess ? pathPagePrefix : v7Features ? pathTemplateLocalPrefix : '/pt';
           base += `/${templateName}`;
         }
 
@@ -786,11 +680,7 @@ cli
             if (!isNextTurbopackNativeBindingsError(e)) {
               throw e;
             }
-            logger.warn(
-              colors.yellow(
-                '⚠ Turbopack is unavailable (native bindings). Falling back to Webpack.',
-              ),
-            );
+            logger.warn(colors.yellow('⚠ Turbopack is unavailable (native bindings). Falling back to Webpack.'));
             await createAndPrepareNext({ webpack: true });
           }
         } else {
@@ -801,9 +691,7 @@ cli
               throw e;
             }
             logger.warn(
-              colors.yellow(
-                '⚠ Turbopack cannot run (native Next.js bindings unavailable). Falling back to Webpack.',
-              ),
+              colors.yellow('⚠ Turbopack cannot run (native Next.js bindings unavailable). Falling back to Webpack.'),
             );
             await createAndPrepareNext({ webpack: true });
           }
@@ -818,18 +706,12 @@ cli
         }
 
         if (base === '/') {
-          throw new Error(
-            'basePath cannot be equal to "/" or equal to empty string',
-          );
+          throw new Error('basePath cannot be equal to "/" or equal to empty string');
         }
 
         // Log the configuration
         logger.info(colors.green('✅ Next.js app prepared successfully'));
-        logger.info(
-          colors.blue(
-            `🔧 pp-dev plugin configured for template: ${templateName}`,
-          ),
-        );
+        logger.info(colors.blue(`🔧 pp-dev plugin configured for template: ${templateName}`));
         logger.info(colors.blue(`🔧 Base path configured: ${base}`));
 
         if (backendBaseURL) {
@@ -842,8 +724,7 @@ cli
 
         // Start the server
         const port = typeof opts.port === 'number' ? opts.port : 3000;
-        const host =
-          typeof opts.host === 'string' ? opts.host || '0.0.0.0' : 'localhost';
+        const host = typeof opts.host === 'string' ? opts.host || '0.0.0.0' : 'localhost';
 
         // Track open sockets for proper cleanup
         const openSockets = new Set<any>();
@@ -877,8 +758,7 @@ cli
                       return;
                     }
 
-                    const middleware =
-                      essentialMiddlewareChain[middlewareIndex];
+                    const middleware = essentialMiddlewareChain[middlewareIndex];
                     middlewareIndex++;
 
                     middleware(req, res, runEssentialMiddleware);
@@ -955,34 +835,30 @@ cli
         // Initialize pp-dev middlewares
         let mi: MiAPI | null = null;
         /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
-        let fullMiddlewareChain: Array<
-          (req: any, res: any, next: () => void) => void
-        > = [];
+        let fullMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
         /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
-        let essentialMiddlewareChain: Array<
-          (req: any, res: any, next: () => void) => void
-        > = [];
+        let essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
 
         if (backendBaseURL) {
           const baseUrlHost = new URL(backendBaseURL).host;
+
+          if (backendBaseURL.startsWith('https://')) {
+            EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 20);
+          }
 
           // Initialize MiAPI
           const miConfig: MiAPIOptions = {
             headers: {
               host: baseUrlHost,
               referer: backendBaseURL,
-              origin: backendBaseURL.replace(
-                /^(https?:\/\/)([^/]+)(\/.*)?$/i,
-                '$1$2',
-              ),
+              origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
             },
             portalPageId: appId,
             appId,
             templateLess,
             disableSSLValidation,
             v7Features,
-            personalAccessToken:
-              personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
+            personalAccessToken: personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
           };
 
           mi = new MiAPI(backendBaseURL, miConfig);
@@ -991,10 +867,7 @@ cli
           // Note: We need to adapt Express middlewares to work with raw HTTP requests
 
           // 1. PP Redirect middleware (essential for all routes)
-          const ppRedirectMiddleware = initPPRedirect(
-            base,
-            templateName ?? undefined,
-          );
+          const ppRedirectMiddleware = initPPRedirect(base, templateName ?? undefined);
           const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
             ppRedirectMiddleware(req, res, next);
           };
@@ -1022,27 +895,17 @@ cli
             };
 
             const proxyCacheMiddleware = initProxyCache(cacheConfig);
-            const proxyCacheWrapper = (
-              req: any,
-              res: any,
-              next: () => void,
-            ) => {
+            const proxyCacheWrapper = (req: any, res: any, next: () => void) => {
               proxyCacheMiddleware(req, res, next);
             };
             fullMiddlewareChain.push(proxyCacheWrapper);
 
-            logger.info(
-              colors.blue(`🔧 Proxy cache middleware added with TTL: ${ttl}ms`),
-            );
+            logger.info(colors.blue(`🔧 Proxy cache middleware added with TTL: ${ttl}ms`));
           }
 
           // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
           const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
-          const loadPPDataMiddleware = initLoadPPData(
-            isIndexRegExp,
-            mi,
-            Object.assign({ base }, miConfig),
-          );
+          const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, Object.assign({ base }, miConfig));
           const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
             loadPPDataMiddleware(req, res, next);
           };
@@ -1050,9 +913,7 @@ cli
           fullMiddlewareChain.push(loadPPDataWrapper);
 
           // 4. Proxy Pass middleware (only for non-internal routes)
-          const baseWithoutTrailingSlash = base.endsWith('/')
-            ? base.substring(0, base.length - 1)
-            : base;
+          const baseWithoutTrailingSlash = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
 
           // Create mock devServer object for proxy pass middleware
           const mockProxyDevServer = {
@@ -1088,11 +949,7 @@ cli
 
           // 5. Internal Server middleware (API endpoints) - essential for all routes
           const internalServerMiddleware = internalServer;
-          const internalServerWrapper = (
-            req: any,
-            res: any,
-            next: () => void,
-          ) => {
+          const internalServerWrapper = (req: any, res: any, next: () => void) => {
             // Check if this is an internal API request
             if (req.url?.startsWith('/@api/')) {
               const mockNext = () => {};
@@ -1115,61 +972,29 @@ cli
               return pathname.startsWith(base) && !pathname.includes('/_next/');
             },
             (response, req) => {
-              return Buffer.from(
-                urlReplacer(
-                  baseUrlHost,
-                  req.headers.host ?? '',
-                  mi!.buildPage(response, miHudLess),
-                ),
-              );
+              return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi!.buildPage(response, miHudLess)));
             },
           );
 
-          const rewriteResponseWrapper = (
-            req: any,
-            res: any,
-            next: () => void,
-          ) => {
+          const rewriteResponseWrapper = (req: any, res: any, next: () => void) => {
             rewriteResponseMiddleware(req, res, next);
           };
           fullMiddlewareChain.push(rewriteResponseWrapper);
 
-          logger.info(
-            colors.blue(
-              `🔧 ${fullMiddlewareChain.length} pp-dev middlewares initialized`,
-            ),
-          );
-          logger.info(
-            colors.blue(
-              `🔧 ${essentialMiddlewareChain.length} essential middlewares for internal routes`,
-            ),
-          );
-          logger.info(
-            colors.blue(`🔧 MiAPI initialized for backend: ${backendBaseURL}`),
-          );
+          logger.info(colors.blue(`🔧 ${fullMiddlewareChain.length} pp-dev middlewares initialized`));
+          logger.info(colors.blue(`🔧 ${essentialMiddlewareChain.length} essential middlewares for internal routes`));
+          logger.info(colors.blue(`🔧 MiAPI initialized for backend: ${backendBaseURL}`));
           logger.info(colors.blue(`🔧 Custom App ID: ${appId}`));
         }
 
         httpServer.listen(port, host, () => {
-          logger.info(
-            colors.green(
-              `✅ pp-dev Next.js server running at http://${host}:${port}`,
-            ),
-          );
-          logger.info(
-            colors.blue(
-              `📱 Next.js app accessible at http://${host}:${port}${base}`,
-            ),
-          );
+          logger.info(colors.green(`✅ pp-dev Next.js server running at http://${host}:${port}`));
+          logger.info(colors.blue(`📱 Next.js app accessible at http://${host}:${port}${base}`));
           logger.info(colors.blue(`🔧 Base path handling active`));
 
           // Set up config watcher
           if (!configWatcher) {
-            configWatcher = createConfigWatcher(
-              projectRoot,
-              startNextServer,
-              logger.info,
-            );
+            configWatcher = createConfigWatcher(projectRoot, startNextServer, logger.info);
             logger.info(colors.blue('🔧 Config file watcher started'));
           }
 
@@ -1181,17 +1006,11 @@ cli
 
           // Handle graceful shutdown
           const gracefulShutdown = async (signal: string) => {
-            logger.info(
-              colors.yellow(
-                `\n🛑 Received ${signal}, shutting down gracefully...`,
-              ),
-            );
+            logger.info(colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`));
 
             // Set a timeout to force exit if shutdown hangs
             const shutdownTimeout = setTimeout(() => {
-              logger.info(
-                colors.yellow('⏰ Shutdown timeout reached, forcing exit'),
-              );
+              logger.info(colors.yellow('⏰ Shutdown timeout reached, forcing exit'));
               process.exit(0);
             }, 5000);
 
@@ -1227,9 +1046,7 @@ cli
               process.exit(0);
             } catch (error) {
               clearTimeout(shutdownTimeout);
-              logger.error(
-                colors.red(`❌ Error during graceful shutdown: ${error}`),
-              );
+              logger.error(colors.red(`❌ Error during graceful shutdown: ${error}`));
               process.exit(1);
             }
           };
@@ -1239,16 +1056,11 @@ cli
 
           // If local process.on is not available, try global process
           if (typeof process.on !== 'function') {
-            const globalProcess =
-              (globalThis as any).process || (global as any).process;
+            const globalProcess = (globalThis as any).process || (global as any).process;
 
             if (globalProcess && typeof globalProcess.on === 'function') {
               processObj = globalProcess;
-              logger.info(
-                colors.green(
-                  '✅ Using global process object for event handlers',
-                ),
-              );
+              logger.info(colors.green('✅ Using global process object for event handlers'));
             }
           }
 
@@ -1264,54 +1076,29 @@ cli
               });
 
               processObj.on('unhandledRejection', (reason, promise) => {
-                logger.error(
-                  colors.red(
-                    `❌ Unhandled Rejection at: ${promise}, reason: ${reason}`,
-                  ),
-                );
+                logger.error(colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`));
                 gracefulShutdown('unhandledRejection');
               });
 
-              logger.info(
-                colors.green(
-                  '✅ Process event handlers registered successfully',
-                ),
-              );
+              logger.info(colors.green('✅ Process event handlers registered successfully'));
             } catch (error) {
-              logger.warn(
-                colors.yellow(
-                  `⚠️  Failed to register process event handlers: ${error}`,
-                ),
-              );
+              logger.warn(colors.yellow(`⚠️  Failed to register process event handlers: ${error}`));
             }
           } else {
             logger.warn(
-              colors.yellow(
-                '⚠️  process.on is not available, graceful shutdown handlers will not be registered',
-              ),
+              colors.yellow('⚠️  process.on is not available, graceful shutdown handlers will not be registered'),
             );
-            logger.info(
-              colors.blue(
-                '💡 This might be due to bundling or environment constraints',
-              ),
-            );
+            logger.info(colors.blue('💡 This might be due to bundling or environment constraints'));
           }
         });
 
         isRestarting = false;
       } catch (error: any) {
         isRestarting = false;
-        logger.error(
-          colors.red(
-            `❌ Failed to start Next.js server: ${error?.message}. Stack: ${error?.stack}`,
-          ),
-        );
+        logger.error(colors.red(`❌ Failed to start Next.js server: ${error?.message}. Stack: ${error?.stack}`));
 
         // Special handling for Next.js peer dependency errors
-        if (
-          error instanceof Error &&
-          error.message.includes('Next.js is required')
-        ) {
+        if (error instanceof Error && error.message.includes('Next.js is required')) {
           logger.error(colors.red('❌ Next.js Peer Dependency Error:'));
           logger.error(colors.red(error.message));
           logger.error(colors.yellow('\n💡 To fix this issue:'));
@@ -1322,9 +1109,7 @@ cli
           logger.error(colors.blue('   3. Or use pnpm:'));
           logger.error(colors.white('      pnpm add next@^16'));
           logger.error(colors.yellow('\n📖 For more information, see:'));
-          logger.error(
-            colors.blue('   https://nextjs.org/docs/getting-started'),
-          );
+          logger.error(colors.blue('   https://nextjs.org/docs/getting-started'));
         }
 
         process.exit(1);
@@ -1333,9 +1118,7 @@ cli
 
     // Handle graceful shutdown
     const gracefulShutdown = async (signal: string) => {
-      logger.info(
-        colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`),
-      );
+      logger.info(colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`));
 
       try {
         // Clean up config watcher
@@ -1376,9 +1159,7 @@ cli
       gracefulShutdown('uncaughtException');
     });
     process.on('unhandledRejection', (reason, promise) => {
-      logger.error(
-        colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`),
-      );
+      logger.error(colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`));
       gracefulShutdown('unhandledRejection');
     });
 
@@ -1391,343 +1172,254 @@ cli
   .command('build [root]', 'build for production')
   .option('--target <target>', `[string] transpile target (default: 'modules')`)
   .option('--outDir <dir>', `[string] output directory (default: dist)`)
-  .option(
-    '--assetsDir <dir>',
-    `[string] directory under outDir to place assets in (default: assets)`,
-  )
-  .option(
-    '--assetsInlineLimit <number>',
-    `[number] static asset base64 inline threshold in bytes (default: 4096)`,
-  )
-  .option(
-    '--ssr [entry]',
-    `[string] build specified entry for server-side rendering`,
-  )
-  .option(
-    '--sourcemap [output]',
-    `[boolean | "inline" | "hidden"] output source maps for build (default: false)`,
-  )
+  .option('--assetsDir <dir>', `[string] directory under outDir to place assets in (default: assets)`)
+  .option('--assetsInlineLimit <number>', `[number] static asset base64 inline threshold in bytes (default: 4096)`)
+  .option('--ssr [entry]', `[string] build specified entry for server-side rendering`)
+  .option('--sourcemap [output]', `[boolean | "inline" | "hidden"] output source maps for build (default: false)`)
   .option(
     '--minify [minifier]',
-    `[boolean | "terser" | "esbuild"] enable/disable minification, ` +
-      `or specify minifier to use (default: esbuild)`,
+    `[boolean | "terser" | "esbuild"] enable/disable minification, ` + `or specify minifier to use (default: esbuild)`,
   )
   .option('--manifest [name]', `[boolean | string] emit build manifest json`)
   .option('--ssrManifest [name]', `[boolean | string] emit ssr manifest json`)
-  .option(
-    '--force',
-    `[boolean] force the optimizer to ignore the cache and re-bundle (experimental)`,
-  )
-  .option(
-    '--emptyOutDir',
-    `[boolean] force empty outDir when it's outside of root`,
-  )
+  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle (experimental)`)
+  .option('--emptyOutDir', `[boolean] force empty outDir when it's outside of root`)
   .option('-w, --watch', `[boolean] rebuilds when modules have changed on disk`)
   .option(
     '--changelog [assetsFile]',
     `[boolean | string] generate changelog between assetsFile and current build (default: false)`,
   )
-  .action(
-    async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
-      filterDuplicateOptions(options);
-      const buildOptions: PPDevBuildOptions = cleanOptions(options);
+  .action(async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
+    filterDuplicateOptions(options);
+    const buildOptions: PPDevBuildOptions = cleanOptions(options);
 
-      try {
-        const configFromFile = await loadConfigFromFile(
-          { mode: options.mode || 'production', command: 'build' },
-          options.config,
+    try {
+      const configFromFile = await loadConfigFromFile(
+        { mode: options.mode || 'production', command: 'build' },
+        options.config,
+        root,
+        options.logLevel,
+      );
+
+      let config = await getViteConfig();
+
+      if (configFromFile) {
+        const { plugins, ...fileConfig } = configFromFile.config;
+
+        config = mergeConfig(config, fileConfig);
+      }
+
+      const buildConfig = mergeConfig(
+        config,
+        {
           root,
-          options.logLevel,
-        );
+          base: options.base,
+          mode: options.mode,
+          configFile: options.config,
+          logLevel: options.logLevel,
+          clearScreen: options.clearScreen,
+          optimizeDeps: { force: options.force },
+          build: buildOptions,
+        },
+        true,
+      ) as InlineConfig;
 
-        let config = await getViteConfig();
+      await build(buildConfig);
 
-        if (configFromFile) {
-          const { plugins, ...fileConfig } = configFromFile.config;
+      if (buildOptions.changelog) {
+        const executionRoot = root || process.cwd();
 
-          config = mergeConfig(config, fileConfig);
-        }
+        const outDir = buildConfig.build?.outDir || 'dist';
 
-        const buildConfig = mergeConfig(
-          config,
-          {
-            root,
-            base: options.base,
-            mode: options.mode,
-            configFile: options.config,
-            logLevel: options.logLevel,
-            clearScreen: options.clearScreen,
-            optimizeDeps: { force: options.force },
-            build: buildOptions,
-          },
-          true,
-        ) as InlineConfig;
+        let oldAssetsPath = '';
 
-        await build(buildConfig);
+        if (typeof buildOptions.changelog === 'string') {
+          oldAssetsPath = path.resolve(executionRoot, buildOptions.changelog);
+        } else {
+          const backupsDirPath = path.resolve(executionRoot, buildConfig.ppDevConfig?.syncBackupsDir || 'backups');
 
-        if (buildOptions.changelog) {
-          const executionRoot = root || process.cwd();
-
-          const outDir = buildConfig.build?.outDir || 'dist';
-
-          let oldAssetsPath = '';
-
-          if (typeof buildOptions.changelog === 'string') {
-            oldAssetsPath = path.resolve(executionRoot, buildOptions.changelog);
-          } else {
-            const backupsDirPath = path.resolve(
-              executionRoot,
-              buildConfig.ppDevConfig?.syncBackupsDir || 'backups',
+          if (!fs.existsSync(backupsDirPath)) {
+            createLogger(options.logLevel).warn(
+              colors.yellow(`backups directory not found, skipping changelog generation`),
             );
 
-            if (!fs.existsSync(backupsDirPath)) {
-              createLogger(options.logLevel).warn(
-                colors.yellow(
-                  `backups directory not found, skipping changelog generation`,
-                ),
-              );
-
-              return;
-            }
-
-            const backups = fs.readdirSync(backupsDirPath, {
-              withFileTypes: true,
-            });
-
-            if (!backups.length) {
-              createLogger(options.logLevel).warn(
-                colors.yellow(
-                  `no backups found, skipping changelog generation`,
-                ),
-              );
-
-              return;
-            }
-
-            const latestBackup = backups
-              .filter((value) => {
-                return value.isFile() && value.name.endsWith('.zip');
-              })
-              .reduce((latest, current) => {
-                const latestTime = fs.statSync(
-                  path.resolve(backupsDirPath, latest.name),
-                ).mtimeMs;
-                const currentTime = fs.statSync(
-                  path.resolve(backupsDirPath, current.name),
-                ).mtimeMs;
-
-                return latestTime > currentTime ? latest : current;
-              }, backups[0]).name;
-
-            oldAssetsPath = path.resolve(backupsDirPath, latestBackup);
+            return;
           }
 
-          const currentAssetFilePath = path.resolve(executionRoot, outDir);
-
-          let changelogDestination = 'dist-zip';
-
-          if (buildConfig.ppDevConfig) {
-            if (buildConfig.ppDevConfig.distZip === false) {
-              changelogDestination =
-                (buildConfig.build?.outDir as string) || 'dist';
-            } else if (
-              typeof buildConfig.ppDevConfig.distZip === 'object' &&
-              typeof buildConfig.ppDevConfig.distZip.outDir === 'string'
-            ) {
-              changelogDestination = buildConfig.ppDevConfig.distZip.outDir;
-            }
-          }
-
-          const changelogGenerator = new ChangelogGenerator({
-            oldAssetsPath,
-            newAssetsPath: currentAssetFilePath,
-            destinationPath: path.resolve(executionRoot, changelogDestination),
+          const backups = fs.readdirSync(backupsDirPath, {
+            withFileTypes: true,
           });
 
-          await changelogGenerator.generateChangelog();
-        }
-      } catch (e: any) {
-        createLogger(options.logLevel).error(
-          colors.red(`error during build:\n${e.stack}`),
-          { error: e },
-        );
+          if (!backups.length) {
+            createLogger(options.logLevel).warn(colors.yellow(`no backups found, skipping changelog generation`));
 
-        process.exit(1);
-      } finally {
-        stopProfiler((message) => createLogger(options.logLevel).info(message));
+            return;
+          }
+
+          const zipBackups = backups.filter((value) => {
+            return value.isFile() && value.name.endsWith('.zip');
+          });
+
+          if (!zipBackups.length) {
+            createLogger(options.logLevel).warn(colors.yellow(`no ZIP backups found, skipping changelog generation`));
+
+            return;
+          }
+
+          const latestBackup = zipBackups.reduce((latest, current) => {
+            const latestTime = fs.statSync(path.resolve(backupsDirPath, latest.name)).mtimeMs;
+            const currentTime = fs.statSync(path.resolve(backupsDirPath, current.name)).mtimeMs;
+
+            return latestTime > currentTime ? latest : current;
+          }).name;
+
+          oldAssetsPath = path.resolve(backupsDirPath, latestBackup);
+        }
+
+        const currentAssetFilePath = path.resolve(executionRoot, outDir);
+
+        let changelogDestination = 'dist-zip';
+
+        if (buildConfig.ppDevConfig) {
+          if (buildConfig.ppDevConfig.distZip === false) {
+            changelogDestination = (buildConfig.build?.outDir as string) || 'dist';
+          } else if (
+            typeof buildConfig.ppDevConfig.distZip === 'object' &&
+            typeof buildConfig.ppDevConfig.distZip.outDir === 'string'
+          ) {
+            changelogDestination = buildConfig.ppDevConfig.distZip.outDir;
+          }
+        }
+
+        const changelogGenerator = new ChangelogGenerator({
+          oldAssetsPath,
+          newAssetsPath: currentAssetFilePath,
+          destinationPath: path.resolve(executionRoot, changelogDestination),
+        });
+
+        await changelogGenerator.generateChangelog();
       }
-    },
-  );
+    } catch (e: any) {
+      createLogger(options.logLevel).error(colors.red(`error during build:\n${e.stack}`), { error: e });
+
+      process.exit(1);
+    } finally {
+      stopProfiler((message) => createLogger(options.logLevel).info(message));
+    }
+  });
 
 // changelog
 cli
-  .command(
-    'changelog [oldAssetPath] [newAssetPath]',
-    'generate changelog between two assets files/folders',
-  )
-  .option(
-    '--oldAssetsPath <oldAssetsPath>',
-    `[string] path to the old assets zip file or folder`,
-  )
-  .option(
-    '--newAssetsPath <newAssetsPath>',
-    `[string] path to the new assets zip file or folder`,
-  )
-  .option(
-    '--destination <destination>',
-    `[string] destination folder for the changelog (default: .)`,
-  )
-  .option(
-    '--filename <filename>',
-    `[string] filename for the changelog (default: CHANGELOG.html)`,
-  )
-  .action(
-    async (
-      oldAssetPath: string,
-      newAssetPath: string,
-      options: ChangelogOptions & GlobalCLIOptions,
-    ) => {
-      filterDuplicateOptions(options);
+  .command('changelog [oldAssetPath] [newAssetPath]', 'generate changelog between two assets files/folders')
+  .option('--oldAssetsPath <oldAssetsPath>', `[string] path to the old assets zip file or folder`)
+  .option('--newAssetsPath <newAssetsPath>', `[string] path to the new assets zip file or folder`)
+  .option('--destination <destination>', `[string] destination folder for the changelog (default: .)`)
+  .option('--filename <filename>', `[string] filename for the changelog (default: CHANGELOG.html)`)
+  .action(async (oldAssetPath: string, newAssetPath: string, options: ChangelogOptions & GlobalCLIOptions) => {
+    filterDuplicateOptions(options);
 
-      const {
-        oldAssetsPath: oldPath = oldAssetPath,
-        newAssetsPath: newPath = newAssetPath,
-        destination = '.',
-        filename = 'CHANGELOG.html',
-        logLevel,
-      } = options;
+    const {
+      oldAssetsPath: oldPath = oldAssetPath,
+      newAssetsPath: newPath = newAssetPath,
+      destination = '.',
+      filename = 'CHANGELOG.html',
+      logLevel,
+    } = options;
 
-      const root = process.cwd();
+    const root = process.cwd();
 
-      if (!oldPath || !newPath) {
-        createLogger(logLevel).error(
-          colors.red(
-            `error during changelog generation: oldAssetPath and newAssetPath are required`,
-          ),
-        );
+    if (!oldPath || !newPath) {
+      createLogger(logLevel).error(
+        colors.red(`error during changelog generation: oldAssetPath and newAssetPath are required`),
+      );
 
-        process.exit(1);
-      }
+      process.exit(1);
+    }
 
-      const fullOldPath = path.resolve(root, oldPath);
-      const fullNewPath = path.resolve(root, newPath);
-      const fullDestination = path.resolve(root, destination);
+    const fullOldPath = path.resolve(root, oldPath);
+    const fullNewPath = path.resolve(root, newPath);
+    const fullDestination = path.resolve(root, destination);
 
-      const changelogGenerator = new ChangelogGenerator({
-        oldAssetsPath: fullOldPath,
-        newAssetsPath: fullNewPath,
-        destinationPath: fullDestination,
-        changelogFilename: filename,
-      });
+    const changelogGenerator = new ChangelogGenerator({
+      oldAssetsPath: fullOldPath,
+      newAssetsPath: fullNewPath,
+      destinationPath: fullDestination,
+      changelogFilename: filename,
+    });
 
-      await changelogGenerator.generateChangelog();
-    },
-  );
+    await changelogGenerator.generateChangelog();
+  });
 
 cli
-  .command(
-    'generate-icon-font [source] [destination]',
-    'generate icon font from SVG files',
-  )
-  .option(
-    '--source <source>',
-    `[string] path to the source directory with SVG files`,
-  )
-  .option(
-    '--destination <destination>',
-    `[string] path to the destination directory to save the generated font files`,
-  )
-  .option(
-    '--font-name, -n <fontName>',
-    `[string] name of the font to generate (default: 'icon-font')`,
-  )
-  .action(
-    async (
-      source: string,
-      destination: string,
-      options: IconFontOptions & GlobalCLIOptions,
-    ) => {
-      filterDuplicateOptions(options);
+  .command('generate-icon-font [source] [destination]', 'generate icon font from SVG files')
+  .option('--source <source>', `[string] path to the source directory with SVG files`)
+  .option('--destination <destination>', `[string] path to the destination directory to save the generated font files`)
+  .option('--font-name, -n <fontName>', `[string] name of the font to generate (default: 'icon-font')`)
+  .action(async (source: string, destination: string, options: IconFontOptions & GlobalCLIOptions) => {
+    filterDuplicateOptions(options);
 
-      const {
-        source: sourceDir = source,
-        destination: destDir = destination,
-        fontName = 'icon-font',
-      } = options;
+    const { source: sourceDir = source, destination: destDir = destination, fontName = 'icon-font' } = options;
 
-      const root = process.cwd();
+    const root = process.cwd();
 
-      const fullSourceDir = path.resolve(root, sourceDir);
-      const fullDestDir = path.resolve(root, destDir);
+    const fullSourceDir = path.resolve(root, sourceDir);
+    const fullDestDir = path.resolve(root, destDir);
 
-      const iconFontGenerator = new IconFontGenerator({
-        sourceDir: fullSourceDir,
-        outputDir: fullDestDir,
-        fontName,
-      });
+    const iconFontGenerator = new IconFontGenerator({
+      sourceDir: fullSourceDir,
+      outputDir: fullDestDir,
+      fontName,
+    });
 
-      const logger = createLogger(options.logLevel);
+    const logger = createLogger(options.logLevel);
 
-      logger.info(
-        `Generating icon font from SVG files in ${colors.dim(fullSourceDir)}`,
-      );
+    logger.info(`Generating icon font from SVG files in ${colors.dim(fullSourceDir)}`);
 
-      await iconFontGenerator.generate();
+    await iconFontGenerator.generate();
 
-      logger.info(
-        `Icon font generated and saved to ${colors.dim(fullDestDir)}`,
-      );
-    },
-  );
+    logger.info(`Icon font generated and saved to ${colors.dim(fullDestDir)}`);
+  });
 
 // optimize
 cli
   .command('optimize [root]', 'pre-bundle dependencies')
-  .option(
-    '--force',
-    `[boolean] force the optimizer to ignore the cache and re-bundle`,
-  )
-  .action(
-    async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
-      filterDuplicateOptions(options);
-      try {
-        const configFromFile = await loadConfigFromFile(
-          { mode: options.mode || 'production', command: 'build' },
-          options.config,
-          root,
-          options.logLevel,
-        );
+  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+  .action(async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
+    filterDuplicateOptions(options);
+    try {
+      const configFromFile = await loadConfigFromFile(
+        { mode: options.mode || 'production', command: 'build' },
+        options.config,
+        root,
+        options.logLevel,
+      );
 
-        let config = await getViteConfig();
+      let config = await getViteConfig();
 
-        if (configFromFile) {
-          const { plugins, ...fileConfig } = configFromFile.config;
+      if (configFromFile) {
+        const { plugins, ...fileConfig } = configFromFile.config;
 
-          config = mergeConfig(config, fileConfig);
-        }
-
-        const optimizeConfig = await resolveConfig(
-          mergeConfig(config, {
-            root,
-            base: options.base,
-            configFile: options.config,
-            logLevel: options.logLevel,
-            mode: options.mode,
-          }),
-          'serve',
-        );
-
-        await optimizeDeps(optimizeConfig, options.force, true);
-      } catch (e: any) {
-        createLogger(options.logLevel).error(
-          colors.red(`error when optimizing deps:\n${e.stack}`),
-          { error: e },
-        );
-
-        process.exit(1);
+        config = mergeConfig(config, fileConfig);
       }
-    },
-  );
+
+      const optimizeConfig = await resolveConfig(
+        mergeConfig(config, {
+          root,
+          base: options.base,
+          configFile: options.config,
+          logLevel: options.logLevel,
+          mode: options.mode,
+        }),
+        'serve',
+      );
+
+      await optimizeDeps(optimizeConfig, options.force, true);
+    } catch (e: any) {
+      createLogger(options.logLevel).error(colors.red(`error when optimizing deps:\n${e.stack}`), { error: e });
+
+      process.exit(1);
+    }
+  });
 
 cli
   .command('preview [root]', 'locally preview production build')
@@ -1789,12 +1481,9 @@ cli
 
         server.printUrls();
       } catch (e: any) {
-        createLogger(options.logLevel).error(
-          colors.red(`error when starting preview server:\n${e.stack}`),
-          {
-            error: e,
-          },
-        );
+        createLogger(options.logLevel).error(colors.red(`error when starting preview server:\n${e.stack}`), {
+          error: e,
+        });
 
         process.exit(1);
       } finally {

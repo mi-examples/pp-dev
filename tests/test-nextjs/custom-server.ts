@@ -1,17 +1,17 @@
-import { createServer } from "http";
-import { parse } from "url";
-import next from "next";
-import type { Socket } from "net";
-import { dirname } from "path";
-import { fileURLToPath } from "url";
+import { createServer } from 'http';
+import { parse } from 'url';
+import next from 'next';
+import type { Socket } from 'net';
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const dev = process.env.NODE_ENV !== "production";
-const hostname = "localhost";
+const dev = process.env.NODE_ENV !== 'production';
+const hostname = 'localhost';
 const port = 3000;
 
 // Simple configuration without pp-dev
-const templateName = "test-nextjs";
-const basePath = "/p/test-nextjs"; // Simple base path
+const templateName = 'test-nextjs';
+const basePath = '/p/test-nextjs'; // Simple base path
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -44,14 +44,14 @@ async function startServer() {
     // Get the request handler
     const handle = app.getRequestHandler();
 
-    console.log("✅ Next.js app prepared successfully");
+    console.log('✅ Next.js app prepared successfully');
     console.log(`🔧 Template: ${templateName}`);
     console.log(`🔧 Base path: ${basePath}`);
 
     // Create HTTP server
     server = createServer(async (req, res) => {
       try {
-        const originalUrl = req.url || "/";
+        const originalUrl = req.url || '/';
         const originalPathname = originalUrl;
         let parsedUrl = parse(originalUrl, true);
 
@@ -62,27 +62,23 @@ async function startServer() {
           // Strip the base path for Next.js
           const nextPath = originalPathname.substring(basePath.length);
 
-          req.url = nextPath || "/";
+          req.url = nextPath || '/';
           parsedUrl = parse(nextPath, true);
 
-          console.log(
-            `[DEBUG] Base path request - Original: ${originalPathname}, Stripped: ${req.url}`
-          );
-        } else if (originalPathname === basePath.replace(/\/$/, "")) {
+          console.log(`[DEBUG] Base path request - Original: ${originalPathname}, Stripped: ${req.url}`);
+        } else if (originalPathname === basePath.replace(/\/$/, '')) {
           // Handle base path without trailing slash
-          req.url = "/";
-          parsedUrl = parse("/", true);
-          console.log(
-            `[DEBUG] Base path without slash - Redirected to: ${req.url}`
-          );
+          req.url = '/';
+          parsedUrl = parse('/', true);
+          console.log(`[DEBUG] Base path without slash - Redirected to: ${req.url}`);
         } else if (
-          originalPathname.startsWith("/_next/") ||
-          originalPathname === "/favicon.ico" ||
-          originalPathname.startsWith("/__nextjs_")
+          originalPathname.startsWith('/_next/') ||
+          originalPathname === '/favicon.ico' ||
+          originalPathname.startsWith('/__nextjs_')
         ) {
           // Next.js internal routes - pass through as-is
           console.log(`[DEBUG] Next.js internal route: ${originalPathname}`);
-        } else if (originalPathname === "/") {
+        } else if (originalPathname === '/') {
           // Root path - this should redirect to base path
           console.log(`[DEBUG] Root path - redirecting to base path`);
           res.writeHead(302, { Location: basePath });
@@ -99,21 +95,19 @@ async function startServer() {
       } catch (error) {
         console.error(`[DEBUG] Error:`, error);
         res.statusCode = 500;
-        res.end("Internal Server Error");
+        res.end('Internal Server Error');
       }
     });
 
     // Track open sockets for proper cleanup
-    server.on("connection", (socket: Socket) => {
+    server.on('connection', (socket: Socket) => {
       openSockets.add(socket);
-      socket.on("close", () => openSockets.delete(socket));
+      socket.on('close', () => openSockets.delete(socket));
     });
 
     // Start the server
     server.listen(port, hostname, () => {
-      console.log(
-        `✅ Custom Next.js server running at http://${hostname}:${port}`
-      );
+      console.log(`✅ Custom Next.js server running at http://${hostname}:${port}`);
       console.log(`📱 App accessible at http://${hostname}:${port}${basePath}`);
       console.log(`🔧 Base path: ${basePath}`);
     });
@@ -124,7 +118,7 @@ async function startServer() {
 
       // Set a timeout to force exit if shutdown hangs
       const shutdownTimeout = setTimeout(() => {
-        console.log("⏰ Shutdown timeout reached, forcing exit");
+        console.log('⏰ Shutdown timeout reached, forcing exit');
         process.exit(0);
       }, 5000);
 
@@ -138,43 +132,43 @@ async function startServer() {
         // Stop accepting new connections and wait for server to close
         await new Promise<void>((resolve) => {
           server.close(() => {
-            console.log("🛑 HTTP server closed");
+            console.log('🛑 HTTP server closed');
             resolve();
           });
         });
 
         // Close the Next.js app properly
-        if (app && typeof app.close === "function") {
+        if (app && typeof app.close === 'function') {
           await app.close();
-          console.log("🛑 Next.js app closed");
+          console.log('🛑 Next.js app closed');
         }
 
         clearTimeout(shutdownTimeout);
-        console.log("✅ Graceful shutdown completed");
+        console.log('✅ Graceful shutdown completed');
         process.exit(0);
       } catch (error) {
         clearTimeout(shutdownTimeout);
-        console.error("❌ Error during graceful shutdown:", error);
+        console.error('❌ Error during graceful shutdown:', error);
         process.exit(1);
       }
     };
 
     // Handle process signals
-    process.on("SIGINT", gracefulShutdown);
-    process.on("SIGTERM", gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
 
     // Handle uncaught exceptions
-    process.on("uncaughtException", (error) => {
-      console.error("❌ Uncaught Exception:", error);
-      gracefulShutdown("uncaughtException");
+    process.on('uncaughtException', (error) => {
+      console.error('❌ Uncaught Exception:', error);
+      gracefulShutdown('uncaughtException');
     });
 
-    process.on("unhandledRejection", (reason, promise) => {
-      console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
-      gracefulShutdown("unhandledRejection");
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+      gracefulShutdown('unhandledRejection');
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 }

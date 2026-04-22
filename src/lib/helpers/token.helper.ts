@@ -20,17 +20,13 @@ export interface TokenErrorInfo {
  */
 export function getTokenErrorInfo(error: any): TokenErrorInfo {
   const status = error.response?.status || 0;
-  const message =
-    error.response?.data?.message || error.message || 'Unknown error';
+  const message = error.response?.data?.message || error.message || 'Unknown error';
 
   switch (status) {
     case 412:
       const lowerMessage = message.toLowerCase();
 
-      if (
-        lowerMessage.includes('session expired') ||
-        lowerMessage.includes('session has expired')
-      ) {
+      if (lowerMessage.includes('session expired') || lowerMessage.includes('session has expired')) {
         return {
           status,
           message,
@@ -134,8 +130,6 @@ export function isTokenError(error: any): boolean {
 export function isSessionExpiredError(error: any): boolean {
   const message = error.response?.data?.message?.toLowerCase() ?? '';
   return (
-    error.response?.status === 412 &&
-    (message.includes('session expired') ||
-      message.includes('session has expired'))
+    error.response?.status === 412 && (message.includes('session expired') || message.includes('session has expired'))
   );
 }

@@ -43,13 +43,19 @@ describe('Proxy Cache Middleware', () => {
 
   describe('Initialization', () => {
     it('should create middleware function', () => {
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       expect(typeof middleware).toBe('function');
     });
 
     it('should accept custom TTL', () => {
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 10000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 10000,
+      });
 
       expect(typeof middleware).toBe('function');
     });
@@ -57,7 +63,10 @@ describe('Proxy Cache Middleware', () => {
 
   describe('Request Handling', () => {
     it('should call next for GET requests', () => {
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -66,7 +75,10 @@ describe('Proxy Cache Middleware', () => {
 
     it('should call next for POST requests', () => {
       mockReq.method = 'POST';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -75,7 +87,10 @@ describe('Proxy Cache Middleware', () => {
 
     it('should handle requests with query parameters', () => {
       mockReq.url = '/api/test?param=value';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -86,7 +101,10 @@ describe('Proxy Cache Middleware', () => {
   describe('Cache Behavior', () => {
     it('should not cache POST requests', () => {
       mockReq.method = 'POST';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       // First request
       middleware(mockReq, mockRes, nextFn);
@@ -100,7 +118,10 @@ describe('Proxy Cache Middleware', () => {
 
     it('should not cache PUT requests', () => {
       mockReq.method = 'PUT';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -109,7 +130,10 @@ describe('Proxy Cache Middleware', () => {
 
     it('should not cache DELETE requests', () => {
       mockReq.method = 'DELETE';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -120,7 +144,10 @@ describe('Proxy Cache Middleware', () => {
   describe('URL Patterns', () => {
     it('should handle root URL', () => {
       mockReq.url = '/';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -129,7 +156,10 @@ describe('Proxy Cache Middleware', () => {
 
     it('should handle nested paths', () => {
       mockReq.url = '/api/v1/users/123/profile';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -138,7 +168,10 @@ describe('Proxy Cache Middleware', () => {
 
     it('should handle URLs with special characters', () => {
       mockReq.url = '/api/search?q=hello%20world&filter=name';
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 5000 });
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 5000,
+      });
 
       middleware(mockReq, mockRes, nextFn);
 
@@ -154,7 +187,10 @@ describe('Proxy Cache Middleware', () => {
     });
 
     it('should accept very long TTL', () => {
-      const middleware = initProxyCache({ devServer: mockDevServer, ttl: 3600000 }); // 1 hour
+      const middleware = initProxyCache({
+        devServer: mockDevServer,
+        ttl: 3600000,
+      }); // 1 hour
 
       expect(typeof middleware).toBe('function');
     });

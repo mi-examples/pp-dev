@@ -1,9 +1,11 @@
-import { defineConfig, RollupOptions } from 'rollup';
+// @ts-nocheck
+import { defineConfig } from 'rollup';
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
 import terser from '@rollup/plugin-terser';
 import * as path from 'path';
 import * as fs from 'fs';
+import { builtinModules } from 'module';
 
 // Read package.json safely
 const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
@@ -15,7 +17,26 @@ const externalDeps = [
   // Exclude dev dependencies from external as they shouldn't be bundled
 ];
 
-const defaultConfig: RollupOptions = {
+const nodeBuiltins = new Set(builtinModules.flatMap((mod) => [mod, `node:${mod}`]));
+const additionalExternal = new Set(['postcss', 'rollup', 'vite', 'estree']);
+
+const isExternal = (id) => {
+  if (nodeBuiltins.has(id)) {
+    return true;
+  }
+
+  if (externalDeps.includes(id)) {
+    return true;
+  }
+
+  if (additionalExternal.has(id)) {
+    return true;
+  }
+
+  return externalDeps.some((dep) => id.startsWith(`${dep}/`));
+};
+
+const defaultConfig = {
   input: {
     index: 'src/index.ts',
     plugin: 'src/plugin.ts',
@@ -32,16 +53,76 @@ const defaultConfig: RollupOptions = {
     if (warning.code === 'CIRCULAR_DEPENDENCY') {
       return;
     }
+
     if (warning.code === 'UNUSED_EXTERNAL_IMPORT') {
       return;
     }
+
     warn(warning);
   },
   // Preserve Node.js globals
   context: 'globalThis',
 };
 
-const configs: RollupOptions[] = [
+function typeDefsMonitorPlugin() {
+  const timeoutMs = Number(process.env.PP_DEV_DTS_TIMEOUT_MS ?? 120_000);
+  const heartbeatMs = Number(process.env.PP_DEV_DTS_HEARTBEAT_MS ?? 10_000);
+
+  let buildStartedAt = 0;
+  let heartbeat = null;
+  let timeout = null;
+
+  const clearTimers = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
+  };
+
+  return {
+    name: 'type-defs-monitor',
+    buildStart() {
+      buildStartedAt = Date.now();
+      console.info(`[rollup:dts] build started (timeout=${timeoutMs}ms heartbeat=${heartbeatMs}ms)`);
+
+      heartbeat = setInterval(() => {
+        const elapsedMs = Date.now() - buildStartedAt;
+
+        console.info(`[rollup:dts] still building... elapsed=${elapsedMs}ms`);
+      }, heartbeatMs);
+      heartbeat.unref?.();
+
+      timeout = setTimeout(() => {
+        const elapsedMs = Date.now() - buildStartedAt;
+
+        console.error(`[rollup:dts] build exceeded timeout after ${elapsedMs}ms, aborting`);
+        process.exit(1);
+      }, timeoutMs);
+      timeout.unref?.();
+    },
+    buildEnd(error) {
+      clearTimers();
+
+      const elapsedMs = Date.now() - buildStartedAt;
+
+      if (error) {
+        console.error(`[rollup:dts] build failed after ${elapsedMs}ms: ${error.message}`);
+      } else {
+        console.info(`[rollup:dts] build completed in ${elapsedMs}ms`);
+      }
+    },
+    closeBundle() {
+      clearTimers();
+    },
+  };
+}
+
+const configs = [
   // ESM Build
   defineConfig({
     ...defaultConfig,
@@ -83,7 +164,7 @@ const configs: RollupOptions[] = [
       chunkFileNames: '[name]-[hash].js',
       entryFileNames: '[name].js',
     },
-    external: externalDeps,
+    external: isExternal,
     // Better tree-shaking
     preserveEntrySignatures: 'strict',
   }),
@@ -119,7 +200,7 @@ const configs: RollupOptions[] = [
       format: 'cjs',
       assetFileNames: '[name][extname]',
       sourcemap: true,
-      exports: 'auto',
+      exports: 'named',
       interop: 'compat',
       // Fix: avoid _interopNamespaceCompat crash when processing Node.js built-ins
       // (path, child_process, etc.) that have inherited prototype properties.
@@ -133,7 +214,7 @@ const configs: RollupOptions[] = [
       chunkFileNames: '[name]-[hash].js',
       entryFileNames: '[name].js',
     },
-    external: externalDeps,
+    external: isExternal,
     preserveEntrySignatures: 'strict',
   }),
 
@@ -141,6 +222,7 @@ const configs: RollupOptions[] = [
   defineConfig({
     input: 'src/index.ts',
     plugins: [
+      typeDefsMonitorPlugin(),
       dts({
         tsconfig: './tsconfig.types.json',
         compilerOptions: {
@@ -156,14 +238,7 @@ const configs: RollupOptions[] = [
       format: 'esm',
       assetFileNames: '[name][extname]',
     },
-    external: [
-      ...externalDeps,
-      // Add problematic dependencies to external
-      'postcss',
-      'rollup',
-      'vite',
-      'estree',
-    ],
+    external: isExternal,
   }),
 ];
 
