@@ -72,10 +72,17 @@
     "brace-expansion": "5.0.5",
     "chokidar": "^5.0.0",
     "file-type": "^22.0.0",
+    "ip-address": "^10.2.0",
     "minimatch": "10.2.4",
-    "npm": ">=11.12.1",
+    "next@*": {
+      "postcss": "8.5.10"
+    },
+    "npm": ">=11.13.0",
     "serialize-javascript": ">=7.0.5",
-    "undici": ">=6.24.0"
+    "undici": ">=6.24.0",
+    "vite@*": {
+      "postcss": "8.5.10"
+    }
   },
   "peerDependencies": {
     "next": ">= 13 < 17"
