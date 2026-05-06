@@ -34,7 +34,9 @@
     "test:e2e": "node scripts/run-tests.js",
     "test:e2e:ui": "npx playwright test --ui",
     "test:all": "npm run test:unit && npm run test:integration",
-    "audit:all": "node scripts/audit-all.mjs"
+    "audit:all": "node scripts/audit-all.mjs",
+    "prereinstall:all": "npm run build",
+    "reinstall:all": "node scripts/reinstall-all.mjs"
   },
   "exports": {
     ".": {
