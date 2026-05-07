@@ -29,8 +29,12 @@
     "minimatch": "10.2.4",
     "path-to-regexp": ">=8.4.0",
     "picomatch": "4.0.4",
+    "postcss": ">=8.5.10",
     "serialize-javascript": ">=7.0.5",
     "undici": ">=6.24.0",
+    "vite@*": {
+      "postcss": "8.5.10"
+    },
     "yaml": ">=2.8.3"
   }
 }

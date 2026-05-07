@@ -1,3 +1,10 @@
+## [0.18.2-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.1...v0.18.2-beta.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **deps:** resolve npm audit findings across workspace ([d13ffad](https://github.com/mi-examples/pp-dev/commit/d13ffadcda69cf6f8c8de39c7b0f7d0840e6fa3a))
+
 ## [0.18.1-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.18.1-beta.1...v0.18.1-beta.2) (2026-04-22)
 
 
