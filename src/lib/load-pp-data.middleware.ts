@@ -42,12 +42,44 @@ function setCachedResponse(key: string, data: any): void {
 // Constants
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
 
+/**
+ * Whether the request is a top-level HTML document navigation (as opposed to an
+ * asset/XHR/HMR request). Used to detect deep-linked page loads so template data
+ * can be loaded even when the first request is not the main page URL.
+ */
+function isHtmlDocumentRequest(req: IncomingMessage): boolean {
+  const dest = req.headers['sec-fetch-dest'];
+
+  if (typeof dest === 'string') {
+    return dest === 'document';
+  }
+
+  // Fallback for clients that don't send Sec-Fetch-* headers.
+  const accept = req.headers['accept'];
+
+  return typeof accept === 'string' && accept.includes('text/html');
+}
+
+/**
+ * Whether the request path is served by this dev app (under its base path).
+ * An empty/`/` base means the app is served from the root.
+ */
+function isUnderBase(requestPath: string, base?: string): boolean {
+  if (!base || base === '/') {
+    return true;
+  }
+
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+
+  return requestPath === normalizedBase || requestPath === normalizedBase.slice(0, -1) || requestPath.startsWith(normalizedBase);
+}
+
 export function initLoadPPData(
   applyUrlRegExp: RegExp,
   mi: MiAPI,
-  opts: PPDevConfig & { base?: string },
+  opts: PPDevConfig & { base?: string; appBase?: string },
 ): NextHandleFunction {
-  const { templateLess = false, miHudLess = false, appId, base, v7Features } = opts;
+  const { templateLess = false, miHudLess = false, appId, base, appBase, v7Features } = opts;
 
   const logger = createLogger();
 
@@ -65,7 +97,19 @@ export function initLoadPPData(
   return async (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
     try {
       const isNeedTemplateLoad = !(templateLess && miHudLess);
-      const isApplyRequest = applyUrlRegExp.test(cutUrlParams(req.url ?? ''));
+      const requestPath = cutUrlParams(req.url ?? '');
+      const isApplyRequest = applyUrlRegExp.test(requestPath);
+
+      // A deep-linked navigation into the app (e.g. an SPA sub-route) that is not the
+      // exact main page URL. Without loading here, template variables would never be
+      // fetched when the very first request is such a sub-path. Excludes `/home`,
+      // which is handled by the auth/redirect block above. The load itself is cached,
+      // so this stays a no-op after the first navigation.
+      const isAppNavigation =
+        !isApplyRequest &&
+        !requestPath.startsWith('/home') &&
+        isUnderBase(requestPath, appBase) &&
+        isHtmlDocumentRequest(req);
 
       // 1. If !isAuthenticated && !isRedirected and url started with /home - try to handle load page or template
       if (
@@ -121,7 +165,7 @@ export function initLoadPPData(
       }
 
       // Default case - continue with normal flow
-      if (!isApplyRequest) {
+      if (!isApplyRequest && !isAppNavigation) {
         return next();
       }
 
