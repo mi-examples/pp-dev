@@ -606,6 +606,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             Object.assign({}, options, {
               appId: normalizedAppId,
               portalPageId: normalizedAppId,
+              appBase: base,
             }),
           ),
         );
