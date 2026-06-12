@@ -378,8 +378,8 @@ if (hot) {
 
   if ($syncButton) {
     hot.on('template:sync:action-required', async (payload: SyncActionRequiredPayload) => {
-      $syncButton.classList.remove('syncing');
-
+      // Keep the sync spinner running while a confirmation modal is shown — the sync
+      // process is still in progress and only ends on `template:sync:response`.
       const approved = await confirmModal({
         title: payload.title,
         content: payload.content,
@@ -391,10 +391,6 @@ if (hot) {
         requestId: payload.requestId,
         approved,
       });
-
-      if (approved) {
-        $syncButton.classList.add('syncing');
-      }
     });
 
     hot.on(
