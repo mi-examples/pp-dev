@@ -23,8 +23,14 @@ describe('DistService — Next.js build strategy', () => {
   beforeEach(() => {
     exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-next-export-'));
     fs.writeFileSync(path.join(exportDir, 'index.html'), '<html><body>app</body></html>');
+    fs.writeFileSync(path.join(exportDir, 'next.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     fs.mkdirSync(path.join(exportDir, 'sub'));
     fs.writeFileSync(path.join(exportDir, 'sub', 'app.js'), 'console.log(1)');
+    fs.mkdirSync(path.join(exportDir, '_next', 'static', 'media'), { recursive: true });
+    fs.writeFileSync(
+      path.join(exportDir, '_next', 'static', 'media', 'next.0x5qb3h5j23ox.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1" /></svg>',
+    );
 
     // Simulate a successful `next build`.
     spawnMock.mockImplementation(() => {
@@ -74,6 +80,19 @@ describe('DistService — Next.js build strategy', () => {
 
     expect(names.some((n) => /^VERSION-v1\.2\.3-.*\.json$/.test(n))).toBe(true);
     expect(zip.file('BUILD-MANIFEST.json')).toBeTruthy();
+  });
+
+  it('produces a VERSION manifest whose hashes match the built files (round-trip)', async () => {
+    const service = createService();
+    const buf = await service.buildNewAssets();
+
+    // Analyzing the freshly built zip must report no inconsistencies: the VERSION
+    // file content (hashes) matches every built file, including SVGs.
+    const analysis = await service.analyzeBackup(buf);
+
+    expect(analysis.versionManifestHashMismatches).toEqual([]);
+    expect(analysis.unknownFiles).toEqual([]);
+    expect(analysis.buildManifestMismatch).toBeNull();
   });
 
   it('rejects when `next build` exits non-zero', async () => {
