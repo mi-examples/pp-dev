@@ -1011,9 +1011,25 @@ cli
           // reused unchanged via a Vite-WS-compatible facade.
           hotServer = new PPDevHotServer();
 
-          // With `output: 'export'`, Next writes the static export to `distDir` (or `out`
-          // by default). Sync zips that directory after running `next build`.
-          const nextExportDir = config?.distDir && config.distDir !== '.next' ? config.distDir : 'out';
+          // The sync `next build` runs in production mode, which writes the static export
+          // to the base distDir. Next's dev phase reports distDir as `<distDir>/dev`, so
+          // resolve it from the production config and defensively strip a trailing `/dev`.
+          // With output:'export', the export lands in distDir (or `out` for the default).
+          let exportDistDir: string | undefined = config?.distDir;
+
+          try {
+            const prodConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
+
+            exportDistDir = prodConfig?.distDir ?? exportDistDir;
+          } catch {
+            // Fall back to the dev config's distDir (normalized below).
+          }
+
+          const normalizedDistDir = (exportDistDir ?? '')
+            .replace(/\\/g, '/')
+            .replace(/\/+$/, '')
+            .replace(/\/dev$/, '');
+          const nextExportDir = !normalizedDistDir || normalizedDistDir === '.next' ? 'out' : normalizedDistDir;
 
           let nextPackageVersion = '0.0.0';
           let nextPackageRepositoryUrl: string | undefined;
