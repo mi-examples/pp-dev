@@ -1011,7 +1011,31 @@ cli
           // reused unchanged via a Vite-WS-compatible facade.
           hotServer = new PPDevHotServer();
 
-          const distService = new DistService(templateName ?? basename(projectRoot));
+          // With `output: 'export'`, Next writes the static export to `distDir` (or `out`
+          // by default). Sync zips that directory after running `next build`.
+          const nextExportDir = config?.distDir && config.distDir !== '.next' ? config.distDir : 'out';
+
+          let nextPackageVersion = '0.0.0';
+          let nextPackageRepositoryUrl: string | undefined;
+
+          try {
+            const projectPkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+
+            nextPackageVersion = typeof projectPkg.version === 'string' ? projectPkg.version : nextPackageVersion;
+            nextPackageRepositoryUrl =
+              typeof projectPkg.repository === 'string' ? projectPkg.repository : projectPkg.repository?.url;
+          } catch {
+            // Fall back to defaults if the project package.json is unreadable.
+          }
+
+          const distService = new DistService(templateName ?? basename(projectRoot), {
+            nextBuild: {
+              projectRoot,
+              distDir: nextExportDir,
+              packageVersion: nextPackageVersion,
+              packageRepositoryUrl: nextPackageRepositoryUrl,
+            },
+          });
 
           // Minimal ViteDevServer shape consumed by ClientService (`ws` + the v7 flag).
           const clientServiceServer = {

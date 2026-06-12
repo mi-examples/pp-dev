@@ -6,10 +6,13 @@ import * as process from 'process';
 import * as child_process from 'child_process';
 import * as console from 'console';
 import * as os from 'os';
+import { createRequire } from 'module';
 import extractZip from 'extract-zip';
+import JSZip from 'jszip';
 import { createLogger } from './logger.js';
 import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
+import { writeBuildVersionManifest } from './version-manifest.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
@@ -19,6 +22,19 @@ const DIRNAME = path.dirname((typeof __filename !== 'undefined' && __filename) |
 const pluginPath = path.resolve(DIRNAME, '..', '..');
 const node_modules_path = path.resolve(pluginPath, '..', '..');
 
+/**
+ * When set, {@link DistService.buildNewAssets} builds with `next build` and zips the
+ * static export directory, instead of running the Vite-based `pp-dev build`.
+ */
+export interface NextBuildOptions {
+  projectRoot: string;
+  /** Static export output directory (Next.js `distDir`), relative to `projectRoot` or absolute. */
+  distDir: string;
+  packageVersion: string;
+  packageRepositoryUrl?: string;
+  packageBranchName?: string;
+}
+
 export interface SyncOptions {
   backupFolder?: string;
   backupNameTemplate?: string;
@@ -26,6 +42,7 @@ export interface SyncOptions {
   distZipFolder?: string;
   distZipFilename?: string;
   versionFileTemplate?: string;
+  nextBuild?: NextBuildOptions;
 }
 
 export interface SyncMeta {
@@ -99,6 +116,7 @@ export class DistService {
   private readonly distZipFolder: string;
   private readonly distZipFilename: string;
   private readonly versionFileTemplate: string;
+  private readonly nextBuild?: NextBuildOptions;
 
   private logger: Logger;
 
@@ -112,6 +130,7 @@ export class DistService {
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
       versionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json',
       dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
+      nextBuild,
     } = syncOptions || {};
 
     this.backupFolder = backupFolder;
@@ -121,6 +140,7 @@ export class DistService {
     this.distZipFolder = distZipFolder;
     this.distZipFilename = distZipFilename;
     this.versionFileTemplate = versionFileTemplate;
+    this.nextBuild = nextBuild;
 
     this.syncMeta();
 
@@ -610,7 +630,12 @@ export class DistService {
     });
   }
 
-  async buildNewAssets() {
+  async buildNewAssets(): Promise<Buffer> {
+    // Next.js apps build with `next build` (static export), not the Vite `pp-dev build`.
+    if (this.nextBuild) {
+      return await this.buildNextAssets();
+    }
+
     const buildCommand = new Promise<string>((resolve, reject) => {
       let data = '';
 
@@ -666,5 +691,105 @@ export class DistService {
     await this.saveBackup(backupFile);
 
     return await this.buildNewAssets();
+  }
+
+  /**
+   * Build a Next.js app via `next build` (static export) and return a ZIP of the
+   * export directory, with VERSION/BUILD-MANIFEST written in for parity with the
+   * Vite build so backup analysis behaves consistently.
+   */
+  private async buildNextAssets(): Promise<Buffer> {
+    const { projectRoot, distDir } = this.nextBuild!;
+
+    this.logger.info(colors.cyan('[DistService] Next.js build started'));
+
+    await this.runNextBuild(projectRoot);
+
+    this.logger.info(colors.cyan('[DistService] Next.js build finished'));
+
+    const outDir = path.resolve(projectRoot, distDir);
+
+    if (!(await this.isDirectory(outDir))) {
+      throw new Error(`Next.js build output directory not found: ${outDir}`);
+    }
+
+    writeBuildVersionManifest({
+      outDir,
+      packageVersion: this.nextBuild!.packageVersion,
+      versionFileTemplate: this.versionFileTemplate,
+      packageRepositoryUrl: this.nextBuild!.packageRepositoryUrl,
+      packageBranchName: this.nextBuild!.packageBranchName,
+    });
+
+    return await this.zipDirectory(outDir);
+  }
+
+  /** Run `next build` in `projectRoot`, resolving the `next` binary from the app itself. */
+  private runNextBuild(projectRoot: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let nextBin: string;
+
+      try {
+        const require = createRequire(path.join(projectRoot, 'package.json'));
+        const nextPkgPath = require.resolve('next/package.json');
+
+        nextBin = path.resolve(path.dirname(nextPkgPath), 'dist/bin/next');
+      } catch {
+        reject(new Error(`Unable to resolve the "next" binary from ${projectRoot}. Is Next.js installed?`));
+
+        return;
+      }
+
+      const proc = child_process.spawn(process.execPath, [nextBin, 'build'], {
+        cwd: projectRoot,
+        env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
+        stdio: 'inherit',
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`next build exited with code ${code}`));
+
+          return;
+        }
+
+        resolve();
+      });
+
+      proc.on('error', reject);
+    });
+  }
+
+  /** Zip a directory's contents (paths relative to `dir`) into an in-memory Buffer. */
+  private async zipDirectory(dir: string): Promise<Buffer> {
+    const zip = new JSZip();
+
+    const addDir = async (current: string): Promise<void> => {
+      const entries = await fs.readdir(current, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const full = path.join(current, entry.name);
+
+        if (entry.isDirectory()) {
+          await addDir(full);
+        } else if (entry.isFile()) {
+          const relativePath = path.relative(dir, full).replace(/\\/g, '/');
+
+          zip.file(relativePath, await fs.readFile(full));
+        }
+      }
+    };
+
+    await addDir(dir);
+
+    return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  }
+
+  private async isDirectory(target: string): Promise<boolean> {
+    try {
+      return (await fs.stat(target)).isDirectory();
+    } catch {
+      return false;
+    }
   }
 }
