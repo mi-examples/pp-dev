@@ -1,3 +1,18 @@
+## [0.18.3-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.18.3-beta.1...v0.18.3-beta.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* **client:** send dev-panel WebSocket responses to the requesting client only ([d73700f](https://github.com/mi-examples/pp-dev/commit/d73700f7ab439422651e0fb38e48cbb4e37556e2))
+* **middleware:** load template variables on deep-linked sub-path navigation ([a21c032](https://github.com/mi-examples/pp-dev/commit/a21c0323999300f326bdf5845f668a180cb7d121))
+
+## [0.18.3-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.2...v0.18.3-beta.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **deps:** resolve npm audit findings across workspace ([bb41f5c](https://github.com/mi-examples/pp-dev/commit/bb41f5cec178d9db130cb5a51bbdabd0a42512dc))
+
 ## [0.18.2-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.1...v0.18.2-beta.1) (2026-05-06)
 
 
