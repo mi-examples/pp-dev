@@ -19,8 +19,8 @@ const nextConfig = withPPDev({
   images: {
     unoptimized: true,
   },
-  assetPrefix: '/pt/test-nextjs',
-  basePath: '/p/test-nextjs',
+  // assetPrefix: '/pt/test-nextjs',
+  // basePath: '/p/test-nextjs',
 });
 
 export default nextConfig;
