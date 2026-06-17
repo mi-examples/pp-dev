@@ -24,6 +24,10 @@ import { IconFontGenerator } from './lib/icon-font-generator.js';
 // Remove the explicit process import since it's globally available
 import internalServer from './lib/internal.middleware';
 import { safeNextImport } from './lib/next-import.js';
+import { ClientService } from './lib/client.service.js';
+import { DistService } from './lib/dist.service.js';
+import { PPDevHotServer } from './lib/pp-ws-server.js';
+import { injectDevPanel, createDevPanelAssetMiddleware } from './lib/dev-panel.js';
 import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
 
 const cli = cac('pp-dev');
@@ -490,6 +494,7 @@ cli
 
     let nextApp: ReturnType<typeof import('next').default> | null = null;
     let httpServer: any = null;
+    let hotServer: PPDevHotServer | null = null;
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
 
@@ -506,6 +511,12 @@ cli
         // Import Next.js first – with logger available for error reporting
         const { next, constants } = await safeNextImport();
         const { PHASE_DEVELOPMENT_SERVER } = constants;
+
+        // Clean up existing dev-panel WebSocket server if any
+        if (hotServer) {
+          await hotServer.close();
+          hotServer = null;
+        }
 
         // Clean up existing server if any
         if (httpServer) {
@@ -874,6 +885,11 @@ cli
           essentialMiddlewareChain.push(ppRedirectWrapper);
           fullMiddlewareChain.push(ppRedirectWrapper);
 
+          // 1b. Dev-panel client assets (client.js/client.css) — served locally, never proxied.
+          const devPanelAssetMiddleware = createDevPanelAssetMiddleware(base);
+          essentialMiddlewareChain.push(devPanelAssetMiddleware);
+          fullMiddlewareChain.push(devPanelAssetMiddleware);
+
           // 2. Proxy Cache middleware (only for non-internal routes)
           if (enableProxyCache) {
             let ttl = +proxyCacheTTL;
@@ -972,7 +988,16 @@ cli
               return pathname.startsWith(base) && !pathname.includes('/_next/');
             },
             (response, req) => {
-              return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi!.buildPage(response, miHudLess)));
+              const page = mi!.buildPage(response, miHudLess);
+              // Inject the dev panel before host-rewriting so its `!!`-prefixed backend
+              // links are handled by urlReplacer like the rest of the page.
+              const withPanel = injectDevPanel(page, base, {
+                backendBaseURL,
+                templateLess,
+                portalPageId: appId,
+              });
+
+              return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', withPanel));
             },
           );
 
@@ -980,6 +1005,76 @@ cli
             rewriteResponseMiddleware(req, res, next);
           };
           fullMiddlewareChain.push(rewriteResponseWrapper);
+
+          // Dev-panel transport: raw-WebSocket replacement for Vite HMR so the panel's
+          // interactive features (template sync) work under Next.js. ClientService is
+          // reused unchanged via a Vite-WS-compatible facade.
+          hotServer = new PPDevHotServer();
+
+          // The sync `next build` runs in production mode, which writes the static export
+          // to the base distDir. Next's dev phase reports distDir as `<distDir>/dev`, so
+          // resolve it from the production config and defensively strip a trailing `/dev`.
+          // With output:'export', the export lands in distDir (or `out` for the default).
+          let exportDistDir: string | undefined = config?.distDir;
+
+          try {
+            const prodConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
+
+            exportDistDir = prodConfig?.distDir ?? exportDistDir;
+          } catch {
+            // Fall back to the dev config's distDir (normalized below).
+          }
+
+          const normalizedDistDir = (exportDistDir ?? '')
+            .replace(/\\/g, '/')
+            .replace(/\/+$/, '')
+            .replace(/\/dev$/, '');
+          const nextExportDir = !normalizedDistDir || normalizedDistDir === '.next' ? 'out' : normalizedDistDir;
+
+          let nextPackageVersion = '0.0.0';
+          let nextPackageRepositoryUrl: string | undefined;
+
+          try {
+            const projectPkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+
+            nextPackageVersion = typeof projectPkg.version === 'string' ? projectPkg.version : nextPackageVersion;
+            nextPackageRepositoryUrl =
+              typeof projectPkg.repository === 'string' ? projectPkg.repository : projectPkg.repository?.url;
+          } catch {
+            // Fall back to defaults if the project package.json is unreadable.
+          }
+
+          const distService = new DistService(templateName ?? basename(projectRoot), {
+            nextBuild: {
+              projectRoot,
+              distDir: nextExportDir,
+              packageVersion: nextPackageVersion,
+              packageRepositoryUrl: nextPackageRepositoryUrl,
+            },
+          });
+
+          // Minimal ViteDevServer shape consumed by ClientService (`ws` + the v7 flag).
+          const clientServiceServer = {
+            ws: hotServer.ws,
+            config: { clientInjectionPlugin: { v7Features } },
+          } as unknown as ViteDevServer;
+
+          new ClientService(clientServiceServer, { distService, miAPI: mi });
+
+          // Route HTTP upgrades: pp-dev WS to our server, everything else (Next.js HMR)
+          // to Next's own upgrade handler when available.
+          const nextUpgradeHandler =
+            typeof (nextApp as any)?.getUpgradeHandler === 'function' ? (nextApp as any).getUpgradeHandler() : null;
+
+          httpServer.on('upgrade', (req: any, socket: any, head: any) => {
+            if (hotServer?.handleUpgrade(req, socket, head)) {
+              return;
+            }
+
+            if (nextUpgradeHandler) {
+              nextUpgradeHandler(req, socket, head);
+            }
+          });
 
           logger.info(colors.blue(`🔧 ${fullMiddlewareChain.length} pp-dev middlewares initialized`));
           logger.info(colors.blue(`🔧 ${essentialMiddlewareChain.length} essential middlewares for internal routes`));
@@ -1026,6 +1121,12 @@ cli
                 socket.destroy();
               }
               openSockets.clear();
+
+              // Close the dev-panel WebSocket server
+              if (hotServer) {
+                await hotServer.close();
+                hotServer = null;
+              }
 
               // Stop accepting new connections and wait for server to close
               await new Promise<void>((resolve) => {
@@ -1125,6 +1226,12 @@ cli
         if (configWatcher) {
           cleanupConfigWatcher(configWatcher);
           configWatcher = null;
+        }
+
+        // Clean up dev-panel WebSocket server
+        if (hotServer) {
+          await hotServer.close();
+          hotServer = null;
         }
 
         // Clean up server

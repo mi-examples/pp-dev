@@ -112,6 +112,7 @@
     "http-proxy-middleware": "^3.0.5",
     "isbinaryfile": "^6.0.0",
     "jsdom": "29.1.1",
+    "jszip": "^3.10.1",
     "memory-cache": "^0.2.0",
     "picocolors": "^1.1.1",
     "rollup": "^4.60.1",
@@ -124,7 +125,8 @@
     "vite": "^8.0.11",
     "vite-plugin-image-optimizer": "^2.0.3",
     "vite-plugin-zip-pack": "^1.2.4",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
@@ -140,6 +142,7 @@
     "@types/jsdom": "^28.0.1",
     "@types/memory-cache": "^0.2.6",
     "@types/node": "^25.5.2",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.5",
     "connect": "^3.7.0",
     "next": "^16.2.7",
