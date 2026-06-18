@@ -1,3 +1,10 @@
+# [0.19.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.19.0-beta.1...v0.19.0-beta.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* address CodeRabbit review findings ([7d50da6](https://github.com/mi-examples/pp-dev/commit/7d50da601627006c06253d7acf3ca06a4974c103))
+
 # [0.19.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.3-beta.2...v0.19.0-beta.1) (2026-06-17)
 
 
