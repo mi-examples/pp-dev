@@ -75,7 +75,7 @@ describe('initLoadPPData — load on deep-linked sub-path navigation', () => {
 
       expect(getPageVariables).toHaveBeenCalledTimes(1);
     } finally {
-      server.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
@@ -87,7 +87,7 @@ describe('initLoadPPData — load on deep-linked sub-path navigation', () => {
 
       expect(getPageVariables).toHaveBeenCalledTimes(1);
     } finally {
-      server.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
@@ -99,7 +99,7 @@ describe('initLoadPPData — load on deep-linked sub-path navigation', () => {
 
       expect(getPageVariables).not.toHaveBeenCalled();
     } finally {
-      server.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
@@ -111,7 +111,7 @@ describe('initLoadPPData — load on deep-linked sub-path navigation', () => {
 
       expect(getPageVariables).not.toHaveBeenCalled();
     } finally {
-      server.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 });

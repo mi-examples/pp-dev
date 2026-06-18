@@ -96,6 +96,10 @@ describe('PPDevHotServer transport', () => {
 
       const message = await nextMessage(sender);
 
+      // Yield a full event-loop tick so any unintended broadcast would arrive at
+      // `other` before we assert isolation.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
       expect(message.event).toBe('info-data:response');
       expect(otherReceived).toBe(false);
     } finally {

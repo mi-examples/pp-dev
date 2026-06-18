@@ -21,6 +21,8 @@ type CustomMessage = { type: 'custom'; event: string; data?: unknown };
 
 type Handler = (payload: any) => void;
 
+const MAX_OUTBOX_SIZE = 50;
+
 function resolveWebSocketUrl(): string {
   const { protocol, host } = window.location;
   const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
@@ -141,6 +143,9 @@ export function createPPDevHotContext(): ViteHotContext {
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(payload);
       } else {
+        if (outbox.length >= MAX_OUTBOX_SIZE) {
+          outbox.shift();
+        }
         outbox.push(payload);
       }
     },
