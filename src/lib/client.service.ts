@@ -4,7 +4,7 @@ import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { DistService, TEMPLATE_VARIABLES_FILE_NAME } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
-import { Logger, ViteDevServer } from 'vite';
+import { Logger, ViteDevServer, WebSocketClient } from 'vite';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 
@@ -93,12 +93,8 @@ export class ClientService {
     }
   }
 
-  onInfoDataRequest() {
-    this.server.ws.send({
-      type: 'custom',
-      event: 'info-data:response',
-      data: {},
-    });
+  onInfoDataRequest(_data: unknown, client: WebSocketClient) {
+    client.send('info-data:response', {});
   }
 
   onTemplateSyncActionResponse(payload?: SyncActionResponsePayload) {
@@ -109,7 +105,7 @@ export class ClientService {
     this.resolveSyncAction(payload.requestId, payload.approved);
   }
 
-  async requestSyncAction(payload: Omit<SyncActionRequestPayload, 'requestId'>) {
+  async requestSyncAction(payload: Omit<SyncActionRequestPayload, 'requestId'>, client: WebSocketClient) {
     const requestId = randomUUID();
     const timeoutMs = this.opts.syncActionTimeoutMs ?? 120_000;
 
@@ -120,21 +116,21 @@ export class ClientService {
 
       this.syncActionResolvers.set(requestId, { resolve, timeoutId });
 
-      this.server.ws.send('template:sync:action-required', {
+      client.send('template:sync:action-required', {
         ...payload,
         requestId,
       } satisfies SyncActionRequestPayload);
     });
   }
 
-  async onTemplateSync() {
+  async onTemplateSync(_data: unknown, client: WebSocketClient) {
     if (this.opts.distService && this.opts.miAPI) {
       const { distService, miAPI } = this.opts;
 
       try {
         if (this.server.config.clientInjectionPlugin?.v7Features) {
           if (!miAPI?.isV710OrHigher) {
-            this.server.ws.send('template:sync:response', {
+            client.send('template:sync:response', {
               error: 'This feature is available only for MI v7.1.0 or higher',
               config: {
                 canSync: false,
@@ -143,7 +139,7 @@ export class ClientService {
 
             return;
           } else {
-            this.server.ws.send('client:config:update', {
+            client.send('client:config:update', {
               config: {
                 canSync: true,
               },
@@ -165,14 +161,14 @@ export class ClientService {
 
                 if (validation && !validation.isValid) {
                   this.logger.error(colors.red(`Authentication error: ${validation.error}`));
-                  this.server.ws.send('template:sync:response', {
+                  client.send('template:sync:response', {
                     error: validation.error,
                     code: validation.code,
                     refresh: true,
                   });
                 } else {
                   this.logger.info(colors.yellow('Session expired'));
-                  this.server.ws.send('template:sync:response', {
+                  client.send('template:sync:response', {
                     error: 'Session expired',
                     code: 'SESSION_EXPIRED',
                     refresh: true,
@@ -180,7 +176,7 @@ export class ClientService {
                 }
               } catch (validationError) {
                 this.logger.info(colors.yellow('Session expired'));
-                this.server.ws.send('template:sync:response', {
+                client.send('template:sync:response', {
                   error: 'Session expired',
                   code: 'SESSION_EXPIRED',
                   refresh: true,
@@ -200,7 +196,7 @@ export class ClientService {
                 colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
               );
 
-              this.server.ws.send('template:sync:response', {
+              client.send('template:sync:response', {
                 error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
                 code: 'CONNECTION_ERROR',
               });
@@ -215,7 +211,7 @@ export class ClientService {
                 colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),
               );
 
-              this.server.ws.send('template:sync:response', {
+              client.send('template:sync:response', {
                 error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
                 code: 'CONNECTION_ERROR',
               });
@@ -232,7 +228,7 @@ export class ClientService {
               ),
             );
 
-            this.server.ws.send('template:sync:response', {
+            client.send('template:sync:response', {
               error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
               code: 'CONNECTION_ERROR',
             });
@@ -298,13 +294,16 @@ export class ClientService {
               const serverPreferredHash = templateVariables.actualHash;
 
               if (localHash !== serverPreferredHash) {
-                const replaceFromServer = await this.requestSyncAction({
-                  title: 'Template variables (server backup)',
-                  content:
-                    'The server backup includes __template_variables.json. It differs from your local public/__template_variables.json (or that file is missing). Replace your project copy with the server backup?',
-                  confirmText: 'Replace from server',
-                  cancelText: 'Keep local',
-                });
+                const replaceFromServer = await this.requestSyncAction(
+                  {
+                    title: 'Template variables (server backup)',
+                    content:
+                      'The server backup includes __template_variables.json. It differs from your local public/__template_variables.json (or that file is missing). Replace your project copy with the server backup?',
+                    confirmText: 'Replace from server',
+                    cancelText: 'Keep local',
+                  },
+                  client,
+                );
 
                 if (replaceFromServer) {
                   await distService.saveTemplateVariablesFile(templateVariables.content);
@@ -313,15 +312,18 @@ export class ClientService {
             };
 
             if (backupAnalysis.unknownFiles.length > 0) {
-              const shouldContinueSync = await this.requestSyncAction({
-                title: 'Unknown files found in backup',
-                content: `Backup contains files not listed in VERSION: ${backupAnalysis.unknownFiles.join(', ')}. Continue sync or cancel?`,
-                confirmText: 'Continue sync',
-                cancelText: 'Cancel sync',
-              });
+              const shouldContinueSync = await this.requestSyncAction(
+                {
+                  title: 'Unknown files found in backup',
+                  content: `Backup contains files not listed in VERSION: ${backupAnalysis.unknownFiles.join(', ')}. Continue sync or cancel?`,
+                  confirmText: 'Continue sync',
+                  cancelText: 'Cancel sync',
+                },
+                client,
+              );
 
               if (!shouldContinueSync) {
-                this.server.ws.send('template:sync:response', {
+                client.send('template:sync:response', {
                   cancelled: true,
                   message: 'Sync cancelled by user. Backup was saved.',
                 });
@@ -344,15 +346,18 @@ export class ClientService {
               const fileList = listed.map((p) => `• ${p}`).join('\n');
               const suffix = remainder > 0 ? `\n... and ${remainder} more file${remainder === 1 ? '' : 's'}` : '';
 
-              const shouldContinueAfterVersionMismatch = await this.requestSyncAction({
-                title: 'VERSION manifest out of date',
-                content: `These files no longer match the hashes recorded in the VERSION manifest:\n\n${fileList}${suffix}\n\nCancel sync, or override and continue using the files on disk?`,
-                confirmText: 'Override and continue',
-                cancelText: 'Cancel sync',
-              });
+              const shouldContinueAfterVersionMismatch = await this.requestSyncAction(
+                {
+                  title: 'VERSION manifest out of date',
+                  content: `These files no longer match the hashes recorded in the VERSION manifest:\n\n${fileList}${suffix}\n\nCancel sync, or override and continue using the files on disk?`,
+                  confirmText: 'Override and continue',
+                  cancelText: 'Cancel sync',
+                },
+                client,
+              );
 
               if (!shouldContinueAfterVersionMismatch) {
-                this.server.ws.send('template:sync:response', {
+                client.send('template:sync:response', {
                   cancelled: true,
                   message: 'Sync cancelled by user. Backup was saved.',
                 });
@@ -371,15 +376,18 @@ export class ClientService {
             ) {
               const { expected, actual } = backupAnalysis.buildManifestMismatch;
 
-              const shouldContinueAfterMismatch = await this.requestSyncAction({
-                title: 'Build manifest fingerprint mismatch',
-                content: `The recomputed backup fingerprint does not match BUILD-MANIFEST.json.\nManifest: ${expected.slice(0, 12)}...\nComputed: ${actual.slice(0, 12)}...\nContinue sync anyway?`,
-                confirmText: 'Continue sync',
-                cancelText: 'Cancel sync',
-              });
+              const shouldContinueAfterMismatch = await this.requestSyncAction(
+                {
+                  title: 'Build manifest fingerprint mismatch',
+                  content: `The recomputed backup fingerprint does not match BUILD-MANIFEST.json.\nManifest: ${expected.slice(0, 12)}...\nComputed: ${actual.slice(0, 12)}...\nContinue sync anyway?`,
+                  confirmText: 'Continue sync',
+                  cancelText: 'Cancel sync',
+                },
+                client,
+              );
 
               if (!shouldContinueAfterMismatch) {
-                this.server.ws.send('template:sync:response', {
+                client.send('template:sync:response', {
                   cancelled: true,
                   message: 'Sync cancelled by user. Backup was saved.',
                 });
@@ -416,7 +424,7 @@ export class ClientService {
               lastBackupDate: new Date().toISOString(),
             };
 
-            this.server.ws.send('template:sync:response', {
+            client.send('template:sync:response', {
               syncedAt: new Date(backupDate),
               currentHash,
               backupFilename,
@@ -424,7 +432,7 @@ export class ClientService {
 
             this.logger.info(colors.green('Template synced'));
           } else {
-            this.server.ws.send('template:sync:response', {
+            client.send('template:sync:response', {
               error: 'Failed to update assets',
             });
 
@@ -432,7 +440,7 @@ export class ClientService {
           }
         } else {
           if (newAssets instanceof Error) {
-            this.server.ws.send('template:sync:response', {
+            client.send('template:sync:response', {
               error: newAssets.message,
             });
 
@@ -441,7 +449,7 @@ export class ClientService {
             return;
           }
 
-          this.server.ws.send('template:sync:response', {
+          client.send('template:sync:response', {
             error: 'Failed to build new assets',
           });
 
@@ -454,7 +462,7 @@ export class ClientService {
 
         this.logger.error(colors.red(`Template sync failed: ${message}`));
 
-        this.server.ws.send('template:sync:response', {
+        client.send('template:sync:response', {
           error: message,
           code: 'SYNC_FAILED',
         });
@@ -462,7 +470,7 @@ export class ClientService {
         return;
       }
     } else {
-      this.server.ws.send('template:sync:response', {
+      client.send('template:sync:response', {
         error: 'Dist service or MiAPI is not defined',
       });
 

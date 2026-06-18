@@ -1,3 +1,33 @@
+# [0.19.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.19.0-beta.1...v0.19.0-beta.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* address CodeRabbit review findings ([7d50da6](https://github.com/mi-examples/pp-dev/commit/7d50da601627006c06253d7acf3ca06a4974c103))
+
+# [0.19.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.3-beta.2...v0.19.0-beta.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* **client:** keep the sync spinner running while confirmation modals are open ([da86bcb](https://github.com/mi-examples/pp-dev/commit/da86bcbe4c4fcfae6df4f99d081da43e8a6a958f))
+* **next:** resolve sync export dir from the production config ([8b8275a](https://github.com/mi-examples/pp-dev/commit/8b8275aea0b501d8f3b1aabc6107865eefcac58e))
+* **test-nextjs:** exclude build output from type-check to stop duplicate route types ([1ec5e50](https://github.com/mi-examples/pp-dev/commit/1ec5e501f97bf8de8c0634bf628b15e97305b508))
+
+
+### Features
+
+* **next:** add dev panel for the Next.js dev server ([95dfd8e](https://github.com/mi-examples/pp-dev/commit/95dfd8e8be9e6fc1c63243a62c103eb597893ba9))
+* **next:** build template sync assets with `next build` ([f19c42e](https://github.com/mi-examples/pp-dev/commit/f19c42ec2b775706621470ba60185d1324d0b1ec))
+
+## [0.18.3-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.18.3-beta.1...v0.18.3-beta.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* **client:** send dev-panel WebSocket responses to the requesting client only ([d73700f](https://github.com/mi-examples/pp-dev/commit/d73700f7ab439422651e0fb38e48cbb4e37556e2))
+* **middleware:** load template variables on deep-linked sub-path navigation ([a21c032](https://github.com/mi-examples/pp-dev/commit/a21c0323999300f326bdf5845f668a180cb7d121))
+
 ## [0.18.3-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.18.2...v0.18.3-beta.1) (2026-06-08)
 
 

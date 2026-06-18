@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import './assets/css/client.scss';
 import './index.html';
+import { createPPDevHotContext } from './hot-context.js';
 
 function checkLocalStorage() {
   try {
@@ -314,9 +315,11 @@ function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
   });
 }
 
-if (import.meta.hot) {
-  const { hot } = import.meta;
+// Use Vite's HMR context when available; otherwise fall back to a raw-WebSocket
+// shim so the dev panel also works under the `pp-dev next` server (no Vite HMR).
+const hot = import.meta.hot ?? createPPDevHotContext();
 
+if (hot) {
   const CLOSED_CLASS = 'closed';
   const CLOSED_CLASS_STORAGE_KEY = 'pp-dev-info-closed';
 
@@ -375,8 +378,8 @@ if (import.meta.hot) {
 
   if ($syncButton) {
     hot.on('template:sync:action-required', async (payload: SyncActionRequiredPayload) => {
-      $syncButton.classList.remove('syncing');
-
+      // Keep the sync spinner running while a confirmation modal is shown — the sync
+      // process is still in progress and only ends on `template:sync:response`.
       const approved = await confirmModal({
         title: payload.title,
         content: payload.content,
@@ -388,10 +391,6 @@ if (import.meta.hot) {
         requestId: payload.requestId,
         approved,
       });
-
-      if (approved) {
-        $syncButton.classList.add('syncing');
-      }
     });
 
     hot.on(
