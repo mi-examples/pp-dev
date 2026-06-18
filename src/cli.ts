@@ -608,6 +608,7 @@ cli
           proxyCacheTTL = 600000,
           personalAccessToken = process.env.MI_ACCESS_TOKEN,
           miHudLess = false,
+          distZip = true,
         } = ppDevConfig;
 
         const appId: number =
@@ -1044,14 +1045,17 @@ cli
             // Fall back to defaults if the project package.json is unreadable.
           }
 
-          const distService = new DistService(templateName ?? basename(projectRoot), {
-            nextBuild: {
-              projectRoot,
-              distDir: nextExportDir,
-              packageVersion: nextPackageVersion,
-              packageRepositoryUrl: nextPackageRepositoryUrl,
-            },
-          });
+          const distService =
+            distZip !== false
+              ? new DistService(templateName ?? basename(projectRoot), {
+                  nextBuild: {
+                    projectRoot,
+                    distDir: nextExportDir,
+                    packageVersion: nextPackageVersion,
+                    packageRepositoryUrl: nextPackageRepositoryUrl,
+                  },
+                })
+              : undefined;
 
           // Minimal ViteDevServer shape consumed by ClientService (`ws` + the v7 flag).
           const clientServiceServer = {
@@ -1073,6 +1077,8 @@ cli
 
             if (nextUpgradeHandler) {
               nextUpgradeHandler(req, socket, head);
+            } else {
+              socket.destroy();
             }
           });
 
