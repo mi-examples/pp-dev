@@ -22,7 +22,7 @@
     "extract-zip": "^2.0.1",
     "file-type": "^22.0.0",
     "formdata-node": "^6.0.3",
-    "http-proxy-middleware": "^3.0.5",
+    "http-proxy-middleware": "^3.0.7",
     "isbinaryfile": "^6.0.0",
     "jsdom": "29.1.1",
     "memory-cache": "^0.2.0",
