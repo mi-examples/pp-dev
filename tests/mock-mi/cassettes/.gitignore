@@ -1,0 +1,2 @@
+# Cassettes may contain session tokens — not committed
+*.json
