@@ -1,3 +1,103 @@
+# [1.0.0](https://github.com/mi-examples/pp-dev/compare/v0.19.0-beta.2...v1.0.0) (2026-06-19)
+
+## ⚠ BREAKING CHANGES
+
+This release replaces the flat configuration API with a grouped schema. All existing `pp-dev.config.*` files must be updated — use `pp-dev migrate` to do it automatically.
+
+### Configuration schema
+
+The flat `VitePPDevOptions` object is replaced by `PPDevConfig` with five grouped sections:
+
+```ts
+// BEFORE (0.x)
+export default {
+  backendBaseURL: 'https://mi.company.com',
+  personalAccessToken: 'YOUR_TOKEN',
+  miHudLess: true,
+  v7Features: true,
+  appId: 937,
+  templateLess: false,
+};
+
+// AFTER (1.0)
+import { defineConfig } from '@metricinsights/pp-dev';
+
+export default defineConfig({
+  mi:    { url: 'https://mi.company.com', token: 'YOUR_TOKEN', mode: 'standalone', apiVersion: 7 },
+  app:   { id: 937, type: 'template' },
+});
+```
+
+| 0.x field | 1.0 field |
+|---|---|
+| `backendBaseURL` | `mi.url` |
+| `personalAccessToken` | `mi.token` |
+| `miHudLess: true` | `mi.mode: 'standalone'` |
+| `miHudLess: false` | `mi.mode: 'embedding'` |
+| `integrateMiTopBar: true` | `mi.mode: 'standalone'`, `mi.include: 'top-bar'` |
+| `integrateMiTopBar: { addSharedComponentsScripts: true }` | `mi.include: 'shared-components'` |
+| `v7Features: true` | `mi.apiVersion: 7` |
+| `v7Features: false` | `mi.apiVersion: 6` |
+| `appId` / `portalPageId` | `app.id` |
+| `templateName` | `app.name` (auto-resolved from `package.json#name` — usually omit) |
+| `templateLess: true` | `app.type: 'page'` |
+| `templateLess: false` | `app.type: 'template'` |
+| `enableProxyCache` | `proxy.cache` |
+| `proxyCacheTTL` | `proxy.cacheTtl` |
+| `disableSSLValidation: true` | `proxy.tls.allowSelfSigned: true` |
+| `distZip` | `build.zip` |
+| `versionPlugin` | `build.versionFile` |
+| `imageOptimizer` | `build.imageOptimisations` |
+| `outDir` | `build.outDir` |
+| `syncBackupsDir` | `sync.backupsDir` |
+
+### Removed
+
+- `pp-watch.config.*` / `.pp-watch.config.*` config files — use `pp-dev.config.*` instead
+- `PPWatchConfig` type
+- `VitePPDevOptions` type — use `PPDevConfig`
+- `normalizeVitePPDevConfig()` — internal, use `normalizePPDevConfig()`
+
+### Defaults
+
+| Field | Default |
+|---|---|
+| `mi.mode` | `'standalone'` |
+| `mi.apiVersion` | `7` |
+| `app.type` | `'template'` |
+| `app.name` | resolved from `package.json#name` |
+
+### Validation
+
+Startup validation now throws meaningful errors instead of silently ignoring bad config. Key rules:
+
+- `mi.include` requires `mi.mode: 'standalone'`
+- `mi.url` is required when `mi.mode: 'embedding'` or `app.type: 'template'`
+- `app.id` is required for templates and standalone pages
+
+### Migration
+
+Run the built-in codemod to upgrade your config automatically:
+
+```bash
+npx @metricinsights/pp-dev migrate
+# Preview changes first:
+npx @metricinsights/pp-dev migrate --dry-run
+# Force output format:
+npx @metricinsights/pp-dev migrate --format ts
+```
+
+The command detects flat 0.x configs and `pp-watch.config.*` files, migrates them to the new grouped format, and writes a `.bak` backup before overwriting.
+
+## Features
+
+* **config:** grouped `PPDevConfig` schema with `mi`, `app`, `proxy`, `build`, `sync` sections
+* **config:** `defineConfig()` helper for full TypeScript intellisense
+* **cli:** `pp-dev migrate` codemod — auto-migrates 0.x flat and `pp-watch` configs to 1.0 format, supports `--dry-run`, `--format ts|js|json`, `--output`, `--no-backup`
+* **ui:** redesigned dev panel — MI brand colors (`#075B7E`), Inter font, bordered buttons, updated toast and confirm modal styles
+
+---
+
 # [0.19.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.19.0-beta.1...v0.19.0-beta.2) (2026-06-18)
 
 

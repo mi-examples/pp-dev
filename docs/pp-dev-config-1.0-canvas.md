@@ -77,7 +77,7 @@ How the local page integrates into Metric Insights.
 | `standalone` | Full control over HTML. MI does not inject wrapper or scripts. Recommended for React/SPA. | `miHudLess: true` |
 | `embedding` | Page content embedded inside MI backend HTML wrapper (inside `<body>`). Not recommended for React. | `miHudLess: false` |
 
-**Default:** `embedding`
+**Default:** `standalone`
 
 ## `mi.include`
 
@@ -96,7 +96,7 @@ Optional MI shared resources bundled into the build.
 
 | Condition | Action |
 | --- | --- |
-| `mode: 'embedding'` + `include` is set | **Error** |
+| `include` is set + `mode !== 'standalone'` | **warn → error** |
 
 ## Other `mi` fields
 
@@ -187,7 +187,7 @@ Optional MI shared resources bundled into the build.
 | `mi.mode` | `mi.include` | Result |
 | --- | --- | --- |
 | `embedding` | — | MI backend wrapper |
-| `embedding` | any value | **Error** |
+| `embedding` | any value | **warn → error** (`include` requires `standalone`) |
 | `standalone` | — | Full HTML control, no MI assets |
 | `standalone` | `shared-components` | + MI scripts & styles |
 | `standalone` | `top-bar` | + scripts/styles + `#mi-react-root` |
@@ -313,12 +313,12 @@ mi: { mode: 'embedding', include: 'top-bar' }  // Error
 
 # Open questions for discussion
 
-- [ ] `mi.apiVersion` — keep `6 | 7` or only `7` in 1.0?
-- [ ] Default `mi.mode` — `embedding` (current behavior) or `standalone` (React-first)?
-- [ ] Missing `mi.url` — warning or error?
-- [ ] `include` with `embedding` — strict error only, or warn+ignore during migration?
-- [ ] Keep top-level `outDir` for Vite compat, or only `build.outDir`?
-- [ ] Provide codemod / migration script for 0.x configs?
+- [x] `mi.apiVersion` — keep `6 | 7`, default `7`
+- [x] Default `mi.mode` — `standalone`
+- [x] Missing `mi.url` — **warning** when `mode=standalone` + `app.type=page`; **error** otherwise (`embedding` always needs backend; `template` always needs backend for variables)
+- [x] `include` with `embedding` — warn → error (log warning, then throw)
+- [x] Top-level `outDir` — removed; only `build.outDir`
+- [x] Provide codemod / migration script for 0.x configs — yes
 
 ---
 

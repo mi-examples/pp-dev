@@ -1,7 +1,7 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "0.19.0-beta.2",
+  "version": "1.0.0",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"
@@ -67,7 +67,7 @@
   },
   "license": "ISC",
   "engines": {
-    "node": ">=22.14"
+    "node": ">=24"
   },
   "overrides": {
     "@xmldom/xmldom": ">=0.8.12",
@@ -82,7 +82,7 @@
     "npm": ">=11.13.0",
     "qs": ">=6.15.2",
     "serialize-javascript": ">=7.0.5",
-    "undici": ">=6.24.0",
+    "undici": ">=7.28.0",
     "vite@*": {
       "postcss": "8.5.10"
     }
@@ -109,7 +109,7 @@
     "extract-zip": "^2.0.1",
     "file-type": "^22.0.0",
     "formdata-node": "^6.0.3",
-    "http-proxy-middleware": "^3.0.5",
+    "http-proxy-middleware": "^3.0.7",
     "isbinaryfile": "^6.0.0",
     "jsdom": "29.1.1",
     "jszip": "^3.10.1",

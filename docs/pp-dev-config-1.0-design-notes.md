@@ -148,12 +148,14 @@ export default {
 
 ---
 
-## Validation rules (agreed / proposed)
+## Validation rules (agreed)
 
-1. `mi.mode === 'embedding'` + `mi.include` set → **error**
-2. `app.type === 'template'` without `app.id` → **error**
-3. `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id` → **error**
-4. `app.name` missing and no `package.json#name` → **error**
+1. `mi.include` set + `mi.mode !== 'standalone'` → **warn → error** (log warning, then throw)
+2. `mi.url` missing + (`mi.mode === 'embedding'` OR `app.type === 'template'`) → **error**
+3. `mi.url` missing + `mi.mode === 'standalone'` + `app.type === 'page'` → **warning** (works without backend)
+4. `app.type === 'template'` without `app.id` → **error**
+5. `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id` → **error**
+6. `app.name` missing and no `package.json#name` → **error**
 
 ---
 
@@ -163,12 +165,12 @@ Track answers here after the review:
 
 | # | Question | Decision |
 | --- | --- | --- |
-| 1 | `mi.apiVersion` — keep `6 \| 7` or only `7`? | _TBD_ |
-| 2 | Default `mi.mode` — `embedding` or `standalone`? | _TBD_ |
+| 1 | `mi.apiVersion` — keep `6 \| 7` or only `7`? | ✅ Keep both; default `7` |
+| 2 | Default `mi.mode` — `embedding` or `standalone`? | ✅ `standalone` |
 | 3 | Missing `mi.url` — warning or error? | _TBD_ |
-| 4 | `include` + `embedding` — strict error only, or warn during migration? | _TBD_ (leaning: error) |
-| 5 | Top-level `outDir` for Vite compat, or only `build.outDir`? | _TBD_ |
-| 6 | Provide codemod / migration script for 0.x configs? | _TBD_ |
+| 4 | `include` + `embedding` — strict error only, or warn during migration? | ✅ warn → error (log warning, then throw) |
+| 5 | Top-level `outDir` for Vite compat, or only `build.outDir`? | ✅ Only `build.outDir` |
+| 6 | Provide codemod / migration script for 0.x configs? | ✅ Yes |
 
 ---
 

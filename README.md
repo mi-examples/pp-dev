@@ -45,82 +45,12 @@ import ppDev from '@metricinsights/pp-dev';
 // Plugin only (for Vite integration)
 import { vitePPDev } from '@metricinsights/pp-dev/plugin';
 
-// Helpers only (for utility functions)
-import { helpers } from '@metricinsights/pp-dev/helpers';
+// Helpers only (defineConfig and utility functions)
+import { defineConfig } from '@metricinsights/pp-dev/helpers';
 
 // Client assets (for development UI)
 import '@metricinsights/pp-dev/client/css/client.css';
 ```
-
-**Available Exports**:
-
-- **Main**: Complete pp-dev functionality with CLI and plugins
-- **Plugin**: Vite plugin for integration with build tools
-- **Helpers**: Utility functions for authentication and configuration
-- **Client**: Development UI assets and styles
-
-## 🚀 Performance & Build System
-
-The pp-dev package includes optimized startup performance and build system with multiple strategies:
-
-### Quick Start
-
-```bash
-# Standard build (parallel)
-npm run build
-
-# Fast development build
-npm run build:fast
-
-# Watch mode for development
-npm run build:watch
-
-# Bundle analysis
-npm run build:analyze
-
-# Performance profiling
-npm run startup:profile
-
-# Startup optimization
-npm run startup:optimize
-```
-
-### Performance Features
-
-- **40-50% faster startup** with intelligent caching
-- **60-70% faster subsequent starts** with connection pooling
-- **Lazy loading** of heavy modules (jsdom, esbuild)
-- **API response caching** with configurable TTL
-- **HTTP connection pooling** for reduced overhead
-- **Startup profiling** with detailed performance analysis
-- **Intelligent dependency optimization** based on profiling data
-
-### Build Features
-
-- **Parallel builds** for 40-60% faster build times
-- **Enhanced tree-shaking** for smaller bundles
-- **Multiple output formats** (ESM, CJS, Types)
-- **Bundle analysis** with visualizer support
-- **ESBuild integration** for faster TypeScript compilation
-- **Build optimization scripts** for performance tuning
-
-### Startup Optimization
-
-The new startup optimization system in v0.11.0 provides:
-
-- **Performance Monitoring**: Real-time startup time tracking and analysis
-- **Cache Optimization**: Intelligent cache management for config and API responses
-- **Dependency Analysis**: Identification of performance bottlenecks
-- **Optimization Suggestions**: Automated recommendations for performance improvements
-
-Run the startup optimizer to analyze and improve your development environment:
-
-```bash
-npm run startup:optimize
-```
-
-📖 See [BUILD_IMPROVEMENTS.md](./BUILD_IMPROVEMENTS.md) for build details.
-📖 See [STARTUP_PERFORMANCE.md](./STARTUP_PERFORMANCE.md) for performance details.
 
 ## Configuration
 
@@ -128,59 +58,66 @@ npm run startup:optimize
 
 Create a configuration file named `pp-dev.config` with one of these extensions:
 
+- `.ts` (recommended)
 - `.js` or `.cjs` (for CommonJS)
-- `.ts` (for TypeScript)
 - `.json`
 
 Alternatively, you can define configuration in your `package.json` using the `pp-dev` key.
 
 ### Configuration Examples
 
+#### TypeScript (recommended)
+
+```typescript
+// pp-dev.config.ts
+import { defineConfig } from '@metricinsights/pp-dev';
+
+export default defineConfig({
+  mi: {
+    url: 'https://mi.company.com',
+    token: process.env.MI_ACCESS_TOKEN,
+    mode: 'standalone',
+    apiVersion: 7,
+  },
+  app: {
+    id: 123,
+    type: 'template',
+  },
+});
+```
+
 #### JavaScript (CommonJS)
 
 ```javascript
 // pp-dev.config.js
+const { defineConfig } = require('@metricinsights/pp-dev');
 
-/**
- * @type {import('@metricinsights/pp-dev').PPDevConfig}
- */
-module.exports = {
-  backendBaseURL: 'https://mi.company.com',
-  appId: 1,
-  v7Features: true,
-  miHudLess: true,
-  integrateMiTopBar: true,
-};
-```
-
-#### TypeScript
-
-```typescript
-// pp-dev.config.ts
-
-import { PPDevConfig } from '@metricinsights/pp-dev';
-
-const config: PPDevConfig = {
-  backendBaseURL: 'https://mi.company.com',
-  appId: 1,
-  v7Features: true,
-  miHudLess: true,
-  integrateMiTopBar: true,
-};
-
-export default config;
+module.exports = defineConfig({
+  mi: {
+    url: 'https://mi.company.com',
+    mode: 'standalone',
+    apiVersion: 7,
+  },
+  app: {
+    id: 123,
+    type: 'template',
+  },
+});
 ```
 
 #### JSON
 
 ```json
-// pp-dev.config.json
 {
-  "backendBaseURL": "https://mi.company.com",
-  "appId": 1,
-  "v7Features": true,
-  "miHudLess": true,
-  "integrateMiTopBar": true
+  "mi": {
+    "url": "https://mi.company.com",
+    "mode": "standalone",
+    "apiVersion": 7
+  },
+  "app": {
+    "id": 123,
+    "type": "template"
+  }
 }
 ```
 
@@ -189,175 +126,129 @@ export default config;
 ```json
 {
   "name": "my-portal-page",
-  "version": "1.0.0",
   "pp-dev": {
-    "backendBaseURL": "https://mi.company.com",
-    "appId": 1,
-    "v7Features": true,
-    "miHudLess": true,
-    "integrateMiTopBar": true
+    "mi": {
+      "url": "https://mi.company.com",
+      "mode": "standalone"
+    },
+    "app": {
+      "id": 123
+    }
   }
 }
 ```
 
 ## Configuration Options
 
-> **Version Compatibility**: This documentation covers pp-dev v0.11.0+. Some options may not be available in older versions. Check the [CHANGELOG](./CHANGELOG.md) for version-specific information.
+### `mi` — Metric Insights connection
 
-### Required Options
+| Field        | Type                              | Default        | Description                                               |
+|--------------|-----------------------------------|----------------|-----------------------------------------------------------|
+| `url`        | `string`                          | —              | URL of the Metric Insights instance                       |
+| `token`      | `string`                          | `MI_ACCESS_TOKEN` env | Personal access token for authentication           |
+| `mode`       | `'standalone' \| 'embedding'`     | `'standalone'` | Standalone hides the MI navigation; embedding keeps it    |
+| `include`    | `'top-bar' \| 'shared-components'`| —              | Bundle MI top-bar assets into the build (requires `standalone`) |
+| `apiVersion` | `6 \| 7`                          | `7`            | MI API version to target                                  |
 
-| Option           | Type   | Description                                                                 |
-| ---------------- | ------ | --------------------------------------------------------------------------- |
-| `backendBaseURL` | string | URL of the Metric Insights instance for API proxying                        |
-| `portalPageId`   | number | ID of the Portal Page for variable values (deprecated, use `appId` instead) |
-| `appId`          | number | ID of the Portal Page for variable values (synonym for `portalPageId`)      |
+### `app` — Portal Page identity
 
-### Optional Options
+| Field  | Type                       | Default                  | Description                                                 |
+|--------|----------------------------|--------------------------|-------------------------------------------------------------|
+| `id`   | `number`                   | —                        | Portal Page ID used to fetch template variables             |
+| `type` | `'template' \| 'page'`     | `'template'`             | `template` syncs back to MI; `page` is standalone-only      |
+| `name` | `string`                   | `package.json#name`      | Template name on the MI instance (usually auto-resolved)    |
 
-| Option                 | Type              | Default                       | Description                                                                                                                                                                                                                                                                     |
-| ---------------------- | ----------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `miHudLess`            | boolean           | `false`                       | Disables Metric Insights navigation bar in development                                                                                                                                                                                                                          |
-| `integrateMiTopBar`    | boolean \| object | `false`                       | Integrates MI Top Bar and scripts into the App build (requires `miHudLess: true`). When `true`, enables both `addRootElement` and `addSharedComponentsScripts`. When an object, allows selective enabling: `{ addRootElement?: boolean, addSharedComponentsScripts?: boolean }` |
-| `templateLess`         | boolean           | `false`                       | Disables template variable transformation                                                                                                                                                                                                                                       |
-| `enableProxyCache`     | boolean           | `true`                        | Enables caching of proxied requests                                                                                                                                                                                                                                             |
-| `proxyCacheTTL`        | number            | `600000`                      | Cache TTL in milliseconds (10 minutes)                                                                                                                                                                                                                                          |
-| `disableSSLValidation` | boolean           | `false`                       | Disables SSL certificate validation for proxy requests                                                                                                                                                                                                                          |
-| `imageOptimizer`       | boolean \| object | `true`                        | Controls image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options                                                                                                                     |
-| `outDir`               | string            | `dist`                        | Output directory for builds                                                                                                                                                                                                                                                     |
-| `distZip`              | boolean \| object | `true`                        | Controls build output zipping. Object options: `{ outDir?: string, outFileName?: string }`                                                                                                                                                                                      |
-| `syncBackupsDir`       | string            | `backups`                     | Directory for asset backups from MI server                                                                                                                                                                                                                                      |
-| `v7Features`           | boolean           | `false`                       | Enables Metric Insights v7 features                                                                                                                                                                                                                                             |
-| `personalAccessToken`  | string            | `process.env.MI_ACCESS_TOKEN` | Personal Access Token for the MI instance                                                                                                                                                                                                                                       |
+### `proxy` — Request proxying
 
-### integrateMiTopBar Details
+| Field               | Type      | Default  | Description                                          |
+|---------------------|-----------|----------|------------------------------------------------------|
+| `cache`             | `boolean` | `true`   | Enable caching of proxied requests                   |
+| `cacheTtl`          | `number`  | `600000` | Cache TTL in milliseconds (10 minutes)               |
+| `tls.allowSelfSigned` | `boolean` | `false` | Allow self-signed SSL certificates on the MI server |
 
-The `integrateMiTopBar` option allows you to integrate the Metric Insights Top Bar and scripts directly into your application build. This is useful when you want to:
+### `build` — Build output
 
-1. **Customize the Top Bar**: Modify the appearance and behavior of the MI navigation
-2. **Bundle Integration**: Include MI scripts in your build instead of loading them dynamically
-3. **Offline Development**: Work with MI features even when disconnected from the server
+| Field               | Type                                                        | Default  | Description                                                                          |
+|---------------------|-------------------------------------------------------------|----------|--------------------------------------------------------------------------------------|
+| `outDir`            | `string`                                                    | `'dist'` | Output directory                                                                     |
+| `zip`               | `boolean \| { fileName?: string; outDir?: string; inDir?: string }` | `true` | Zip build output. Object form customizes filename and directories.        |
+| `versionFile`       | `boolean \| { enabled?: boolean; fileNameTemplate?: string }` | `true` | Write a VERSION file into the build                                                  |
+| `imageOptimisations`| `boolean \| Record<string, unknown>`                        | `true`   | Image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options |
 
-**Important**: This option can only be enabled when `miHudLess` is set to `true`.
+### `sync` — Template sync
 
-#### Configuration Options
+| Field        | Type     | Default     | Description                             |
+|--------------|----------|-------------|-----------------------------------------|
+| `backupsDir` | `string` | `'backups'` | Directory for backups from the MI server |
 
-`integrateMiTopBar` can be configured in two ways:
+### Validation
 
-**1. Boolean (Simple)**
+pp-dev validates your config at startup and reports problems clearly:
 
-- `true`: Enables both `addRootElement` and `addSharedComponentsScripts`
-- `false`: Disables integration (default)
+| Condition | Behaviour |
+|---|---|
+| `mi.include` set + `mi.mode !== 'standalone'` | error |
+| `mi.url` missing + `mi.mode === 'embedding'` or `app.type === 'template'` | error |
+| `mi.url` missing + `mi.mode === 'standalone'` + `app.type === 'page'` | warning |
+| `app.type === 'template'` without `app.id` | error |
+| `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id` | error |
+| `app.name` missing and no `package.json#name` | error |
 
-**2. Object (Advanced)**
+### Environment Variables
 
-- `addRootElement`: Adds `<div id="mi-react-root">` element to the body for React mounting
-- `addSharedComponentsScripts`: Adds MI shared component scripts and styles:
-  - `/auth/info.js` - Authentication info script
-  - `/js/main.js` - Main MI JavaScript bundle
-  - `/css/main.css` - MI stylesheet
-
-#### Examples
-
-**Simple boolean configuration:**
-
-```javascript
-// pp-dev.config.js
-module.exports = {
-  backendBaseURL: 'https://mi.company.com',
-  appId: 1,
-  miHudLess: true, // Required: Disable dynamic MI scripts
-  integrateMiTopBar: true, // Enable: Integrate Top Bar into build
-};
-```
-
-**Advanced object configuration (selective features):**
-
-```javascript
-// pp-dev.config.js
-module.exports = {
-  backendBaseURL: 'https://mi.company.com',
-  appId: 1,
-  miHudLess: true,
-  integrateMiTopBar: {
-    addRootElement: true, // Add root element for React
-    addSharedComponentsScripts: true, // Add MI scripts and styles
-  },
-};
-```
-
-**Partial integration (scripts only, manual root element):**
-
-```javascript
-// pp-dev.config.js
-module.exports = {
-  backendBaseURL: 'https://mi.company.com',
-  appId: 1,
-  miHudLess: true,
-  integrateMiTopBar: {
-    addRootElement: false, // Don't add root element
-    addSharedComponentsScripts: true, // Add MI scripts and styles
-  },
-};
-```
-
-### v7Features Details
-
-When enabled (`true`), this option:
-
-1. Changes development path from `/pt/<portal-page-name>` to `/pl/<portal-page-name>`
-2. Updates Code Sync feature to use v7.1.0+ URLs
-
-### Personal Access Token
-
-The `personalAccessToken` option allows you to authenticate with the Metric Insights instance. You can set it in your configuration or use the `MI_ACCESS_TOKEN` environment variable.
-
-Example with authentication and Top Bar integration:
-
-```javascript
-// pp-dev.config.js
-module.exports = {
-  backendBaseURL: 'https://mi.company.com',
-  appId: 1,
-  personalAccessToken: process.env.MI_ACCESS_TOKEN,
-  miHudLess: true,
-  integrateMiTopBar: true,
-};
-```
-
-**Environment Variable**: Set `MI_ACCESS_TOKEN` in your `.env` file:
-
-```bash
-MI_ACCESS_TOKEN=your_token_here
-```
+| Variable          | Description                                     |
+|-------------------|-------------------------------------------------|
+| `MI_ACCESS_TOKEN` | Default value for `mi.token` when not set in config |
 
 **Local development and network exposure**: pp-dev is a **development** tool. It assumes a trusted machine. Personal access tokens and session helpers are still sensitive: they can authenticate to your Metric Insights backend as you.
 
-- Prefer binding the dev server to **`localhost`** when you do not need access from other devices. If you use **`--host`** (or equivalent) so the app listens on **all interfaces** or your LAN, other machines on the same network can reach the dev server and its dev-only routes (for example the in-browser token login flow). Treat that like exposing credentials: use only on networks you trust, or restrict access with your OS firewall.
-- Do not commit real tokens; keep them in `.env` (gitignored) or your secret store. Avoid sharing screen recordings or logs that contain `MI_ACCESS_TOKEN` or bearer tokens.
+- Prefer binding the dev server to **`localhost`** when you do not need access from other devices. If you use **`--host`** (or equivalent) so the app listens on **all interfaces** or your LAN, other machines on the same network can reach the dev server and its dev-only routes. Treat that like exposing credentials: use only on networks you trust, or restrict access with your OS firewall.
+- Do not commit real tokens; keep them in `.env` (gitignored) or your secret store.
 
-### Enhanced Authentication (v0.11.0+)
+## Migrating from 0.x
 
-The new authentication system in v0.11.0 provides:
-
-- **Automatic Environment Loading**: Automatically loads `MI_*` environment variables from `.env` files
-- **Token Validation**: Enhanced token validation and error handling
-- **Secure Headers**: Automatic header management for authenticated requests
-- **Connection Pooling**: Optimized HTTP connections for better performance
-
-**Supported Environment Variables**:
-
-- `MI_ACCESS_TOKEN`: Personal access token for authentication
-- `MI_BACKEND_URL`: Alternative to `backendBaseURL` in config
-- `MI_APP_ID`: Alternative to `appId` in config
-
-**Automatic Loading**: pp-dev automatically detects and loads these variables from your project's `.env` file:
+Run the built-in codemod to upgrade your config automatically:
 
 ```bash
-# .env
-MI_ACCESS_TOKEN=your_personal_access_token
-MI_BACKEND_URL=https://mi.company.com
-MI_APP_ID=123
+npx @metricinsights/pp-dev migrate
 ```
+
+Options:
+
+| Option | Description |
+|---|---|
+| `[config]` | Path to config file (auto-detected if omitted) |
+| `--dry-run` | Preview the migrated output without writing |
+| `--format ts\|js\|json` | Override output format |
+| `--output <file>` | Write to a specific file instead of overwriting |
+| `--no-backup` | Skip creating a `.bak` backup of the original |
+
+The command detects flat 0.x configs and legacy `pp-watch.config.*` files, converts them to the new grouped format, and writes a `.bak` backup before overwriting.
+
+**Field mapping** (0.x → 1.0):
+
+| 0.x | 1.0 |
+|---|---|
+| `backendBaseURL` | `mi.url` |
+| `personalAccessToken` | `mi.token` |
+| `miHudLess: true` | `mi.mode: 'standalone'` |
+| `miHudLess: false` | `mi.mode: 'embedding'` |
+| `integrateMiTopBar: true` | `mi.mode: 'standalone'`, `mi.include: 'top-bar'` |
+| `integrateMiTopBar: { addSharedComponentsScripts: true }` | `mi.include: 'shared-components'` |
+| `v7Features: true` | `mi.apiVersion: 7` |
+| `v7Features: false` | `mi.apiVersion: 6` |
+| `appId` / `portalPageId` | `app.id` |
+| `templateName` | `app.name` (usually omit — auto-resolved from `package.json#name`) |
+| `templateLess: true` | `app.type: 'page'` |
+| `templateLess: false` | `app.type: 'template'` |
+| `enableProxyCache` | `proxy.cache` |
+| `proxyCacheTTL` | `proxy.cacheTtl` |
+| `disableSSLValidation: true` | `proxy.tls.allowSelfSigned: true` |
+| `distZip` | `build.zip` |
+| `versionPlugin` | `build.versionFile` |
+| `imageOptimizer` | `build.imageOptimisations` |
+| `outDir` | `build.outDir` |
+| `syncBackupsDir` | `sync.backupsDir` |
 
 ## CLI Commands
 
@@ -388,13 +279,10 @@ pp-dev [root] [options]
 
 **Development Shortcuts**:
 
-- `p` - Start/stop performance profiler (v0.11.0+)
 - `l` - Proxy re-login (refresh authentication)
 - `r` - Restart dev server
 - `u` - Show server URLs
 - `q` - Quit dev server
-
-**Performance Profiling**: Use the `p` shortcut to start/stop the Node.js profiler for detailed performance analysis during development.
 
 ### Next.js Development
 
@@ -422,6 +310,20 @@ pp-dev build [options]
 | `--outDir <dir>`     | `dist`    | Output directory                  |
 | `--assetsDir <dir>`  | `assets`  | Assets directory under outDir     |
 | `--changelog [file]` | `true`    | Create changelog file             |
+
+### Migration
+
+```bash
+pp-dev migrate [config] [options]
+```
+
+| Option | Description |
+|---|---|
+| `[config]` | Config file to migrate (auto-detected if omitted) |
+| `--dry-run` | Preview output without writing |
+| `--format ts\|js\|json` | Output format |
+| `--output <file>` | Write to a specific path |
+| `--no-backup` | Skip `.bak` backup |
 
 ### Changelog Generation
 
@@ -454,7 +356,7 @@ pp-dev generate-icon-font [source] [destination] [options]
 
 ## Next.js Integration
 
-1. Add pp-dev configuration to your project root
+1. Add a `pp-dev.config.ts` to your project root
 2. Update `package.json` scripts:
    ```json
    {
@@ -510,8 +412,8 @@ If you encounter an error like "Next.js is required but not available":
 #### Version Compatibility
 
 - **pp-dev** requires Next.js version 15 or higher (but less than 17)
-- **Node.js** version 20 or higher is required
-- **TypeScript** version 4.2 or higher is supported
+- **Node.js** version 24 or higher is required
+- **TypeScript** version 5 or higher is recommended
 
 ### Getting Help
 
