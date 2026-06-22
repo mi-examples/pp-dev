@@ -109,15 +109,6 @@ class AuthProvider {
     });
   }
 
-  /**
-   * Get authentication info for debugging
-   */
-  getDebugInfo(): AuthState & { listenerCount: number } {
-    return {
-      ...this.getState(),
-      listenerCount: this.listeners.size,
-    };
-  }
 }
 
 // Create and export a singleton instance

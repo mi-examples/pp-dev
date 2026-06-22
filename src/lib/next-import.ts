@@ -41,8 +41,7 @@ export async function isNextAvailable(): Promise<boolean> {
     await import('next');
 
     return true;
-  } catch (error) {
-    console.log(error);
+  } catch {
     return false;
   }
 }

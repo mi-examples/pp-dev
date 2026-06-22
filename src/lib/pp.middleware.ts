@@ -11,7 +11,6 @@ import { Logger } from 'vite';
 export type Headers = Record<string, string | undefined>;
 
 export interface MiAPIOptions {
-  portalPageId?: number;
   appId?: number;
   headers?: Headers;
   templateLess: boolean;
@@ -47,7 +46,7 @@ export class MiAPI {
 
   public internalPageName: string | undefined;
 
-  private portalPageId?: number;
+  private appId?: number;
   private templateLess?: boolean;
 
   private assetsApi: AssetsAPI;
@@ -59,7 +58,7 @@ export class MiAPI {
   constructor(baseURL: string, opts?: MiAPIOptions) {
     const {
       headers = {},
-      portalPageId,
+      appId,
       templateLess = true,
       disableSSLValidation = false,
       v7Features = false,
@@ -113,7 +112,7 @@ export class MiAPI {
       axiosInstanceCache.set(cacheKey, this.#axios);
     }
 
-    this.portalPageId = portalPageId;
+    this.appId = appId;
     this.templateLess = templateLess;
 
     this.assetsApi = new (!v7Features ? AssetsAPI : AssetsV7API)(this.#axios);
@@ -221,7 +220,7 @@ export class MiAPI {
 
     if (this.#v7Features) {
       const page = await this.pageApi
-        .get(this.portalPageId!, this.#clearHeaders(headers))
+        .get(this.appId!, this.#clearHeaders(headers))
         .then((response) => {
           this.logger.info(colors.green('Page fetched'));
 
@@ -230,7 +229,7 @@ export class MiAPI {
         .catch(async (e) => {
           this.#templateLoadedResolve(false);
 
-          // Auth still valid but HTML/non-JSON body — do not replace with portalPageId/access error
+          // Auth still valid but HTML/non-JSON body — do not replace with app.id/access error
           if (isUnavailableJsonApiError(e)) {
             throw e;
           }
@@ -240,7 +239,7 @@ export class MiAPI {
 
             throw new Error(
               'The current user does not have access to this page. ' +
-                'Check your configuration to ensure the portalPageId is correct.',
+                'Check your configuration to ensure app.id is correct.',
             );
           } else {
             throw e;
@@ -347,8 +346,8 @@ export class MiAPI {
   async getPageVariables(pageId: number, headers: Headers) {
     this.#pageTemplate = await this.getPageTemplate(headers);
 
-    if (!this.portalPageId) {
-      this.portalPageId = pageId;
+    if (!this.appId) {
+      this.appId = pageId;
       this.templateLess = false;
     }
 
@@ -379,7 +378,7 @@ export class MiAPI {
         }
 
         if (reason.response?.status === 401) {
-          console.log(`Unauthorized error: ${reason}`);
+          this.logger.warn(`Unauthorized error: ${reason}`);
 
           throw new Error(
             `Current user does not have access to page with id "${pageId}" on instance ${this.#axios.getUri()}`,
@@ -397,12 +396,12 @@ export class MiAPI {
    * @param headers
    */
   async getPageInfo(pageId: number, headers: Headers) {
-    if (!this.portalPageId) {
-      this.portalPageId = pageId;
+    if (!this.appId) {
+      this.appId = pageId;
     }
 
     const clearHeaders = this.#clearHeaders(headers);
-    const pageIdToFetch = this.portalPageId!;
+    const pageIdToFetch = this.appId!;
 
     try {
       if (this.#v7Features) {
@@ -450,7 +449,7 @@ export class MiAPI {
     if (this.#v7Features && error.message?.includes('access')) {
       throw new Error(
         'The current user does not have access to this page. ' +
-          'Check your configuration to ensure the portalPageId is correct.',
+          'Check your configuration to ensure app.id is correct.',
       );
     }
 
@@ -529,11 +528,11 @@ export class MiAPI {
   }
 
   async getAssets() {
-    if (this.portalPageId) {
+    if (this.appId) {
       if (this.templateLess) {
-        return await this.assetsApi.downloadPageAssets(this.portalPageId, this.#headers);
+        return await this.assetsApi.downloadPageAssets(this.appId, this.#headers);
       } else {
-        const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
+        const pageInfo = await this.pageApi.get(this.appId, this.#headers);
 
         if (this.#isV710OrHigher) {
           const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
@@ -549,11 +548,11 @@ export class MiAPI {
   }
 
   async updateAssets(assets: Buffer) {
-    if (this.portalPageId) {
+    if (this.appId) {
       if (this.templateLess) {
-        return await this.assetsApi.uploadPageAssets(this.portalPageId, assets, this.#headers);
+        return await this.assetsApi.uploadPageAssets(this.appId, assets, this.#headers);
       } else {
-        const pageInfo = await this.pageApi.get(this.portalPageId, this.#headers);
+        const pageInfo = await this.pageApi.get(this.appId, this.#headers);
 
         if (this.#isV710OrHigher) {
           const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);

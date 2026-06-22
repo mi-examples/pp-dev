@@ -681,7 +681,7 @@ export class DistService {
 
       return await fs.readFile(assetFile);
     } catch (e) {
-      console.log(e);
+      this.logger.error(e instanceof Error ? (e.stack ?? e.message) : String(e));
 
       throw e;
     }

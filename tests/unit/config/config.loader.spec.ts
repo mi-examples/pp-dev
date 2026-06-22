@@ -8,33 +8,26 @@ describe('Config Loader', () => {
   let originalCwd: string;
 
   beforeEach(() => {
-    // Save original cwd
     originalCwd = process.cwd();
 
-    // Create a unique test directory
     testDir = join(tmpdir(), `pp-dev-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(testDir, { recursive: true });
 
-    // Change to test directory
     process.chdir(testDir);
   });
 
   afterEach(async () => {
-    // Restore original cwd
     process.chdir(originalCwd);
 
-    // Clean up test directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
 
-    // Clear module cache to ensure fresh imports
     vi.resetModules();
   });
 
   describe('getConfig', () => {
     it('should return empty config when no config files exist', async () => {
-      // Create minimal package.json
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
 
       const { getConfig, clearConfigCache } = await import('../../../src/config.js');
@@ -45,14 +38,14 @@ describe('Config Loader', () => {
       expect(config).toEqual({});
     });
 
-    it('should load config from package.json pp-dev field', async () => {
+    it('should load grouped config from package.json pp-dev field', async () => {
       writeFileSync(
         join(testDir, 'package.json'),
         JSON.stringify({
           name: 'test-project',
           'pp-dev': {
-            backendBaseURL: 'https://pkg.example.com',
-            portalPageId: 456,
+            mi: { url: 'https://pkg.example.com' },
+            app: { id: 456 },
           },
         }),
       );
@@ -62,11 +55,59 @@ describe('Config Loader', () => {
 
       const config = await getConfig();
 
-      expect(config.backendBaseURL).toBe('https://pkg.example.com');
-      expect(config.portalPageId).toBe(456);
+      expect(config.mi?.url).toBe('https://pkg.example.com');
+      expect(config.app?.id).toBe(456);
     });
 
-    it('should load config from .pp-watch.config.json (legacy format)', async () => {
+    it('should load grouped config from pp-dev.config.json', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
+      writeFileSync(
+        join(testDir, 'pp-dev.config.json'),
+        JSON.stringify({
+          mi: { url: 'https://json.example.com' },
+          app: { id: 111, type: 'page' },
+        }),
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+      clearConfigCache();
+
+      const config = await getConfig();
+
+      expect(config.mi?.url).toBe('https://json.example.com');
+      expect(config.app?.id).toBe(111);
+      expect(config.app?.type).toBe('page');
+    });
+
+    it('should prioritize config file over package.json pp-dev field', async () => {
+      writeFileSync(
+        join(testDir, 'package.json'),
+        JSON.stringify({
+          name: 'test',
+          'pp-dev': {
+            mi: { url: 'https://pkg.example.com' },
+            app: { id: 1 },
+          },
+        }),
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.json'),
+        JSON.stringify({
+          mi: { url: 'https://file.example.com' },
+          app: { id: 2 },
+        }),
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+      clearConfigCache();
+
+      const config = await getConfig();
+
+      expect(config.mi?.url).toBe('https://file.example.com');
+      expect(config.app?.id).toBe(2);
+    });
+
+    it('should not load pp-watch.config.json (legacy format removed in 1.0)', async () => {
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
       writeFileSync(
         join(testDir, '.pp-watch.config.json'),
@@ -81,87 +122,8 @@ describe('Config Loader', () => {
 
       const config = await getConfig();
 
-      expect(config.backendBaseURL).toBe('https://watch.example.com');
-      expect(config.portalPageId).toBe(789);
-    });
-
-    it('should load config from pp-dev.config.json', async () => {
-      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
-      writeFileSync(
-        join(testDir, 'pp-dev.config.json'),
-        JSON.stringify({
-          backendBaseURL: 'https://json.example.com',
-          portalPageId: 111,
-          templateLess: true,
-        }),
-      );
-
-      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
-      clearConfigCache();
-
-      const config = await getConfig();
-
-      expect(config.backendBaseURL).toBe('https://json.example.com');
-      expect(config.portalPageId).toBe(111);
-      expect(config.templateLess).toBe(true);
-    });
-
-    it('should prioritize pp-dev config over pp-watch config', async () => {
-      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
-
-      // Create both configs
-      writeFileSync(
-        join(testDir, 'pp-dev.config.json'),
-        JSON.stringify({
-          backendBaseURL: 'https://pp-dev.example.com',
-          portalPageId: 100,
-        }),
-      );
-      writeFileSync(
-        join(testDir, '.pp-watch.config.json'),
-        JSON.stringify({
-          baseURL: 'https://pp-watch.example.com',
-          portalPageId: 200,
-        }),
-      );
-
-      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
-      clearConfigCache();
-
-      const config = await getConfig();
-
-      // pp-dev config should take priority
-      expect(config.backendBaseURL).toBe('https://pp-dev.example.com');
-      expect(config.portalPageId).toBe(100);
-    });
-
-    it('should prioritize config file over package.json pp-dev field', async () => {
-      writeFileSync(
-        join(testDir, 'package.json'),
-        JSON.stringify({
-          name: 'test',
-          'pp-dev': {
-            backendBaseURL: 'https://pkg.example.com',
-            portalPageId: 1,
-          },
-        }),
-      );
-      writeFileSync(
-        join(testDir, 'pp-dev.config.json'),
-        JSON.stringify({
-          backendBaseURL: 'https://file.example.com',
-          portalPageId: 2,
-        }),
-      );
-
-      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
-      clearConfigCache();
-
-      const config = await getConfig();
-
-      // Config file should take priority
-      expect(config.backendBaseURL).toBe('https://file.example.com');
-      expect(config.portalPageId).toBe(2);
+      // Legacy watch config is no longer loaded — result should be empty
+      expect(config).toEqual({});
     });
   });
 
@@ -186,8 +148,6 @@ describe('Config Loader', () => {
     });
 
     it('should return empty object when package.json does not exist', async () => {
-      // Don't create package.json
-
       const { getPkg, clearConfigCache } = await import('../../../src/config.js');
       clearConfigCache();
 
@@ -201,35 +161,25 @@ describe('Config Loader', () => {
     it('should cache package.json reads', async () => {
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', version: '1.0.0' }));
 
-      const { getPkg, clearConfigCache, getConfigCacheStats } = await import('../../../src/config.js');
+      const { getPkg, clearConfigCache } = await import('../../../src/config.js');
       clearConfigCache();
 
-      // First call
-      getPkg();
-      const stats1 = getConfigCacheStats();
+      const pkg1 = getPkg();
+      const pkg2 = getPkg();
 
-      // Second call (should use cache)
-      getPkg();
-      const stats2 = getConfigCacheStats();
-
-      expect(stats1.packageJsonCached).toBe(true);
-      expect(stats2.packageJsonCached).toBe(true);
+      expect(pkg1).toBe(pkg2); // same cached reference on second call
     });
 
     it('should clear cache when clearConfigCache is called', async () => {
-      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
+      const { getPkg, clearConfigCache } = await import('../../../src/config.js');
 
-      const { getPkg, clearConfigCache, getConfigCacheStats } = await import('../../../src/config.js');
-
-      // Populate cache
-      getPkg();
-      expect(getConfigCacheStats().packageJsonCached).toBe(true);
-
-      // Clear cache
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'before-clear' }));
       clearConfigCache();
-      expect(getConfigCacheStats().packageJsonCached).toBe(false);
-      expect(getConfigCacheStats().configEntries).toBe(0);
-      expect(getConfigCacheStats().dirContentCached).toBe(false);
+      expect(getPkg().name).toBe('before-clear');
+
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'after-clear' }));
+      clearConfigCache();
+      expect(getPkg().name).toBe('after-clear');
     });
   });
 });

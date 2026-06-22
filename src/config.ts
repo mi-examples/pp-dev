@@ -1,11 +1,10 @@
 import { readdirSync, readFileSync, unlink, writeFileSync, existsSync } from 'fs';
 import path from 'path';
-import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
+import { PP_DEV_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
-import { type VitePPDevOptions } from './plugin.js';
+import type { PPDevConfig } from './plugin.js';
 
-export type PPDevConfig = Omit<VitePPDevOptions, 'templateName'>;
-export type PPWatchConfig = { baseURL: string; portalPageId: number };
+export type { PPDevConfig } from './plugin.js';
 
 // Performance optimization: Cache for configuration files
 interface ConfigCache {
@@ -87,9 +86,10 @@ async function loadTsConfig<T extends object>(filePath: string) {
     entryPoints: [filePath],
     outfile: 'out.js',
     write: false,
-    target: ['node14.18', 'node16'],
+    target: 'node24',
     platform: 'node',
     bundle: true,
+    packages: 'external',
     format: isESM ? 'esm' : 'cjs',
     mainFields: ['main'],
     sourcemap: 'inline',
@@ -211,7 +211,7 @@ export function getPkg() {
   return getPackageJson();
 }
 
-export async function getConfig() {
+export async function getConfig(): Promise<PPDevConfig> {
   const dirContent = getDirectoryContent();
 
   let config: PPDevConfig = {};
@@ -224,21 +224,6 @@ export async function getConfig() {
     configFound = true;
   }
 
-  if (dirContent.length) {
-    if (!configFound) {
-      const watchConfig = await loadConfig<PPWatchConfig>(dirContent, PP_WATCH_CONFIG_NAMES as never as string[]);
-
-      if (watchConfig) {
-        config = {
-          backendBaseURL: watchConfig.baseURL,
-          portalPageId: watchConfig.portalPageId,
-        };
-
-        configFound = true;
-      }
-    }
-  }
-
   const pkg = getPackageJson();
 
   if (!configFound && typeof pkg['pp-dev'] === 'object') {
@@ -248,17 +233,8 @@ export async function getConfig() {
   return config;
 }
 
-// Export cache management functions for external use
 export function clearConfigCache() {
   configCache.clear();
   packageJsonCache = null;
   dirContentCache = null;
-}
-
-export function getConfigCacheStats() {
-  return {
-    configEntries: configCache.size,
-    packageJsonCached: !!packageJsonCache,
-    dirContentCached: !!dirContentCache,
-  };
 }

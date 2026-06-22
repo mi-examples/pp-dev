@@ -1,14 +1,30 @@
 import { InlineConfig, PluginOption } from 'vite';
 import { execSync } from 'child_process';
 import type { NormalizedVitePPDevOptions } from './plugin.js';
-import { normalizeVitePPDevConfig } from './plugin.js';
+import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
 import { clientInjectionPlugin, miTopBarPlugin } from './plugins/index.js';
 import header from './banner/header.js';
 import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
-import { getConfig, getPkg, PPDevConfig } from './config.js';
+import { getConfig, getPkg } from './config.js';
+import type { PPDevConfig } from './plugin.js';
+import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from './constants.js';
+import { createLogger } from './lib/logger.js';
 
-export type { PPDevConfig, PPWatchConfig } from './config.js';
+export type { PPDevConfig } from './config.js';
+export type {
+  MiConfig,
+  AppConfig,
+  ProxyConfig,
+  BuildConfig,
+  SyncConfig,
+  MiMode,
+  MiInclude,
+  AppType,
+  VersionPluginOptions,
+} from './plugin.js';
+export { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+export { defineConfig } from './helpers.js';
 
 declare module 'vite' {
   interface UserConfig {
@@ -23,9 +39,6 @@ declare module 'next' {
   }
 }
 
-const pathPagePrefix = '/p';
-const pathTemplatePrefix = '/pt';
-const pathTemplateLocalPrefix = '/pl';
 
 function resolveRepositoryUrl(repository: unknown): string | undefined {
   if (typeof repository === 'string') {
@@ -108,7 +121,7 @@ export async function getViteConfig(): Promise<InlineConfig> {
   const templateName = pkg.name;
 
   const ppDevConfig = await getConfig();
-  const normalizedPPDevConfig = normalizeVitePPDevConfig(Object.assign(ppDevConfig, { templateName }));
+  const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, templateName);
 
   // Lazy import vitePPDev to avoid loading plugin module during Next.js config evaluation
   const { default: vitePPDev } = await import('./plugin.js');
@@ -156,7 +169,7 @@ export async function getViteConfig(): Promise<InlineConfig> {
   }
 
   return {
-    base: templateLess ? `${pathPagePrefix}/${templateName}` : `${pathTemplatePrefix}/${templateName}`,
+    base: templateLess ? `${PATH_PAGE_PREFIX}/${templateName}` : `${PATH_TEMPLATE_PREFIX}/${templateName}`,
     server: {
       port: 3000,
     },
@@ -191,7 +204,7 @@ export async function getViteConfig(): Promise<InlineConfig> {
  * ```ts
  * // In next.config.js - use withPPDev to avoid validation warnings
  * const { withPPDev } = require('@metricinsights/pp-dev');
- * module.exports = withPPDev({ ... }, { backendBaseURL: '...' });
+ * module.exports = withPPDev({ ... }, { mi: { url: '...' } });
  *
  * // Or use standalone pp-dev.config.js (preferred - no Next.js config pollution)
  * module.exports = { ... };  // your next config
@@ -224,35 +237,20 @@ function createBasePath(
   if (isDevelopment) {
     if (v7Features) {
       if (templateLess) {
-        return `${pathPagePrefix}/${templateName}`;
+        return `${PATH_PAGE_PREFIX}/${templateName}`;
       } else {
-        return `${pathTemplateLocalPrefix}/${templateName}`;
+        return `${PATH_TEMPLATE_LOCAL_PREFIX}/${templateName}`;
       }
     } else {
       if (templateLess) {
-        return `${pathPagePrefix}/${templateName}`;
+        return `${PATH_PAGE_PREFIX}/${templateName}`;
       } else {
-        return `${pathTemplatePrefix}/${templateName}`;
+        return `${PATH_TEMPLATE_PREFIX}/${templateName}`;
       }
     }
   }
 
-  return `/p/${templateName}`;
-}
-
-/**
- * Merges multiple configuration objects with proper typing and order
- * @param baseConfig - Base configuration to start with
- * @param nextConfiguration - Next.js configuration to merge
- * @param additionalConfig - Additional configuration to merge last
- * @returns Merged configuration object
- */
-function mergeConfigs(
-  baseConfig: NextConfig,
-  nextConfiguration: NextConfig,
-  additionalConfig?: Partial<NextConfig>,
-): NextConfig {
-  return Object.assign({}, baseConfig, nextConfiguration, additionalConfig);
+  return `${PATH_PAGE_PREFIX}/${templateName}`;
 }
 
 /**
@@ -290,38 +288,34 @@ export function withPPDev(
       // Get pp-dev config from Next.js config if available
       // Priority order: file config -> Next.js config -> function parameter config
       const nextConfigPPDev = getPPDevConfigFromNextConfig(nextConfiguration);
-      const mergedConfig = Object.assign({}, config, nextConfigPPDev, ppDevConfig ?? {});
+      const mergedConfig: PPDevConfig = Object.assign({}, config, nextConfigPPDev, ppDevConfig ?? {});
+
+      // Derive display flags from grouped config
+      const appType = mergedConfig.app?.type ?? 'template';
+      const templateLess = appType === 'page';
+      const apiVersion = mergedConfig.mi?.apiVersion ?? 7;
+      const v7Features = apiVersion >= 7;
 
       // Create base configuration with appropriate base path
       const isDevelopment = phase === PHASE_DEVELOPMENT_SERVER;
-      const basePath = createBasePath(
-        templateName,
-        mergedConfig.templateLess ?? false,
-        isDevelopment,
-        mergedConfig.v7Features ?? false,
-      );
+      const basePath = createBasePath(templateName, templateLess, isDevelopment, v7Features);
 
       const baseConfig: NextConfig = {
         basePath,
         trailingSlash: isDevelopment ? true : undefined,
       };
 
-      if (!mergedConfig.templateLess) {
-        baseConfig.assetPrefix = `${pathTemplatePrefix}/${templateName}`;
+      if (!templateLess) {
+        baseConfig.assetPrefix = `${PATH_TEMPLATE_PREFIX}/${templateName}`;
       }
 
-      if (isDevelopment) {
-        // Merge base config with user's Next.js config.
-        // PP-Dev config is NOT added to Next.js config (avoids "Unrecognized key" warnings).
-        // CLI and app get config from getConfig() / pp-dev.config.js instead.
-        return mergeConfigs(baseConfig, nextConfiguration);
-      }
-
-      // Production configuration
-      return mergeConfigs(baseConfig, nextConfiguration);
+      // PP-Dev config is NOT added to Next.js config (avoids "Unrecognized key" warnings).
+      // CLI and app get config from getConfig() / pp-dev.config.js instead.
+      return Object.assign({}, baseConfig, nextConfiguration);
     } catch (error) {
-      console.error('Error in withPPDev:', error);
-      console.warn('Falling back to original Next.js configuration');
+      const logger = createLogger();
+      logger.error('Error in withPPDev:', { error: error instanceof Error ? error : new Error(String(error)) });
+      logger.warn('Falling back to original Next.js configuration');
 
       // Fallback to original config if something goes wrong
       try {
@@ -329,7 +323,7 @@ export function withPPDev(
           typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
         return fallbackConfig;
       } catch (fallbackError) {
-        console.error('Error in fallback configuration:', fallbackError);
+        logger.error('Error in fallback configuration:', { error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)) });
         // Last resort: return empty config
         return {};
       }

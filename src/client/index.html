@@ -35,7 +35,7 @@
     <div class="pp-dev-info__section">
       <span class="pp-dev-info__item">
         <span class="pp-dev-info__label">Template mode:</span>
-        {% if (templateLess || !backendBaseURL || Number.isNaN(+portalPageId)) { %}
+        {% if (templateLess || !backendBaseURL || Number.isNaN(+appId)) { %}
         <span class="pp-dev-info__value danger">Disabled</span>
         {% } else { %}
         <span class="pp-dev-info__value success">Enabled</span>
@@ -43,22 +43,22 @@
       </span>
     </div>
 
-    {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
+    {% if (backendBaseURL && !Number.isNaN(+appId)) { %}
     <div class="pp-dev-info__section">
       <span class="pp-dev-info__item">
-        <span class="pp-dev-info__label">Portal page ID:</span>
+        <span class="pp-dev-info__label">App ID:</span>
         <a
-          href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= portalPageId %}"
+          href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= appId %}"
           target="_blank"
           class="pp-dev-info__link"
-          >{%= portalPageId %}</a
+          >{%= appId %}</a
         >
       </span>
     </div>
     {% } %}
   </div>
 
-  {% if (backendBaseURL && !Number.isNaN(+portalPageId)) { %}
+  {% if (backendBaseURL && !Number.isNaN(+appId)) { %}
   <button id="sync-template" class="sync-button" title="Sync template">
     <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       <path

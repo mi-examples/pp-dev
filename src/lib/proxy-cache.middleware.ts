@@ -170,7 +170,7 @@ function setResponseHeaders(res: ServerResponse, headers: Record<string, any>): 
     }
   } catch (error) {
     // Log header setting errors but don't fail the request
-    console.warn('Failed to set some response headers:', error);
+    createLogger().warn(`Failed to set some response headers: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

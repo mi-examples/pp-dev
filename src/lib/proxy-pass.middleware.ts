@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { MiAPI } from './pp.middleware';
+import type { NextHandleFunction } from 'connect';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -39,7 +40,7 @@ function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: Buffer
   };
 }
 
-export function initProxy(opts: ProxyOpts) {
+export function initProxy(opts: ProxyOpts): NextHandleFunction {
   const {
     rewritePath = /^\/(?!p[tl]).*/i,
     baseURL = '',
@@ -286,7 +287,7 @@ export function initProxy(opts: ProxyOpts) {
         res.end(errorMessage);
       },
     },
-  });
+  }) as unknown as NextHandleFunction;
 }
 
 export default initProxy;

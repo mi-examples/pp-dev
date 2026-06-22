@@ -1,4 +1,4 @@
-import { PPDevConfig } from '../index.js';
+import type { NormalizedVitePPDevOptions } from '../plugin.js';
 import type { NextHandleFunction, IncomingMessage, NextFunction } from 'connect';
 import { cutUrlParams, redirect } from './helpers/url.helper.js';
 import { Headers, MiAPI } from './pp.middleware.js';
@@ -77,7 +77,7 @@ function isUnderBase(requestPath: string, base?: string): boolean {
 export function initLoadPPData(
   applyUrlRegExp: RegExp,
   mi: MiAPI,
-  opts: PPDevConfig & { base?: string; appBase?: string },
+  opts: Partial<NormalizedVitePPDevOptions> & { base?: string; appBase?: string },
 ): NextHandleFunction {
   const { templateLess = false, miHudLess = false, appId, base, appBase, v7Features } = opts;
 
@@ -87,12 +87,6 @@ export function initLoadPPData(
   if (templateLess && miHudLess && typeof appId === 'undefined') {
     throw new Error('Custom App ID is required when both templateLess and miHudLess are true');
   }
-
-  let authState = authProvider.getState();
-
-  authProvider.subscribe((state) => {
-    authState = state;
-  });
 
   return async (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
     try {
@@ -110,6 +104,8 @@ export function initLoadPPData(
         !requestPath.startsWith('/home') &&
         isUnderBase(requestPath, appBase) &&
         isHtmlDocumentRequest(req);
+
+      const authState = authProvider.getState();
 
       // 1. If !isAuthenticated && !isRedirected and url started with /home - try to handle load page or template
       if (
