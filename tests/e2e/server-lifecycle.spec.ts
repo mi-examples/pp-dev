@@ -6,10 +6,21 @@
  * The mock server and cassettes are reserved for request-path tests.
  */
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execSync, type ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+
+// On Windows, proc.kill('SIGTERM') only kills the shell (npm.cmd), not the
+// node/next child processes. Use taskkill /T to kill the entire process tree.
+function killTree(proc: ChildProcess): void {
+  if (!proc.pid) return;
+  if (process.platform === 'win32') {
+    try { execSync(`taskkill /PID ${proc.pid} /T /F`, { stdio: 'ignore' }); } catch { /* already gone */ }
+  } else {
+    proc.kill('SIGTERM');
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
@@ -86,7 +97,7 @@ function startPPDev(extraEnv?: Record<string, string>): ProcOutput {
       });
     },
 
-    kill: () => proc.kill('SIGTERM'),
+    kill: () => killTree(proc),
   };
 }
 
