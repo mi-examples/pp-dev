@@ -102,18 +102,9 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
       [host]: 'localhost',
     },
     logger: {
-      info: () => {
-        //
-      },
-      log: () => {
-        //
-      },
-      error: () => {
-        //
-      },
-      warn: () => {
-        //
-      },
+      info: () => {},
+      warn: () => {},
+      error: () => {},
     },
     secure: !disableSSLValidation,
     headers: {

@@ -14,7 +14,7 @@
     "prebuild": "npm run clean",
     "build": "npm run build:parallel",
     "build:parallel": "npm run build:node && npm run build:client",
-    "build:node": "rollup --config rollup.config.ts --configPlugin typescript && node scripts/postbuild.js",
+    "build:node": "rollup --config rollup.config.ts --configPlugin typescript && node scripts/postbuild.js && node scripts/build-types.mjs",
     "build:client": "rollup --config src/client/rollup.config.ts --configPlugin typescript",
     "build:watch": "rollup --config rollup.config.ts --configPlugin typescript --watch",
     "build:analyze": "rollup --config rollup.config.ts --configPlugin typescript --configPlugin rollup-plugin-visualizer",

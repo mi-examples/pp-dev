@@ -36,7 +36,9 @@
     ".next/dev/types/**/*.ts",
     "dist/types/**/*.ts",
     "dist/dev/types/**/*.ts",
-    "dist/dev/dev/types/**/*.ts"
+    "dist/dev/dev/types/**/*.ts",
+    "next.config.mjs",
+    "pp-dev.config.ts"
   ],
   "exclude": [
     "node_modules",
