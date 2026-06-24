@@ -21,13 +21,14 @@ import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import { startMockMiServer, DEFAULT_PORT, saveCassette, CASSETTES_DIR } from './server.ts';
+import { startMockMiServer, DEFAULT_PORT } from './server.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
 const CONFIG_PATH = path.join(TEST_APP_DIR, 'pp-dev.config.ts');
 const CASSETTE_NAME = process.argv[2] ?? 'startup';
 const REAL_MI_URL = process.env.REAL_MI_URL;
+const PP_DEV_JS = path.join(TEST_APP_DIR, 'node_modules/@metricinsights/pp-dev/bin/pp-dev.js');
 
 if (!REAL_MI_URL) {
   console.error('Set REAL_MI_URL env var to the target MI instance, e.g.:');
@@ -47,20 +48,16 @@ const mockMi = await startMockMiServer({
 // Temporarily rewrite pp-dev.config.ts to point at the mock server
 const originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
 const patchedConfig = originalConfig.replace(
-  /url:s*['"]https?://[^'"]+['"]/,
+  /url:\s*['"]https?:\/\/[^'"]+['"]/,
   `url: '${mockMi.url}'`,
 );
 fs.writeFileSync(CONFIG_PATH, patchedConfig);
 
-const ppdev = spawn(
-  'node',
-  ['node_modules/.bin/pp-dev', 'next'],
-  {
-    cwd: TEST_APP_DIR,
-    stdio: 'inherit',
-    env: { ...process.env },
-  },
-);
+const ppdev = spawn(process.execPath, [PP_DEV_JS, 'next'], {
+  cwd: TEST_APP_DIR,
+  stdio: 'inherit',
+  env: { ...process.env },
+});
 
 const cleanup = async (signal?: NodeJS.Signals) => {
   console.log(`\n[record] Stopping... (${signal ?? 'exit'})`);
