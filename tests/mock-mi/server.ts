@@ -19,8 +19,22 @@ export interface Interaction {
   response: {
     status: number;
     headers: Record<string, string | string[]>;
+    /** UTF-8 text for text responses; base64-encoded for binary (bodyEncoding === 'base64'). */
     body: string;
+    bodyEncoding?: 'base64';
   };
+}
+
+function isBinaryContentType(contentType: string | undefined): boolean {
+  if (!contentType) return false;
+  const t = contentType.split(';')[0].trim().toLowerCase();
+  return (
+    !t.startsWith('text/') &&
+    t !== 'application/json' &&
+    t !== 'application/javascript' &&
+    t !== 'application/xml' &&
+    t !== 'application/x-www-form-urlencoded'
+  );
 }
 
 export interface Cassette {
@@ -104,7 +118,11 @@ export async function startMockMiServer(opts: {
           // skip headers that Node rejects
         }
       }
-      res.end(interaction.response.body);
+      const body =
+        interaction.response.bodyEncoding === 'base64'
+          ? Buffer.from(interaction.response.body, 'base64')
+          : interaction.response.body;
+      res.end(body);
     });
   }
 
@@ -146,12 +164,15 @@ export async function startMockMiServer(opts: {
               }
 
               // Update map so the last response for each endpoint wins
+              const contentType = String(storedHeaders['content-type'] ?? '');
+              const binary = isBinaryContentType(contentType);
               interactionMap.set(key, {
                 request: { method: req.method ?? 'GET', pathname: url.pathname },
                 response: {
                   status: proxyRes.statusCode ?? 200,
                   headers: storedHeaders,
-                  body: bodyBuffer.toString('utf-8'),
+                  body: binary ? bodyBuffer.toString('base64') : bodyBuffer.toString('utf-8'),
+                  ...(binary && { bodyEncoding: 'base64' as const }),
                 },
               });
 
