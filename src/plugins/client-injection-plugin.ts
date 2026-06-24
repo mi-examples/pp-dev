@@ -24,6 +24,7 @@ declare module 'vite' {
 // Memoized path resolution
 // Support both CJS and ESM contexts
 let DIRNAME: string;
+
 try {
   // @ts-ignore - __filename is available in CJS
   if (typeof __filename !== 'undefined' && __filename) {
@@ -49,10 +50,13 @@ function getTemplate(): AsyncTemplateFunction {
   if (cachedTemplate) {
     return cachedTemplate;
   }
+
   const templatePath = path.resolve(DIRNAME, 'client', 'index.html');
+
   if (!cachedTemplateContent) {
     cachedTemplateContent = fs.readFileSync(templatePath, { encoding: 'utf8' });
   }
+
   cachedTemplate = ejs.compile(cachedTemplateContent, {
     openDelimiter: '{',
     closeDelimiter: '}',
@@ -62,6 +66,7 @@ function getTemplate(): AsyncTemplateFunction {
     rmWhitespace: true,
     compileDebug: false,
   });
+
   return cachedTemplate;
 }
 

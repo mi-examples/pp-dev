@@ -75,6 +75,7 @@ export class PPDevHotServer {
         } else {
           // send(payload: unknown) overload — broadcast the pre-built payload as-is.
           const data = JSON.stringify(arg1);
+
           for (const socket of this.clients.keys()) {
             if (socket.readyState === WebSocket.OPEN) {
               socket.send(data);

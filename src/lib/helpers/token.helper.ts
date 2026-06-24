@@ -40,6 +40,7 @@ export function getTokenErrorInfo(error: any): TokenErrorInfo {
           ],
         };
       }
+
       return {
         status,
         message,
@@ -121,6 +122,7 @@ export function logTokenError(logger: any, error: any, context?: string): void {
  */
 export function isTokenError(error: any): boolean {
   const status = error.response?.status;
+
   return status === 401 || status === 403 || status === 412;
 }
 
@@ -129,6 +131,7 @@ export function isTokenError(error: any): boolean {
  */
 export function isSessionExpiredError(error: any): boolean {
   const message = error.response?.data?.message?.toLowerCase() ?? '';
+
   return (
     error.response?.status === 412 && (message.includes('session expired') || message.includes('session has expired'))
   );

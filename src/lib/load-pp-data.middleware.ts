@@ -24,7 +24,8 @@ const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
 function getCachedResponse(key: string): any | null {
   const cached = apiResponseCache.get(key);
-  if (!cached) return null;
+
+  if (!cached) {return null;}
 
   if (Date.now() - cached.timestamp > CACHE_TTL) {
     apiResponseCache.delete(key);
@@ -244,6 +245,7 @@ async function handlePageInfoOnly(
 
     if (cachedData) {
       logger.info(colors.green('Page info loaded from cache'));
+
       return next();
     }
 
@@ -298,6 +300,7 @@ async function handleTemplateLoad(
 
     if (cachedData) {
       logger.info(colors.green('Page data loaded from cache'));
+
       return next();
     }
 

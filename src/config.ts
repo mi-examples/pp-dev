@@ -28,6 +28,7 @@ function getPackageJson(): any {
   }
 
   const cwd = process.cwd();
+
   try {
     const data = JSON.parse(
       readFileSync(path.resolve(cwd, 'package.json'), {
@@ -37,10 +38,13 @@ function getPackageJson(): any {
     );
 
     packageJsonCache = { data, timestamp: now };
+
     return data;
   } catch {
     const empty = {};
+
     packageJsonCache = { data: empty, timestamp: now };
+
     return empty;
   }
 }
@@ -76,6 +80,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
   } else {
     // Performance optimization: Use cached package.json
     const pkg = getPackageJson();
+
     isESM = !!pkg && pkg.type === 'module';
   }
 
@@ -134,6 +139,7 @@ async function loadJsConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `js:${filePath}`;
   const cached = configCache.get(cacheKey);
+
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
@@ -154,6 +160,7 @@ async function loadJSONConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `json:${filePath}`;
   const cached = configCache.get(cacheKey);
+
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
@@ -188,6 +195,7 @@ function getDirectoryContent(): string[] {
     .map((value) => value.name);
 
   dirContentCache = { files, timestamp: now };
+
   return files;
 }
 

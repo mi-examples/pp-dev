@@ -293,6 +293,7 @@ export class DistService {
     }
 
     const trailingStaticPart = this.versionFileTemplate.slice(lastIndex);
+
     segments.push(this.escapeRegExp(trailingStaticPart));
 
     return new RegExp(`^${segments.join('')}$`, 'i');
@@ -355,6 +356,7 @@ export class DistService {
 
       if (buildManifestPath) {
         const buildManifestAbsolutePath = path.join(contentRootDir, buildManifestPath);
+
         buildManifest = JSON.parse(await fs.readFile(buildManifestAbsolutePath, 'utf-8')) as BuildManifest;
 
         if (

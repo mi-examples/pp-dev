@@ -170,7 +170,9 @@ function setResponseHeaders(res: ServerResponse, headers: Record<string, any>): 
     }
   } catch (error) {
     // Log header setting errors but don't fail the request
-    createLogger().warn(`Failed to set some response headers: ${error instanceof Error ? error.message : String(error)}`);
+    createLogger().warn(
+      `Failed to set some response headers: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -205,6 +207,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       );
 
       setResponseHeaders(res, cacheItem.headers);
+      res.setHeader('X-PP-Cache', 'hit');
 
       res.write(cacheItem.content);
       res.end();
@@ -230,6 +233,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       // Convert data to Buffer and store
       if (typeof data === 'string') {
         const safeEncoding: BufferEncoding = encoding || 'utf8';
+
         chunks.push(Buffer.from(data, safeEncoding));
       } else if (Buffer.isBuffer(data)) {
         chunks.push(data);
@@ -250,6 +254,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       if (chunk !== undefined && chunk !== null) {
         if (typeof chunk === 'string') {
           const safeEncoding: BufferEncoding = encoding || 'utf8';
+
           chunks.push(Buffer.from(chunk, safeEncoding));
         } else if (Buffer.isBuffer(chunk)) {
           chunks.push(chunk);

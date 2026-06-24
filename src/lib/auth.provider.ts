@@ -65,9 +65,11 @@ class AuthProvider {
     if (updates.isAuthenticated !== undefined) {
       this.state.isAuthenticated = updates.isAuthenticated;
     }
+
     if (updates.isRedirected !== undefined) {
       this.state.isRedirected = updates.isRedirected;
     }
+
     this.state.lastChecked = Date.now();
     this.notifyListeners();
   }

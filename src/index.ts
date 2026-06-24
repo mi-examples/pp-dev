@@ -314,6 +314,7 @@ export function withPPDev(
       return Object.assign({}, baseConfig, nextConfiguration);
     } catch (error) {
       const logger = createLogger();
+
       logger.error('Error in withPPDev:', { error: error instanceof Error ? error : new Error(String(error)) });
       logger.warn('Falling back to original Next.js configuration');
 
@@ -321,9 +322,11 @@ export function withPPDev(
       try {
         const fallbackConfig =
           typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
+
         return fallbackConfig;
       } catch (fallbackError) {
         logger.error('Error in fallback configuration:', { error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)) });
+
         // Last resort: return empty config
         return {};
       }

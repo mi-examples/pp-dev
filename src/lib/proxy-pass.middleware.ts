@@ -27,6 +27,7 @@ export interface ProxyOpts {
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
+
 export const PROXY_HEADER = 'X-PP-Proxy';
 
 // TODO: Implement interceptor for streaming responses

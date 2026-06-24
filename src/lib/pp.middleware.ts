@@ -489,6 +489,7 @@ export class MiAPI {
 
     if (!miHudLess) {
       const placeholder = dom.window.document.createElement('div');
+
       placeholder.innerHTML = placeholderText;
 
       const container = dom.window.document.querySelector('.main-side');
@@ -602,6 +603,7 @@ export class MiAPI {
       // Use the token helper for better error handling
       if (getTokenErrorInfo(error).code !== 'UNKNOWN_ERROR') {
         const errorInfo = getTokenErrorInfo(error);
+
         this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
 
         // Log detailed error information with suggestions

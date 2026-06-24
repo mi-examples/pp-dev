@@ -146,6 +146,7 @@ export function createPPDevHotContext(): ViteHotContext {
         if (outbox.length >= MAX_OUTBOX_SIZE) {
           outbox.shift();
         }
+
         outbox.push(payload);
       }
     },
