@@ -30,6 +30,9 @@ import { PPDevHotServer } from './lib/pp-ws-server.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from './lib/dev-panel.js';
 import { PP_DEV_CONFIG_NAMES, PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from './constants.js';
 import { normalizePPDevConfig } from './plugin.js';
+import { RequestStore } from './lib/request-store.js';
+import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
+import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 
 const cli = cac('pp-dev');
 
@@ -218,6 +221,7 @@ export const stopProfiler = (log: (message: string) => void): void | Promise<voi
       // Write profile to disk, upload, etc.
       if (!err) {
         const outPath = path.resolve(`./pp-dev-profile-${profileCount++}.cpuprofile`);
+
         fs.writeFileSync(outPath, JSON.stringify(profile));
         log(colors.yellow(`CPU profile written to ${colors.white(colors.dim(outPath))}`));
         profileSession = undefined;
@@ -236,11 +240,13 @@ const filterDuplicateOptions = <T extends object>(options: T) => {
     }
   }
 };
+
 /**
  * removing global flags before passing as command specific sub-configs
  */
 function cleanOptions<Options extends GlobalCLIOptions>(options: Options): Omit<Options, keyof GlobalCLIOptions> {
   const ret = { ...options };
+
   delete ret['--'];
   delete ret.c;
   delete ret.config;
@@ -290,7 +296,8 @@ cli
     const logger = createLogger(options.logLevel);
 
     const startServer = async () => {
-      if (isRestarting) return;
+      if (isRestarting) {return;}
+
       isRestarting = true;
 
       try {
@@ -302,7 +309,8 @@ cli
         }
 
         // Clear config cache
-        const { clearConfigCache } = await import('./config.js');
+        const { clearConfigCache, getConfig } = await import('./config.js');
+
         clearConfigCache();
 
         // output structure is preserved even after bundling so require()
@@ -370,6 +378,16 @@ cli
         logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`);
 
         server.printUrls();
+
+        const serveConfig = await getConfig();
+
+        if (serveConfig.inspector?.enabled !== false) {
+          const localUrl = server.resolvedUrls?.local[0];
+          const origin = localUrl ? new URL(localUrl).origin : `http://localhost:${server.config.server.port ?? 5173}`;
+
+          logger.info(`\n  ${colors.cyan('🔍 Request Inspector')}  ${colors.dim(origin + INSPECTOR_PATH)}\n`);
+        }
+
         bindShortcuts(server, {
           print: true,
           customShortcuts: [
@@ -538,6 +556,7 @@ cli
 
         // Clear config cache
         const { clearConfigCache } = await import('./config.js');
+
         clearConfigCache();
 
         const { join, basename } = await import('path');
@@ -619,6 +638,9 @@ cli
         const proxyCacheTTL = _normalized.proxyCacheTTL;
         const personalAccessToken = _normalized.personalAccessToken;
         const miHudLess = _normalized.miHudLess;
+        const inspectorEnabled = _normalized.inspectorEnabled;
+        const inspectorMaxMemory = _normalized.inspectorMaxMemory;
+        const inspectorCaptureLimit = _normalized.inspectorCaptureLimit;
 
         const appId: number =
           _normalized.appId ??
@@ -681,6 +703,7 @@ cli
             if (!isNextTurbopackNativeBindingsError(e)) {
               throw e;
             }
+
             logger.warn(colors.yellow('⚠ Turbopack is unavailable (native bindings). Falling back to Webpack.'));
             await createAndPrepareNext({ webpack: true });
           }
@@ -691,6 +714,7 @@ cli
             if (!isNextTurbopackNativeBindingsError(e)) {
               throw e;
             }
+
             logger.warn(
               colors.yellow('⚠ Turbopack cannot run (native Next.js bindings unavailable). Falling back to Webpack.'),
             );
@@ -756,20 +780,24 @@ cli
                     if (middlewareIndex >= essentialMiddlewareChain.length) {
                       // Essential middlewares processed, continue with Next.js handling
                       processNextJSRequest();
+
                       return;
                     }
 
                     const middleware = essentialMiddlewareChain[middlewareIndex];
+
                     middlewareIndex++;
 
                     middleware(req, res, runEssentialMiddleware);
                   };
 
                   runEssentialMiddleware();
+
                   return; // Exit early, middleware will handle the rest
                 } else {
                   // No essential middlewares, process normally
                   processNextJSRequest();
+
                   return;
                 }
               }
@@ -781,16 +809,19 @@ cli
                 if (middlewareIndex >= fullMiddlewareChain.length) {
                   // All middlewares processed, continue with Next.js handling
                   processNextJSRequest();
+
                   return;
                 }
 
                 const middleware = fullMiddlewareChain[middlewareIndex];
+
                 middlewareIndex++;
 
                 middleware(req, res, runMiddleware);
               };
 
               runMiddleware();
+
               return; // Exit early, middleware will handle the rest
             }
 
@@ -805,8 +836,10 @@ cli
               } else if (originalPathname === base.replace(/\/$/, '')) {
                 // Path without trailing slash - redirect to canonical URL with trailing slash
                 const redirectUrl = originalUrl.replace(originalPathname, base);
+
                 res.writeHead(302, { Location: redirectUrl });
                 res.end();
+
                 return;
               } else if (
                 originalPathname.startsWith('/_next/') ||
@@ -840,6 +873,17 @@ cli
         /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
         let essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
 
+        // Request inspector: register routes on the shared internalServer and add capture middleware
+        if (inspectorEnabled !== false) {
+          const reqStore = new RequestStore(inspectorMaxMemory);
+
+          registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
+
+          const captureMiddleware = createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit);
+
+          fullMiddlewareChain.push(captureMiddleware);
+        }
+
         if (backendBaseURL) {
           const baseUrlHost = new URL(backendBaseURL).host;
 
@@ -871,17 +915,20 @@ cli
           const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
             ppRedirectMiddleware(req, res, next);
           };
+
           essentialMiddlewareChain.push(ppRedirectWrapper);
           fullMiddlewareChain.push(ppRedirectWrapper);
 
           // 1b. Dev-panel client assets (client.js/client.css) — served locally, never proxied.
           const devPanelAssetMiddleware = createDevPanelAssetMiddleware(base);
+
           essentialMiddlewareChain.push(devPanelAssetMiddleware);
           fullMiddlewareChain.push(devPanelAssetMiddleware);
 
           // 2. Proxy Cache middleware (only for non-internal routes)
           if (enableProxyCache) {
             let ttl = +proxyCacheTTL;
+
             if (!ttl || Number.isNaN(ttl) || ttl < 0) {
               ttl = 10 * 60 * 1000; // 10 minutes
             }
@@ -903,6 +950,7 @@ cli
             const proxyCacheWrapper = (req: any, res: any, next: () => void) => {
               proxyCacheMiddleware(req, res, next);
             };
+
             fullMiddlewareChain.push(proxyCacheWrapper);
 
             logger.info(colors.blue(`🔧 Proxy cache middleware added with TTL: ${ttl}ms`));
@@ -950,21 +998,24 @@ cli
           const proxyPassWrapper = (req: any, res: any, next: () => void) => {
             proxyPassMiddlewareInstance(req, res, next);
           };
+
           fullMiddlewareChain.push(proxyPassWrapper);
 
-          // 5. Internal Server middleware (API endpoints) - essential for all routes
+          // 5. Internal Server middleware (API endpoints + inspector UI) - essential for all routes
           const internalServerMiddleware = internalServer;
           const internalServerWrapper = (req: any, res: any, next: () => void) => {
-            // Check if this is an internal API request
-            if (req.url?.startsWith('/@api/')) {
+            // Check if this is an internal pp-dev request (API or inspector UI)
+            if (req.url?.startsWith('/@api/') || req.url?.startsWith(INSPECTOR_PATH)) {
               const mockNext = () => {};
 
               internalServerMiddleware(req, res, mockNext);
 
-              return; // Don't call next() for API requests
+              return; // Don't call next() for internal pp-dev requests
             }
+
             next();
           };
+
           essentialMiddlewareChain.push(internalServerWrapper);
           fullMiddlewareChain.push(internalServerWrapper);
 
@@ -972,6 +1023,7 @@ cli
           const rewriteResponseMiddleware = initRewriteResponse(
             (url) => {
               const pathname = url.split('?')[0];
+
               // Next.js serves page HTML at base path or subpaths (e.g. /p/test-nextjs/, /p/test-nextjs/dashboard),
               // not at index.html. Match page requests under base, excluding /_next/ static assets.
               return pathname.startsWith(base) && !pathname.includes('/_next/');
@@ -993,6 +1045,7 @@ cli
           const rewriteResponseWrapper = (req: any, res: any, next: () => void) => {
             rewriteResponseMiddleware(req, res, next);
           };
+
           fullMiddlewareChain.push(rewriteResponseWrapper);
 
           // Dev-panel transport: raw-WebSocket replacement for Vite HMR so the panel's
@@ -1079,6 +1132,11 @@ cli
         httpServer.listen(port, host, () => {
           logger.info(colors.green(`✅ pp-dev Next.js server running at http://${host}:${port}`));
           logger.info(colors.blue(`📱 Next.js app accessible at http://${host}:${port}${base}`));
+
+          if (inspectorEnabled !== false) {
+            logger.info(colors.cyan(`🔍 Request Inspector: http://${host}:${port}${INSPECTOR_PATH}`));
+          }
+
           logger.info(colors.blue(`🔧 Base path handling active`));
 
           // Set up config watcher
@@ -1114,6 +1172,7 @@ cli
               for (const socket of Array.from(openSockets)) {
                 socket.destroy();
               }
+
               openSockets.clear();
 
               // Close the dev-panel WebSocket server
@@ -1292,6 +1351,7 @@ cli
   )
   .action(async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
+
     const buildOptions: PPDevBuildOptions = cleanOptions(options);
 
     try {
@@ -1641,6 +1701,7 @@ cli
             break;
           }
         }
+
         // Fall back to pp-watch config files
         if (!sourceFile) {
           for (const name of watchConfigNames) {
@@ -1684,16 +1745,19 @@ cli
           });
           const code = result.outputFiles[0].text;
           const tmpFile = `pp-migrate-tmp-${Date.now()}.mjs`;
+
           fs.writeFileSync(tmpFile, code);
           try {
             const mod = await import(pathToFileURL(path.resolve(projectRoot, tmpFile)).toString());
+
             rawConfig = mod.default?.default ?? mod.default ?? mod;
           } finally {
-            if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+            if (fs.existsSync(tmpFile)) {fs.unlinkSync(tmpFile);}
           }
         } else if (/\.[cm]?js$/i.test(sourceFile)) {
           const { pathToFileURL } = await import('url');
           const mod = await import(pathToFileURL(path.resolve(projectRoot, sourceFile)).toString());
+
           rawConfig = mod.default?.default ?? mod.default ?? mod;
         } else if (sourceFile.endsWith('.json')) {
           rawConfig = JSON.parse(fs.readFileSync(sourceFile, 'utf-8'));
@@ -1737,6 +1801,7 @@ cli
       // Backup original
       if (doBackup && fs.existsSync(sourceFile)) {
         const backupPath = `${sourceFile}.bak`;
+
         fs.copyFileSync(sourceFile, backupPath);
         logger.info(colors.blue(`Backed up original to: ${path.relative(projectRoot, backupPath)}`));
       }

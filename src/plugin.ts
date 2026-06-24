@@ -11,6 +11,9 @@ import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createInternalServer } from './lib/internal.middleware.js';
 import { getTokenErrorInfo } from './lib/helpers/index.js';
+import { RequestStore } from './lib/request-store.js';
+import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
+import { registerInspectorRoutes } from './lib/request-inspector.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -83,12 +86,22 @@ export interface SyncConfig {
   backupsDir?: string;
 }
 
+export interface InspectorConfig {
+  /** Enable the request inspector web UI at /@pp-dev/inspector. @default true */
+  enabled?: boolean;
+  /** Maximum RAM for stored request/response payloads in bytes. @default 1073741824 (1 GB) */
+  maxMemory?: number;
+  /** Maximum bytes captured per individual request/response body. @default 10485760 (10 MB) */
+  captureLimit?: number;
+}
+
 export interface PPDevConfig {
   mi?: MiConfig;
   app?: AppConfig;
   proxy?: ProxyConfig;
   build?: BuildConfig;
   sync?: SyncConfig;
+  inspector?: InspectorConfig;
 }
 
 // ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
@@ -122,6 +135,9 @@ export interface NormalizedVitePPDevOptions {
   syncBackupsDir: string;
   v7Features: boolean;
   personalAccessToken?: string;
+  inspectorEnabled: boolean;
+  inspectorMaxMemory: number;
+  inspectorCaptureLimit: number;
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -164,7 +180,7 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
 export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
-  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {} } = config;
+  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {} } = config;
 
   const miMode = mi.mode ?? 'standalone';
   const appType = app.type ?? 'template';
@@ -242,6 +258,9 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
     syncBackupsDir: sync.backupsDir ?? 'backups',
     v7Features: apiVersion >= 7,
     personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
+    inspectorEnabled: inspector.enabled ?? true,
+    inspectorMaxMemory: inspector.maxMemory ?? 1 * 1024 * 1024 * 1024,
+    inspectorCaptureLimit: inspector.captureLimit ?? 10 * 1024 * 1024,
   };
 }
 
@@ -277,6 +296,9 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     syncBackupsDir,
     v7Features,
     personalAccessToken,
+    inspectorEnabled,
+    inspectorMaxMemory,
+    inspectorCaptureLimit,
   } = options || {};
 
   let isFirstRequest = true;
@@ -323,6 +345,17 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
       const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
 
       server.middlewares.use(initPPRedirect(base, templateName));
+
+      if (inspectorEnabled !== false) {
+        const reqStore = new RequestStore(inspectorMaxMemory);
+
+        server.middlewares.use(createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit));
+
+        const internalServer = createInternalServer();
+
+        registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
+        server.middlewares.use(internalServer);
+      }
 
       if (backendBaseURL) {
         const baseUrlHost = new URL(backendBaseURL).host;
