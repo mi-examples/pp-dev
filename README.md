@@ -175,6 +175,14 @@ module.exports = defineConfig({
 | `versionFile`       | `boolean \| { enabled?: boolean; fileNameTemplate?: string }` | `true` | Write a VERSION file into the build                                                  |
 | `imageOptimisations`| `boolean \| Record<string, unknown>`                        | `true`   | Image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options |
 
+### `inspector` — Request Inspector
+
+| Field          | Type      | Default     | Description                                                    |
+|----------------|-----------|-------------|----------------------------------------------------------------|
+| `enabled`      | `boolean` | `true`      | Enable the request inspector                                   |
+| `maxMemory`    | `number`  | `104857600` | Max total body memory (bytes) before oldest entries are evicted (default 100 MB) |
+| `captureLimit` | `number`  | `10485760`  | Max body size captured per request/response (bytes, default 10 MB). Larger bodies are stored truncated. |
+
 ### `sync` — Template sync
 
 | Field        | Type     | Default     | Description                             |
@@ -379,6 +387,68 @@ module.exports = withPPDev({
 ## Vite Configuration
 
 For custom build configuration, create a `vite.config` file. See [Vite Configuration](https://vitejs.dev/config/) for details.
+
+## Request Inspector
+
+pp-dev includes a built-in request inspector that captures every proxied and locally-served HTTP request made during development. It is enabled by default.
+
+### Web UI
+
+Open `http://localhost:3000/@pp-dev/inspector` (replace port as needed) in any browser tab while the dev server is running. The UI shows:
+
+- A scrollable list of captured requests with method, status, source badge, and timing
+- Full request and response headers, with a **Copy** button per section
+- Request and response bodies rendered as text for JSON/HTML/CSS/plain-text content types, with **Copy** and **Save** buttons
+- Binary bodies (images, fonts, archives) show metadata only and offer a **Save** button
+- A **Clear** button in the top-right removes all stored entries
+
+### Source badges
+
+Each request in the list displays a colored letter badge to the left of the HTTP status:
+
+| Badge | Color  | Meaning                                      |
+|-------|--------|----------------------------------------------|
+| `P`   | Purple | Forwarded to the upstream Metric Insights server (proxy) |
+| `C`   | Amber  | Served from the local proxy cache             |
+| `L`   | Grey   | Served locally (static file, dev route, etc.) |
+
+### Console banner
+
+The dev panel script prints a one-line banner to the browser DevTools console when the page loads:
+
+```
+pp-dev  🔍 Request Inspector  →  http://localhost:3000/@pp-dev/inspector
+```
+
+The message persists in DevTools history so it is visible even when you open the console after the page has loaded.
+
+### REST API
+
+The inspector also exposes a lightweight JSON API, useful for tooling and AI agents:
+
+| Method   | Path                    | Description                                 |
+|----------|-------------------------|---------------------------------------------|
+| `GET`    | `/@api/requests`        | Paginated list of captured requests (metadata only, no bodies) |
+| `GET`    | `/@api/requests/:id`    | Full entry including captured request/response bodies (base64-encoded) |
+| `GET`    | `/@api/requests/stats`  | Store stats: entry count, memory usage, limits |
+| `DELETE` | `/@api/requests`        | Clear all stored entries                    |
+
+`GET /@api/requests` accepts `?limit=` (default 50) and `?offset=` query parameters for pagination.
+
+Bodies in `GET /@api/requests/:id` are returned as base64 strings in `requestBody` / `responseBody` fields alongside `requestContentType` / `responseContentType`. A `*Truncated: true` flag indicates the body exceeded `captureLimit` and was cut off.
+
+### Configuration
+
+```typescript
+// pp-dev.config.ts
+export default defineConfig({
+  inspector: {
+    enabled: true,         // set to false to disable entirely
+    maxMemory: 100 * 1024 * 1024,   // evict oldest entries above 100 MB
+    captureLimit: 10 * 1024 * 1024, // capture at most 10 MB per body
+  },
+});
+```
 
 ## Troubleshooting
 
