@@ -3,6 +3,7 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import * as net from 'net';
 import * as zlib from 'zlib';
 import { fileURLToPath } from 'url';
 
@@ -120,7 +121,7 @@ export async function startMockMiServer(opts: {
           proxyRes(proxyRes: http.IncomingMessage, req: http.IncomingMessage, res: http.ServerResponse) {
             const chunks: Buffer[] = [];
             proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
-            proxyRes.on('end', async () => {
+            proxyRes.on('end', () => {
               const rawBuffer = Buffer.concat(chunks);
               const url = new URL(req.url ?? '/', `http://localhost:${port}`);
               const key = cassetteKey(req.method ?? 'GET', url.pathname);
@@ -136,9 +137,7 @@ export async function startMockMiServer(opts: {
 
               if (encoding === 'gzip' || encoding === 'x-gzip') {
                 try {
-                  bodyBuffer = await new Promise<Buffer<ArrayBuffer>>((ok, fail) =>
-                    zlib.gunzip(rawBuffer, (err, result) => (err ? fail(err) : ok(result))),
-                  );
+                  bodyBuffer = zlib.gunzipSync(rawBuffer);
                   delete storedHeaders['content-encoding'];
                   storedHeaders['content-length'] = String(bodyBuffer.byteLength);
                 } catch {
@@ -163,10 +162,12 @@ export async function startMockMiServer(opts: {
               res.end(rawBuffer);
             });
           },
-          error(err: Error, _req: http.IncomingMessage, res: http.ServerResponse) {
+          error(err: Error, _req: http.IncomingMessage, res: http.ServerResponse | net.Socket) {
             console.error('[mock-mi:record] Proxy error:', err.message);
-            res.writeHead(502, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
+            if (res instanceof http.ServerResponse) {
+              res.writeHead(502, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
           },
         },
       } as Parameters<typeof createProxyMiddleware>[0]),
