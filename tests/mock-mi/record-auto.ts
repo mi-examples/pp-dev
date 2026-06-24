@@ -9,7 +9,9 @@
  *   2. Patches tests/test-nextjs/pp-dev.config.ts to point at mock server
  *   3. Starts pp-dev next, waits for it to be ready
  *   4. Makes a few HTTP requests to pp-dev to trigger MI API calls
- *   5. Saves cassette, restores config, exits
+ *   5. Directly fetches template metadata + ZIP download via mock-mi proxy
+ *      (records the responses without needing a full next build / sync trigger)
+ *   6. Saves cassette, restores config, exits
  */
 
 import { spawn } from 'child_process';
@@ -26,6 +28,10 @@ const REAL_MI_URL = process.env.REAL_MI_URL ?? 'https://stg7x.metricinsights.com
 const PP_DEV_JS = path.join(TEST_APP_DIR, 'node_modules/@metricinsights/pp-dev/bin/pp-dev.js');
 const STARTUP_TIMEOUT = 90_000;
 const REQUEST_TIMEOUT = 10_000;
+const DOWNLOAD_TIMEOUT = 30_000;
+// Personal access token — if set, pp-dev adds it as Authorization: Bearer to all proxied
+// requests, allowing authenticated MI endpoints to be recorded without a browser session.
+const MI_ACCESS_TOKEN = process.env.MI_ACCESS_TOKEN ?? process.env.REAL_MI_TOKEN ?? '';
 
 function log(msg: string) {
   console.log(`[record-auto] ${msg}`);
@@ -41,6 +47,13 @@ const mockMi = await startMockMiServer({
 });
 
 const originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
+
+// Parse app ID from config before patching (used to discover template ID later)
+const appIdMatch = originalConfig.match(/id:\s*(\d+)/);
+const APP_ID = appIdMatch ? parseInt(appIdMatch[1], 10) : null;
+if (APP_ID === null) {
+  log('Warning: could not parse app.id from pp-dev.config.ts — template API calls will be skipped.');
+}
 let configPatched = false;
 
 const cleanup = () => {
@@ -70,11 +83,18 @@ fs.writeFileSync(CONFIG_PATH, patched);
 configPatched = true;
 log(`Patched pp-dev.config.ts → mi.url = ${mockMi.url}`);
 
+if (!MI_ACCESS_TOKEN) {
+  log(
+    'Warning: MI_ACCESS_TOKEN / REAL_MI_TOKEN not set — authenticated MI endpoints will not be recorded.\n' +
+      '         Set MI_ACCESS_TOKEN=<your-pat> to capture template API calls automatically.',
+  );
+}
+
 // 3. Start pp-dev next directly (no shell wrapper to avoid pipe latency on Windows)
 log('Starting pp-dev next...');
 const ppdev = spawn(process.execPath, [PP_DEV_JS, 'next'], {
   cwd: TEST_APP_DIR,
-  env: { ...process.env, NO_COLOR: '1' },
+  env: { ...process.env, NO_COLOR: '1', MI_ACCESS_TOKEN },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
@@ -120,13 +140,70 @@ for (const p of paths) {
   }
 }
 
+// 6. Fetch template API endpoints directly from mock-mi to record them.
+//    These are used during template:sync (download + upload flow). We request
+//    them through the mock-mi proxy so it records the real MI responses without
+//    needing to trigger a full next build.
+if (APP_ID !== null && MI_ACCESS_TOKEN) {
+  const authHeaders: Record<string, string> = { Authorization: `Bearer ${MI_ACCESS_TOKEN}` };
+
+  log(`Fetching page data to discover template ID (app ${APP_ID})...`);
+  let templateId: number | null = null;
+  try {
+    const pageRes = await fetch(`${mockMi.url}/api/page/id/${APP_ID}`, {
+      headers: authHeaders,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    });
+    if (pageRes.ok) {
+      const json = (await pageRes.json()) as { page?: { template_id?: number } };
+      templateId = json?.page?.template_id ?? null;
+      log(`  Discovered template_id: ${templateId}`);
+    } else {
+      log(`  /api/page/id/${APP_ID} → ${pageRes.status}`);
+    }
+  } catch (err) {
+    log(`  /api/page/id/${APP_ID} → error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (templateId !== null) {
+    // Template metadata
+    try {
+      const infoRes = await fetch(`${mockMi.url}/api/page_template/id/${templateId}`, {
+        headers: authHeaders,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+      });
+      log(`  /api/page_template/id/${templateId} → ${infoRes.status}`);
+    } catch (err) {
+      log(`  /api/page_template/id/${templateId} → error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Template ZIP download (binary — may be large, use extended timeout)
+    try {
+      const dlRes = await fetch(`${mockMi.url}/api/page_template/id/${templateId}/asset/download`, {
+        headers: authHeaders,
+        signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT),
+      });
+      log(`  /api/page_template/id/${templateId}/asset/download → ${dlRes.status}`);
+      // Consume body so the proxy finishes writing before we proceed
+      await dlRes.arrayBuffer();
+      log(`  (ZIP body consumed)`);
+    } catch (err) {
+      log(
+        `  /api/page_template/id/${templateId}/asset/download → error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+} else if (APP_ID !== null) {
+  log('Skipping template API fetch (no MI_ACCESS_TOKEN).');
+}
+
 // Give pending proxy responses time to be captured
 await new Promise((r) => setTimeout(r, 2_000));
 
-// 6. Save cassette explicitly before teardown
+// 7. Save cassette explicitly before teardown
 mockMi.save?.();
 
-// 7. Teardown
+// 8. Teardown
 ppdev.kill('SIGTERM');
 await mockMi.close();
 cleanup();
