@@ -139,6 +139,7 @@ function updatePopupPositions() {
   // Update popup positions
   popups.forEach((popup, index: number) => {
     const top = POPUP_OFFSET + index * (POPUP_HEIGHT + POPUP_OFFSET);
+
     popup.style.top = `${top}px`;
   });
 
@@ -219,6 +220,7 @@ function infoPopup(opts: InfoPopupOptions) {
 
       const now = Date.now();
       const elapsed = now - lastUpdate;
+
       remainingTime -= elapsed;
       lastUpdate = now;
 
@@ -229,6 +231,7 @@ function infoPopup(opts: InfoPopupOptions) {
       }
 
       const progress = (remainingTime / duration) * 100;
+
       if ($progressBar) {
         ($progressBar as HTMLElement).style.width = `${progress}%`;
       }
@@ -325,6 +328,21 @@ function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
     document.body.appendChild($overlay);
   });
 }
+
+// ── Inspector console banner ──────────────────────────────────────────────────
+// Logged once on page load so it is visible in DevTools history when the console
+// is opened. The message is harmless if the inspector is disabled.
+(function printInspectorBanner() {
+  const url = window.location.origin + '/@pp-dev/inspector';
+
+  console.log(
+    '%cpp-dev%c  🔍 Request Inspector  →  %c%s',
+    'background:#6e8efb;color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px',
+    'color:#a0a0b8;font-size:11px',
+    'color:#a78bfa;font-size:11px;text-decoration:underline',
+    url,
+  );
+})();
 
 // Use Vite's HMR context when available; otherwise fall back to a raw-WebSocket
 // shim so the dev panel also works under the `pp-dev next` server (no Vite HMR).
