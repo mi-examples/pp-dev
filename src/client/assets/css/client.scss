@@ -1,4 +1,4 @@
-$pp-dev-height: 30px;
+$pp-dev-height: 32px;
 
 .pp-dev-info-namespace {
   // Define theme colors
@@ -290,7 +290,8 @@ $pp-dev-height: 30px;
     top: calc(100% - $pp-dev-height);
     right: 0;
     text-align: center;
-    padding: 8px 12px;
+    padding: 2px;
+    gap: 8px;
     background-color: var(--pp-dev-info-color-white);
     border-radius: 4px 0 0 0;
     border-bottom: 1px solid rgba(34, 34, 34, 0.08);
@@ -311,7 +312,7 @@ $pp-dev-height: 30px;
     * {
       color: var(--pp-dev-info-color-dark);
       font-family: 'Inter', sans-serif;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 300;
       line-height: 1.5;
       letter-spacing: 0.00938em;
@@ -347,9 +348,9 @@ $pp-dev-height: 30px;
         right: 0;
         top: 50%;
         transform: translateY(-50%);
-        height: 12px;
+        height: 16px;
         width: 1px;
-        background-color: rgba(0, 0, 0, 0.15);
+        background-color: rgba(34, 34, 34, 0.24);
 
         @media screen and (prefers-color-scheme: dark) {
           background-color: rgba(255, 255, 255, 0.2);
@@ -369,7 +370,7 @@ $pp-dev-height: 30px;
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 13px;
+      font-size: 12px;
       line-height: 1.5;
     }
 
@@ -388,7 +389,7 @@ $pp-dev-height: 30px;
       transition: color 0.2s ease;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 8px;
 
       &:hover {
         color: var(--pp-dev-info-color-primary);
@@ -456,10 +457,8 @@ $pp-dev-height: 30px;
       justify-content: center;
       width: 28px;
       height: 28px;
-      margin-right: 12px;
       padding: 6px;
       cursor: pointer;
-      border: 1px solid var(--pp-dev-info-color-primary) !important;
       border-radius: 3px;
       transition: background-color 0.2s ease;
 
@@ -498,9 +497,7 @@ $pp-dev-height: 30px;
       width: 28px;
       height: 28px;
       padding: 6px;
-      margin-left: 12px;
       background-color: transparent;
-      border: 1px solid var(--pp-dev-info-color-primary) !important;
       border-radius: 3px;
       cursor: pointer;
       color: var(--pp-dev-info-color-primary);
@@ -554,6 +551,18 @@ $pp-dev-height: 30px;
         svg {
           animation: rotate 1.5s linear infinite;
         }
+      }
+    }
+
+    &__sep {
+      display: inline-flex;
+      flex-shrink: 0;
+      width: 1px;
+      height: 16px;
+      background-color: rgba(34, 34, 34, 0.24);
+
+      @media screen and (prefers-color-scheme: dark) {
+        background-color: rgba(255, 255, 255, 0.2);
       }
     }
 
