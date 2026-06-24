@@ -117,7 +117,7 @@ export async function startMockMiServer(opts: {
         changeOrigin: true,
         selfHandleResponse: true,
         on: {
-          proxyRes(proxyRes, req, res) {
+          proxyRes(proxyRes: http.IncomingMessage, req: http.IncomingMessage, res: http.ServerResponse) {
             const chunks: Buffer[] = [];
             proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
             proxyRes.on('end', async () => {
@@ -136,7 +136,7 @@ export async function startMockMiServer(opts: {
 
               if (encoding === 'gzip' || encoding === 'x-gzip') {
                 try {
-                  bodyBuffer = await new Promise<Buffer>((ok, fail) =>
+                  bodyBuffer = await new Promise<Buffer<ArrayBuffer>>((ok, fail) =>
                     zlib.gunzip(rawBuffer, (err, result) => (err ? fail(err) : ok(result))),
                   );
                   delete storedHeaders['content-encoding'];
@@ -163,9 +163,10 @@ export async function startMockMiServer(opts: {
               res.end(rawBuffer);
             });
           },
-          error(err, _req, res) {
+          error(err: Error, _req: http.IncomingMessage, res: http.ServerResponse) {
             console.error('[mock-mi:record] Proxy error:', err.message);
-            (res as Response).status(502).json({ error: err.message });
+            res.writeHead(502, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
           },
         },
       } as Parameters<typeof createProxyMiddleware>[0]),

@@ -21,7 +21,7 @@ import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import { startMockMiServer, DEFAULT_PORT } from './server.ts';
+import { startMockMiServer, DEFAULT_PORT } from './server.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
