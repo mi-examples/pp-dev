@@ -56,7 +56,7 @@ export function loadCassette(name: string): Cassette {
   if (!fs.existsSync(file)) {
     throw new Error(`Cassette not found: ${file}\nRun "npm run record:mi" with VPN enabled to record it.`);
   }
-  return JSON.parse(fs.readFileSync(file, 'utf-8')) as Cassette;
+  return JSON.parse(fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, '')) as Cassette;
 }
 
 export function saveCassette(cassette: Cassette): void {

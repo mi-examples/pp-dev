@@ -1,0 +1,33 @@
+{
+  "name": "startup",
+  "baseUrl": "https://stg7x.metricinsights.com",
+  "recordedAt": "2026-06-30T00:00:00.000Z",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "pathname": "/api/page/id/937"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"page\":{\"name\":\"pp-dev-test-template\",\"enabled\":\"Y\",\"visible_in_homepage\":\"Y\",\"internal_name\":\"pp-dev-test-template\",\"tags\":\"[{\\\"name\\\":\\\"sample\\\",\\\"value\\\":\\\"mock\\\"}]\",\"template\":\"<html><body><div id=\\\"mi-react-root\\\"></div></body></html>\",\"template_id\":313,\"base_url\":\"/pl/pp-dev-test-template/\",\"groups\":[],\"custom_domain\":null}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "pathname": "/data/page/index/auth/info"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"authenticated\":true,\"user\":{\"id\":1,\"username\":\"mock-ci\"}}"
+      }
+    }
+  ]
+}

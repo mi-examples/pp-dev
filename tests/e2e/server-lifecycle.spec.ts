@@ -10,6 +10,7 @@ import { spawn, execSync, type ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
 
 // On Windows, proc.kill('SIGTERM') only kills the shell (npm.cmd), not the
 // node/next child processes. Use taskkill /T to kill the entire process tree.
@@ -105,21 +106,36 @@ function startPPDev(extraEnv?: Record<string, string>): ProcOutput {
 
 describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   let ppdev: ProcOutput;
+  let mockMi: MockMiServer;
+  let originalConfig: string;
 
   beforeAll(async () => {
-    // Start pp-dev with the unmodified config (original MI URL).
-    // pp-dev is lazy about MI connections — startup succeeds without VPN.
+    mockMi = await startMockMiServer({ mode: 'replay', cassetteName: 'startup' });
+    originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
+    const patchedConfig = originalConfig.replace(
+      /url:\s*['"]https?:\/\/[^'"]+['"]/,
+      `url: '${mockMi.url}'`,
+    );
+
+    if (patchedConfig === originalConfig) {
+      throw new Error('Could not patch test pp-dev config to use mock-mi');
+    }
+
+    fs.writeFileSync(CONFIG_PATH, patchedConfig);
+
+    // Start pp-dev against mock-mi so CI never depends on the VPN-only MI instance.
     ppdev = startPPDev();
     // Wait for the very last startup log so all startup lines are in ppdev.lines
     await ppdev.waitForLine(/Process event handlers registered/i, 60_000);
   }, 90_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     ppdev?.kill();
     // Ensure config was not left modified by any test
     const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    const restored = content.replace(/\n\/\/ restart-trigger\n/g, '');
+    const restored = (originalConfig ?? content).replace(/\n\/\/ restart-trigger\n/g, '');
     if (restored !== content) fs.writeFileSync(CONFIG_PATH, restored);
+    await mockMi?.close();
   });
 
   // ── 1: Clean startup ──────────────────────────────────────────────────
@@ -149,5 +165,24 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     });
     // Expects a redirect (302) or page response — anything below 500
     expect(res.status).toBeLessThan(500);
+  });
+
+  it('loads page data from mock-mi cassette', async () => {
+    const res = await fetch('http://localhost:3000/pl/pp-dev-test-template/', {
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    expect(res.status).toBeLessThan(500);
+    await ppdev.waitForLine(/Page fetched/i, 10_000);
+    await ppdev.waitForLine(/Local page template fetched/i, 10_000);
+  });
+
+  it('proxies MI data requests through mock-mi cassette', async () => {
+    const res = await fetch('http://localhost:3000/data/page/index/auth/info', {
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ authenticated: true });
   });
 });
