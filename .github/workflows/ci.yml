@@ -59,17 +59,8 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h
 
-      - name: Install Playwright system deps
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
-        run: npx playwright install-deps chromium
-
-      - name: Verify Chrome browser
-        run: google-chrome --version
-
       - name: Build
         run: npm run build
 
       - name: Run E2E tests
-        run: npx playwright test
+        run: npm run test:e2e

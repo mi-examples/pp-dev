@@ -51,10 +51,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: {
-        ...devices['Desktop Chrome'],
-        ...(process.env.CI ? { channel: 'chrome' } : {}),
-      },
+      use: { ...devices['Desktop Chrome'] },
       outputDir: `test-results/${process.env.TEST_TYPE || 'all'}`,
     },
 
