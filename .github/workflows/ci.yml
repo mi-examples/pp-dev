@@ -62,5 +62,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install E2E fixture dependencies
+        working-directory: tests/test-nextjs
+        run: npm install --no-audit --package-lock=false
+
       - name: Run E2E tests
         run: npm run test:e2e
