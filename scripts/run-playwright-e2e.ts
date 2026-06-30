@@ -114,7 +114,26 @@ function ppDevBinFor(fixtureDir: string): string {
   return path.join(fixtureDir, 'node_modules', '@metricinsights', 'pp-dev', 'bin', 'pp-dev.js');
 }
 
-function killTree(proc: ChildProcess): void {
+async function waitForExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (proc.exitCode !== null || proc.signalCode !== null) {
+    return true;
+  }
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      proc.off('exit', onExit);
+      resolve(false);
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+
+    proc.once('exit', onExit);
+  });
+}
+
+async function killTree(proc: ChildProcess): Promise<void> {
   if (!proc.pid) return;
 
   if (process.platform === 'win32') {
@@ -126,10 +145,28 @@ function killTree(proc: ChildProcess): void {
     return;
   }
 
-  proc.kill('SIGTERM');
+  try {
+    process.kill(-proc.pid, 'SIGTERM');
+  } catch {
+    proc.kill('SIGTERM');
+  }
+
+  if (await waitForExit(proc, 5_000)) {
+    return;
+  }
+
+  try {
+    process.kill(-proc.pid, 'SIGKILL');
+  } catch {
+    proc.kill('SIGKILL');
+  }
 }
 
-function spawnCommand(command: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): ChildProcess {
+function spawnCommand(
+  command: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; detached?: boolean } = {},
+): ChildProcess {
   const env: NodeJS.ProcessEnv = { ...process.env, ...(opts.env ?? {}) };
 
   for (const [key, value] of Object.entries(env)) {
@@ -142,6 +179,7 @@ function spawnCommand(command: string, args: string[], opts: { cwd?: string; env
     cwd: opts.cwd ?? root,
     env,
     stdio: 'inherit',
+    detached: opts.detached,
   });
 }
 
@@ -207,6 +245,7 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
       {
         cwd: fixture.dir,
         env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: undefined },
+        detached: process.platform !== 'win32',
       },
     );
 
@@ -223,7 +262,7 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
     });
   } finally {
     if (server) {
-      killTree(server);
+      await killTree(server);
     }
     fs.writeFileSync(configPath, originalConfig);
   }
