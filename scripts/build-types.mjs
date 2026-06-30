@@ -11,6 +11,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const rollupBin = resolve(root, 'node_modules/rollup/dist/bin/rollup');
 const TIMEOUT_MS = parseInt(process.env.PP_DEV_DTS_TIMEOUT_MS ?? '60000', 10);
 
 function killTree(pid) {
@@ -33,11 +34,12 @@ function killTree(pid) {
 console.log(`[build:types] Starting DTS build (timeout=${TIMEOUT_MS}ms)`);
 
 const proc = spawn(
-  'rollup --config rollup.config.types.ts --configPlugin typescript',
+  process.execPath,
+  [rollupBin, '--config', 'rollup.config.types.ts', '--configPlugin', 'typescript'],
   {
     cwd: root,
     stdio: 'inherit',
-    shell: true,
+    detached: process.platform !== 'win32',
   },
 );
 

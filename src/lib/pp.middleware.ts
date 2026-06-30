@@ -344,12 +344,12 @@ export class MiAPI {
    * @param headers
    */
   async getPageVariables(pageId: number, headers: Headers) {
-    this.#pageTemplate = await this.getPageTemplate(headers);
-
-    if (!this.appId) {
+    if (typeof this.appId === 'undefined') {
       this.appId = pageId;
       this.templateLess = false;
     }
+
+    this.#pageTemplate = await this.getPageTemplate(headers);
 
     return await this.pageApi
       .get(pageId, this.#clearHeaders(headers))

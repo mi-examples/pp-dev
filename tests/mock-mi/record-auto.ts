@@ -14,7 +14,7 @@
  *   6. Saves cassette, restores config, exits
  */
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -29,6 +29,8 @@ const PP_DEV_JS = path.join(TEST_APP_DIR, 'node_modules/@metricinsights/pp-dev/b
 const STARTUP_TIMEOUT = 90_000;
 const REQUEST_TIMEOUT = 10_000;
 const DOWNLOAD_TIMEOUT = 30_000;
+const PP_PORT = Number(process.env.PP_DEV_RECORD_AUTO_PORT ?? 3000);
+const PP_BASE = `http://localhost:${PP_PORT}`;
 // Personal access token — if set, pp-dev adds it as Authorization: Bearer to all proxied
 // requests, allowing authenticated MI endpoints to be recorded without a browser session.
 const MI_ACCESS_TOKEN = process.env.MI_ACCESS_TOKEN ?? process.env.REAL_MI_TOKEN ?? '';
@@ -55,29 +57,33 @@ if (APP_ID === null) {
   log('Warning: could not parse app.id from pp-dev.config.ts — template API calls will be skipped.');
 }
 let configPatched = false;
+let ppdev: ChildProcess | undefined;
+let mockClosed = false;
 
-const cleanup = () => {
+const cleanup = async () => {
   if (configPatched) {
     fs.writeFileSync(CONFIG_PATH, originalConfig);
     log('Config restored.');
   }
+
+  if (ppdev && ppdev.exitCode === null && ppdev.signalCode === null) {
+    ppdev.kill('SIGTERM');
+  }
+
+  if (!mockClosed) {
+    await mockMi.close();
+    mockClosed = true;
+  }
 };
 
-process.once('uncaughtException', (err) => {
-  console.error('[record-auto] Uncaught error:', err);
-  cleanup();
-  process.exit(1);
-});
-
+try {
 // 2. Patch config to point at mock server
 const patched = originalConfig.replace(
   /url:\s*['"]https?:\/\/[^'"]+['"]/,
   `url: '${mockMi.url}'`,
 );
 if (patched === originalConfig) {
-  console.error('[record-auto] Could not patch mi.url in pp-dev.config.ts — check the regex.');
-  await mockMi.close();
-  process.exit(1);
+  throw new Error('Could not patch mi.url in pp-dev.config.ts — check the regex.');
 }
 fs.writeFileSync(CONFIG_PATH, patched);
 configPatched = true;
@@ -92,14 +98,15 @@ if (!MI_ACCESS_TOKEN) {
 
 // 3. Start pp-dev next directly (no shell wrapper to avoid pipe latency on Windows)
 log('Starting pp-dev next...');
-const ppdev = spawn(process.execPath, [PP_DEV_JS, 'next'], {
+const child = spawn(process.execPath, [PP_DEV_JS, 'next', '--host', 'localhost', '--port', String(PP_PORT), '--strictPort'], {
   cwd: TEST_APP_DIR,
   env: { ...process.env, NO_COLOR: '1', MI_ACCESS_TOKEN },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+ppdev = child;
 
-ppdev.stdout?.pipe(process.stdout);
-ppdev.stderr?.pipe(process.stderr);
+child.stdout?.pipe(process.stdout);
+child.stderr?.pipe(process.stderr);
 
 // 4. Wait for startup
 await new Promise<void>((resolve, reject) => {
@@ -113,9 +120,9 @@ await new Promise<void>((resolve, reject) => {
       resolve();
     }
   };
-  ppdev.stdout?.on('data', onData);
-  ppdev.stderr?.on('data', onData);
-  ppdev.once('exit', (code) => {
+  child.stdout?.on('data', onData);
+  child.stderr?.on('data', onData);
+  child.once('exit', (code) => {
     clearTimeout(timer);
     reject(new Error(`pp-dev exited early with code ${code}`));
   });
@@ -124,7 +131,6 @@ await new Promise<void>((resolve, reject) => {
 log('pp-dev is ready. Making requests to capture MI API calls...');
 
 // 5. Make requests to trigger MI API calls (auth check, template vars, etc.)
-const PP_BASE = 'http://localhost:3000';
 const paths = ['/', '/pl/pp-dev-test-template/', '/data/page/index/auth/info'];
 
 for (const p of paths) {
@@ -203,10 +209,7 @@ await new Promise((r) => setTimeout(r, 2_000));
 // 7. Save cassette explicitly before teardown
 mockMi.save?.();
 
-// 8. Teardown
-ppdev.kill('SIGTERM');
-await mockMi.close();
-cleanup();
-
 log('Done.');
-process.exit(0);
+} finally {
+  await cleanup();
+}

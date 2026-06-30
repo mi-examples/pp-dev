@@ -1,9 +1,8 @@
 /**
  * E2E tests for pp-dev server lifecycle.
  *
- * These tests do NOT use the mock MI server — pp-dev initializes lazily and
- * never calls MI during startup, so the tests pass without VPN or mock.
- * The mock server and cassettes are reserved for request-path tests.
+ * These tests run pp-dev against mock-mi replay so CI never depends on the
+ * VPN-only MI instance during startup.
  */
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import { spawn, execSync, type ChildProcess } from 'child_process';
@@ -13,13 +12,13 @@ import { fileURLToPath } from 'url';
 import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
 
 // On Windows, proc.kill('SIGTERM') only kills the shell (npm.cmd), not the
-// node/next child processes. Use taskkill /T to kill the entire process tree.
+// node/next child processes. POSIX uses a detached process group for the same reason.
 function killTree(proc: ChildProcess): void {
   if (!proc.pid) return;
   if (process.platform === 'win32') {
     try { execSync(`taskkill /PID ${proc.pid} /T /F`, { stdio: 'ignore' }); } catch { /* already gone */ }
   } else {
-    proc.kill('SIGTERM');
+    try { process.kill(-proc.pid, 'SIGTERM'); } catch { proc.kill('SIGTERM'); }
   }
 }
 
@@ -43,15 +42,20 @@ function startPPDev(extraEnv?: Record<string, string>): ProcOutput {
     env: { ...process.env, NO_COLOR: '1', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: true,
+    detached: process.platform !== 'win32',
   });
 
   const lines: string[] = [];
   const listeners: Array<(line: string) => void> = [];
+  let lineBuffer = '';
 
   const onData = (data: Buffer) => {
     const text = data.toString();
     process.stdout.write(text);
-    for (const raw of text.split('\n')) {
+    lineBuffer += text;
+    const parts = lineBuffer.split(/\r?\n/);
+    lineBuffer = parts.pop() ?? '';
+    for (const raw of parts) {
       const line = raw.trim();
       if (!line) continue;
       lines.push(line);

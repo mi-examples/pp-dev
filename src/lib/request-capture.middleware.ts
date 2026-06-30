@@ -51,13 +51,21 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
     const origWrite = res.write.bind(res) as typeof res.write;
     const origEnd = res.end.bind(res) as typeof res.end;
 
-    function captureChunk(chunk: unknown): void {
+    function captureChunk(chunk: unknown, encoding?: BufferEncoding): void {
       if (resTruncated || chunk == null) {
         return;
       }
 
       try {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(typeof chunk === 'string' ? chunk : String(chunk));
+        const buf = Buffer.isBuffer(chunk)
+          ? chunk
+          : typeof chunk === 'string'
+            ? Buffer.from(chunk, encoding)
+            : ArrayBuffer.isView(chunk)
+              ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+              : chunk instanceof ArrayBuffer
+                ? Buffer.from(chunk)
+                : Buffer.from(String(chunk));
 
         resSize += buf.byteLength;
 
@@ -70,6 +78,10 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
       } catch {
         // ignore encoding errors on capture
       }
+    }
+
+    function getWriteEncoding(args: unknown[]): BufferEncoding | undefined {
+      return typeof args[0] === 'string' ? (args[0] as BufferEncoding) : undefined;
     }
 
     function detectSource(): RequestSource {
@@ -104,14 +116,14 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
     }
 
     (res as any).write = function (chunk: any, ...args: any[]): boolean {
-      captureChunk(chunk);
+      captureChunk(chunk, getWriteEncoding(args));
 
       return (origWrite as any)(chunk, ...args);
     };
 
     (res as any).end = function (chunk?: any, ...args: any[]): any {
       if (typeof chunk !== 'function') {
-        captureChunk(chunk);
+        captureChunk(chunk, getWriteEncoding(args));
       }
 
       finalize();

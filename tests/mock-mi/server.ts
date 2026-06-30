@@ -46,9 +46,14 @@ export interface Cassette {
 
 export const CASSETTES_DIR = path.resolve(__dirname, 'cassettes');
 export const DEFAULT_PORT = 7331;
+const FILESYSTEM_PATH_RE = /\/(?:opt|var|srv|usr|home)\/[^\s"'<>),\]}]+/g;
 
 function cassetteKey(method: string, pathname: string): string {
   return `${method.toUpperCase()}:${pathname}`;
+}
+
+function redactFilesystemPaths(value: string): string {
+  return value.replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]');
 }
 
 function sanitizeHeaders(headers: Record<string, string | string[]>): Record<string, string | string[]> {
@@ -109,7 +114,7 @@ function sanitizeJsonValue(value: unknown, parentKey = ''): unknown {
     return 'User';
   }
 
-  return value;
+  return redactFilesystemPaths(value);
 }
 
 function sanitizeTextBody(body: string): string {
@@ -122,7 +127,8 @@ function sanitizeTextBody(body: string): string {
     .replace(/(["']?user_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1mock-ci$2')
     .replace(/(["']?username["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1mock-ci$2')
     .replace(/(["']?first_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1Mock$2')
-    .replace(/(["']?last_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1User$2');
+    .replace(/(["']?last_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1User$2')
+    .replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]');
 }
 
 function sanitizeBody(body: string, contentType: string): string {
@@ -295,7 +301,8 @@ export async function startMockMiServer(opts: {
               const rawBuffer = Buffer.concat(chunks);
               const url = new URL(req.url ?? '/', `http://localhost:${port}`);
               const key = cassetteKey(req.method ?? 'GET', url.pathname);
-              const encoding = proxyRes.headers['content-encoding'];
+              const encodingHeader = proxyRes.headers['content-encoding'];
+              const encoding = String(Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader ?? '').toLowerCase();
 
               // Decompress so cassette bodies are plain text/JSON
               let bodyBuffer = rawBuffer;
@@ -305,9 +312,15 @@ export async function startMockMiServer(opts: {
                   .map(([k, v]) => [k, Array.isArray(v) ? v : String(v)]),
               ) as Record<string, string | string[]>;
 
-              if (encoding === 'gzip' || encoding === 'x-gzip') {
+              if (encoding === 'gzip' || encoding === 'x-gzip' || encoding === 'br' || encoding === 'deflate') {
                 try {
-                  bodyBuffer = zlib.gunzipSync(rawBuffer);
+                  if (encoding === 'br') {
+                    bodyBuffer = zlib.brotliDecompressSync(rawBuffer);
+                  } else if (encoding === 'deflate') {
+                    bodyBuffer = zlib.inflateSync(rawBuffer);
+                  } else {
+                    bodyBuffer = zlib.gunzipSync(rawBuffer);
+                  }
                   delete storedHeaders['content-encoding'];
                   storedHeaders['content-length'] = String(bodyBuffer.byteLength);
                 } catch {

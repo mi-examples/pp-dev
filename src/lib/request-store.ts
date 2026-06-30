@@ -49,7 +49,19 @@ export class RequestStore {
   }
 
   add(entry: RequestEntry): void {
-    const size = (entry.requestBody?.byteLength ?? 0) + (entry.responseBody?.byteLength ?? 0);
+    let storedEntry = entry;
+    let size = (entry.requestBody?.byteLength ?? 0) + (entry.responseBody?.byteLength ?? 0);
+
+    if (size > this.maxMemory) {
+      storedEntry = {
+        ...entry,
+        requestBody: null,
+        responseBody: null,
+        requestBodyTruncated: entry.requestBodyTruncated || entry.requestBody !== null,
+        responseBodyTruncated: entry.responseBodyTruncated || entry.responseBody !== null,
+      };
+      size = 0;
+    }
 
     // Evict oldest entries until we have room
     while (this.totalSize + size > this.maxMemory && this.insertOrder.length > 0) {
@@ -62,8 +74,8 @@ export class RequestStore {
       }
     }
 
-    this.entries.set(entry.id, entry);
-    this.insertOrder.push(entry.id);
+    this.entries.set(storedEntry.id, storedEntry);
+    this.insertOrder.push(storedEntry.id);
     this.totalSize += size;
   }
 

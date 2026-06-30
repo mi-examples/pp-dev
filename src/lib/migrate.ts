@@ -59,7 +59,7 @@ export function isLegacyPPWatchConfig(config: Record<string, unknown>): boolean 
 }
 
 export function isAlreadyMigrated(config: Record<string, unknown>): boolean {
-  const NEW_KEYS = new Set(['mi', 'app', 'proxy', 'build', 'sync']);
+  const NEW_KEYS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector']);
 
   return Object.keys(config).some((k) => NEW_KEYS.has(k));
 }

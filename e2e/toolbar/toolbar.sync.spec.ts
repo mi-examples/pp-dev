@@ -37,15 +37,18 @@ test.describe('Toolbar Sync Functionality', () => {
           const className = await syncButton.getAttribute('class');
           const disabled = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
 
-          return className?.includes('syncing') || disabled;
+          return className?.includes('syncing') ? 'syncing' : disabled ? 'disabled' : 'idle';
         })
-        .toBe(true);
+        .not.toBe('idle');
 
       const className = await syncButton.getAttribute('class');
       const disabledAfterClick = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
 
       if (disabledAfterClick && !className?.includes('syncing')) {
-        test.skip();
+        expect(disabledAfterClick).toBe(true);
+        expect(className).not.toContain('syncing');
+
+        return;
       }
 
       expect(className).toContain('syncing');

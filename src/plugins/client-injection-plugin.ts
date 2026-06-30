@@ -41,6 +41,7 @@ try {
   DIRNAME = process.cwd();
 }
 
+const CLIENT_DIST_DIR = normalizePath(path.join(PP_DEV_PACKAGE_DIR, 'dist/client'));
 const PACKAGE_REGEXP = new RegExp(`^\\/?${PACKAGE_NAME}\\/client\\/(.*)$`);
 
 let cachedTemplateContent: string | null = null;
@@ -84,9 +85,17 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
     },
 
     resolveId(source) {
-      if (PACKAGE_REGEXP.test(source)) {
+      const match = source.match(PACKAGE_REGEXP);
+
+      if (match) {
+        const resolvedId = normalizePath(path.join(CLIENT_DIST_DIR, match[1]));
+
+        if (!resolvedId.startsWith(`${CLIENT_DIST_DIR}/`)) {
+          return null;
+        }
+
         return {
-          id: normalizePath(path.join(PP_DEV_PACKAGE_DIR, 'dist/client', source.replace(PACKAGE_REGEXP, '$1'))),
+          id: resolvedId,
         };
       }
     },

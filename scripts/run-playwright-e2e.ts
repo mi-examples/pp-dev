@@ -198,10 +198,14 @@ function runCommand(command: string, args: string[], opts: { cwd?: string; env?:
   });
 }
 
-async function waitForServer(url: string, timeoutMs = 60_000): Promise<void> {
+async function waitForServer(url: string, proc: ChildProcess, timeoutMs = 60_000): Promise<void> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      throw new Error(`pp-dev exited before ${url} became ready`);
+    }
+
     try {
       const res = await fetch(url, {
         redirect: 'manual',
@@ -249,7 +253,7 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
       },
     );
 
-    await waitForServer(baseURL);
+    await waitForServer(baseURL, server);
 
     await runCommand(process.execPath, [playwrightCli, 'test', ...defaultPlaywrightArgs, ...playwrightArgs], {
       cwd: root,

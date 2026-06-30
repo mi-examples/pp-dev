@@ -39,6 +39,37 @@ declare module 'next' {
   }
 }
 
+const PP_DEV_CONFIG_GROUPS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector']);
+
+function mergePPDevConfigs(...configs: Array<PPDevConfig | undefined>): PPDevConfig {
+  const merged: PPDevConfig = {};
+  const mutableMerged = merged as Record<string, unknown>;
+
+  for (const config of configs) {
+    if (!config) {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(config)) {
+      if (value === undefined) {
+        continue;
+      }
+
+      if (PP_DEV_CONFIG_GROUPS.has(key) && value && typeof value === 'object' && !Array.isArray(value)) {
+        mutableMerged[key] = {
+          ...((mutableMerged[key] as Record<string, unknown> | undefined) ?? {}),
+          ...(value as Record<string, unknown>),
+        };
+
+        continue;
+      }
+
+      mutableMerged[key] = value;
+    }
+  }
+
+  return merged;
+}
 
 function resolveRepositoryUrl(repository: unknown): string | undefined {
   if (typeof repository === 'string') {
@@ -288,17 +319,15 @@ export function withPPDev(
       // Get pp-dev config from Next.js config if available
       // Priority order: file config -> Next.js config -> function parameter config
       const nextConfigPPDev = getPPDevConfigFromNextConfig(nextConfiguration);
-      const mergedConfig: PPDevConfig = Object.assign({}, config, nextConfigPPDev, ppDevConfig ?? {});
+      const mergedConfig = mergePPDevConfigs(config, nextConfigPPDev, ppDevConfig);
+      const normalized = normalizePPDevConfig(mergedConfig, templateName);
 
-      // Derive display flags from grouped config
-      const appType = mergedConfig.app?.type ?? 'template';
-      const templateLess = appType === 'page';
-      const apiVersion = mergedConfig.mi?.apiVersion ?? 7;
-      const v7Features = apiVersion >= 7;
+      // Derive display flags from the same normalization path used by Vite/CLI.
+      const { templateLess, v7Features } = normalized;
 
       // Create base configuration with appropriate base path
       const isDevelopment = phase === PHASE_DEVELOPMENT_SERVER;
-      const basePath = createBasePath(templateName, templateLess, isDevelopment, v7Features);
+      const basePath = createBasePath(normalized.templateName, templateLess, isDevelopment, v7Features);
 
       const baseConfig: NextConfig = {
         basePath,
@@ -306,7 +335,7 @@ export function withPPDev(
       };
 
       if (!templateLess) {
-        baseConfig.assetPrefix = `${PATH_TEMPLATE_PREFIX}/${templateName}`;
+        baseConfig.assetPrefix = `${v7Features ? PATH_TEMPLATE_LOCAL_PREFIX : PATH_TEMPLATE_PREFIX}/${normalized.templateName}`;
       }
 
       // PP-Dev config is NOT added to Next.js config (avoids "Unrecognized key" warnings).

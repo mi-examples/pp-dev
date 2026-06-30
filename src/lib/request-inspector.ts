@@ -22,6 +22,17 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
     });
   });
 
+  // ── API: stats ────────────────────────────────────────────────────────────────
+  app.get('/@api/requests/stats', (_req, res) => {
+    res.json({
+      total: store.size,
+      memoryUsage: store.memoryUsage,
+      maxMemory: store.maxMemory,
+      memoryUsageFormatted: formatBytes(store.memoryUsage),
+      maxMemoryFormatted: formatBytes(store.maxMemory),
+    });
+  });
+
   // ── API: get single request with bodies ───────────────────────────────────────
   app.get('/@api/requests/:id', (req, res) => {
     const entry = store.get(req.params.id);
@@ -60,17 +71,6 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
   app.delete('/@api/requests', (_req, res) => {
     store.clear();
     res.json({ ok: true });
-  });
-
-  // ── API: stats ────────────────────────────────────────────────────────────────
-  app.get('/@api/requests/stats', (_req, res) => {
-    res.json({
-      total: store.size,
-      memoryUsage: store.memoryUsage,
-      maxMemory: store.maxMemory,
-      memoryUsageFormatted: formatBytes(store.memoryUsage),
-      maxMemoryFormatted: formatBytes(store.maxMemory),
-    });
   });
 
   // ── Web UI ────────────────────────────────────────────────────────────────────
@@ -516,7 +516,7 @@ function makeBodySection(title, b64, contentType, truncated, size, type) {
     bodyHtml = \`<div class="body-binary">Body too large to capture (\${formatBytes(size)})</div>\`;
   } else if (b64) {
     if (ct.includes('json') || ct.includes('/javascript') || ct === 'text/plain') {
-      const text = atob(b64);
+      const text = decodeTextBody(b64);
 
       if (ct.includes('json')) {
         try {
@@ -525,14 +525,14 @@ function makeBodySection(title, b64, contentType, truncated, size, type) {
           bodyHtml = \`<pre class="body-content">\${esc(text)}</pre>\`;
         }
       } else {
-        bodyHtml = \`<pre class="body-content">\${esc(atob(b64))}</pre>\`;
+        bodyHtml = \`<pre class="body-content">\${esc(text)}</pre>\`;
       }
     } else if (ct.startsWith('text/')) {
-      bodyHtml = \`<pre class="body-content">\${esc(atob(b64))}</pre>\`;
+      bodyHtml = \`<pre class="body-content">\${esc(decodeTextBody(b64))}</pre>\`;
     } else if (ct.startsWith('image/') && size < 1024*1024) {
       bodyHtml = \`<img class="body-image" src="data:\${esc(ct)};base64,\${b64}" alt="image"/>\`;
     } else if (ct === 'application/x-www-form-urlencoded') {
-      const params = new URLSearchParams(atob(b64));
+      const params = new URLSearchParams(decodeTextBody(b64));
       const rows = [...params.entries()].map(([k,v]) => \`<tr><td>\${esc(k)}</td><td>\${esc(v)}</td></tr>\`).join('');
 
       bodyHtml = \`<table class="kv-table">\${rows}</table>\`;
@@ -615,6 +615,12 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function decodeTextBody(b64) {
+  const bytes = Uint8Array.from(atob(b64), function(c) { return c.charCodeAt(0); });
+
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
 function sourceInfo(source) {
   if (source === 'proxy') {
     return { cls: 'src-proxy', title: 'Backend (live)' };
@@ -683,7 +689,7 @@ function copyBody(type, btn) {
   }
 
   try {
-    clipboard(atob(b64), btn);
+    clipboard(decodeTextBody(b64), btn);
   } catch(e) {}
 }
 window.copyBody = copyBody;

@@ -234,8 +234,10 @@ export async function getConfig(): Promise<PPDevConfig> {
 
   const pkg = getPackageJson();
 
-  if (!configFound && typeof pkg['pp-dev'] === 'object') {
-    config = pkg['pp-dev'];
+  const packageConfig = pkg['pp-dev'];
+
+  if (!configFound && packageConfig && typeof packageConfig === 'object' && !Array.isArray(packageConfig)) {
+    config = packageConfig as PPDevConfig;
   }
 
   return config;

@@ -680,7 +680,7 @@ cli
             conf: {
               ...config,
               basePath: base,
-              assetPrefix: `${templateLess ? PATH_PAGE_PREFIX : PATH_TEMPLATE_PREFIX}/${templateName}`,
+              assetPrefix: base,
             },
           };
 

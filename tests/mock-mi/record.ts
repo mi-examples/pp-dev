@@ -59,10 +59,20 @@ const ppdev = spawn(process.execPath, [PP_DEV_JS, 'next'], {
   env: { ...process.env },
 });
 
+let cleaningUp = false;
+
 const cleanup = async (signal?: NodeJS.Signals) => {
+  if (cleaningUp) {
+    return;
+  }
+
+  cleaningUp = true;
   console.log(`\n[record] Stopping... (${signal ?? 'exit'})`);
   fs.writeFileSync(CONFIG_PATH, originalConfig);
-  ppdev.kill();
+  mockMi.save?.();
+  if (ppdev.exitCode === null && ppdev.signalCode === null) {
+    ppdev.kill();
+  }
   await mockMi.close();
 };
 

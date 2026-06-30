@@ -262,6 +262,18 @@ describe('normalizePPDevConfig', () => {
 });
 
 describe('validatePPDevConfig', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.MI_BACKEND_URL;
+    delete process.env.MI_ACCESS_TOKEN;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
   it('throws if templateName is empty', () => {
     expect(() => validatePPDevConfig({}, '')).toThrow('app.name is required');
   });
