@@ -94,7 +94,15 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
       return 'local';
     }
 
+    let finalized = false;
+
     function finalize(): void {
+      if (finalized) {
+        return;
+      }
+
+      finalized = true;
+
       const requestBody = !reqTruncated && reqChunks.length > 0 ? Buffer.concat(reqChunks) : null;
       const responseBody = !resTruncated && resChunks.length > 0 ? Buffer.concat(resChunks) : null;
 

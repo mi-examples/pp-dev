@@ -28,8 +28,13 @@ import { ClientService } from './lib/client.service.js';
 import { DistService } from './lib/dist.service.js';
 import { PPDevHotServer } from './lib/pp-ws-server.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from './lib/dev-panel.js';
-import { PP_DEV_CONFIG_NAMES, PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from './constants.js';
-import { normalizePPDevConfig } from './plugin.js';
+import {
+  PP_DEV_CONFIG_NAMES,
+  PATH_PAGE_PREFIX,
+  PATH_TEMPLATE_PREFIX,
+  PATH_TEMPLATE_LOCAL_PREFIX,
+} from './constants.js';
+import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
@@ -296,7 +301,9 @@ cli
     const logger = createLogger(options.logLevel);
 
     const startServer = async () => {
-      if (isRestarting) {return;}
+      if (isRestarting) {
+        return;
+      }
 
       isRestarting = true;
 
@@ -629,6 +636,8 @@ cli
         }
 
         // Normalize grouped PPDevConfig to internal flat options
+        validatePPDevConfig(ppDevConfig, templateName ?? '');
+
         const _normalized = normalizePPDevConfig(ppDevConfig, templateName ?? '');
         const backendBaseURL = _normalized.backendBaseURL ?? 'http://localhost:8080';
         const templateLess = _normalized.templateLess;
@@ -860,7 +869,9 @@ cli
               await handle(req, res, parsedUrl);
             }
           } catch (error) {
-            logger.error(`Error handling request: ${error instanceof Error ? error.message : String(error)}`, { error: error instanceof Error ? error : undefined });
+            logger.error(`Error handling request: ${error instanceof Error ? error.message : String(error)}`, {
+              error: error instanceof Error ? error : undefined,
+            });
             res.statusCode = 500;
             res.end('Internal Server Error');
           }
@@ -958,7 +969,11 @@ cli
 
           // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
           const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
-          const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, Object.assign({ base }, miConfig, { miHudLess }));
+          const loadPPDataMiddleware = initLoadPPData(
+            isIndexRegExp,
+            mi,
+            Object.assign({ base }, miConfig, { miHudLess }),
+          );
           const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
             loadPPDataMiddleware(req, res, next);
           };
@@ -1737,9 +1752,10 @@ cli
             entryPoints: [sourceFile],
             outfile: 'out.js',
             write: false,
-            target: ['node18'],
+            target: 'node24',
             platform: 'node',
             bundle: true,
+            packages: 'external',
             format: 'esm',
             mainFields: ['main'],
           });
@@ -1752,7 +1768,9 @@ cli
 
             rawConfig = mod.default?.default ?? mod.default ?? mod;
           } finally {
-            if (fs.existsSync(tmpFile)) {fs.unlinkSync(tmpFile);}
+            if (fs.existsSync(tmpFile)) {
+              fs.unlinkSync(tmpFile);
+            }
           }
         } else if (/\.[cm]?js$/i.test(sourceFile)) {
           const { pathToFileURL } = await import('url');

@@ -158,9 +158,7 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
 
   if (!miUrl) {
     if (miMode === 'embedding' || appType === 'template') {
-      throw new Error(
-        '[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"',
-      );
+      throw new Error('[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"');
     }
 
     if (miMode === 'standalone' && appType === 'page') {
@@ -172,7 +170,7 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
     throw new Error('[pp-dev] app.id is required when app.type is "template"');
   }
 
-  if (appType === 'page' && miMode === 'standalone' && !config.app?.id) {
+  if (appType === 'page' && miMode === 'standalone' && miUrl && !config.app?.id) {
     throw new Error('[pp-dev] app.id is required when app.type is "page" and mi.mode is "standalone"');
   }
 }
@@ -387,13 +385,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         const isIndexRegExp = new RegExp(`^((${base})|/)$`);
 
-        server.middlewares.use(
-          initLoadPPData(
-            isIndexRegExp,
-            mi,
-            Object.assign({}, options, { appId, appBase: base }),
-          ),
-        );
+        server.middlewares.use(initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, { appId, appBase: base })));
 
         server.middlewares.use(
           proxyPassMiddleware({

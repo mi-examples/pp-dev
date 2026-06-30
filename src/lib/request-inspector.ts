@@ -8,8 +8,9 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
   app.get('/@api/requests', (req, res) => {
     const { limit, offset, method, search } = req.query as Record<string, string | undefined>;
     const items = store.list({
-      limit: limit ? parseInt(limit, 10) : undefined,
-      offset: offset ? parseInt(offset, 10) : undefined,
+      limit: limit !== undefined ? (Number.isFinite(parseInt(limit, 10)) ? parseInt(limit, 10) : undefined) : undefined,
+      offset:
+        offset !== undefined ? (Number.isFinite(parseInt(offset, 10)) ? parseInt(offset, 10) : undefined) : undefined,
       method,
       search,
     });
@@ -101,7 +102,7 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
-  
+
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
@@ -298,7 +299,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
         <div style="font-size:32px;opacity:.3">←</div>
         <div>Select a request to inspect</div>
       </div>
-      <div id="detail-panel" style="display:none;flex:1;display:none;flex-direction:column;overflow:hidden">
+      <div id="detail-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
         <div class="detail-info-bar" id="detail-info"></div>
         <div class="info-url" id="detail-url"></div>
         <div class="detail-scroll" id="detail-scroll"></div>

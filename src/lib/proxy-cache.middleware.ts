@@ -91,21 +91,27 @@ class EnhancedCache extends memoryCache.Cache<string, CacheItem> {
     }
 
     // Remove items if we exceed max size
-    while (this.totalSize > this.maxSize && keys.length > 0) {
-      const oldestKey = keys.sort((a, b) => {
+    while (this.totalSize > this.maxSize) {
+      const liveKeys = this.keys();
+
+      if (liveKeys.length === 0) {
+        break;
+      }
+
+      const oldestKey = liveKeys.sort((a, b) => {
         const itemA = this.get(a);
         const itemB = this.get(b);
 
         return (itemA?.timestamp || 0) - (itemB?.timestamp || 0);
       })[0];
 
-      if (oldestKey) {
-        const item = this.get(oldestKey);
+      const item = this.get(oldestKey);
 
-        if (item) {
-          this.totalSize -= item.size;
-          this.del(oldestKey);
-        }
+      if (item) {
+        this.totalSize -= item.size;
+        this.del(oldestKey);
+      } else {
+        break;
       }
     }
   }
@@ -240,6 +246,8 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       } else if (data !== null && data !== undefined) {
         chunks.push(Buffer.from(String(data), 'utf8'));
       }
+
+      callback?.();
 
       return true;
     };

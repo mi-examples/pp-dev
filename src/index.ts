@@ -152,6 +152,9 @@ export async function getViteConfig(): Promise<InlineConfig> {
   const templateName = pkg.name;
 
   const ppDevConfig = await getConfig();
+
+  validatePPDevConfig(ppDevConfig, templateName);
+
   const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, templateName);
 
   // Lazy import vitePPDev to avoid loading plugin module during Next.js config evaluation
@@ -320,6 +323,9 @@ export function withPPDev(
       // Priority order: file config -> Next.js config -> function parameter config
       const nextConfigPPDev = getPPDevConfigFromNextConfig(nextConfiguration);
       const mergedConfig = mergePPDevConfigs(config, nextConfigPPDev, ppDevConfig);
+
+      validatePPDevConfig(mergedConfig, templateName);
+
       const normalized = normalizePPDevConfig(mergedConfig, templateName);
 
       // Derive display flags from the same normalization path used by Vite/CLI.
@@ -335,7 +341,9 @@ export function withPPDev(
       };
 
       if (!templateLess) {
-        baseConfig.assetPrefix = `${v7Features ? PATH_TEMPLATE_LOCAL_PREFIX : PATH_TEMPLATE_PREFIX}/${normalized.templateName}`;
+        const prefix = isDevelopment && v7Features ? PATH_TEMPLATE_LOCAL_PREFIX : PATH_TEMPLATE_PREFIX;
+
+        baseConfig.assetPrefix = `${prefix}/${normalized.templateName}`;
       }
 
       // PP-Dev config is NOT added to Next.js config (avoids "Unrecognized key" warnings).
@@ -354,7 +362,9 @@ export function withPPDev(
 
         return fallbackConfig;
       } catch (fallbackError) {
-        logger.error('Error in fallback configuration:', { error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)) });
+        logger.error('Error in fallback configuration:', {
+          error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)),
+        });
 
         // Last resort: return empty config
         return {};

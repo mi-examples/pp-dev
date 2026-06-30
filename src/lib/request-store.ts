@@ -84,25 +84,23 @@ export class RequestStore {
   }
 
   list(opts?: { limit?: number; offset?: number; method?: string; search?: string }): RequestMeta[] {
-    let result = this.insertOrder
-      .slice()
-      .map((id) => {
-        const e = this.entries.get(id)!;
+    let result = this.insertOrder.slice().map((id) => {
+      const e = this.entries.get(id)!;
 
-        return {
-          id: e.id,
-          timestamp: e.timestamp,
-          method: e.method,
-          url: e.url,
-          statusCode: e.statusCode,
-          duration: e.duration,
-          source: e.source,
-          requestSize: e.requestBody?.byteLength ?? 0,
-          responseSize: e.responseBody?.byteLength ?? 0,
-          requestBodyTruncated: e.requestBodyTruncated,
-          responseBodyTruncated: e.responseBodyTruncated,
-        };
-      });
+      return {
+        id: e.id,
+        timestamp: e.timestamp,
+        method: e.method,
+        url: e.url,
+        statusCode: e.statusCode,
+        duration: e.duration,
+        source: e.source,
+        requestSize: e.requestBody?.byteLength ?? 0,
+        responseSize: e.responseBody?.byteLength ?? 0,
+        requestBodyTruncated: e.requestBodyTruncated,
+        responseBodyTruncated: e.responseBodyTruncated,
+      };
+    });
 
     if (opts?.method) {
       result = result.filter((e) => e.method === opts.method!.toUpperCase());
@@ -110,12 +108,12 @@ export class RequestStore {
 
     if (opts?.search) {
       const q = opts.search.toLowerCase();
-      
+
       result = result.filter((e) => e.url.toLowerCase().includes(q));
     }
 
-    const offset = opts?.offset ?? 0;
-    const limit = opts?.limit ?? result.length;
+    const offset = Number.isFinite(opts?.offset) ? opts.offset! : 0;
+    const limit = Number.isFinite(opts?.limit) ? opts.limit! : result.length;
 
     return result.slice(offset, offset + limit);
   }

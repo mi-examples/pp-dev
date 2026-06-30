@@ -396,7 +396,7 @@ export class MiAPI {
    * @param headers
    */
   async getPageInfo(pageId: number, headers: Headers) {
-    if (!this.appId) {
+    if (typeof this.appId === 'undefined') {
       this.appId = pageId;
     }
 
