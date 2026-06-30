@@ -51,6 +51,158 @@ function cassetteKey(method: string, pathname: string): string {
   return `${method.toUpperCase()}:${pathname}`;
 }
 
+function sanitizeHeaders(headers: Record<string, string | string[]>): Record<string, string | string[]> {
+  const allowedHeaders = new Set([
+    'accept-ranges',
+    'cache-control',
+    'content-type',
+    'etag',
+    'expires',
+    'last-modified',
+    'pragma',
+    'vary',
+  ]);
+
+  return Object.fromEntries(
+    Object.entries(headers).filter(([header]) => allowedHeaders.has(header.toLowerCase())),
+  ) as Record<string, string | string[]>;
+}
+
+function sanitizeJsonValue(value: unknown, parentKey = ''): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeJsonValue(item, parentKey));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [key, sanitizeJsonValue(nestedValue, key)]),
+    );
+  }
+
+  const key = parentKey.toLowerCase();
+
+  if (typeof value === 'number' && /user_id|userId|created_by|updated_by/.test(key)) {
+    return 1;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  if (/token|secret|password|session|cookie|authorization/.test(key)) {
+    return '[REDACTED]';
+  }
+
+  if (/email/.test(key)) {
+    return 'mock-ci';
+  }
+
+  if (/username|login|display_name|displayname/.test(key)) {
+    return 'mock-ci';
+  }
+
+  if (/first_name|firstname/.test(key)) {
+    return 'Mock';
+  }
+
+  if (/last_name|lastname/.test(key)) {
+    return 'User';
+  }
+
+  return value;
+}
+
+function sanitizeTextBody(body: string): string {
+  return body
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, 'mock-ci')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]')
+    .replace(/(["']?(?:access_)?token["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1[REDACTED]$2')
+    .replace(/(["']?session(?:_id)?["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1[REDACTED]$2')
+    .replace(/(["']?email["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1mock-ci$2')
+    .replace(/(["']?user_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1mock-ci$2')
+    .replace(/(["']?username["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1mock-ci$2')
+    .replace(/(["']?first_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1Mock$2')
+    .replace(/(["']?last_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1User$2');
+}
+
+function sanitizeBody(body: string, contentType: string): string {
+  if (contentType.toLowerCase().includes('application/json')) {
+    try {
+      return JSON.stringify(sanitizeJsonValue(JSON.parse(body)));
+    } catch {
+      // Fall through to text redaction for malformed JSON/JSONP.
+    }
+  }
+
+  return sanitizeTextBody(body);
+}
+
+function sanitizeCassette(cassette: Cassette): Cassette {
+  return {
+    ...cassette,
+    interactions: cassette.interactions.map((interaction) => {
+      if (interaction.request.pathname === '/auth/info.js') {
+        return {
+          ...interaction,
+          response: {
+            status: 200,
+            headers: { 'content-type': 'application/javascript; charset=utf-8' },
+            body: 'window.miAuthInfo = { authenticated: true, user: { username: "mock-ci" } };\n',
+          },
+        };
+      }
+
+      if (interaction.request.pathname === '/js/main.js') {
+        return {
+          ...interaction,
+          response: {
+            status: 200,
+            headers: { 'content-type': 'application/javascript; charset=utf-8' },
+            body: 'window.MI = window.MI || {};\n',
+          },
+        };
+      }
+
+      if (interaction.request.pathname === '/css/main.css') {
+        return {
+          ...interaction,
+          response: {
+            status: 200,
+            headers: { 'content-type': 'text/css; charset=utf-8' },
+            body: '/* Mock MI top bar styles for pp-dev E2E tests. */\n',
+          },
+        };
+      }
+
+      if (/^\/api\/page_template\/id\/\d+\/asset\/download$/.test(interaction.request.pathname)) {
+        return {
+          ...interaction,
+          response: {
+            status: 404,
+            headers: { 'content-type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({ error: 'Template asset download omitted from cassette' }),
+          },
+        };
+      }
+
+      const headers = sanitizeHeaders(interaction.response.headers);
+      const contentType = String(headers['content-type'] ?? headers['Content-Type'] ?? '');
+
+      return {
+        ...interaction,
+        response: {
+          ...interaction.response,
+          headers,
+          body:
+            interaction.response.bodyEncoding === 'base64'
+              ? interaction.response.body
+              : sanitizeBody(interaction.response.body, contentType),
+        },
+      };
+    }),
+  };
+}
+
 export function loadCassette(name: string): Cassette {
   const file = path.join(CASSETTES_DIR, `${name}.json`);
   if (!fs.existsSync(file)) {
@@ -62,7 +214,7 @@ export function loadCassette(name: string): Cassette {
 export function saveCassette(cassette: Cassette): void {
   fs.mkdirSync(CASSETTES_DIR, { recursive: true });
   const file = path.join(CASSETTES_DIR, `${cassette.name}.json`);
-  fs.writeFileSync(file, JSON.stringify(cassette, null, 2));
+  fs.writeFileSync(file, JSON.stringify(sanitizeCassette(cassette), null, 2));
   console.log(`[mock-mi] Saved ${cassette.interactions.length} interactions → ${file}`);
 }
 

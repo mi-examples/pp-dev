@@ -39,7 +39,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -63,8 +63,18 @@ jobs:
         run: npm run build
 
       - name: Install E2E fixture dependencies
-        working-directory: tests/test-nextjs
-        run: npm install --no-audit --package-lock=false
+        run: |
+          npm install --prefix tests/test-nextjs --no-audit --package-lock=false
+          npm install --prefix tests/test-commonjs --no-audit --package-lock=false
+          npm install --prefix tests/test-nextjs-cjs --no-audit --package-lock=false
+
+      - name: Run unit and integration tests
+        run: npm run test
 
       - name: Run E2E tests
         run: npm run test:e2e
+
+      - name: Run browser E2E tests
+        env:
+          PLAYWRIGHT_USE_SYSTEM_CHROME: '1'
+        run: npm run test:e2e:browser
