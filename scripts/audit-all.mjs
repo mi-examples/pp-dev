@@ -2,15 +2,7 @@
  * Runs `npm audit` in the repository root and every tests/* package that has a package.json.
  * Exits with code 1 if any audit reports vulnerabilities or fails.
  *
- * Audit level: "high" for test fixtures; "critical" for root.
- *
- * WHY --audit-level=critical for root: npm@11.x (pulled in by @semantic-release/npm) bundles
- * node-gyp whose undici <=6.26.0 has several high-severity CVEs. npm's own node_modules tree
- * is isolated and cannot be patched via package.json overrides — npm audit fix itself says
- * "cannot be fixed automatically". The postinstall script (patch-npm-bundled-vulnerabilities.mjs)
- * replaces the actual files with undici@8.x at runtime; we raise the audit threshold here to
- * avoid blocking CI on an issue that is (a) already patched on disk, (b) only in a dev CI tool,
- * and (c) will resolve when npm ships a release with the fix bundled.
+ * Audit level: "high" for every target.
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -45,18 +37,15 @@ if (existsSync(testsDir)) {
  * Windows: `execFileSync("npm", …)` is unreliable (npm.cmd / EINVAL); use cmd.exe.
  * Unix: invoke `npm` directly (no shell) to avoid DEP0190.
  */
-function runNpmAudit(cwd, isRoot) {
-  // Root uses --audit-level=critical; see file-level comment for rationale.
-  const level = isRoot ? 'critical' : 'high';
-
+function runNpmAudit(cwd) {
   if (process.platform === 'win32') {
-    return spawnSync('cmd.exe', ['/d', '/s', '/c', `npm audit --audit-level=${level}`], {
+    return spawnSync('cmd.exe', ['/d', '/s', '/c', 'npm audit --audit-level=high'], {
       cwd,
       stdio: 'inherit',
     });
   }
 
-  return spawnSync('npm', ['audit', `--audit-level=${level}`], { cwd, stdio: 'inherit' });
+  return spawnSync('npm', ['audit', '--audit-level=high'], { cwd, stdio: 'inherit' });
 }
 
 const results = [];
@@ -66,7 +55,7 @@ for (const { label, cwd } of targets) {
 
   console.log(`\n${bar}\n  npm audit — ${label}\n${bar}\n`);
 
-  const spawned = runNpmAudit(cwd, label === 'root');
+  const spawned = runNpmAudit(cwd);
   const code = spawned.status ?? (spawned.error ? 1 : 0);
 
   results.push({ label, code });
