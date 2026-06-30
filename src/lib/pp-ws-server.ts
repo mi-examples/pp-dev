@@ -154,7 +154,9 @@ export class PPDevHotServer {
       try {
         listener(message.data, client);
       } catch (err) {
-        createLogger().error(`ws handler for "${message.event}" failed`, { error: err instanceof Error ? err : new Error(String(err)) });
+        createLogger().error(`ws handler for "${message.event}" failed`, {
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
       }
     }
   }

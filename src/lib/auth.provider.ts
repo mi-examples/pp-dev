@@ -110,7 +110,6 @@ class AuthProvider {
       }
     });
   }
-
 }
 
 // Create and export a singleton instance

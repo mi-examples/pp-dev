@@ -25,7 +25,9 @@ const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 function getCachedResponse(key: string): any | null {
   const cached = apiResponseCache.get(key);
 
-  if (!cached) {return null;}
+  if (!cached) {
+    return null;
+  }
 
   if (Date.now() - cached.timestamp > CACHE_TTL) {
     apiResponseCache.delete(key);
@@ -72,7 +74,11 @@ function isUnderBase(requestPath: string, base?: string): boolean {
 
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
 
-  return requestPath === normalizedBase || requestPath === normalizedBase.slice(0, -1) || requestPath.startsWith(normalizedBase);
+  return (
+    requestPath === normalizedBase ||
+    requestPath === normalizedBase.slice(0, -1) ||
+    requestPath.startsWith(normalizedBase)
+  );
 }
 
 export function initLoadPPData(

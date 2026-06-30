@@ -2,12 +2,12 @@ $pp-dev-height: 32px;
 
 .pp-dev-info-namespace {
   // Define theme colors
-  --pp-dev-info-color-primary: #075B7E;
+  --pp-dev-info-color-primary: #075b7e;
   --pp-dev-info-color-secondary: rgba(34, 34, 34, 0.64);
-  --pp-dev-info-color-success: #077E45;
+  --pp-dev-info-color-success: #077e45;
   --pp-dev-info-color-info: #17a2b8;
-  --pp-dev-info-color-warning: #FFB000;
-  --pp-dev-info-color-danger: #AC2B2B;
+  --pp-dev-info-color-warning: #ffb000;
+  --pp-dev-info-color-danger: #ac2b2b;
   --pp-dev-info-color-light: #f8f9fa;
   --pp-dev-info-color-dark: #343a40;
   --pp-dev-info-color-white: #ffffff;
@@ -621,9 +621,9 @@ $pp-dev-height: 32px;
     @media screen and (prefers-color-scheme: dark) {
       & {
         // Dark theme colors
-        --pp-dev-info-color-primary: #2A8DB5;
+        --pp-dev-info-color-primary: #2a8db5;
         --pp-dev-info-color-secondary: rgba(220, 220, 220, 0.64);
-        --pp-dev-info-color-success: #0FAD5E;
+        --pp-dev-info-color-success: #0fad5e;
         --pp-dev-info-color-info: #2dccff;
         --pp-dev-info-color-warning: #ffb302;
         --pp-dev-info-color-danger: #e05252;

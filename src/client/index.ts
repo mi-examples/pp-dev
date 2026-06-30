@@ -78,7 +78,7 @@ function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
   }
 
   document.removeEventListener('keydown', entry.onKeyDown);
-  
+
   activeConfirmModals.delete(overlay);
   overlay.remove();
   entry.resolve(result);
@@ -97,9 +97,7 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   $popup.classList.add('pp-dev-info-namespace');
 
   const typeClass = opts.type ? `pp-dev-info__popup--${opts.type}` : '';
-  const iconHtml = opts.type
-    ? `<div class="pp-dev-info__popup-title-icon">${TYPE_ICONS[opts.type]}</div>`
-    : '';
+  const iconHtml = opts.type ? `<div class="pp-dev-info__popup-title-icon">${TYPE_ICONS[opts.type]}</div>` : '';
 
   const template = `
     <div class="pp-dev-info__popup ${typeClass} ${opts.className || ''}" style="${opts.style || ''}">
