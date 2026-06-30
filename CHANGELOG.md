@@ -1,3 +1,30 @@
+# [0.20.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.19.0...v0.20.0-beta.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* address code review defects ([c734183](https://github.com/mi-examples/pp-dev/commit/c734183f2b4e7cd901e27502acff42d671d4dff4))
+* address review feedback defects ([85e2b80](https://github.com/mi-examples/pp-dev/commit/85e2b80ddc4cdeca9d97682315c4a0417cb34e5a))
+* **build:** run rollup-plugin-dts in child process to prevent Windows hang ([d9466b0](https://github.com/mi-examples/pp-dev/commit/d9466b0884f3e0eb5d01ef864e18ba32c6ff7899))
+* **ci:** restore fixture package install ([d0ea762](https://github.com/mi-examples/pp-dev/commit/d0ea762c6f9e6802cb3bca22d29f7193a0dcdf9c))
+* **e2e:** use taskkill /T /F on Windows to kill pp-dev process tree ([79ca61e](https://github.com/mi-examples/pp-dev/commit/79ca61e2f73144d9584bce762424853c154281e7))
+* **mock-mi:** fix broken regex and Windows-incompatible spawn in record.ts ([ad0b033](https://github.com/mi-examples/pp-dev/commit/ad0b0333976b38b362b74a47c8bad239d9b0e75a))
+* **mock-mi:** fix remaining TS errors in server.ts ([b538640](https://github.com/mi-examples/pp-dev/commit/b5386404e0fb16f8d5ba03073da507c8f679cb48))
+* **mock-mi:** fix TypeScript errors in mock-mi server and record scripts ([f64f835](https://github.com/mi-examples/pp-dev/commit/f64f8350e4353ac90f963feee99ff945c15572bf))
+* **mock-mi:** store binary responses as base64 in cassettes ([c6ee828](https://github.com/mi-examples/pp-dev/commit/c6ee82800dc4c621326f4032ea2f2ec606b0545b))
+* **security:** patch npm/node-gyp undici <=6.26.0 high-severity CVEs ([d4c8a10](https://github.com/mi-examples/pp-dev/commit/d4c8a10e704c75b6d1c1b7bcd8166d007b5270a2)), closes [hi#severity](https://github.com/hi/issues/severity) [hi#severity](https://github.com/hi/issues/severity)
+* **security:** pin undici to ^7.28.0 to fix CVEs without breaking jsdom ([d03bd5e](https://github.com/mi-examples/pp-dev/commit/d03bd5e744e18695a7c05c3e3e6b545e2a00b219))
+* **ui:** align panel bar with Figma spec (PP-3449) ([9ed1320](https://github.com/mi-examples/pp-dev/commit/9ed13200bb154753534a29b7f606b3fc663d3076))
+
+
+### Features
+
+* **inspector:** add Request Inspector with web UI and REST API ([e53fa90](https://github.com/mi-examples/pp-dev/commit/e53fa90639bdb6ed917772169ea2cb4f36de28a8))
+* **inspector:** print inspector URL banner to browser DevTools console ([9222397](https://github.com/mi-examples/pp-dev/commit/92223972ec5f649085a76afd22b2328aeafb0e97))
+* **mock-mi:** add PAT support and template API fetch to record-auto ([74c3142](https://github.com/mi-examples/pp-dev/commit/74c3142941456d9a8fdaad62fdb1ff956e6b147e))
+* **ui:** PP-3440 MI brand redesign — colors, Inter font, SVG type icons ([a0a30a5](https://github.com/mi-examples/pp-dev/commit/a0a30a5aafe07255cc74bb614d36f86a4ee64925)), closes [#075B7E](https://github.com/mi-examples/pp-dev/issues/075B7E) [#077E45](https://github.com/mi-examples/pp-dev/issues/077E45) [#AC2B2B](https://github.com/mi-examples/pp-dev/issues/AC2B2B) [#FFB000](https://github.com/mi-examples/pp-dev/issues/FFB000)
+* v1.0 grouped PPDevConfig schema, defineConfig helper, pp-dev migrate codemod ([222b4e5](https://github.com/mi-examples/pp-dev/commit/222b4e5949144295f07dd9fed87e131692323560))
+
 # [1.0.0](https://github.com/mi-examples/pp-dev/compare/v0.19.0-beta.2...v1.0.0) (2026-06-19)
 
 ## ⚠ BREAKING CHANGES
