@@ -78,11 +78,18 @@ function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
   }
 
   document.removeEventListener('keydown', entry.onKeyDown);
-  
+
   activeConfirmModals.delete(overlay);
   overlay.remove();
   entry.resolve(result);
 }
+
+const TYPE_ICONS: Record<NonNullable<InfoPopupOptions['type']>, string> = {
+  success: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 12 15 16 9"/></svg>`,
+  danger: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+  warning: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+  info: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
+};
 
 function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   const $popup = document.createElement('div');
@@ -90,10 +97,12 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   $popup.classList.add('pp-dev-info-namespace');
 
   const typeClass = opts.type ? `pp-dev-info__popup--${opts.type}` : '';
+  const iconHtml = opts.type ? `<div class="pp-dev-info__popup-title-icon">${TYPE_ICONS[opts.type]}</div>` : '';
 
   const template = `
     <div class="pp-dev-info__popup ${typeClass} ${opts.className || ''}" style="${opts.style || ''}">
       <div class="pp-dev-info__popup-title">
+        ${iconHtml}
         <div class="pp-dev-info__popup-title-text">${opts.title}</div>
         <div class="pp-dev-info__popup-title-close">
           <svg
@@ -128,6 +137,7 @@ function updatePopupPositions() {
   // Update popup positions
   popups.forEach((popup, index: number) => {
     const top = POPUP_OFFSET + index * (POPUP_HEIGHT + POPUP_OFFSET);
+
     popup.style.top = `${top}px`;
   });
 
@@ -208,6 +218,7 @@ function infoPopup(opts: InfoPopupOptions) {
 
       const now = Date.now();
       const elapsed = now - lastUpdate;
+
       remainingTime -= elapsed;
       lastUpdate = now;
 
@@ -218,6 +229,7 @@ function infoPopup(opts: InfoPopupOptions) {
       }
 
       const progress = (remainingTime / duration) * 100;
+
       if ($progressBar) {
         ($progressBar as HTMLElement).style.width = `${progress}%`;
       }
@@ -314,6 +326,21 @@ function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
     document.body.appendChild($overlay);
   });
 }
+
+// ── Inspector console banner ──────────────────────────────────────────────────
+// Logged once on page load so it is visible in DevTools history when the console
+// is opened. The message is harmless if the inspector is disabled.
+(function printInspectorBanner() {
+  const url = window.location.origin + '/@pp-dev/inspector';
+
+  console.log(
+    '%cpp-dev%c  🔍 Request Inspector  →  %c%s',
+    'background:#6e8efb;color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px',
+    'color:#a0a0b8;font-size:11px',
+    'color:#a78bfa;font-size:11px;text-decoration:underline',
+    url,
+  );
+})();
 
 // Use Vite's HMR context when available; otherwise fall back to a raw-WebSocket
 // shim so the dev panel also works under the `pp-dev next` server (no Vite HMR).

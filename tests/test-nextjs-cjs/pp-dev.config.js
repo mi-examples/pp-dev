@@ -2,12 +2,18 @@
  * @type {import('@metricinsights/pp-dev').PPDevConfig}
  */
 const ppDevConfig = {
-  backendBaseURL: 'https://stg7x.metricinsights.com',
-  portalPageId: 733,
-  v7Features: true,
-  templateLess: false,
-  miHudLess: true,
-  disableSSLValidation: true,
+  mi: {
+    url: 'https://stg7x.metricinsights.com',
+    mode: 'standalone',
+    apiVersion: 7,
+  },
+  app: {
+    id: 733,
+    type: 'template',
+  },
+  proxy: {
+    tls: { allowSelfSigned: true },
+  },
 };
 
 module.exports = ppDevConfig;

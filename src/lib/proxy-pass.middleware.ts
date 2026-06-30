@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { MiAPI } from './pp.middleware';
+import type { NextHandleFunction } from 'connect';
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;
@@ -26,6 +27,7 @@ export interface ProxyOpts {
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
+
 export const PROXY_HEADER = 'X-PP-Proxy';
 
 // TODO: Implement interceptor for streaming responses
@@ -39,7 +41,7 @@ function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: Buffer
   };
 }
 
-export function initProxy(opts: ProxyOpts) {
+export function initProxy(opts: ProxyOpts): NextHandleFunction {
   const {
     rewritePath = /^\/(?!p[tl]).*/i,
     baseURL = '',
@@ -101,18 +103,9 @@ export function initProxy(opts: ProxyOpts) {
       [host]: 'localhost',
     },
     logger: {
-      info: () => {
-        //
-      },
-      log: () => {
-        //
-      },
-      error: () => {
-        //
-      },
-      warn: () => {
-        //
-      },
+      info: () => {},
+      warn: () => {},
+      error: () => {},
     },
     secure: !disableSSLValidation,
     headers: {
@@ -286,7 +279,7 @@ export function initProxy(opts: ProxyOpts) {
         res.end(errorMessage);
       },
     },
-  });
+  }) as unknown as NextHandleFunction;
 }
 
 export default initProxy;

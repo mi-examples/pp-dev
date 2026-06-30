@@ -1,12 +1,16 @@
-import { PPDevConfig } from '@metricinsights/pp-dev';
+import { defineConfig } from '@metricinsights/pp-dev';
 
-const ppDevConfig: PPDevConfig = {
-  backendBaseURL: 'https://stg7x.metricinsights.com',
-  portalPageId: 937,
-  v7Features: true,
-  templateLess: false,
-  miHudLess: true,
-  disableSSLValidation: true,
-};
-
-export default ppDevConfig;
+export default defineConfig({
+  mi: {
+    url: 'https://stg7x.metricinsights.com',
+    mode: 'standalone',
+    apiVersion: 7,
+  },
+  app: {
+    id: 937,
+    type: 'template',
+  },
+  proxy: {
+    tls: { allowSelfSigned: true },
+  },
+});

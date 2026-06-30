@@ -1,11 +1,10 @@
 import { readdirSync, readFileSync, unlink, writeFileSync, existsSync } from 'fs';
 import path from 'path';
-import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
+import { PP_DEV_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
-import { type VitePPDevOptions } from './plugin.js';
+import type { PPDevConfig } from './plugin.js';
 
-export type PPDevConfig = Omit<VitePPDevOptions, 'templateName'>;
-export type PPWatchConfig = { baseURL: string; portalPageId: number };
+export type { PPDevConfig } from './plugin.js';
 
 // Performance optimization: Cache for configuration files
 interface ConfigCache {
@@ -29,6 +28,7 @@ function getPackageJson(): any {
   }
 
   const cwd = process.cwd();
+
   try {
     const data = JSON.parse(
       readFileSync(path.resolve(cwd, 'package.json'), {
@@ -38,10 +38,13 @@ function getPackageJson(): any {
     );
 
     packageJsonCache = { data, timestamp: now };
+
     return data;
   } catch {
     const empty = {};
+
     packageJsonCache = { data: empty, timestamp: now };
+
     return empty;
   }
 }
@@ -77,6 +80,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
   } else {
     // Performance optimization: Use cached package.json
     const pkg = getPackageJson();
+
     isESM = !!pkg && pkg.type === 'module';
   }
 
@@ -87,9 +91,10 @@ async function loadTsConfig<T extends object>(filePath: string) {
     entryPoints: [filePath],
     outfile: 'out.js',
     write: false,
-    target: ['node14.18', 'node16'],
+    target: 'node24',
     platform: 'node',
     bundle: true,
+    packages: 'external',
     format: isESM ? 'esm' : 'cjs',
     mainFields: ['main'],
     sourcemap: 'inline',
@@ -134,6 +139,7 @@ async function loadJsConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `js:${filePath}`;
   const cached = configCache.get(cacheKey);
+
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
@@ -154,6 +160,7 @@ async function loadJSONConfig<T extends object>(filePath: string) {
   // Performance optimization: Check cache first
   const cacheKey = `json:${filePath}`;
   const cached = configCache.get(cacheKey);
+
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
@@ -188,6 +195,7 @@ function getDirectoryContent(): string[] {
     .map((value) => value.name);
 
   dirContentCache = { files, timestamp: now };
+
   return files;
 }
 
@@ -211,7 +219,7 @@ export function getPkg() {
   return getPackageJson();
 }
 
-export async function getConfig() {
+export async function getConfig(): Promise<PPDevConfig> {
   const dirContent = getDirectoryContent();
 
   let config: PPDevConfig = {};
@@ -224,41 +232,19 @@ export async function getConfig() {
     configFound = true;
   }
 
-  if (dirContent.length) {
-    if (!configFound) {
-      const watchConfig = await loadConfig<PPWatchConfig>(dirContent, PP_WATCH_CONFIG_NAMES as never as string[]);
-
-      if (watchConfig) {
-        config = {
-          backendBaseURL: watchConfig.baseURL,
-          portalPageId: watchConfig.portalPageId,
-        };
-
-        configFound = true;
-      }
-    }
-  }
-
   const pkg = getPackageJson();
 
-  if (!configFound && typeof pkg['pp-dev'] === 'object') {
-    config = pkg['pp-dev'];
+  const packageConfig = pkg['pp-dev'];
+
+  if (!configFound && packageConfig && typeof packageConfig === 'object' && !Array.isArray(packageConfig)) {
+    config = packageConfig as PPDevConfig;
   }
 
   return config;
 }
 
-// Export cache management functions for external use
 export function clearConfigCache() {
   configCache.clear();
   packageJsonCache = null;
   dirContentCache = null;
-}
-
-export function getConfigCacheStats() {
-  return {
-    configEntries: configCache.size,
-    packageJsonCached: !!packageJsonCache,
-    dirContentCached: !!dirContentCache,
-  };
 }

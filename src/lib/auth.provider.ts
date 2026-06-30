@@ -65,9 +65,11 @@ class AuthProvider {
     if (updates.isAuthenticated !== undefined) {
       this.state.isAuthenticated = updates.isAuthenticated;
     }
+
     if (updates.isRedirected !== undefined) {
       this.state.isRedirected = updates.isRedirected;
     }
+
     this.state.lastChecked = Date.now();
     this.notifyListeners();
   }
@@ -107,16 +109,6 @@ class AuthProvider {
         console.error('Error in auth state listener:', error);
       }
     });
-  }
-
-  /**
-   * Get authentication info for debugging
-   */
-  getDebugInfo(): AuthState & { listenerCount: number } {
-    return {
-      ...this.getState(),
-      listenerCount: this.listeners.size,
-    };
   }
 }
 

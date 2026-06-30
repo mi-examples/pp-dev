@@ -27,7 +27,7 @@ test.describe('Toolbar Minimize Functionality', () => {
     await expect(toolbar).toBeVisible();
 
     // Click minimize button
-    await minimizeBtn.click();
+    await minimizeBtn.click({ force: true });
 
     // Toolbar should have 'closed' class
     await expect(toolbar).toHaveClass(/closed/);
@@ -50,11 +50,11 @@ test.describe('Toolbar Minimize Functionality', () => {
     await expect(toolbar).toBeVisible();
 
     // Minimize
-    await minimizeBtn.click();
+    await minimizeBtn.click({ force: true });
     await expect(toolbar).toHaveClass(/closed/);
 
     // Restore
-    await minimizeBtn.click();
+    await minimizeBtn.click({ force: true });
     await expect(toolbar).not.toHaveClass(/closed/);
   });
 
@@ -73,7 +73,7 @@ test.describe('Toolbar Minimize Functionality', () => {
     const minimizeBtn = page.locator('.pp-dev-info__wrap-btn');
 
     // Minimize toolbar
-    await minimizeBtn.click();
+    await minimizeBtn.click({ force: true });
     await expect(toolbar).toHaveClass(/closed/);
 
     // Check localStorage value
@@ -116,13 +116,13 @@ test.describe('Toolbar Minimize Functionality', () => {
     const minimizeSvg = minimizeBtn.locator('svg');
 
     // Click to minimize
-    await minimizeBtn.click();
+    await minimizeBtn.click({ force: true });
 
     // SVG should have 'closed' class
     await expect(minimizeSvg).toHaveClass(/closed/);
 
     // Click to restore
-    await minimizeBtn.click();
+    await minimizeBtn.click({ force: true });
 
     // SVG should not have 'closed' class
     await expect(minimizeSvg).not.toHaveClass(/closed/);

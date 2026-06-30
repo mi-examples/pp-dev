@@ -26,6 +26,7 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
   if (!server.httpServer || !process.stdin.isTTY || process.env.CI) {
     return;
   }
+
   (server as any)._shortcutsOptions = opts;
 
   const logger = createLogger();
@@ -54,6 +55,7 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
     if (input === '\x03') {
       // Re-emit SIGINT so the CLI graceful shutdown handlers run.
       process.kill(process.pid, 'SIGINT');
+
       return;
     }
 
@@ -94,6 +96,7 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
   process.stdin.setRawMode(true);
 
   process.stdin.on('data', onInput).setEncoding('utf8').resume();
+
   const boundServer = server.httpServer;
 
   const cleanupBinding = () => {

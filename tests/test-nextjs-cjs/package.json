@@ -44,7 +44,8 @@
     "path-to-regexp": ">=8.4.0",
     "picomatch": "4.0.4",
     "serialize-javascript": ">=7.0.5",
-    "undici": ">=6.24.0",
+    "undici": ">=7.28.0",
+    "http-proxy-middleware": "^3.0.7",
     "vite": "^8.0.16",
     "vite@*": {
       "postcss": "8.5.10"

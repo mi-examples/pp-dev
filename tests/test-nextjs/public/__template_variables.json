@@ -1,0 +1,26 @@
+{
+    "tags": [
+        {
+            "portal_page_template_tag_id": 2341,
+            "portal_page_template_id": 313,
+            "name": "variable-test",
+            "uid": "c8dfece5cc68249206e4690fc4737a8d",
+            "default_value": "String value for test",
+            "additional_options": "",
+            "tag_type": "text",
+            "tag_source": "static",
+            "javascript_code": null,
+            "display_order": 0,
+            "use_hmtl_editor_ind": "N",
+            "use_json_editor_ind": "N",
+            "description": "Value for test",
+            "use_js_code_ind": "N",
+            "use_raw_html_ind": "N"
+        }
+    ],
+    "settings": {
+        "image_capture_timeout": 20,
+        "image_capture_on_event": "none",
+        "image_capture_css_selector": "none"
+    }
+}

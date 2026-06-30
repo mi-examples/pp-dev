@@ -39,7 +39,7 @@ describe('dev-panel', () => {
       const out = injectDevPanel(baseHtml, '/p/my-app/', {
         templateLess: false,
         backendBaseURL: 'http://mi',
-        portalPageId: 1,
+        appId: 1,
       });
 
       expect(out).toContain('<link rel="stylesheet" href="/p/my-app/@metricinsights/pp-dev/client/client.css">');
