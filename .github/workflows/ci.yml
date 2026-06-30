@@ -68,9 +68,9 @@ jobs:
 
       - name: Install E2E fixture dependencies
         run: |
-          npm ci --prefix tests/test-nextjs --no-audit
-          npm ci --prefix tests/test-commonjs --no-audit
-          npm ci --prefix tests/test-nextjs-cjs --no-audit
+          npm install --prefix tests/test-nextjs --no-audit --package-lock=false
+          npm install --prefix tests/test-commonjs --no-audit --package-lock=false
+          npm install --prefix tests/test-nextjs-cjs --no-audit --package-lock=false
 
       - name: Run unit and integration tests
         run: npm run test
