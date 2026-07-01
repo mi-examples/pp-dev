@@ -1,10 +1,18 @@
 {%# This is EJS template. Parameters: openDelimiter: "{", closeDelimiter="}" %}
 <div class="pp-dev-info-namespace pp-dev-info">
   <div class="pp-dev-info__wrap-btn">
-    <svg class="pp-dev-info__wrap-btn-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
-      <path
-        d="M218.101 38.101L198.302 57.9c-4.686 4.686-4.686 12.284 0 16.971L353.432 230H12c-6.627 0-12 5.373-12 12v28c0 6.627 5.373 12 12 12h341.432l-155.13 155.13c-4.686 4.686-4.686 12.284 0 16.971l19.799 19.799c4.686 4.686 12.284 4.686 16.971 0l209.414-209.414c4.686-4.686 4.686-12.284 0-16.971L235.071 38.101c-4.686-4.687-12.284-4.687-16.97 0z"
-      />
+    <svg
+      class="pp-dev-info__wrap-btn-arrow"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M5 12h14"></path>
+      <path d="m12 5 7 7-7 7"></path>
     </svg>
   </div>
 
@@ -46,7 +54,7 @@
     {% if (backendBaseURL && !Number.isNaN(+appId)) { %}
     <div class="pp-dev-info__section">
       <span class="pp-dev-info__item">
-        <span class="pp-dev-info__label">App ID:</span>
+        <span class="pp-dev-info__label">Portal page ID:</span>
         <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= appId %}" target="_blank" class="pp-dev-info__link"
           >{%= appId %}</a
         >
@@ -58,10 +66,21 @@
   {% if (backendBaseURL && !Number.isNaN(+appId)) { %}
   <span class="pp-dev-info__sep" aria-hidden="true"></span>
   <button id="sync-template" class="sync-button" title="Sync template">
-    <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"
-      />
+    <svg
+      fill="none"
+      width="16px"
+      height="16px"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M21 2v6h-6"></path>
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+      <path d="M3 22v-6h6"></path>
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
     </svg>
   </button>
   {% } %}

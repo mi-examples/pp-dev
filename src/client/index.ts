@@ -70,6 +70,9 @@ const activeConfirmModals = new Map<
   { resolve: (value: boolean) => void; onKeyDown: (event: KeyboardEvent) => void }
 >();
 
+const ICON_SIZE = 16;
+const CLOSE_ICON_SIZE = 12;
+
 function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
   const entry = activeConfirmModals.get(overlay);
 
@@ -85,10 +88,10 @@ function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
 }
 
 const TYPE_ICONS: Record<NonNullable<InfoPopupOptions['type']>, string> = {
-  success: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 12 15 16 9"/></svg>`,
-  danger: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
-  warning: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-  info: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
+  success: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`,
+  danger: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
+  warning: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+  info: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
 };
 
 function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
@@ -107,8 +110,8 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
         <div class="pp-dev-info__popup-title-close">
           <svg
             viewBox="0 0 24 24"
-            width="16"
-            height="16"
+            width="${CLOSE_ICON_SIZE}"
+            height="${CLOSE_ICON_SIZE}"
             stroke="currentColor"
             stroke-width="1.5"
             fill="none"
@@ -121,7 +124,6 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
         </div>
       </div>
       <div class="pp-dev-info__popup-content">${opts.content}</div>
-      <div class="pp-dev-info__popup-progress"></div>
     </div>
   `;
 
@@ -137,8 +139,11 @@ function updatePopupPositions() {
   // Update popup positions
   popups.forEach((popup, index: number) => {
     const top = POPUP_OFFSET + index * (POPUP_HEIGHT + POPUP_OFFSET);
+    const $popupContent = popup.querySelector<HTMLElement>('.pp-dev-info__popup');
 
-    popup.style.top = `${top}px`;
+    if ($popupContent) {
+      $popupContent.style.top = `${top}px`;
+    }
   });
 
   // Ensure dev panel stays at the bottom
@@ -150,7 +155,7 @@ function updatePopupPositions() {
 
 function animatePopup($popup: HTMLDivElement, type: 'enter' | 'exit') {
   return new Promise<void>((resolve) => {
-    const $popupContent = $popup.querySelector('.pp-dev-info-namespace');
+    const $popupContent = $popup.querySelector('.pp-dev-info__popup');
 
     if (!$popupContent) {
       return resolve();
@@ -179,7 +184,6 @@ function animatePopup($popup: HTMLDivElement, type: 'enter' | 'exit') {
 function infoPopup(opts: InfoPopupOptions) {
   const $popup = createPopupElement(opts);
   const $closeButton = $popup.querySelector('.pp-dev-info__popup-title-close');
-  const $progressBar = $popup.querySelector('.pp-dev-info__popup-progress');
 
   const removePopup = async () => {
     await animatePopup($popup, 'exit');
@@ -210,8 +214,7 @@ function infoPopup(opts: InfoPopupOptions) {
     let lastUpdate = Date.now();
     let isVisible = true;
 
-    // Update progress bar
-    const updateProgress = () => {
+    const scheduleDismiss = () => {
       if (!isVisible) {
         return;
       }
@@ -228,13 +231,7 @@ function infoPopup(opts: InfoPopupOptions) {
         return;
       }
 
-      const progress = (remainingTime / duration) * 100;
-
-      if ($progressBar) {
-        ($progressBar as HTMLElement).style.width = `${progress}%`;
-      }
-
-      requestAnimationFrame(updateProgress);
+      requestAnimationFrame(scheduleDismiss);
     };
 
     // Handle visibility change
@@ -243,12 +240,11 @@ function infoPopup(opts: InfoPopupOptions) {
 
       if (isVisible) {
         lastUpdate = Date.now();
-        requestAnimationFrame(updateProgress);
+        requestAnimationFrame(scheduleDismiss);
       }
     });
 
-    // Start progress bar animation
-    requestAnimationFrame(updateProgress);
+    requestAnimationFrame(scheduleDismiss);
   }
 }
 
@@ -435,14 +431,13 @@ if (hot) {
           infoPopup({
             title: 'Sync cancelled',
             content: payload.message,
-            className: 'pp-dev-info__popup--warning',
             type: 'warning',
           });
         } else if ('error' in payload && typeof payload.error !== 'undefined') {
           infoPopup({
             title: 'Sync error',
             content: payload.error,
-            className: 'pp-dev-info__popup--danger',
+            type: 'danger',
           });
 
           if (payload.refresh) {
@@ -460,7 +455,7 @@ if (hot) {
             content: `Synced at ${new Date(payload.syncedAt).toLocaleString()}.<br />Backup filename: ${
               payload.backupFilename
             }`,
-            className: 'pp-dev-info__popup--success',
+            type: 'success',
           });
         }
       },
