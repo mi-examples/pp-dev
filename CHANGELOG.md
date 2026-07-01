@@ -1,3 +1,10 @@
+# [0.20.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.2...v0.20.0-beta.3) (2026-07-01)
+
+
+### Bug Fixes
+
+* **PP-3449:** address PR [#182](https://github.com/mi-examples/pp-dev/issues/182) code review comments ([010a182](https://github.com/mi-examples/pp-dev/commit/010a182136cf72eac0782e38750ea30f9f89f8f8))
+
 # [0.20.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.1...v0.20.0-beta.2) (2026-07-01)
 
 
