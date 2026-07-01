@@ -1,3 +1,10 @@
+# [0.20.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.1...v0.20.0-beta.2) (2026-07-01)
+
+
+### Bug Fixes
+
+* **ui:** align dev panel with design ([0d020e3](https://github.com/mi-examples/pp-dev/commit/0d020e32c3e1608cafdcc0c7a5b368524867a785))
+
 # [0.20.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.19.0...v0.20.0-beta.1) (2026-06-30)
 
 
