@@ -145,6 +145,7 @@ export interface NormalizedVitePPDevOptions {
 export function validatePPDevConfig(config: PPDevConfig, templateName: string): void {
   const miMode = config.mi?.mode ?? 'standalone';
   const appType = config.app?.type ?? 'template';
+  const apiVersion = config.mi?.apiVersion ?? 7;
   const miUrl = config.mi?.url ?? process.env.MI_BACKEND_URL;
 
   if (!templateName) {
@@ -170,8 +171,10 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
     throw new Error('[pp-dev] app.id is required when app.type is "template"');
   }
 
-  if (appType === 'page' && miMode === 'standalone' && miUrl && !config.app?.id) {
-    throw new Error('[pp-dev] app.id is required when app.type is "page" and mi.mode is "standalone"');
+  const requiresPageAppId = appType === 'page' && miUrl && (miMode === 'standalone' || apiVersion >= 7);
+
+  if (requiresPageAppId && !config.app?.id) {
+    throw new Error('[pp-dev] app.id is required when backend page data is loaded for app.type "page"');
   }
 }
 

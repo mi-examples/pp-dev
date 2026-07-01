@@ -3,12 +3,29 @@ import { RequestStore } from './request-store.js';
 
 export const INSPECTOR_PATH = '/@pp-dev/inspector';
 
+const DEFAULT_LIST_LIMIT = 500;
+
+// Routes are installed once for the lifetime of the shared `internalServer` app; restarting
+// the dev server (config watch) only swaps `current` to point at the fresh store/capture limit.
+let routesInstalled = false;
+let current: { store: RequestStore; captureLimit: number } | undefined;
+
 export function registerInspectorRoutes(app: Application, store: RequestStore, captureLimit = 10 * 1024 * 1024): void {
+  current = { store, captureLimit };
+
+  if (routesInstalled) {
+    return;
+  }
+
+  routesInstalled = true;
+
   // ── API: list requests ────────────────────────────────────────────────────────
   app.get('/@api/requests', (req, res) => {
+    const { store: activeStore } = current!;
     const { limit, offset, method, search } = req.query as Record<string, string | undefined>;
-    const items = store.list({
-      limit: limit !== undefined ? (Number.isFinite(parseInt(limit, 10)) ? parseInt(limit, 10) : undefined) : undefined,
+    const parsedLimit = limit !== undefined ? parseInt(limit, 10) : undefined;
+    const items = activeStore.list({
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : DEFAULT_LIST_LIMIT,
       offset:
         offset !== undefined ? (Number.isFinite(parseInt(offset, 10)) ? parseInt(offset, 10) : undefined) : undefined,
       method,
@@ -17,26 +34,28 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
 
     res.json({
       requests: items,
-      total: store.size,
-      memoryUsage: store.memoryUsage,
-      maxMemory: store.maxMemory,
+      total: activeStore.size,
+      memoryUsage: activeStore.memoryUsage,
+      maxMemory: activeStore.maxMemory,
     });
   });
 
   // ── API: stats ────────────────────────────────────────────────────────────────
   app.get('/@api/requests/stats', (_req, res) => {
+    const { store: activeStore } = current!;
+
     res.json({
-      total: store.size,
-      memoryUsage: store.memoryUsage,
-      maxMemory: store.maxMemory,
-      memoryUsageFormatted: formatBytes(store.memoryUsage),
-      maxMemoryFormatted: formatBytes(store.maxMemory),
+      total: activeStore.size,
+      memoryUsage: activeStore.memoryUsage,
+      maxMemory: activeStore.maxMemory,
+      memoryUsageFormatted: formatBytes(activeStore.memoryUsage),
+      maxMemoryFormatted: formatBytes(activeStore.maxMemory),
     });
   });
 
   // ── API: get single request with bodies ───────────────────────────────────────
   app.get('/@api/requests/:id', (req, res) => {
-    const entry = store.get(req.params.id);
+    const entry = current!.store.get(req.params.id);
 
     if (!entry) {
       res.status(404).json({ error: 'Not found', id: req.params.id });
@@ -70,7 +89,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
 
   // ── API: clear all requests ───────────────────────────────────────────────────
   app.delete('/@api/requests', (_req, res) => {
-    store.clear();
+    current!.store.clear();
     res.json({ ok: true });
   });
 
@@ -78,7 +97,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
   app.get(INSPECTOR_PATH, (_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
-    res.end(getInspectorHtml(captureLimit));
+    res.end(getInspectorHtml(current!.captureLimit));
   });
 }
 

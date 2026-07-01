@@ -308,7 +308,25 @@ describe('validatePPDevConfig', () => {
         { mi: { url: 'https://mi.example.com', mode: 'standalone' }, app: { type: 'page' } },
         'app',
       ),
-    ).toThrow('app.id is required when app.type is "page" and mi.mode is "standalone"');
+    ).toThrow('app.id is required when backend page data is loaded for app.type "page"');
+  });
+
+  it('throws if app.type=page + embedding + apiVersion 7 without app.id', () => {
+    expect(() =>
+      validatePPDevConfig(
+        { mi: { url: 'https://mi.example.com', mode: 'embedding', apiVersion: 7 }, app: { type: 'page' } },
+        'app',
+      ),
+    ).toThrow('app.id is required when backend page data is loaded for app.type "page"');
+  });
+
+  it('does not throw for app.type=page + embedding + apiVersion 6 without app.id', () => {
+    expect(() =>
+      validatePPDevConfig(
+        { mi: { url: 'https://mi.example.com', mode: 'embedding', apiVersion: 6 }, app: { type: 'page' } },
+        'app',
+      ),
+    ).not.toThrow();
   });
 
   it('passes valid standalone template config', () => {

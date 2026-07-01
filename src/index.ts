@@ -346,29 +346,24 @@ export function withPPDev(
         baseConfig.assetPrefix = `${prefix}/${normalized.templateName}`;
       }
 
-      // PP-Dev config is NOT added to Next.js config (avoids "Unrecognized key" warnings).
-      // CLI and app get config from getConfig() / pp-dev.config.js instead.
-      return Object.assign({}, baseConfig, nextConfiguration);
+      // PP-Dev config is added as a non-enumerable property so Next.js's own config-key
+      // validation (which enumerates keys) doesn't flag it, while getPPDevConfigFromNextConfig()
+      // and the CLI's config?.ppDev lookup can still read it directly.
+      const result = Object.assign({}, baseConfig, nextConfiguration);
+
+      Object.defineProperty(result, 'ppDev', {
+        value: mergedConfig,
+        enumerable: false,
+        configurable: true,
+      });
+
+      return result;
     } catch (error) {
       const logger = createLogger();
 
       logger.error('Error in withPPDev:', { error: error instanceof Error ? error : new Error(String(error)) });
-      logger.warn('Falling back to original Next.js configuration');
 
-      // Fallback to original config if something goes wrong
-      try {
-        const fallbackConfig =
-          typeof nextjsConfig === 'function' ? await nextjsConfig(phase, nextConfig) : nextjsConfig;
-
-        return fallbackConfig;
-      } catch (fallbackError) {
-        logger.error('Error in fallback configuration:', {
-          error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)),
-        });
-
-        // Last resort: return empty config
-        return {};
-      }
+      throw error;
     }
   };
 }
