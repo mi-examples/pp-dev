@@ -1,13 +1,13 @@
-$pp-dev-height: 30px;
+$pp-dev-height: 32px;
 
 .pp-dev-info-namespace {
   // Define theme colors
-  --pp-dev-info-color-primary: #007bff;
-  --pp-dev-info-color-secondary: #6c757d;
-  --pp-dev-info-color-success: #28a745;
+  --pp-dev-info-color-primary: #075b7e;
+  --pp-dev-info-color-secondary: rgba(34, 34, 34, 0.64);
+  --pp-dev-info-color-success: #077e45;
   --pp-dev-info-color-info: #17a2b8;
-  --pp-dev-info-color-warning: #ffc107;
-  --pp-dev-info-color-danger: #dc3545;
+  --pp-dev-info-color-warning: #ffb000;
+  --pp-dev-info-color-danger: #ac2b2b;
   --pp-dev-info-color-light: #f8f9fa;
   --pp-dev-info-color-dark: #343a40;
   --pp-dev-info-color-white: #ffffff;
@@ -17,186 +17,125 @@ $pp-dev-height: 30px;
     position: fixed;
     top: 10px;
     right: 10px;
-    width: max-content;
-    max-width: 300px;
-    height: max-content;
-    max-height: max-content;
+    width: 280px;
+    max-width: calc(100vw - 20px);
+    height: auto;
     background-color: var(--pp-dev-info-color-white);
-    box-shadow:
-      0 4px 6px rgba(0, 0, 0, 0.1),
-      0 1px 3px rgba(0, 0, 0, 0.08);
-    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(34, 34, 34, 0.2);
+    border-radius: 2px;
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 12px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
     z-index: 100001;
-    border: 1px solid var(--pp-dev-info-color-secondary);
+    border-left: 2px solid var(--pp-dev-info-color-primary);
     transform: translateX(0);
     opacity: 1;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    box-sizing: border-box;
+    --pp-dev-info-popup-accent: var(--pp-dev-info-color-primary);
 
     &.entering {
-      transform: translateX(100%);
+      transform: translateX(calc(100% + 10px));
       opacity: 0;
     }
 
     &.exiting {
-      transform: translateX(100%);
+      transform: translateX(calc(100% + 10px));
       opacity: 0;
-    }
-
-    &-progress {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      height: 4px;
-      background: linear-gradient(90deg, var(--pp-dev-info-color-primary), var(--pp-dev-info-color-info));
-      width: 100%;
-      transform-origin: left;
-      transition: width 0.1s linear;
-      border-radius: 0 0 0 8px;
     }
 
     &-title {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      padding: 12px 16px;
-      height: auto;
-      min-height: 30px;
+      gap: 8px;
+      padding: 0;
+      min-height: 0;
       width: 100%;
       box-sizing: border-box;
-      border-bottom: 1px solid var(--pp-dev-info-color-light);
-      background-color: var(--pp-dev-info-color-secondary);
+      border-bottom: 0;
+      color: #040404;
+
+      &-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        color: var(--pp-dev-info-popup-accent);
+      }
 
       &-text {
-        font-size: 14px;
+        flex: 1;
+        color: #040404;
+        font-size: 12px;
         font-weight: 600;
-        color: var(--pp-dev-info-color-white);
-        line-height: 1.4;
+        line-height: 18px;
+        text-align: left;
+        word-break: break-word;
       }
 
       &-close {
         cursor: pointer;
-        width: 24px;
-        height: 24px;
+        width: 12px;
+        height: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--pp-dev-info-color-white);
-        border-radius: 4px;
-        transition: background-color 0.2s ease;
+        margin-top: 2px;
+        color: rgba(34, 34, 34, 0.64);
+        border-radius: 2px;
+        transition: color 0.2s ease;
+        flex-shrink: 0;
 
         &:hover {
-          background-color: rgba(255, 255, 255, 0.1);
+          color: var(--pp-dev-info-color-dark);
         }
 
         svg {
           transition: transform 0.2s ease;
         }
-
-        &:hover svg {
-          transform: scale(1.1);
-        }
       }
     }
 
     &-content {
-      padding: 12px 16px;
+      margin-left: 24px;
+      padding: 0;
+      width: calc(100% - 24px);
       overflow-y: auto;
       box-sizing: border-box;
-      flex-grow: 1;
-      background-color: var(--pp-dev-info-color-white);
-      width: 100%;
-      line-height: 1.5;
-      font-size: 13px;
+      flex-grow: 0;
+      background-color: transparent;
+      color: rgba(34, 34, 34, 0.8);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 18px;
+      text-align: left;
+      word-break: break-word;
     }
 
     &--success {
-      border-color: var(--pp-dev-info-color-success);
-      box-shadow:
-        0 4px 6px rgba(40, 167, 69, 0.1),
-        0 1px 3px rgba(40, 167, 69, 0.08);
-
-      .pp-dev-info__popup {
-        &-title {
-          background-color: var(--pp-dev-info-color-success);
-        }
-
-        &-content {
-          color: var(--pp-dev-info-color-success);
-        }
-
-        &-progress {
-          background: linear-gradient(90deg, var(--pp-dev-info-color-success), #4caf50);
-        }
-      }
+      --pp-dev-info-popup-accent: var(--pp-dev-info-color-success);
+      border-left-color: var(--pp-dev-info-color-success);
     }
 
     &--danger {
-      border-color: var(--pp-dev-info-color-danger);
-      box-shadow:
-        0 4px 6px rgba(220, 53, 69, 0.1),
-        0 1px 3px rgba(220, 53, 69, 0.08);
-
-      .pp-dev-info__popup {
-        &-title {
-          background-color: var(--pp-dev-info-color-danger);
-        }
-
-        &-content {
-          color: var(--pp-dev-info-color-danger);
-        }
-
-        &-progress {
-          background: linear-gradient(90deg, var(--pp-dev-info-color-danger), #f44336);
-        }
-      }
+      --pp-dev-info-popup-accent: var(--pp-dev-info-color-danger);
+      border-left-color: var(--pp-dev-info-color-danger);
     }
 
     &--info {
-      border-color: var(--pp-dev-info-color-info);
-      box-shadow:
-        0 4px 6px rgba(23, 162, 184, 0.1),
-        0 1px 3px rgba(23, 162, 184, 0.08);
-
-      .pp-dev-info__popup {
-        &-title {
-          background-color: var(--pp-dev-info-color-info);
-        }
-
-        &-content {
-          color: var(--pp-dev-info-color-info);
-        }
-
-        &-progress {
-          background: linear-gradient(90deg, var(--pp-dev-info-color-info), #2196f3);
-        }
-      }
+      --pp-dev-info-popup-accent: var(--pp-dev-info-color-info);
+      border-left-color: var(--pp-dev-info-color-info);
     }
 
     &--warning {
-      border-color: var(--pp-dev-info-color-warning);
-      box-shadow:
-        0 4px 6px rgba(255, 193, 7, 0.1),
-        0 1px 3px rgba(255, 193, 7, 0.08);
-
-      .pp-dev-info__popup {
-        &-title {
-          background-color: var(--pp-dev-info-color-warning);
-          color: var(--pp-dev-info-color-dark);
-        }
-
-        &-content {
-          color: var(--pp-dev-info-color-warning);
-        }
-
-        &-progress {
-          background: linear-gradient(90deg, var(--pp-dev-info-color-warning), #ff9800);
-        }
-      }
+      --pp-dev-info-popup-accent: var(--pp-dev-info-color-warning);
+      border-left-color: var(--pp-dev-info-color-warning);
     }
   }
 
@@ -214,13 +153,11 @@ $pp-dev-height: 30px;
   }
 
   .pp-dev-info__confirm {
-    width: min(500px, calc(100vw - 32px));
-    border-radius: 10px;
+    width: min(408px, calc(100vw - 32px));
+    border-radius: 3px;
     border: 1px solid rgba(0, 0, 0, 0.15);
     background-color: var(--pp-dev-info-color-white);
-    box-shadow:
-      0 18px 40px rgba(0, 0, 0, 0.35),
-      0 2px 6px rgba(0, 0, 0, 0.2);
+    box-shadow: 0px 8px 32px 0px rgba(34, 34, 34, 0.4);
     overflow: hidden;
 
     &-title {
@@ -242,13 +179,13 @@ $pp-dev-height: 30px;
 
     &-actions {
       display: flex;
-      justify-content: flex-end;
+      flex-direction: column;
       gap: 8px;
       padding: 0 16px 16px;
     }
 
     &-btn {
-      min-width: 110px;
+      width: 100%;
       padding: 8px 12px;
       border-radius: 6px;
       border: 1px solid transparent;
@@ -284,11 +221,13 @@ $pp-dev-height: 30px;
     top: calc(100% - $pp-dev-height);
     right: 0;
     text-align: center;
-    padding: 8px 12px;
+    padding: 2px;
+    gap: 8px;
     background-color: var(--pp-dev-info-color-white);
-    border-radius: 8px 0 0 0;
+    border-radius: 4px 0 0 0;
+    border-bottom: 1px solid rgba(34, 34, 34, 0.08);
     color: var(--pp-dev-info-color-dark);
-    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: -2px -2px 8px 0px rgba(34, 34, 34, 0.08);
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -303,11 +242,11 @@ $pp-dev-height: 30px;
     // and the extension is still usable
     * {
       color: var(--pp-dev-info-color-dark);
-      font-family: sans-serif;
-      font-size: 13px;
-      font-weight: 300;
-      line-height: 1.5;
-      letter-spacing: 0.00938em;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 18px;
+      letter-spacing: 0;
       text-decoration: none;
       text-transform: inherit;
       vertical-align: inherit;
@@ -340,9 +279,9 @@ $pp-dev-height: 30px;
         right: 0;
         top: 50%;
         transform: translateY(-50%);
-        height: 12px;
+        height: 16px;
         width: 1px;
-        background-color: rgba(0, 0, 0, 0.15);
+        background-color: rgba(34, 34, 34, 0.24);
 
         @media screen and (prefers-color-scheme: dark) {
           background-color: rgba(255, 255, 255, 0.2);
@@ -362,13 +301,14 @@ $pp-dev-height: 30px;
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 13px;
-      line-height: 1.5;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 18px;
     }
 
     &__label {
       color: var(--pp-dev-info-color-secondary);
-      font-weight: 500;
+      font-weight: 400;
     }
 
     &__value {
@@ -381,7 +321,7 @@ $pp-dev-height: 30px;
       transition: color 0.2s ease;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 8px;
 
       &:hover {
         color: var(--pp-dev-info-color-primary);
@@ -417,7 +357,7 @@ $pp-dev-height: 30px;
       color: var(--pp-dev-info-color-primary);
       text-decoration: none;
       vertical-align: middle;
-      line-height: 1.5;
+      line-height: 18px;
 
       &:hover {
         text-decoration: none;
@@ -443,33 +383,33 @@ $pp-dev-height: 30px;
     }
 
     &__wrap-btn {
-      box-sizing: content-box;
+      box-sizing: border-box;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
-      margin-right: 12px;
-      padding: 4px;
+      width: 28px;
+      height: 28px;
+      padding: 6px;
       cursor: pointer;
-      border-radius: 4px;
+      border-radius: 3px;
       transition: background-color 0.2s ease;
 
       &:hover {
-        background-color: rgba(0, 0, 0, 0.05);
+        background-color: rgba(7, 91, 126, 0.06);
         animation: arrowHover 0.8s linear infinite;
       }
 
       &-arrow {
         width: 16px;
         height: 16px;
-        fill: var(--pp-dev-info-color-dark);
+        color: var(--pp-dev-info-color-dark);
+        fill: none;
         transition: transform 0.2s ease;
       }
     }
 
     &.closed {
-      transform: translateX(calc(100% - 40px));
+      transform: translateX(calc(100% - $pp-dev-height));
       z-index: 100002;
 
       & .pp-dev-info__wrap-btn {
@@ -487,13 +427,11 @@ $pp-dev-height: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 26px;
-      padding: 4px;
-      margin-left: 12px;
+      width: 28px;
+      height: 28px;
+      padding: 6px;
       background-color: transparent;
-      border: none;
-      border-radius: 4px;
+      border-radius: 3px;
       cursor: pointer;
       color: var(--pp-dev-info-color-primary);
       transition: all 0.2s ease;
@@ -510,10 +448,12 @@ $pp-dev-height: 30px;
         background-color: currentColor;
         opacity: 0;
         transition: opacity 0.2s ease;
-        border-radius: 4px;
+        border-radius: 3px;
       }
 
       svg {
+        width: 16px;
+        height: 16px;
         position: relative;
         z-index: 1;
         transition: transform 0.3s ease;
@@ -521,6 +461,7 @@ $pp-dev-height: 30px;
 
       &:hover:not(.disabled) {
         color: var(--pp-dev-info-color-primary);
+        background-color: rgba(7, 91, 126, 0.06);
 
         svg {
           transform: scale(1.1) rotate(45deg);
@@ -548,6 +489,18 @@ $pp-dev-height: 30px;
       }
     }
 
+    &__sep {
+      display: inline-flex;
+      flex-shrink: 0;
+      width: 1px;
+      height: 16px;
+      background-color: rgba(34, 34, 34, 0.24);
+
+      @media screen and (prefers-color-scheme: dark) {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+    }
+
     @keyframes rotate {
       from {
         transform: rotate(0deg);
@@ -566,11 +519,11 @@ $pp-dev-height: 30px;
     }
 
     .custom-font {
-      font-family: sans-serif;
+      font-family: 'Inter', sans-serif;
       font-size: 13px;
-      font-weight: 300;
+      font-weight: 400;
       vertical-align: middle;
-      line-height: 1.5;
+      line-height: 18px;
       color: var(--pp-dev-info-color-dark);
 
       &:not(.not-colored) a {
@@ -603,12 +556,12 @@ $pp-dev-height: 30px;
     @media screen and (prefers-color-scheme: dark) {
       & {
         // Dark theme colors
-        --pp-dev-info-color-primary: #007bff;
-        --pp-dev-info-color-secondary: #a4abb6;
-        --pp-dev-info-color-success: #56f000;
+        --pp-dev-info-color-primary: #2a8db5;
+        --pp-dev-info-color-secondary: rgba(220, 220, 220, 0.64);
+        --pp-dev-info-color-success: #0fad5e;
         --pp-dev-info-color-info: #2dccff;
         --pp-dev-info-color-warning: #ffb302;
-        --pp-dev-info-color-danger: #ff3838;
+        --pp-dev-info-color-danger: #e05252;
         --pp-dev-info-color-light: #343a40;
         --pp-dev-info-color-dark: #f8f9fa;
         --pp-dev-info-color-white: #000000;

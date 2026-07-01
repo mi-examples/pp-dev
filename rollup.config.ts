@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { defineConfig } from 'rollup';
 import typescript from '@rollup/plugin-typescript';
-import dts from 'rollup-plugin-dts';
 import terser from '@rollup/plugin-terser';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -63,64 +62,6 @@ const defaultConfig = {
   // Preserve Node.js globals
   context: 'globalThis',
 };
-
-function typeDefsMonitorPlugin() {
-  const timeoutMs = Number(process.env.PP_DEV_DTS_TIMEOUT_MS ?? 120_000);
-  const heartbeatMs = Number(process.env.PP_DEV_DTS_HEARTBEAT_MS ?? 10_000);
-
-  let buildStartedAt = 0;
-  let heartbeat = null;
-  let timeout = null;
-
-  const clearTimers = () => {
-    if (heartbeat) {
-      clearInterval(heartbeat);
-      heartbeat = null;
-    }
-
-    if (timeout) {
-      clearTimeout(timeout);
-      timeout = null;
-    }
-  };
-
-  return {
-    name: 'type-defs-monitor',
-    buildStart() {
-      buildStartedAt = Date.now();
-      console.info(`[rollup:dts] build started (timeout=${timeoutMs}ms heartbeat=${heartbeatMs}ms)`);
-
-      heartbeat = setInterval(() => {
-        const elapsedMs = Date.now() - buildStartedAt;
-
-        console.info(`[rollup:dts] still building... elapsed=${elapsedMs}ms`);
-      }, heartbeatMs);
-      heartbeat.unref?.();
-
-      timeout = setTimeout(() => {
-        const elapsedMs = Date.now() - buildStartedAt;
-
-        console.error(`[rollup:dts] build exceeded timeout after ${elapsedMs}ms, aborting`);
-        process.exit(1);
-      }, timeoutMs);
-      timeout.unref?.();
-    },
-    buildEnd(error) {
-      clearTimers();
-
-      const elapsedMs = Date.now() - buildStartedAt;
-
-      if (error) {
-        console.error(`[rollup:dts] build failed after ${elapsedMs}ms: ${error.message}`);
-      } else {
-        console.info(`[rollup:dts] build completed in ${elapsedMs}ms`);
-      }
-    },
-    closeBundle() {
-      clearTimers();
-    },
-  };
-}
 
 const configs = [
   // ESM Build
@@ -218,28 +159,6 @@ const configs = [
     preserveEntrySignatures: 'strict',
   }),
 
-  // Type Definitions
-  defineConfig({
-    input: 'src/index.ts',
-    plugins: [
-      typeDefsMonitorPlugin(),
-      dts({
-        tsconfig: './tsconfig.types.json',
-        compilerOptions: {
-          declaration: true,
-          declarationMap: false,
-          sourceMap: false,
-        },
-        respectExternal: true,
-      }),
-    ],
-    output: {
-      dir: path.dirname(pkg.types),
-      format: 'esm',
-      assetFileNames: '[name][extname]',
-    },
-    external: isExternal,
-  }),
 ];
 
 export default configs;

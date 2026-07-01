@@ -206,6 +206,7 @@ export class ClientService {
 
             // HTTP gateway / maintenance (explicit status)
             const httpStatus = err.response?.status;
+
             if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
               this.logger.info(
                 colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),

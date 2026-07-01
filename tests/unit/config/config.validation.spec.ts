@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 // Import the constants to test config file name patterns
-import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from '../../../src/constants.js';
+import { PP_DEV_CONFIG_NAMES } from '../../../src/constants.js';
 
 describe('Config Validation', () => {
   describe('PP_DEV_CONFIG_NAMES', () => {
@@ -30,18 +30,6 @@ describe('Config Validation', () => {
       const regularIndex = PP_DEV_CONFIG_NAMES.indexOf('pp-dev.config.js');
 
       expect(dotfileIndex).toBeLessThan(regularIndex);
-    });
-  });
-
-  describe('PP_WATCH_CONFIG_NAMES', () => {
-    it('should include legacy pp-watch config file names', () => {
-      expect(PP_WATCH_CONFIG_NAMES).toContain('.pp-watch.config.js');
-      expect(PP_WATCH_CONFIG_NAMES).toContain('.pp-watch.config.ts');
-      expect(PP_WATCH_CONFIG_NAMES).toContain('.pp-watch.config.json');
-    });
-
-    it('should only have 3 legacy config names', () => {
-      expect(PP_WATCH_CONFIG_NAMES).toHaveLength(3);
     });
   });
 

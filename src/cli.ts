@@ -28,7 +28,16 @@ import { ClientService } from './lib/client.service.js';
 import { DistService } from './lib/dist.service.js';
 import { PPDevHotServer } from './lib/pp-ws-server.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from './lib/dev-panel.js';
-import { PP_DEV_CONFIG_NAMES, PP_WATCH_CONFIG_NAMES } from './constants.js';
+import {
+  PP_DEV_CONFIG_NAMES,
+  PATH_PAGE_PREFIX,
+  PATH_TEMPLATE_PREFIX,
+  PATH_TEMPLATE_LOCAL_PREFIX,
+} from './constants.js';
+import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+import { RequestStore } from './lib/request-store.js';
+import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
+import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 
 const cli = cac('pp-dev');
 
@@ -46,7 +55,6 @@ function createConfigWatcher(
 ): ConfigWatcher {
   const configFiles = [
     ...PP_DEV_CONFIG_NAMES,
-    ...PP_WATCH_CONFIG_NAMES,
     'package.json',
     'next.config.js',
     'next.config.mjs',
@@ -218,6 +226,7 @@ export const stopProfiler = (log: (message: string) => void): void | Promise<voi
       // Write profile to disk, upload, etc.
       if (!err) {
         const outPath = path.resolve(`./pp-dev-profile-${profileCount++}.cpuprofile`);
+
         fs.writeFileSync(outPath, JSON.stringify(profile));
         log(colors.yellow(`CPU profile written to ${colors.white(colors.dim(outPath))}`));
         profileSession = undefined;
@@ -236,11 +245,13 @@ const filterDuplicateOptions = <T extends object>(options: T) => {
     }
   }
 };
+
 /**
  * removing global flags before passing as command specific sub-configs
  */
 function cleanOptions<Options extends GlobalCLIOptions>(options: Options): Omit<Options, keyof GlobalCLIOptions> {
   const ret = { ...options };
+
   delete ret['--'];
   delete ret.c;
   delete ret.config;
@@ -290,7 +301,10 @@ cli
     const logger = createLogger(options.logLevel);
 
     const startServer = async () => {
-      if (isRestarting) return;
+      if (isRestarting) {
+        return;
+      }
+
       isRestarting = true;
 
       try {
@@ -302,7 +316,8 @@ cli
         }
 
         // Clear config cache
-        const { clearConfigCache } = await import('./config.js');
+        const { clearConfigCache, getConfig } = await import('./config.js');
+
         clearConfigCache();
 
         // output structure is preserved even after bundling so require()
@@ -370,6 +385,16 @@ cli
         logger.info(`\n  ${colors.green(`${colors.bold('PP-DEV')} v${VERSION}`)}  ${startupDurationString}\n`);
 
         server.printUrls();
+
+        const serveConfig = await getConfig();
+
+        if (serveConfig.inspector?.enabled !== false) {
+          const localUrl = server.resolvedUrls?.local[0];
+          const origin = localUrl ? new URL(localUrl).origin : `http://localhost:${server.config.server.port ?? 5173}`;
+
+          logger.info(`\n  ${colors.cyan('🔍 Request Inspector')}  ${colors.dim(origin + INSPECTOR_PATH)}\n`);
+        }
+
         bindShortcuts(server, {
           print: true,
           customShortcuts: [
@@ -538,6 +563,7 @@ cli
 
         // Clear config cache
         const { clearConfigCache } = await import('./config.js');
+
         clearConfigCache();
 
         const { join, basename } = await import('path');
@@ -596,46 +622,40 @@ cli
           logger.info(colors.blue(`🔧 Loaded pp-dev config from Next.js config`));
         }
 
-        // Extract configuration values with defaults
-        const {
-          backendBaseURL = process.env.MI_BACKEND_URL || 'http://localhost:8080',
-          appId: originalAppId,
-          portalPageId,
-          templateLess = true,
-          v7Features = true,
-          disableSSLValidation = false,
-          enableProxyCache = true,
-          proxyCacheTTL = 600000,
-          personalAccessToken = process.env.MI_ACCESS_TOKEN,
-          miHudLess = false,
-          distZip = true,
-        } = ppDevConfig;
-
-        const appId: number =
-          originalAppId ??
-          portalPageId ??
-          (process.env.MI_APP_ID ? parseInt(process.env.MI_APP_ID, 10) || undefined : undefined) ??
-          (process.env.MI_PORTAL_PAGE_ID ? parseInt(process.env.MI_PORTAL_PAGE_ID, 10) || undefined : undefined) ??
-          1;
-
         // Get template name from config, package.json, or fallback to project directory name
         let templateName: string | null = null;
 
-        if (!templateName) {
-          try {
-            const { getPkg } = await import('./config.js');
-            const pkg = getPkg();
+        try {
+          const { getPkg } = await import('./config.js');
+          const pkg = getPkg();
 
-            templateName = pkg.name;
-          } catch (error) {
-            // Fallback to project directory name
-            templateName = basename(projectRoot);
-          }
+          templateName = pkg.name;
+        } catch {
+          // Fallback to project directory name
+          templateName = basename(projectRoot);
         }
 
-        // Calculate base path using the same logic as the plugin
-        const pathPagePrefix = '/p'; // templateLess = true - use /p
-        const pathTemplateLocalPrefix = '/pl'; // templateLess = false && v7Features = true - use /pl
+        // Normalize grouped PPDevConfig to internal flat options
+        validatePPDevConfig(ppDevConfig, templateName ?? '');
+
+        const _normalized = normalizePPDevConfig(ppDevConfig, templateName ?? '');
+        const backendBaseURL = _normalized.backendBaseURL ?? 'http://localhost:8080';
+        const templateLess = _normalized.templateLess;
+        const v7Features = _normalized.v7Features;
+        const disableSSLValidation = _normalized.disableSSLValidation;
+        const enableProxyCache = _normalized.enableProxyCache;
+        const proxyCacheTTL = _normalized.proxyCacheTTL;
+        const personalAccessToken = _normalized.personalAccessToken;
+        const miHudLess = _normalized.miHudLess;
+        const inspectorEnabled = _normalized.inspectorEnabled;
+        const inspectorMaxMemory = _normalized.inspectorMaxMemory;
+        const inspectorCaptureLimit = _normalized.inspectorCaptureLimit;
+
+        const appId: number =
+          _normalized.appId ??
+          (process.env.MI_APP_ID ? parseInt(process.env.MI_APP_ID, 10) || undefined : undefined) ??
+          (process.env.MI_PORTAL_PAGE_ID ? parseInt(process.env.MI_PORTAL_PAGE_ID, 10) || undefined : undefined) ??
+          1;
 
         const configBasePath = config?.basePath;
         let base = '';
@@ -643,7 +663,7 @@ cli
         if (configBasePath) {
           base = configBasePath;
         } else {
-          base = templateLess ? pathPagePrefix : v7Features ? pathTemplateLocalPrefix : '/pt';
+          base = templateLess ? PATH_PAGE_PREFIX : v7Features ? PATH_TEMPLATE_LOCAL_PREFIX : PATH_TEMPLATE_PREFIX;
           base += `/${templateName}`;
         }
 
@@ -669,7 +689,7 @@ cli
             conf: {
               ...config,
               basePath: base,
-              assetPrefix: `${templateLess ? pathPagePrefix : '/pt'}/${templateName}`,
+              assetPrefix: base,
             },
           };
 
@@ -692,6 +712,7 @@ cli
             if (!isNextTurbopackNativeBindingsError(e)) {
               throw e;
             }
+
             logger.warn(colors.yellow('⚠ Turbopack is unavailable (native bindings). Falling back to Webpack.'));
             await createAndPrepareNext({ webpack: true });
           }
@@ -702,6 +723,7 @@ cli
             if (!isNextTurbopackNativeBindingsError(e)) {
               throw e;
             }
+
             logger.warn(
               colors.yellow('⚠ Turbopack cannot run (native Next.js bindings unavailable). Falling back to Webpack.'),
             );
@@ -767,20 +789,24 @@ cli
                     if (middlewareIndex >= essentialMiddlewareChain.length) {
                       // Essential middlewares processed, continue with Next.js handling
                       processNextJSRequest();
+
                       return;
                     }
 
                     const middleware = essentialMiddlewareChain[middlewareIndex];
+
                     middlewareIndex++;
 
                     middleware(req, res, runEssentialMiddleware);
                   };
 
                   runEssentialMiddleware();
+
                   return; // Exit early, middleware will handle the rest
                 } else {
                   // No essential middlewares, process normally
                   processNextJSRequest();
+
                   return;
                 }
               }
@@ -792,16 +818,19 @@ cli
                 if (middlewareIndex >= fullMiddlewareChain.length) {
                   // All middlewares processed, continue with Next.js handling
                   processNextJSRequest();
+
                   return;
                 }
 
                 const middleware = fullMiddlewareChain[middlewareIndex];
+
                 middlewareIndex++;
 
                 middleware(req, res, runMiddleware);
               };
 
               runMiddleware();
+
               return; // Exit early, middleware will handle the rest
             }
 
@@ -816,8 +845,10 @@ cli
               } else if (originalPathname === base.replace(/\/$/, '')) {
                 // Path without trailing slash - redirect to canonical URL with trailing slash
                 const redirectUrl = originalUrl.replace(originalPathname, base);
+
                 res.writeHead(302, { Location: redirectUrl });
                 res.end();
+
                 return;
               } else if (
                 originalPathname.startsWith('/_next/') ||
@@ -838,7 +869,9 @@ cli
               await handle(req, res, parsedUrl);
             }
           } catch (error) {
-            console.error(`[DEBUG] Error:`, error);
+            logger.error(`Error handling request: ${error instanceof Error ? error.message : String(error)}`, {
+              error: error instanceof Error ? error : undefined,
+            });
             res.statusCode = 500;
             res.end('Internal Server Error');
           }
@@ -850,6 +883,17 @@ cli
         let fullMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
         /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
         let essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
+
+        // Request inspector: register routes on the shared internalServer and add capture middleware
+        if (inspectorEnabled !== false) {
+          const reqStore = new RequestStore(inspectorMaxMemory);
+
+          registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
+
+          const captureMiddleware = createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit);
+
+          fullMiddlewareChain.push(captureMiddleware);
+        }
 
         if (backendBaseURL) {
           const baseUrlHost = new URL(backendBaseURL).host;
@@ -865,7 +909,6 @@ cli
               referer: backendBaseURL,
               origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
             },
-            portalPageId: appId,
             appId,
             templateLess,
             disableSSLValidation,
@@ -883,17 +926,20 @@ cli
           const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
             ppRedirectMiddleware(req, res, next);
           };
+
           essentialMiddlewareChain.push(ppRedirectWrapper);
           fullMiddlewareChain.push(ppRedirectWrapper);
 
           // 1b. Dev-panel client assets (client.js/client.css) — served locally, never proxied.
           const devPanelAssetMiddleware = createDevPanelAssetMiddleware(base);
+
           essentialMiddlewareChain.push(devPanelAssetMiddleware);
           fullMiddlewareChain.push(devPanelAssetMiddleware);
 
           // 2. Proxy Cache middleware (only for non-internal routes)
           if (enableProxyCache) {
             let ttl = +proxyCacheTTL;
+
             if (!ttl || Number.isNaN(ttl) || ttl < 0) {
               ttl = 10 * 60 * 1000; // 10 minutes
             }
@@ -915,6 +961,7 @@ cli
             const proxyCacheWrapper = (req: any, res: any, next: () => void) => {
               proxyCacheMiddleware(req, res, next);
             };
+
             fullMiddlewareChain.push(proxyCacheWrapper);
 
             logger.info(colors.blue(`🔧 Proxy cache middleware added with TTL: ${ttl}ms`));
@@ -922,7 +969,11 @@ cli
 
           // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
           const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
-          const loadPPDataMiddleware = initLoadPPData(isIndexRegExp, mi, Object.assign({ base }, miConfig));
+          const loadPPDataMiddleware = initLoadPPData(
+            isIndexRegExp,
+            mi,
+            Object.assign({ base }, miConfig, { miHudLess }),
+          );
           const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
             loadPPDataMiddleware(req, res, next);
           };
@@ -957,26 +1008,29 @@ cli
             disableSSLValidation,
             miAPI: mi,
             templateName: templateName ?? undefined,
-          }) as any;
+          });
 
           const proxyPassWrapper = (req: any, res: any, next: () => void) => {
             proxyPassMiddlewareInstance(req, res, next);
           };
+
           fullMiddlewareChain.push(proxyPassWrapper);
 
-          // 5. Internal Server middleware (API endpoints) - essential for all routes
+          // 5. Internal Server middleware (API endpoints + inspector UI) - essential for all routes
           const internalServerMiddleware = internalServer;
           const internalServerWrapper = (req: any, res: any, next: () => void) => {
-            // Check if this is an internal API request
-            if (req.url?.startsWith('/@api/')) {
+            // Check if this is an internal pp-dev request (API or inspector UI)
+            if (req.url?.startsWith('/@api/') || req.url?.startsWith(INSPECTOR_PATH)) {
               const mockNext = () => {};
 
               internalServerMiddleware(req, res, mockNext);
 
-              return; // Don't call next() for API requests
+              return; // Don't call next() for internal pp-dev requests
             }
+
             next();
           };
+
           essentialMiddlewareChain.push(internalServerWrapper);
           fullMiddlewareChain.push(internalServerWrapper);
 
@@ -984,6 +1038,7 @@ cli
           const rewriteResponseMiddleware = initRewriteResponse(
             (url) => {
               const pathname = url.split('?')[0];
+
               // Next.js serves page HTML at base path or subpaths (e.g. /p/test-nextjs/, /p/test-nextjs/dashboard),
               // not at index.html. Match page requests under base, excluding /_next/ static assets.
               return pathname.startsWith(base) && !pathname.includes('/_next/');
@@ -995,7 +1050,7 @@ cli
               const withPanel = injectDevPanel(page, base, {
                 backendBaseURL,
                 templateLess,
-                portalPageId: appId,
+                appId,
               });
 
               return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', withPanel));
@@ -1005,6 +1060,7 @@ cli
           const rewriteResponseWrapper = (req: any, res: any, next: () => void) => {
             rewriteResponseMiddleware(req, res, next);
           };
+
           fullMiddlewareChain.push(rewriteResponseWrapper);
 
           // Dev-panel transport: raw-WebSocket replacement for Vite HMR so the panel's
@@ -1046,7 +1102,7 @@ cli
           }
 
           const distService =
-            distZip !== false
+            _normalized.distZip !== false
               ? new DistService(templateName ?? basename(projectRoot), {
                   nextBuild: {
                     projectRoot,
@@ -1091,6 +1147,11 @@ cli
         httpServer.listen(port, host, () => {
           logger.info(colors.green(`✅ pp-dev Next.js server running at http://${host}:${port}`));
           logger.info(colors.blue(`📱 Next.js app accessible at http://${host}:${port}${base}`));
+
+          if (inspectorEnabled !== false) {
+            logger.info(colors.cyan(`🔍 Request Inspector: http://${host}:${port}${INSPECTOR_PATH}`));
+          }
+
           logger.info(colors.blue(`🔧 Base path handling active`));
 
           // Set up config watcher
@@ -1126,6 +1187,7 @@ cli
               for (const socket of Array.from(openSockets)) {
                 socket.destroy();
               }
+
               openSockets.clear();
 
               // Close the dev-panel WebSocket server
@@ -1304,6 +1366,7 @@ cli
   )
   .action(async (root: string, options: PPDevBuildOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
+
     const buildOptions: PPDevBuildOptions = cleanOptions(options);
 
     try {
@@ -1601,6 +1664,171 @@ cli
         process.exit(1);
       } finally {
         stopProfiler((message) => createLogger(options.logLevel).info(message));
+      }
+    },
+  );
+
+// migrate
+cli
+  .command('migrate [config]', 'migrate pp-dev config from 0.x flat format to 1.0 grouped format')
+  .option('--dry-run', '[boolean] print migrated config without writing any files')
+  .option('--format <format>', '[string] output format: ts (default), js, json')
+  .option('--output <file>', '[string] output file path (default: pp-dev.config.ts)')
+  .option('--no-backup', '[boolean] skip backup of original config file')
+  .action(
+    async (
+      configArg: string | undefined,
+      options: { dryRun?: boolean; format?: string; output?: string; backup?: boolean } & GlobalCLIOptions,
+    ) => {
+      const logger = createLogger(options.logLevel);
+
+      const {
+        isLegacyFlatConfig,
+        isLegacyPPWatchConfig,
+        isAlreadyMigrated,
+        migrateLegacyFlatConfig,
+        migratePPWatchConfig,
+        generateConfigFileContent,
+      } = await import('./lib/migrate.js');
+
+      const format = (options.format ?? 'ts') as 'ts' | 'js' | 'json';
+      const doBackup = options.backup !== false;
+      const projectRoot = process.cwd();
+
+      // Discover config file to migrate
+      const watchConfigNames = [
+        '.pp-watch.config.ts',
+        '.pp-watch.config.js',
+        '.pp-watch.config.json',
+        'pp-watch.config.ts',
+        'pp-watch.config.js',
+        'pp-watch.config.json',
+      ];
+
+      let sourceFile: string | null = configArg ?? null;
+      let isWatchConfig = false;
+
+      if (!sourceFile) {
+        // Try pp-dev config files first
+        for (const name of PP_DEV_CONFIG_NAMES) {
+          if (fs.existsSync(path.join(projectRoot, name))) {
+            sourceFile = path.join(projectRoot, name);
+            break;
+          }
+        }
+
+        // Fall back to pp-watch config files
+        if (!sourceFile) {
+          for (const name of watchConfigNames) {
+            if (fs.existsSync(path.join(projectRoot, name))) {
+              sourceFile = path.join(projectRoot, name);
+              isWatchConfig = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!sourceFile) {
+        logger.warn(colors.yellow('No pp-dev or pp-watch config file found in the current directory.'));
+        logger.info(colors.blue('Supported files: pp-dev.config.{ts,js,cjs,mjs,json}, .pp-watch.config.{ts,js,json}'));
+        process.exit(1);
+      }
+
+      logger.info(colors.blue(`Found config: ${path.relative(projectRoot, sourceFile)}`));
+
+      // Load the config
+      const { getConfig, getPkg } = await import('./config.js');
+      const pkg = getPkg();
+      let rawConfig: Record<string, unknown> = {};
+
+      try {
+        // Use a temporary import that bypasses the new PPDevConfig type
+        if (/\.[cm]?ts$/i.test(sourceFile)) {
+          const esbuild = await import('esbuild');
+          const { pathToFileURL } = await import('url');
+          const result = await esbuild.build({
+            absWorkingDir: projectRoot,
+            entryPoints: [sourceFile],
+            outfile: 'out.js',
+            write: false,
+            target: 'node24',
+            platform: 'node',
+            bundle: true,
+            packages: 'external',
+            format: 'esm',
+            mainFields: ['main'],
+          });
+          const code = result.outputFiles[0].text;
+          const tmpFile = `pp-migrate-tmp-${Date.now()}.mjs`;
+
+          fs.writeFileSync(tmpFile, code);
+          try {
+            const mod = await import(pathToFileURL(path.resolve(projectRoot, tmpFile)).toString());
+
+            rawConfig = mod.default?.default ?? mod.default ?? mod;
+          } finally {
+            if (fs.existsSync(tmpFile)) {
+              fs.unlinkSync(tmpFile);
+            }
+          }
+        } else if (/\.[cm]?js$/i.test(sourceFile)) {
+          const { pathToFileURL } = await import('url');
+          const mod = await import(pathToFileURL(path.resolve(projectRoot, sourceFile)).toString());
+
+          rawConfig = mod.default?.default ?? mod.default ?? mod;
+        } else if (sourceFile.endsWith('.json')) {
+          rawConfig = JSON.parse(fs.readFileSync(sourceFile, 'utf-8'));
+        }
+      } catch (e: any) {
+        logger.error(colors.red(`Failed to load config file: ${e.message}`));
+        process.exit(1);
+      }
+
+      if (!rawConfig || typeof rawConfig !== 'object') {
+        logger.error(colors.red('Config file did not export a valid object.'));
+        process.exit(1);
+      }
+
+      // Detect format and migrate
+      let migratedConfig;
+
+      if (isAlreadyMigrated(rawConfig)) {
+        logger.info(colors.green('Config is already in 1.0 format — nothing to migrate.'));
+        process.exit(0);
+      } else if (isWatchConfig || isLegacyPPWatchConfig(rawConfig)) {
+        logger.info(colors.blue('Detected pp-watch config format → migrating to 1.0'));
+        migratedConfig = migratePPWatchConfig(rawConfig as any);
+      } else if (isLegacyFlatConfig(rawConfig)) {
+        logger.info(colors.blue('Detected 0.x flat config format → migrating to 1.0'));
+        migratedConfig = migrateLegacyFlatConfig(rawConfig, pkg.name);
+      } else {
+        logger.warn(colors.yellow('Could not detect config format. No known keys found.'));
+        process.exit(1);
+      }
+
+      const outputContent = generateConfigFileContent(migratedConfig, format);
+      const outputFile = options.output ?? path.join(projectRoot, `pp-dev.config.${format}`);
+
+      if (options.dryRun) {
+        logger.info(colors.green(`\n--- Migrated config (dry-run) → ${path.relative(projectRoot, outputFile)} ---\n`));
+        console.log(outputContent);
+        process.exit(0);
+      }
+
+      // Backup original
+      if (doBackup && fs.existsSync(sourceFile)) {
+        const backupPath = `${sourceFile}.bak`;
+
+        fs.copyFileSync(sourceFile, backupPath);
+        logger.info(colors.blue(`Backed up original to: ${path.relative(projectRoot, backupPath)}`));
+      }
+
+      fs.writeFileSync(outputFile, outputContent, 'utf-8');
+      logger.info(colors.green(`✅ Migration complete → ${path.relative(projectRoot, outputFile)}`));
+
+      if (sourceFile !== outputFile && fs.existsSync(sourceFile)) {
+        logger.info(colors.yellow(`You can now delete the old config: ${path.relative(projectRoot, sourceFile)}`));
       }
     },
   );

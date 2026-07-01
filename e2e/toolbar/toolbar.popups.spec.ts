@@ -39,7 +39,7 @@ test.describe('Toolbar Popup Notifications', () => {
         // Verify popup structure
         await expect(popup.first().locator('.pp-dev-info__popup-title')).toBeVisible();
         await expect(popup.first().locator('.pp-dev-info__popup-content')).toBeVisible();
-        await expect(popup.first().locator('.pp-dev-info__popup-progress')).toBeAttached();
+        await expect(popup.first().locator('.pp-dev-info__popup-progress')).toHaveCount(0);
       }
     }
   });
@@ -162,7 +162,7 @@ test.describe('Toolbar Popup Notifications', () => {
     }
   });
 
-  test('should show progress bar animation on popup', async ({ page, baseURL }) => {
+  test('should match compact notification styling on popup', async ({ page, baseURL }) => {
     if (!baseURL) {
       throw new Error('baseURL is not set');
     }
@@ -180,16 +180,23 @@ test.describe('Toolbar Popup Notifications', () => {
       try {
         await popup.waitFor({ state: 'visible', timeout: 10000 });
 
-        const progressBar = popup.locator('.pp-dev-info__popup-progress');
-        await expect(progressBar).toBeAttached();
+        await expect(popup.locator('.pp-dev-info__popup-title-icon')).toBeVisible();
 
-        // Check that progress bar has width style (animated)
-        const hasWidthStyle = await progressBar.evaluate((el) => {
+        const styles = await popup.evaluate((el) => {
           const style = window.getComputedStyle(el);
-          return style.width !== '0px' && style.width !== '';
+
+          return {
+            width: style.width,
+            padding: style.padding,
+            borderLeftWidth: style.borderLeftWidth,
+            borderRadius: style.borderRadius,
+          };
         });
 
-        expect(hasWidthStyle).toBe(true);
+        expect(styles.width).toBe('280px');
+        expect(styles.padding).toBe('12px');
+        expect(styles.borderLeftWidth).toBe('2px');
+        expect(styles.borderRadius).toBe('2px');
       } catch {
         test.skip();
       }

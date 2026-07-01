@@ -17,7 +17,7 @@ import { PACKAGE_NAME, VERSION, PP_DEV_CLIENT_ENTRY } from '../constants.js';
 export interface DevPanelData {
   backendBaseURL?: string;
   templateLess: boolean;
-  portalPageId?: number;
+  appId?: number;
   canSync?: boolean;
 }
 
@@ -62,7 +62,7 @@ export function renderDevPanelMarkup(data: DevPanelData): string {
     VERSION,
     backendBaseURL: data.backendBaseURL,
     templateLess: data.templateLess,
-    portalPageId: data.portalPageId,
+    appId: data.appId,
     canSync: data.canSync ?? true,
   }) as string;
 }

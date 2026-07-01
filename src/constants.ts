@@ -32,7 +32,9 @@ export const PACKAGE_NAME = name as string;
  */
 export const PP_DEV_HMR_WS_PATH = '/@pp-dev-hmr';
 
-export const PP_WATCH_CONFIG_NAMES = ['.pp-watch.config.js', '.pp-watch.config.ts', '.pp-watch.config.json'] as const;
+export const PATH_PAGE_PREFIX = '/p';
+export const PATH_TEMPLATE_PREFIX = '/pt';
+export const PATH_TEMPLATE_LOCAL_PREFIX = '/pl';
 
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',

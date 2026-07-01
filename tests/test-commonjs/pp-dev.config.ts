@@ -1,13 +1,17 @@
-import { PPDevConfig } from '@metricinsights/pp-dev';
+import { defineConfig } from '@metricinsights/pp-dev';
 
-const ppDevConfig: PPDevConfig = {
-  backendBaseURL: 'https://stg7x.metricinsights.com',
-  appId: 937,
-  miHudLess: true,
-  integrateMiTopBar: true,
-  v7Features: true,
-  templateLess: false,
-  disableSSLValidation: true,
-};
-
-export default ppDevConfig;
+export default defineConfig({
+  mi: {
+    url: 'https://stg7x.metricinsights.com',
+    mode: 'standalone',
+    include: 'top-bar',
+    apiVersion: 7,
+  },
+  app: {
+    id: 937,
+    type: 'template',
+  },
+  proxy: {
+    tls: { allowSelfSigned: true },
+  },
+});

@@ -3,6 +3,7 @@ import { redirect } from './helpers/url.helper.js';
 import { URL } from 'url';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
+import { PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from '../constants.js';
 
 export function initPPRedirect(base: string, templateName?: string): NextHandleFunction {
   base = base.startsWith('/') ? base : `/${base}`;
@@ -18,8 +19,8 @@ export function initPPRedirect(base: string, templateName?: string): NextHandleF
     const findPaths = ['/', baseWithoutTrailingSlash];
 
     if (templateName) {
-      findPaths.push(`/pt/${templateName}`);
-      findPaths.push(`/pl/${templateName}`);
+      findPaths.push(`${PATH_TEMPLATE_PREFIX}/${templateName}`);
+      findPaths.push(`${PATH_TEMPLATE_LOCAL_PREFIX}/${templateName}`);
     }
 
     // Redirect from `/` and `/pt/${templateName}` and `${base}` (without a training slash) to portal page address

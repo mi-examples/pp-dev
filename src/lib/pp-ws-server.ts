@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import { PP_DEV_HMR_WS_PATH } from '../constants.js';
+import { createLogger } from './logger.js';
 
 /**
  * Raw-WebSocket transport for the dev panel under the `pp-dev next` server, where
@@ -74,6 +75,7 @@ export class PPDevHotServer {
         } else {
           // send(payload: unknown) overload — broadcast the pre-built payload as-is.
           const data = JSON.stringify(arg1);
+
           for (const socket of this.clients.keys()) {
             if (socket.readyState === WebSocket.OPEN) {
               socket.send(data);
@@ -152,7 +154,9 @@ export class PPDevHotServer {
       try {
         listener(message.data, client);
       } catch (err) {
-        console.error(`[pp-dev] ws handler for "${message.event}" failed`, err);
+        createLogger().error(`ws handler for "${message.event}" failed`, {
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
       }
     }
   }

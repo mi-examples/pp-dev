@@ -8,6 +8,6 @@
     "types": ["vite/client", "jquery"],
     "esModuleInterop": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "vite.config.ts", "pp-dev.config.ts"],
   "exclude": ["node_modules"]
 }

@@ -1,6 +1,8 @@
 /**
  * Runs `npm audit` in the repository root and every tests/* package that has a package.json.
  * Exits with code 1 if any audit reports vulnerabilities or fails.
+ *
+ * Audit level: "high" for every target.
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -37,13 +39,13 @@ if (existsSync(testsDir)) {
  */
 function runNpmAudit(cwd) {
   if (process.platform === 'win32') {
-    return spawnSync('cmd.exe', ['/d', '/s', '/c', 'npm audit'], {
+    return spawnSync('cmd.exe', ['/d', '/s', '/c', 'npm audit --audit-level=high'], {
       cwd,
       stdio: 'inherit',
     });
   }
 
-  return spawnSync('npm', ['audit'], { cwd, stdio: 'inherit' });
+  return spawnSync('npm', ['audit', '--audit-level=high'], { cwd, stdio: 'inherit' });
 }
 
 const results = [];

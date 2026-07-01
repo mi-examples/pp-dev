@@ -1,4 +1,4 @@
-import { IndexHtmlTransformResult, Plugin, ServerOptions } from 'vite';
+import { IndexHtmlTransformResult, Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
 import { redirect, urlReplacer } from './lib/helpers/url.helper.js';
@@ -11,29 +11,100 @@ import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createInternalServer } from './lib/internal.middleware.js';
 import { getTokenErrorInfo } from './lib/helpers/index.js';
+import { RequestStore } from './lib/request-store.js';
+import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
+import { registerInspectorRoutes } from './lib/request-inspector.js';
 
-type RequiredSelection<T, K extends keyof T> = Required<Pick<T, K>> & Omit<T, K>;
+// ─── Public config types ──────────────────────────────────────────────────────
 
-interface DistZipOptions {
-  /**
-   * Output ZIP archive file name.
-   * You can use `[templateName]` placeholder to replace it with the template name.
-   * @default `${templateName}.zip`
-   */
-  outFileName?: string;
+export type MiMode = 'standalone' | 'embedding';
+export type MiInclude = 'shared-components' | 'top-bar';
+export type AppType = 'page' | 'template';
 
-  /**
-   * Output directory for the build.
-   * @default 'dist-zip'
-   */
+export interface MiConfig {
+  /** MI instance base URL. Falls back to process.env.MI_BACKEND_URL. */
+  url?: string;
+  /** Personal Access Token. Falls back to process.env.MI_ACCESS_TOKEN. */
+  token?: string;
+  /** How the page integrates into MI. @default 'standalone' */
+  mode?: MiMode;
+  /** Optional MI shared resources. Only valid when mode === 'standalone'. */
+  include?: MiInclude;
+  /** MI API/routing version. @default 7 */
+  apiVersion?: 6 | 7;
+}
+
+export interface AppConfig {
+  /** Portal page / app ID on MI. Required for type=template and type=page+standalone. */
+  id?: number;
+  /** Internal asset name. @default package.json#name */
+  name?: string;
+  /** App type affecting routing and data loading. @default 'template' */
+  type?: AppType;
+}
+
+export interface ProxyConfig {
+  /** Enable request caching to the backend. @default true */
+  cache?: boolean;
+  /** Cache TTL in milliseconds. @default 600000 */
+  cacheTtl?: number;
+  tls?: {
+    /** Allow self-signed TLS certificates. @default false */
+    allowSelfSigned?: boolean;
+  };
+}
+
+interface DistZipBuildConfig {
+  /** Output ZIP file name. @default '<app.name>.zip' */
+  fileName?: string;
+  /** Output directory for the ZIP archive. @default 'dist-zip' */
   outDir?: string;
-
-  /**
-   * Input directory for the build.
-   * @default 'dist'
-   */
+  /** Input directory to zip. @default value of build.outDir */
   inDir?: string;
 }
+
+interface VersionFileBuildConfig {
+  /** @default true */
+  enabled?: boolean;
+  /** @default 'VERSION-v{packageversion}-{currentDate}.json' */
+  fileNameTemplate?: string;
+}
+
+export interface BuildConfig {
+  /** Build output directory. @default 'dist' */
+  outDir?: string;
+  /** Pack build output into a ZIP archive. @default true */
+  zip?: boolean | DistZipBuildConfig;
+  /** Create a VERSION JSON file with SHA256 hashes. @default true */
+  versionFile?: boolean | VersionFileBuildConfig;
+  /** Image optimisation options. @default true */
+  imageOptimisations?: boolean | Record<string, unknown>;
+}
+
+export interface SyncConfig {
+  /** Directory for sync backups. @default 'backups' */
+  backupsDir?: string;
+}
+
+export interface InspectorConfig {
+  /** Enable the request inspector web UI at /@pp-dev/inspector. @default true */
+  enabled?: boolean;
+  /** Maximum RAM for stored request/response payloads in bytes. @default 1073741824 (1 GB) */
+  maxMemory?: number;
+  /** Maximum bytes captured per individual request/response body. @default 10485760 (10 MB) */
+  captureLimit?: number;
+}
+
+export interface PPDevConfig {
+  mi?: MiConfig;
+  app?: AppConfig;
+  proxy?: ProxyConfig;
+  build?: BuildConfig;
+  sync?: SyncConfig;
+  inspector?: InspectorConfig;
+}
+
+// ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
 
 export interface VersionPluginOptions {
   /**
@@ -42,365 +113,159 @@ export interface VersionPluginOptions {
    * @default "VERSION-v{packageversion}-{currentDate}.json"
    */
   versionFileTemplate?: string;
-
-  /**
-   * Enable or disable the version plugin.
-   * @default true
-   */
+  /** @default true */
   enabled?: boolean;
 }
 
-export interface VitePPDevOptions {
-  /**
-   * Backend base URL to MI instance for the local proxy.
-   */
-  backendBaseURL?: string;
-
-  /**
-   * Portal page ID on the MI instance.
-   * @deprecated Use appId instead
-   */
-  portalPageId?: number;
-
-  /**
-   * Application ID on the MI instance.
-   * This is a synonym for portalPageId.
-   */
-  appId?: number;
-
-  /**
-   * Template name or PP internal name that will be used for the asset generation.
-   * Equals to package.json name field value.
-   */
+/** @internal — used by the Vite plugin and CLI; not part of the public API. */
+export interface NormalizedVitePPDevOptions {
   templateName: string;
-
-  /**
-   * Enable or disable template variables loading from the backend.
-   */
-  templateLess?: boolean;
-
-  /**
-   * Enable or disable MI top bar and scripts loading from the backend for local development.
-   */
-  miHudLess?: boolean;
-
-  /**
-   * Integrate MI Top Bar and script into the App build.
-   *
-   * Depends on `miHudLess` option. Can be used only if `miHudLess` is enabled (true).
-   *
-   * @since 0.11.0
-   * @default false
-   */
-  integrateMiTopBar?:
-    | boolean
-    | {
-        /**
-         * Add MI Top Bar root element to the build.
-         * If disabled, you will need to add the root element manually to the HTML.
-         * @default false
-         */
-        addRootElement?: boolean;
-
-        /**
-         * Add MI Shared Components scripts to the build.
-         * @default false
-         */
-        addSharedComponentsScripts?: boolean;
-      };
-
-  /**
-   * Enable or disable request caching to the backend by the local proxy.
-   * @default true
-   */
-  enableProxyCache?: boolean;
-
-  /**
-   * Request caching time in milliseconds.
-   * @default 600000 (10 minutes)
-   */
-  proxyCacheTTL?: number;
-
-  /**
-   * Disable SSL certificate validation for MI instances with self-signed certificates.
-   * @default false
-   */
-  disableSSLValidation?: boolean;
-
-  /**
-   * Image optimizer options.
-   * @default true
-   */
-  imageOptimizer?: boolean | Parameters<typeof ViteImageOptimizer>[0];
-
-  /**
-   * Output directory for the build.
-   * @default 'dist'
-   */
-  outDir?: string;
-
-  /**
-   * Disable or enable packing the build output into a ZIP archive.
-   * @default true
-   */
-  distZip?: boolean | DistZipOptions;
-
-  /**
-   * Create a VERSION JSON file with SHA256 hashes of all build output files.
-   * @default true
-   */
-  versionPlugin?: boolean | VersionPluginOptions;
-
-  /**
-   * Backups an asset directory path for sync with the MI instance.
-   * @default backups
-   */
-  syncBackupsDir?: string;
-
-  /**
-   * Enable Metric Insights v7 features.
-   * @default false
-   * @since 0.8.0
-   */
-  v7Features?: boolean;
-
-  /**
-   * Personal Access Token for the MI instance.
-   * @default process.env.MI_ACCESS_TOKEN
-   * @since 0.10.0
-   * @example
-   * ```ts
-   * import vitePPDev from '@metricinsights/pp-dev';
-   *
-   * export default vitePPDev({
-   *   personalAccessToken: process.env.MI_ACCESS_TOKEN,
-   *   // other options...
-   * });
-   * ```
-   */
+  backendBaseURL?: string;
+  appId?: number;
+  templateLess: boolean;
+  miHudLess: boolean;
+  integrateMiTopBar: boolean | { addRootElement?: boolean; addSharedComponentsScripts?: boolean };
+  enableProxyCache: boolean;
+  proxyCacheTTL: number;
+  disableSSLValidation: boolean;
+  imageOptimizer: boolean | Parameters<typeof ViteImageOptimizer>[0];
+  outDir: string;
+  distZip: false | { outFileName: string; outDir: string; inDir?: string };
+  versionPlugin: false | VersionPluginOptions;
+  syncBackupsDir: string;
+  v7Features: boolean;
   personalAccessToken?: string;
+  inspectorEnabled: boolean;
+  inspectorMaxMemory: number;
+  inspectorCaptureLimit: number;
 }
 
-export type NormalizedVitePPDevOptions = RequiredSelection<
-  VitePPDevOptions,
-  | 'templateName'
-  | 'templateLess'
-  | 'miHudLess'
-  | 'integrateMiTopBar'
-  | 'enableProxyCache'
-  | 'proxyCacheTTL'
-  | 'disableSSLValidation'
-  | 'imageOptimizer'
-  | 'outDir'
-  | 'distZip'
-  | 'versionPlugin'
-  | 'syncBackupsDir'
-  | 'v7Features'
-  | 'personalAccessToken'
->;
+// ─── Validation ───────────────────────────────────────────────────────────────
 
-// Add more specific types for validation
-type ValidationResult = { isValid: true } | { isValid: false; error: string };
+export function validatePPDevConfig(config: PPDevConfig, templateName: string): void {
+  const miMode = config.mi?.mode ?? 'standalone';
+  const appType = config.app?.type ?? 'template';
+  const apiVersion = config.mi?.apiVersion ?? 7;
+  const miUrl = config.mi?.url ?? process.env.MI_BACKEND_URL;
 
-function validateConfigValue<T>(value: T, validator: (v: T) => boolean, errorMessage: string): ValidationResult {
-  return validator(value) ? { isValid: true } : { isValid: false, error: errorMessage };
-}
-
-function validateConfig(config: VitePPDevOptions): ValidationResult {
-  const validations: ValidationResult[] = [
-    validateConfigValue(
-      config,
-      (c): c is VitePPDevOptions => typeof c === 'object' && c !== null,
-      'VitePPDevOptions must be an object',
-    ),
-    validateConfigValue(
-      config.templateName,
-      (name): name is string => typeof name === 'string' && name.length > 0,
-      'VitePPDevOptions.templateName must be a non-empty string',
-    ),
-    validateConfigValue(
-      config.backendBaseURL,
-      (url): url is string | undefined => url === undefined || (typeof url === 'string' && url.length > 0),
-      'VitePPDevOptions.backendBaseURL must be a non-empty string if provided',
-    ),
-    validateConfigValue(
-      config.portalPageId,
-      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
-      'VitePPDevOptions.portalPageId must be a positive number if provided',
-    ),
-    validateConfigValue(
-      config.appId,
-      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
-      'VitePPDevOptions.appId must be a positive number if provided',
-    ),
-    validateConfigValue(
-      config.proxyCacheTTL,
-      (ttl): ttl is number | undefined => ttl === undefined || (typeof ttl === 'number' && ttl > 0),
-      'VitePPDevOptions.proxyCacheTTL must be a positive number if provided',
-    ),
-    validateConfigValue(
-      config.integrateMiTopBar,
-      (
-        integrate,
-      ): integrate is boolean | { addRootElement?: boolean; addSharedComponentsScripts?: boolean } | undefined => {
-        if (integrate === undefined) {
-          return true;
-        }
-
-        if (integrate === null) {
-          return false;
-        }
-
-        if (typeof integrate !== 'boolean' && typeof integrate !== 'object') {
-          return false;
-        }
-
-        // integrateMiTopBar can only be true if miHudLess is true
-        if (integrate === true && config.miHudLess !== true) {
-          return false;
-        }
-
-        if (typeof integrate === 'object' && integrate !== null) {
-          if (integrate.addRootElement !== undefined && typeof integrate.addRootElement !== 'boolean') {
-            return false;
-          }
-
-          if (
-            integrate.addSharedComponentsScripts !== undefined &&
-            typeof integrate.addSharedComponentsScripts !== 'boolean'
-          ) {
-            return false;
-          }
-
-          if (
-            config.miHudLess !== true &&
-            (integrate.addRootElement === true || integrate.addSharedComponentsScripts === true)
-          ) {
-            return false;
-          }
-        }
-
-        return true;
-      },
-      'VitePPDevOptions.integrateMiTopBar must be a boolean or an object with addRootElement and addSharedComponentsScripts booleans',
-    ),
-  ];
-
-  const invalidResult = validations.find((result) => !result.isValid);
-
-  return invalidResult || { isValid: true };
-}
-
-export function normalizeVitePPDevConfig(config: VitePPDevOptions): NormalizedVitePPDevOptions {
-  const validationResult = validateConfig(config);
-
-  if (!validationResult.isValid) {
-    throw new Error(validationResult.error);
+  if (!templateName) {
+    throw new Error('[pp-dev] app.name is required (or set package.json#name)');
   }
 
-  // Prefer appId over portalPageId if both are provided
-  const portalPageId = config.appId ?? config.portalPageId;
-
-  const {
-    enableProxyCache = true,
-    proxyCacheTTL = 10 * 60 * 1000,
-    disableSSLValidation = false,
-    imageOptimizer = true,
-    miHudLess = false,
-    integrateMiTopBar = false,
-    templateLess = false,
-    outDir = 'dist',
-    distZip = true,
-    versionPlugin = true,
-    syncBackupsDir = 'backups',
-    v7Features = false,
-    personalAccessToken = process.env.MI_ACCESS_TOKEN,
-  } = config || {};
-
-  let distZipConfig = distZip;
-
-  if (distZipConfig === true) {
-    distZipConfig = {
-      outFileName: `${config.templateName}.zip`,
-      outDir: 'dist-zip',
-    };
-  } else if (typeof distZip === 'object') {
-    distZipConfig = {
-      outFileName:
-        typeof distZip.outFileName === 'string'
-          ? distZip.outFileName.replace('[templateName]', config.templateName)
-          : `${config.templateName}.zip`,
-      outDir: distZip.outDir ?? 'dist-zip',
-    };
-  } else {
-    distZipConfig = false;
+  if (config.mi?.include && miMode !== 'standalone') {
+    console.warn('[pp-dev] mi.include is only valid when mi.mode is "standalone"');
+    throw new Error('[pp-dev] mi.include requires mi.mode to be "standalone"');
   }
 
-  let imageOptimizerConfig = imageOptimizer;
-
-  if (typeof imageOptimizer === 'boolean') {
-    if (imageOptimizerConfig === true) {
-      imageOptimizerConfig = {};
+  if (!miUrl) {
+    if (miMode === 'embedding' || appType === 'template') {
+      throw new Error('[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"');
     }
-  } else if (typeof imageOptimizer !== 'object') {
-    imageOptimizerConfig = false;
+
+    if (miMode === 'standalone' && appType === 'page') {
+      console.warn('[pp-dev] mi.url is not set — dev server will run without a backend proxy');
+    }
   }
 
-  const versionPluginDefaultTemplate = 'VERSION-v{packageversion}-{currentDate}.json';
-  let versionPluginConfig: false | VersionPluginOptions;
+  if (appType === 'template' && !config.app?.id) {
+    throw new Error('[pp-dev] app.id is required when app.type is "template"');
+  }
 
-  if (versionPlugin === false) {
-    versionPluginConfig = false;
-  } else if (versionPlugin === true) {
-    versionPluginConfig = {
-      versionFileTemplate: versionPluginDefaultTemplate,
-      enabled: true,
-    };
+  const requiresPageAppId = appType === 'page' && miUrl && (miMode === 'standalone' || apiVersion >= 7);
+
+  if (requiresPageAppId && !config.app?.id) {
+    throw new Error('[pp-dev] app.id is required when backend page data is loaded for app.type "page"');
+  }
+}
+
+// ─── Normalization ────────────────────────────────────────────────────────────
+
+export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
+  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {} } = config;
+
+  const miMode = mi.mode ?? 'standalone';
+  const appType = app.type ?? 'template';
+  const apiVersion = mi.apiVersion ?? 7;
+
+  const miHudLess = miMode === 'standalone';
+
+  let integrateMiTopBar: NormalizedVitePPDevOptions['integrateMiTopBar'] = false;
+
+  if (mi.include === 'top-bar') {
+    integrateMiTopBar = true;
+  } else if (mi.include === 'shared-components') {
+    integrateMiTopBar = { addSharedComponentsScripts: true, addRootElement: false };
+  }
+
+  const templateLess = appType === 'page';
+
+  const resolvedName = app.name ?? templateName;
+  const defaultVersionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json';
+
+  let distZip: NormalizedVitePPDevOptions['distZip'];
+  const zipCfg = build.zip;
+
+  if (zipCfg === false) {
+    distZip = false;
+  } else if (zipCfg === true || zipCfg === undefined) {
+    distZip = { outFileName: `${resolvedName}.zip`, outDir: 'dist-zip' };
   } else {
-    versionPluginConfig = {
-      versionFileTemplate: versionPlugin.versionFileTemplate ?? versionPluginDefaultTemplate,
-      enabled: versionPlugin.enabled ?? true,
+    distZip = {
+      outFileName: zipCfg.fileName ?? `${resolvedName}.zip`,
+      outDir: zipCfg.outDir ?? 'dist-zip',
+      ...(zipCfg.inDir ? { inDir: zipCfg.inDir } : {}),
     };
+  }
+
+  let versionPlugin: NormalizedVitePPDevOptions['versionPlugin'];
+  const vfCfg = build.versionFile;
+
+  if (vfCfg === false) {
+    versionPlugin = false;
+  } else if (vfCfg === true || vfCfg === undefined) {
+    versionPlugin = { versionFileTemplate: defaultVersionFileTemplate, enabled: true };
+  } else {
+    versionPlugin = {
+      versionFileTemplate: vfCfg.fileNameTemplate ?? defaultVersionFileTemplate,
+      enabled: vfCfg.enabled ?? true,
+    };
+  }
+
+  let imageOptimizer: NormalizedVitePPDevOptions['imageOptimizer'];
+  const imgCfg = build.imageOptimisations;
+
+  if (imgCfg === false) {
+    imageOptimizer = false;
+  } else if (imgCfg === true || imgCfg === undefined) {
+    imageOptimizer = {};
+  } else {
+    imageOptimizer = imgCfg;
   }
 
   return {
-    enableProxyCache,
-    proxyCacheTTL,
-    disableSSLValidation,
-    imageOptimizer: imageOptimizerConfig,
+    templateName: resolvedName,
+    backendBaseURL: mi.url ?? process.env.MI_BACKEND_URL,
+    appId: app.id,
     templateLess,
     miHudLess,
-    outDir,
-    distZip: distZipConfig,
-    versionPlugin: versionPluginConfig,
-    syncBackupsDir,
-    v7Features,
-    personalAccessToken,
-    portalPageId,
     integrateMiTopBar,
-    ...config,
-  } as NormalizedVitePPDevOptions;
+    enableProxyCache: proxy.cache ?? true,
+    proxyCacheTTL: proxy.cacheTtl ?? 600_000,
+    disableSSLValidation: proxy.tls?.allowSelfSigned ?? false,
+    imageOptimizer,
+    outDir: build.outDir ?? 'dist',
+    distZip,
+    versionPlugin,
+    syncBackupsDir: sync.backupsDir ?? 'backups',
+    v7Features: apiVersion >= 7,
+    personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
+    inspectorEnabled: inspector.enabled ?? true,
+    inspectorMaxMemory: inspector.maxMemory ?? 1 * 1024 * 1024 * 1024,
+    inspectorCaptureLimit: inspector.captureLimit ?? 10 * 1024 * 1024,
+  };
 }
 
-function validateServerConfig(config: ServerOptions & { base: string }): ValidationResult {
-  const validations: ValidationResult[] = [
-    validateConfigValue(
-      config.base,
-      (base): base is string => typeof base === 'string' && base.length > 0 && base !== '/',
-      'Server base path cannot be empty or "/"',
-    ),
-    validateConfigValue(
-      config.port,
-      (port): port is number | undefined =>
-        port === undefined || (typeof port === 'number' && port > 0 && port < 65536),
-      'Server port must be a valid port number (1-65535)',
-    ),
-  ];
-
-  const invalidResult = validations.find((result) => !result.isValid);
-
-  return invalidResult || { isValid: true };
-}
+// ─── Internal MiAPI config ────────────────────────────────────────────────────
 
 interface MiAPIConfig {
   headers: {
@@ -408,7 +273,6 @@ interface MiAPIConfig {
     referer: string;
     origin: string;
   };
-  portalPageId?: number;
   appId?: number;
   templateLess: boolean;
   disableSSLValidation: boolean;
@@ -416,57 +280,7 @@ interface MiAPIConfig {
   personalAccessToken?: string;
 }
 
-function validateMiAPIConfig(config: MiAPIConfig): ValidationResult {
-  const validations: ValidationResult[] = [
-    validateConfigValue(
-      config.headers,
-      (headers): headers is MiAPIConfig['headers'] =>
-        typeof headers === 'object' &&
-        typeof headers.host === 'string' &&
-        typeof headers.referer === 'string' &&
-        typeof headers.origin === 'string',
-      'MiAPI headers must be properly configured',
-    ),
-    validateConfigValue(
-      config.portalPageId,
-      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
-      'MiAPI portalPageId must be a positive number if provided',
-    ),
-    validateConfigValue(
-      config.appId,
-      (id): id is number | undefined => id === undefined || (typeof id === 'number' && id > 0),
-      'MiAPI appId must be a positive number if provided',
-    ),
-    validateConfigValue(
-      config.personalAccessToken,
-      (token): token is string | undefined => token === undefined || typeof token === 'string',
-      'MiAPI personalAccessToken must be a string if provided',
-    ),
-  ];
-
-  const invalidResult = validations.find((result) => !result.isValid);
-
-  return invalidResult || { isValid: true };
-}
-
-interface ProxyCacheConfig {
-  devServer: any;
-  ttl: number;
-}
-
-function validateProxyCacheConfig(config: ProxyCacheConfig): ValidationResult {
-  const validations: ValidationResult[] = [
-    validateConfigValue(
-      config.ttl,
-      (ttl): ttl is number => typeof ttl === 'number' && ttl > 0,
-      'Proxy cache TTL must be a positive number',
-    ),
-  ];
-
-  const invalidResult = validations.find((result) => !result.isValid);
-
-  return invalidResult || { isValid: true };
-}
+// ─── Vite plugin ──────────────────────────────────────────────────────────────
 
 function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   const {
@@ -474,7 +288,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     templateLess,
     backendBaseURL,
     miHudLess,
-    portalPageId,
     appId,
     enableProxyCache,
     proxyCacheTTL,
@@ -484,32 +297,21 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     syncBackupsDir,
     v7Features,
     personalAccessToken,
+    inspectorEnabled,
+    inspectorMaxMemory,
+    inspectorCaptureLimit,
   } = options || {};
 
-  // Avoid server caching for index.html file when first loading
   let isFirstRequest = true;
   let baseDir = process.cwd();
-
-  const normalizedAppId = appId ?? portalPageId;
 
   return {
     name: 'vite-pp-dev',
     apply: 'serve',
     config: (config) => {
-      const serverConfig: ServerOptions & { base: string } = {
-        base: config.base || '',
-        ...config.server,
-      };
-
-      const validationResult = validateServerConfig(serverConfig);
-
-      if (!validationResult.isValid) {
-        throw new Error(validationResult.error);
-      }
-
       config.clientInjectionPlugin = {
         backendBaseURL,
-        portalPageId: normalizedAppId,
+        appId,
         templateLess,
         v7Features,
       };
@@ -524,17 +326,12 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
       return config;
     },
-    transformIndexHtml: async (html, ctx) => {
-      const result: IndexHtmlTransformResult = { html, tags: [] };
+    transformIndexHtml: async (_html, _ctx) => {
+      const result: IndexHtmlTransformResult = { html: _html, tags: [] };
 
       if (isFirstRequest) {
         isFirstRequest = false;
-
-        result.tags.push({
-          tag: 'script',
-          injectTo: 'body',
-          children: `${Math.random()}`,
-        });
+        result.tags.push({ tag: 'script', injectTo: 'body', children: `${Math.random()}` });
       }
 
       return result;
@@ -550,6 +347,17 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
       server.middlewares.use(initPPRedirect(base, templateName));
 
+      if (inspectorEnabled !== false) {
+        const reqStore = new RequestStore(inspectorMaxMemory);
+
+        server.middlewares.use(createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit));
+
+        const internalServer = createInternalServer();
+
+        registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
+        server.middlewares.use(internalServer);
+      }
+
       if (backendBaseURL) {
         const baseUrlHost = new URL(backendBaseURL).host;
 
@@ -559,19 +367,12 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             referer: backendBaseURL,
             origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
           },
-          portalPageId: normalizedAppId,
-          appId: normalizedAppId,
+          appId,
           templateLess,
           disableSSLValidation,
           v7Features,
           personalAccessToken: personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
         };
-
-        const validationResult = validateMiAPIConfig(miConfig);
-
-        if (!validationResult.isValid) {
-          throw new Error(validationResult.error);
-        }
 
         const mi = new MiAPI(backendBaseURL, miConfig);
 
@@ -579,37 +380,15 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           let ttl = +proxyCacheTTL;
 
           if (!ttl || Number.isNaN(ttl) || ttl < 0) {
-            ttl = 10 * 60 * 1000; // 10 minutes
+            ttl = 10 * 60 * 1000;
           }
 
-          const cacheConfig: ProxyCacheConfig = {
-            devServer: server,
-            ttl,
-          };
-
-          const validationResult = validateProxyCacheConfig(cacheConfig);
-
-          if (!validationResult.isValid) {
-            throw new Error(validationResult.error);
-          }
-
-          server.middlewares.use(initProxyCache(cacheConfig));
+          server.middlewares.use(initProxyCache({ devServer: server, ttl }));
         }
 
         const isIndexRegExp = new RegExp(`^((${base})|/)$`);
 
-        // Get portal page variables from the backend (also, redirect magic)
-        server.middlewares.use(
-          initLoadPPData(
-            isIndexRegExp,
-            mi,
-            Object.assign({}, options, {
-              appId: normalizedAppId,
-              portalPageId: normalizedAppId,
-              appBase: base,
-            }),
-          ),
-        );
+        server.middlewares.use(initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, { appId, appBase: base })));
 
         server.middlewares.use(
           proxyPassMiddleware({
@@ -619,10 +398,9 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             disableSSLValidation,
             miAPI: mi,
             templateName,
-          }) as any,
+          }),
         );
 
-        // Helper function to send error responses consistently
         const sendErrorResponse = (res: any, status: number, error: string, details?: string, code?: string) => {
           const response: any = { error };
 
@@ -637,34 +415,22 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           res.status(status).json(response).end();
         };
 
-        // Helper function to handle token validation errors
         const handleTokenValidationError = (res: any, error: any, tokenType: string) => {
-          // Log the error for debugging
           server.config.logger.error(`${tokenType} token validation error:`, error);
 
-          // Use the token helper for better error handling
           const errorInfo = getTokenErrorInfo(error);
 
-          // Check if the error was enhanced by the middleware
           if (error.tokenErrorInfo) {
             const enhancedErrorInfo = error.tokenErrorInfo;
 
-            server.config.logger.info(
-              `Using enhanced error info: ${enhancedErrorInfo.code} - ${enhancedErrorInfo.userFriendlyMessage}`,
+            sendErrorResponse(
+              res,
+              enhancedErrorInfo.status || 500,
+              enhancedErrorInfo.userFriendlyMessage,
+              enhancedErrorInfo.message,
+              enhancedErrorInfo.code,
             );
-
-            const status = enhancedErrorInfo.status || 500;
-            const code = enhancedErrorInfo.code;
-            const userFriendlyMessage = enhancedErrorInfo.userFriendlyMessage;
-            const details = enhancedErrorInfo.message;
-
-            sendErrorResponse(res, status, userFriendlyMessage, details, code);
           } else {
-            server.config.logger.info(
-              `Using original error info: ${errorInfo.code} - ${errorInfo.userFriendlyMessage}`,
-            );
-
-            // Map error codes to appropriate HTTP status codes and messages
             let status: number;
             let errorMessage: string;
             let errorCode: string;
@@ -705,6 +471,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         };
 
         const internalServer = createInternalServer();
+
         internalServer.post('/@api/login', async (req, res, next) => {
           const { token, tokenType } = req.body;
 
@@ -714,7 +481,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             return;
           }
 
-          // Log token validation attempt
           server.config.logger.info(`Attempting to validate ${tokenType} token...`);
 
           if (tokenType === 'personal') {
@@ -740,6 +506,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                 }
 
                 sendErrorResponse(res, 400, 'Token expired or invalid');
+
                 return null;
               })
               .catch((error: any) => handleTokenValidationError(res, error, 'personal'));
@@ -774,6 +541,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                 }
 
                 sendErrorResponse(res, 400, 'Token expired or invalid');
+
                 return null;
               })
               .catch((error: any) => handleTokenValidationError(res, error, 'regular'));
@@ -817,17 +585,12 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
               )
             : undefined;
 
-        const eventHandler = new ClientService(server, {
-          distService,
-          miAPI: mi,
-        });
+        new ClientService(server, { distService, miAPI: mi });
 
         return () => {
           server.middlewares.use(
             initRewriteResponse(
               (url) => {
-                console.log('initRewriteResponse.url', url);
-
                 return url.split('?')[0].endsWith('index.html');
               },
               (response, req) => {

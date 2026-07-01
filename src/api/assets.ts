@@ -10,25 +10,25 @@ export class AssetsAPI extends BaseAPI {
     super(axios);
   }
 
-  protected getDownloadUrl(portalPageId: number | string) {
-    return `/admin/page/downloadassets/id/${portalPageId}`;
+  protected getDownloadUrl(appId: number | string) {
+    return `/admin/page/downloadassets/id/${appId}`;
   }
 
   protected getDownloadTemplateUrl(templateId: number | string) {
     return `/admin/pagetemplate/downloadassets/id/${templateId}`;
   }
 
-  protected getUploadUrl(portalPageId: number | string) {
-    return `/admin/page/uploadassets/id/${portalPageId}`;
+  protected getUploadUrl(appId: number | string) {
+    return `/admin/page/uploadassets/id/${appId}`;
   }
 
   protected getUploadTemplateUrl(templateId: number | string) {
     return `/admin/pagetemplate/uploadassets/id/${templateId}`;
   }
 
-  async downloadPageAssets(portalPageId: number | string, headers?: Headers) {
+  async downloadPageAssets(appId: number | string, headers?: Headers) {
     return this.axios
-      .get<Buffer>(this.getDownloadUrl(portalPageId), {
+      .get<Buffer>(this.getDownloadUrl(appId), {
         withCredentials: true,
         headers: Object.assign({}, headers, { accept: '*/*' }),
         responseType: 'arraybuffer',
@@ -38,11 +38,11 @@ export class AssetsAPI extends BaseAPI {
 
   /**
    * Upload page assets.
-   * @param portalPageId
+   * @param appId
    * @param file - Zip file with assets
    * @param headers
    */
-  async uploadPageAssets(portalPageId: number | string, file: Buffer, headers?: Headers) {
+  async uploadPageAssets(appId: number | string, file: Buffer, headers?: Headers) {
     const formData = new (await this.formdataModulePromise).FormData();
     const { File } = await this.formdataModulePromise;
 
@@ -50,7 +50,7 @@ export class AssetsAPI extends BaseAPI {
 
     formData.append('file', assetFile);
 
-    const url = this.getUploadUrl(portalPageId);
+    const url = this.getUploadUrl(appId);
 
     return this.axios
       .post<{ status?: 'OK' }>(url, formData, {
