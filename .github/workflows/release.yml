@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -31,6 +32,15 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Prerelease versions (e.g. 1.0.0-beta.1) publish under the "beta" dist-tag so they
+          # never become "latest" and require an explicit `npm install pkg@beta` to pick up.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "tag=beta" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+
           echo "Releasing version: $VERSION"
 
       - name: Install dependencies
@@ -54,7 +64,7 @@ jobs:
         run: npm install -g npm@latest --no-audit
 
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --tag ${{ steps.version.outputs.tag }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
