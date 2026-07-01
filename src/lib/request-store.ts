@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 export const DEFAULT_MAX_MEMORY = 1 * 1024 * 1024 * 1024; // 1 GB
 
+// Approximate per-entry overhead (headers, URL, metadata) so zero-body entries still count
+// toward maxMemory and get evicted — otherwise a long dev session could grow entries/insertOrder
+// without bound even though totalSize never appeared to grow.
+const ENTRY_OVERHEAD_BYTES = 512;
+
 export type RequestSource = 'local' | 'proxy' | 'proxy-cache';
 
 export interface RequestEntry {
@@ -50,9 +55,9 @@ export class RequestStore {
 
   add(entry: RequestEntry): void {
     let storedEntry = entry;
-    let size = (entry.requestBody?.byteLength ?? 0) + (entry.responseBody?.byteLength ?? 0);
+    let bodyBytes = (entry.requestBody?.byteLength ?? 0) + (entry.responseBody?.byteLength ?? 0);
 
-    if (size > this.maxMemory) {
+    if (bodyBytes > this.maxMemory) {
       storedEntry = {
         ...entry,
         requestBody: null,
@@ -60,8 +65,10 @@ export class RequestStore {
         requestBodyTruncated: entry.requestBodyTruncated || entry.requestBody !== null,
         responseBodyTruncated: entry.responseBodyTruncated || entry.responseBody !== null,
       };
-      size = 0;
+      bodyBytes = 0;
     }
+
+    const size = bodyBytes + ENTRY_OVERHEAD_BYTES;
 
     // Evict oldest entries until we have room
     while (this.totalSize + size > this.maxMemory && this.insertOrder.length > 0) {
@@ -69,7 +76,7 @@ export class RequestStore {
       const old = this.entries.get(oldest);
 
       if (old) {
-        this.totalSize -= (old.requestBody?.byteLength ?? 0) + (old.responseBody?.byteLength ?? 0);
+        this.totalSize -= (old.requestBody?.byteLength ?? 0) + (old.responseBody?.byteLength ?? 0) + ENTRY_OVERHEAD_BYTES;
         this.entries.delete(oldest);
       }
     }
@@ -112,8 +119,14 @@ export class RequestStore {
       result = result.filter((e) => e.url.toLowerCase().includes(q));
     }
 
-    const offset = Number.isFinite(opts?.offset) ? opts.offset! : 0;
-    const limit = Number.isFinite(opts?.limit) ? opts.limit! : result.length;
+    const limit = Number.isFinite(opts?.limit) ? opts!.limit! : result.length;
+
+    // Without an explicit offset, return the most recent `limit` entries (not the oldest).
+    if (opts?.offset === undefined) {
+      return result.slice(Math.max(0, result.length - limit));
+    }
+
+    const offset = Number.isFinite(opts.offset) ? opts.offset! : 0;
 
     return result.slice(offset, offset + limit);
   }

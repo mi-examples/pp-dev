@@ -28,7 +28,6 @@ const REAL_MI_URL = process.env.REAL_MI_URL ?? 'https://stg7x.metricinsights.com
 const PP_DEV_JS = path.join(TEST_APP_DIR, 'node_modules/@metricinsights/pp-dev/bin/pp-dev.js');
 const STARTUP_TIMEOUT = 90_000;
 const REQUEST_TIMEOUT = 10_000;
-const DOWNLOAD_TIMEOUT = 30_000;
 const PP_PORT = Number(process.env.PP_DEV_RECORD_AUTO_PORT ?? 3000);
 const PP_BASE = `http://localhost:${PP_PORT}`;
 // Personal access token — if set, pp-dev adds it as Authorization: Bearer to all proxied
@@ -183,21 +182,8 @@ if (APP_ID !== null && MI_ACCESS_TOKEN) {
       log(`  /api/page_template/id/${templateId} → error: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Template ZIP download (binary — may be large, use extended timeout)
-    try {
-      const dlRes = await fetch(`${mockMi.url}/api/page_template/id/${templateId}/asset/download`, {
-        headers: authHeaders,
-        signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT),
-      });
-      log(`  /api/page_template/id/${templateId}/asset/download → ${dlRes.status}`);
-      // Consume body so the proxy finishes writing before we proceed
-      await dlRes.arrayBuffer();
-      log(`  (ZIP body consumed)`);
-    } catch (err) {
-      log(
-        `  /api/page_template/id/${templateId}/asset/download → error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    // Template ZIP download is skipped: server.ts rewrites its cassette entry to a synthetic
+    // 404 during save, so fetching the (possibly large) archive here would only be discarded.
   }
 } else if (APP_ID !== null) {
   log('Skipping template API fetch (no MI_ACCESS_TOKEN).');

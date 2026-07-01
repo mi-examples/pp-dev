@@ -209,8 +209,16 @@ function sanitizeCassette(cassette: Cassette): Cassette {
   };
 }
 
+function cassetteFile(name: string): string {
+  if (!/^[a-z0-9._-]+$/i.test(name)) {
+    throw new Error(`Invalid cassette name: ${name}`);
+  }
+
+  return path.join(CASSETTES_DIR, `${name}.json`);
+}
+
 export function loadCassette(name: string): Cassette {
-  const file = path.join(CASSETTES_DIR, `${name}.json`);
+  const file = cassetteFile(name);
   if (!fs.existsSync(file)) {
     throw new Error(`Cassette not found: ${file}\nRun "npm run record:mi" with VPN enabled to record it.`);
   }
@@ -219,7 +227,7 @@ export function loadCassette(name: string): Cassette {
 
 export function saveCassette(cassette: Cassette): void {
   fs.mkdirSync(CASSETTES_DIR, { recursive: true });
-  const file = path.join(CASSETTES_DIR, `${cassette.name}.json`);
+  const file = cassetteFile(cassette.name);
   fs.writeFileSync(file, JSON.stringify(sanitizeCassette(cassette), null, 2));
   console.log(`[mock-mi] Saved ${cassette.interactions.length} interactions → ${file}`);
 }

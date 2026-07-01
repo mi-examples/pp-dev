@@ -274,7 +274,6 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
 
 async function main() {
   let mockMi: MockMiServer | undefined;
-  let completed = false;
 
   try {
     mockMi = await startMockMiServer({
@@ -289,12 +288,8 @@ async function main() {
       console.log(`\n[browser-e2e] Running ${fixture.testType} at http://localhost:${fixture.port}\n`);
       await runFixture(fixture, mockMi);
     }
-
-    completed = true;
   } finally {
-    if (completed) {
-      mockMi?.save?.();
-    }
+    mockMi?.save?.();
     await mockMi?.close();
   }
 }

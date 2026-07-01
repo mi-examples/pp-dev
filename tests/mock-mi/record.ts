@@ -51,6 +51,9 @@ const patchedConfig = originalConfig.replace(
   /url:\s*['"]https?:\/\/[^'"]+['"]/,
   `url: '${mockMi.url}'`,
 );
+if (patchedConfig === originalConfig) {
+  throw new Error('Could not patch mi.url in pp-dev.config.ts');
+}
 fs.writeFileSync(CONFIG_PATH, patchedConfig);
 
 const ppdev = spawn(process.execPath, [PP_DEV_JS, 'next'], {
