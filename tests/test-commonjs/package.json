@@ -15,9 +15,9 @@
   },
   "devDependencies": {
     "@types/jquery": "^3.5.34",
-    "@types/luxon": "^3.7.1",
+    "@types/luxon": "^3.7.2",
     "typescript": "^6.0.3",
-    "vite": "^8.0.11"
+    "vite": "^8.1.3"
   },
   "overrides": {
     "@xmldom/xmldom": ">=0.8.12",
