@@ -11,20 +11,20 @@
   },
   "dependencies": {
     "@metricinsights/pp-dev": "file:../../metricinsights-pp-dev-latest.tgz",
-    "next": "^16.2.7",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "sharp": "^0.34.5"
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
-    "@types/node": "^25",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10",
-    "eslint": "^9.39.0",
-    "eslint-config-next": "^16.2.7",
-    "postcss": "^8.5.10",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.10",
+    "postcss": "^8.5.16",
     "tailwindcss": "^4",
     "typescript": "^6"
   },
