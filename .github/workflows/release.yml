@@ -30,6 +30,11 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
+          if [[ "$GITHUB_REF_NAME" != v* ]]; then
+            echo "This workflow must be run against a version tag (e.g. v1.0.0)."
+            exit 1
+          fi
+
           VERSION=${GITHUB_REF_NAME#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
