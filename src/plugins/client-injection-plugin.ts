@@ -2,6 +2,7 @@ import { IndexHtmlTransformResult, normalizePath, Plugin } from 'vite';
 import * as path from 'path';
 import { PP_DEV_CLIENT_ENTRY, PACKAGE_NAME, VERSION, PP_DEV_PACKAGE_DIR } from '../constants.js';
 import { getDevPanelAssetPaths } from '../lib/dev-panel.js';
+import type { DevPanelPosition } from '../plugin.js';
 import * as fs from 'fs';
 import ejs from 'ejs';
 import type { AsyncTemplateFunction } from 'ejs';
@@ -13,6 +14,9 @@ export interface ClientInjectionPluginOpts {
   appId?: number;
   canSync?: boolean;
   v7Features?: boolean;
+  devPanelPosition?: DevPanelPosition;
+  devPanelHidden?: boolean;
+  devPanelAutoHide?: boolean;
 }
 
 declare module 'vite' {
@@ -124,6 +128,9 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
         templateLess,
         appId,
         canSync = true,
+        devPanelPosition = 'bottom-right',
+        devPanelHidden = false,
+        devPanelAutoHide = false,
       } = opts || ctx.server?.config.clientInjectionPlugin || {};
 
       const templateData = {
@@ -133,6 +140,9 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
         templateLess,
         appId,
         canSync,
+        devPanelPosition,
+        devPanelHidden,
+        devPanelAutoHide,
       };
 
       result.tags.push({

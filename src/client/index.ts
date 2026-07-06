@@ -2,37 +2,10 @@
 import './assets/css/client.scss';
 import './index.html';
 import { createPPDevHotContext } from './hot-context.js';
-
-function checkLocalStorage() {
-  try {
-    localStorage.setItem('test', 'test');
-    localStorage.removeItem('test');
-
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function setStorageItem(key: string, value: string) {
-  if (checkLocalStorage()) {
-    localStorage.setItem(key, value);
-  }
-}
-
-function getStorageItem(key: string) {
-  if (checkLocalStorage()) {
-    return localStorage.getItem(key);
-  }
-
-  return null;
-}
-
-function removeStorageItem(key: string) {
-  if (checkLocalStorage()) {
-    localStorage.removeItem(key);
-  }
-}
+import { STORAGE_KEYS, getStorageItem, setStorageItem } from './storage.js';
+import { createPanelStateController, type PanelStateController } from './panel-state.js';
+import { initDrag, initAutoHide } from './panel-position.js';
+import { initPanelSettings } from './panel-settings.js';
 
 interface InfoPopupOptions {
   title: string;
@@ -132,25 +105,34 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   return $popup;
 }
 
+let panelController: PanelStateController | null = null;
+
 function updatePopupPositions() {
   const popups = document.querySelectorAll<HTMLElement>('.pp-dev-info-namespace:not(.pp-dev-info)');
-  const $devPanel = document.querySelector('.pp-dev-info');
+  const position = panelController?.getState().position ?? 'bottom-right';
+  const isLeft = position === 'top-left' || position === 'bottom-left';
+  const isTop = position === 'top-left' || position === 'top-right';
 
-  // Update popup positions
+  // Anchor popups to the panel's horizontal side and stack them from the vertically
+  // opposite edge so they never cover the panel.
   popups.forEach((popup, index: number) => {
-    const top = POPUP_OFFSET + index * (POPUP_HEIGHT + POPUP_OFFSET);
+    const offset = POPUP_OFFSET + index * (POPUP_HEIGHT + POPUP_OFFSET);
     const $popupContent = popup.querySelector<HTMLElement>('.pp-dev-info__popup');
 
-    if ($popupContent) {
-      $popupContent.style.top = `${top}px`;
+    if (!$popupContent) {
+      return;
+    }
+
+    $popupContent.classList.toggle('pp-dev-info__popup--left', isLeft);
+
+    if (isTop) {
+      $popupContent.style.top = 'auto';
+      $popupContent.style.bottom = `${offset}px`;
+    } else {
+      $popupContent.style.bottom = 'auto';
+      $popupContent.style.top = `${offset}px`;
     }
   });
-
-  // Ensure dev panel stays at the bottom
-  if ($devPanel) {
-    ($devPanel as HTMLElement).style.top = 'auto';
-    ($devPanel as HTMLElement).style.bottom = '0';
-  }
 }
 
 function animatePopup($popup: HTMLDivElement, type: 'enter' | 'exit') {
@@ -338,14 +320,80 @@ function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
   );
 })();
 
+// ── Panel UI: position, auto-hide, hide, minimize ─────────────────────────────
+// Initialized outside the hot-context guard — panel placement and visibility must
+// not depend on the WebSocket transport being available.
+const CLOSED_CLASS = 'closed';
+
+const $infoPanel = document.querySelector<HTMLElement>('.pp-dev-info');
+
+if ($infoPanel) {
+  panelController = createPanelStateController($infoPanel);
+
+  const $dragHandle = $infoPanel.querySelector<HTMLElement>('.pp-dev-info__drag-handle');
+
+  if ($dragHandle) {
+    initDrag($infoPanel, $dragHandle, (corner) => panelController!.setPosition(corner));
+  }
+
+  const autoHide = initAutoHide($infoPanel, () => panelController!.getState().autoHide);
+
+  initPanelSettings($infoPanel, panelController, {
+    onOpenChange: (open) => autoHide.keepPeeked(open),
+  });
+
+  panelController.onChange((state) => {
+    if (!state.autoHide) {
+      $infoPanel.classList.remove('is-peeking');
+    }
+
+    updatePopupPositions();
+  });
+
+  // Minimize button; in auto-hide mode it acts as "pin" (disables auto-hide).
+  const $minimizeButtonWrap = $infoPanel.querySelector<HTMLElement>('.pp-dev-info__wrap-btn');
+  const $minimizeButtonSVG = $minimizeButtonWrap?.querySelector('svg');
+
+  if ($minimizeButtonWrap && $minimizeButtonSVG) {
+    let isClosed = getStorageItem(STORAGE_KEYS.closed) === 'true' && !panelController.getState().autoHide;
+
+    const updateTitle = () => {
+      $minimizeButtonWrap.title = panelController!.getState().autoHide ? 'Pin panel' : 'Minimize';
+    };
+
+    updateTitle();
+    panelController.onChange(updateTitle);
+
+    if (isClosed) {
+      $infoPanel.classList.add(CLOSED_CLASS);
+      $minimizeButtonSVG.classList.add(CLOSED_CLASS);
+    }
+
+    $minimizeButtonWrap.addEventListener('click', (e: Event) => {
+      e.preventDefault();
+
+      if (panelController!.getState().autoHide) {
+        isClosed = false;
+        panelController!.setAutoHide(false);
+
+        return;
+      }
+
+      $infoPanel.classList.toggle(CLOSED_CLASS);
+      $minimizeButtonSVG.classList.toggle(CLOSED_CLASS);
+
+      isClosed = !isClosed;
+
+      setStorageItem(STORAGE_KEYS.closed, isClosed ? 'true' : 'false');
+    });
+  }
+}
+
 // Use Vite's HMR context when available; otherwise fall back to a raw-WebSocket
 // shim so the dev panel also works under the `pp-dev next` server (no Vite HMR).
 const hot = import.meta.hot ?? createPPDevHotContext();
 
 if (hot) {
-  const CLOSED_CLASS = 'closed';
-  const CLOSED_CLASS_STORAGE_KEY = 'pp-dev-info-closed';
-
   hot.on('redirect', (data: { url: string }) => {
     window.location.href = data.url;
   });
@@ -371,31 +419,6 @@ if (hot) {
       }
     }
   });
-
-  let isClosed = getStorageItem(CLOSED_CLASS_STORAGE_KEY) === 'true' || false;
-
-  const $infoPanel = document.querySelector('.pp-dev-info');
-
-  const $minimizeButtonWrap = document.querySelector('.pp-dev-info__wrap-btn');
-  const $minimizeButtonSVG = $minimizeButtonWrap?.querySelector('svg');
-
-  if ($infoPanel && $minimizeButtonWrap && $minimizeButtonSVG) {
-    if (isClosed) {
-      $infoPanel.classList.add(CLOSED_CLASS);
-      $minimizeButtonSVG.classList.add(CLOSED_CLASS);
-    }
-
-    $minimizeButtonWrap.addEventListener('click', (e: Event) => {
-      e.preventDefault();
-
-      $infoPanel.classList.toggle(CLOSED_CLASS);
-      $minimizeButtonSVG.classList.toggle(CLOSED_CLASS);
-
-      isClosed = !isClosed;
-
-      setStorageItem(CLOSED_CLASS_STORAGE_KEY, isClosed ? 'true' : 'false');
-    });
-  }
 
   const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
 

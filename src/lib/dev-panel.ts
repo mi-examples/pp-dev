@@ -4,6 +4,7 @@ import ejs from 'ejs';
 import type { TemplateFunction } from 'ejs';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { PACKAGE_NAME, VERSION, PP_DEV_CLIENT_ENTRY } from '../constants.js';
+import type { DevPanelPosition } from '../plugin.js';
 
 /**
  * Shared dev-panel rendering and serving, framework-agnostic.
@@ -19,6 +20,9 @@ export interface DevPanelData {
   templateLess: boolean;
   appId?: number;
   canSync?: boolean;
+  devPanelPosition?: DevPanelPosition;
+  devPanelHidden?: boolean;
+  devPanelAutoHide?: boolean;
 }
 
 /** Directory holding the built client assets (`client.js`, `client.css`, `index.html`). */
@@ -64,6 +68,11 @@ export function renderDevPanelMarkup(data: DevPanelData): string {
     templateLess: data.templateLess,
     appId: data.appId,
     canSync: data.canSync ?? true,
+    // Defaults are mandatory: EJS renders with `with(locals)`, so a missing variable
+    // throws ReferenceError for every caller that does not pass the new fields.
+    devPanelPosition: data.devPanelPosition ?? 'bottom-right',
+    devPanelHidden: data.devPanelHidden ?? false,
+    devPanelAutoHide: data.devPanelAutoHide ?? false,
   }) as string;
 }
 
