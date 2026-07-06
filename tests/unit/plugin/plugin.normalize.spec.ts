@@ -227,6 +227,25 @@ describe('normalizePPDevConfig', () => {
     });
   });
 
+  describe('devPanel normalization', () => {
+    it('defaults: position=bottom-right, hidden=false, autoHide=false', () => {
+      const n = normalizePPDevConfig({}, 'app');
+      expect(n.devPanelPosition).toBe('bottom-right');
+      expect(n.devPanelHidden).toBe(false);
+      expect(n.devPanelAutoHide).toBe(false);
+    });
+
+    it('maps explicit devPanel options', () => {
+      const n = normalizePPDevConfig(
+        { devPanel: { position: 'top-left', hidden: true, autoHide: true } },
+        'app',
+      );
+      expect(n.devPanelPosition).toBe('top-left');
+      expect(n.devPanelHidden).toBe(true);
+      expect(n.devPanelAutoHide).toBe(true);
+    });
+  });
+
   describe('Complete configuration', () => {
     it('normalizes a full config correctly', () => {
       const config: PPDevConfig = {
@@ -324,6 +343,32 @@ describe('validatePPDevConfig', () => {
     expect(() =>
       validatePPDevConfig(
         { mi: { url: 'https://mi.example.com', mode: 'embedding', apiVersion: 6 }, app: { type: 'page' } },
+        'app',
+      ),
+    ).not.toThrow();
+  });
+
+  it('throws on invalid devPanel.position', () => {
+    expect(() =>
+      validatePPDevConfig(
+        {
+          mi: { url: 'https://mi.example.com' },
+          app: { type: 'template', id: 1 },
+          devPanel: { position: 'middle' as never },
+        },
+        'app',
+      ),
+    ).toThrow('devPanel.position must be one of: top-left, top-right, bottom-left, bottom-right');
+  });
+
+  it('accepts a valid devPanel.position', () => {
+    expect(() =>
+      validatePPDevConfig(
+        {
+          mi: { url: 'https://mi.example.com' },
+          app: { type: 'template', id: 1 },
+          devPanel: { position: 'top-right' },
+        },
         'app',
       ),
     ).not.toThrow();

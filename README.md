@@ -189,6 +189,23 @@ module.exports = defineConfig({
 |--------------|----------|-------------|-----------------------------------------|
 | `backupsDir` | `string` | `'backups'` | Directory for backups from the MI server |
 
+### `devPanel` — Dev panel appearance
+
+| Field      | Type                                                            | Default          | Description                                                                 |
+|------------|-----------------------------------------------------------------|------------------|-----------------------------------------------------------------------------|
+| `position` | `'top-left' \| 'top-right' \| 'bottom-left' \| 'bottom-right'`  | `'bottom-right'` | Screen corner the dev panel is anchored to                                  |
+| `hidden`   | `boolean`                                                       | `false`          | Fully hide the panel. Restore in the browser with `?pp-dev-panel=show`      |
+| `autoHide` | `boolean`                                                       | `false`          | Panel slides behind the screen edge leaving a thin strip; hover reveals it  |
+
+These values are **defaults**: the panel itself has a settings popover (gear icon) with a corner
+picker, an auto-hide toggle and a hide button, and the panel can be dragged by its grip handle and
+snapped to any corner. Runtime choices are persisted in the browser's `localStorage`
+(`pp-dev-info-position`, `pp-dev-info-auto-hide`, `pp-dev-info-hidden`) and take precedence over
+the config until "Reset to config defaults" is clicked in the popover. The URL params
+`?pp-dev-panel=show` / `?pp-dev-panel=hide` set a persistent override too — handy for restoring a
+hidden panel or taking clean screenshots. Note that `localStorage` is origin-scoped, so overrides
+apply to every pp-dev app served on the same host and port.
+
 ### Validation
 
 pp-dev validates your config at startup and reports problems clearly:
@@ -201,6 +218,7 @@ pp-dev validates your config at startup and reports problems clearly:
 | `app.type === 'template'` without `app.id` | error |
 | `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id` | error |
 | `app.name` missing and no `package.json#name` | error |
+| `devPanel.position` not one of the four corners | error |
 
 ### Environment Variables
 

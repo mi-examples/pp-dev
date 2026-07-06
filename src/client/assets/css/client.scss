@@ -1,4 +1,45 @@
+@use 'sass:map';
+
 $pp-dev-height: 32px;
+$pp-dev-peek: 4px;
+
+// Corner map: v/h — anchored edges; sx — horizontal slide direction for minimize/auto-hide
+// (1 → slides right, -1 → slides left); radius/shadow face the viewport center;
+// edge — hairline border on the exposed horizontal edge.
+$pp-dev-corners: (
+  'top-left': (
+    v: top,
+    h: left,
+    sx: -1,
+    radius: 0 0 4px 0,
+    shadow: 2px 2px 8px 0 rgba(34, 34, 34, 0.08),
+    edge: border-bottom,
+  ),
+  'top-right': (
+    v: top,
+    h: right,
+    sx: 1,
+    radius: 0 0 0 4px,
+    shadow: -2px 2px 8px 0 rgba(34, 34, 34, 0.08),
+    edge: border-bottom,
+  ),
+  'bottom-left': (
+    v: bottom,
+    h: left,
+    sx: -1,
+    radius: 0 4px 0 0,
+    shadow: 2px -2px 8px 0 rgba(34, 34, 34, 0.08),
+    edge: border-top,
+  ),
+  'bottom-right': (
+    v: bottom,
+    h: right,
+    sx: 1,
+    radius: 4px 0 0 0,
+    shadow: -2px -2px 8px 0 rgba(34, 34, 34, 0.08),
+    edge: border-top,
+  ),
+);
 
 .pp-dev-info-namespace {
   // Define theme colors
@@ -137,6 +178,19 @@ $pp-dev-height: 32px;
       --pp-dev-info-popup-accent: var(--pp-dev-info-color-warning);
       border-left-color: var(--pp-dev-info-color-warning);
     }
+
+    // Popups anchored to the left screen edge (panel in a left corner)
+    &--left {
+      right: auto;
+      left: 10px;
+      border-left: none;
+      border-right: 2px solid var(--pp-dev-info-popup-accent);
+
+      &.entering,
+      &.exiting {
+        transform: translateX(calc(-100% - 10px));
+      }
+    }
   }
 
   &.pp-dev-info__confirm-overlay,
@@ -218,16 +272,11 @@ $pp-dev-height: 32px;
     white-space: nowrap;
     width: fit-content;
     height: $pp-dev-height;
-    top: calc(100% - $pp-dev-height);
-    right: 0;
     text-align: center;
     padding: 2px;
     gap: 8px;
     background-color: var(--pp-dev-info-color-white);
-    border-radius: 4px 0 0 0;
-    border-bottom: 1px solid rgba(34, 34, 34, 0.08);
     color: var(--pp-dev-info-color-dark);
-    box-shadow: -2px -2px 8px 0px rgba(34, 34, 34, 0.08);
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -382,6 +431,200 @@ $pp-dev-height: 32px;
       @include bold;
     }
 
+    &__drag-handle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 14px;
+      height: 28px;
+      cursor: grab;
+      touch-action: none;
+      border-radius: 3px;
+      color: var(--pp-dev-info-color-secondary);
+      opacity: 0.55;
+      transition:
+        opacity 0.2s ease,
+        background-color 0.2s ease;
+
+      svg {
+        pointer-events: none;
+        fill: currentColor;
+      }
+
+      &:hover {
+        opacity: 1;
+        background-color: rgba(7, 91, 126, 0.06);
+      }
+    }
+
+    &__settings-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      color: var(--pp-dev-info-color-secondary);
+      transition: all 0.2s ease;
+
+      svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        transition: transform 0.3s ease;
+      }
+
+      &:hover {
+        color: var(--pp-dev-info-color-primary);
+        background-color: rgba(7, 91, 126, 0.06);
+
+        svg {
+          transform: rotate(45deg);
+        }
+      }
+    }
+
+    &__settings {
+      position: absolute;
+      min-width: 216px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background-color: var(--pp-dev-info-color-white);
+      border: 1px solid rgba(34, 34, 34, 0.15);
+      border-radius: 3px;
+      box-shadow: 0 4px 16px rgba(34, 34, 34, 0.2);
+      z-index: 100002;
+      cursor: default;
+      white-space: normal;
+      text-align: left;
+
+      .pp-dev-info__settings-title {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--pp-dev-info-color-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+
+      .pp-dev-info__settings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .pp-dev-info__settings-toggle {
+        appearance: auto;
+        -webkit-appearance: checkbox;
+        width: 14px;
+        height: 14px;
+        accent-color: var(--pp-dev-info-color-primary);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .pp-dev-info__corner-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 30px);
+        gap: 4px;
+      }
+
+      .pp-dev-info__corner-btn {
+        width: 30px;
+        height: 22px;
+        border: 1px solid rgba(34, 34, 34, 0.25);
+        border-radius: 3px;
+        cursor: pointer;
+        position: relative;
+        background: transparent;
+        transition: border-color 0.2s ease;
+
+        &::after {
+          content: '';
+          position: absolute;
+          width: 10px;
+          height: 6px;
+          border-radius: 1px;
+          background-color: var(--pp-dev-info-color-secondary);
+          transition: background-color 0.2s ease;
+        }
+
+        &--top-left::after {
+          top: 2px;
+          left: 2px;
+        }
+
+        &--top-right::after {
+          top: 2px;
+          right: 2px;
+        }
+
+        &--bottom-left::after {
+          bottom: 2px;
+          left: 2px;
+        }
+
+        &--bottom-right::after {
+          bottom: 2px;
+          right: 2px;
+        }
+
+        &:hover {
+          border-color: var(--pp-dev-info-color-primary);
+        }
+
+        &.active {
+          border-color: var(--pp-dev-info-color-primary);
+
+          &::after {
+            background-color: var(--pp-dev-info-color-primary);
+          }
+        }
+      }
+
+      .pp-dev-info__settings-hide-btn {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid rgba(34, 34, 34, 0.2);
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--pp-dev-info-color-danger);
+        transition: background-color 0.2s ease;
+
+        &:hover {
+          background-color: rgba(172, 43, 43, 0.06);
+        }
+      }
+
+      .pp-dev-info__settings-hint {
+        font-size: 10px;
+        line-height: 14px;
+        color: var(--pp-dev-info-color-secondary);
+
+        code {
+          font-family: monospace;
+          font-size: 10px;
+        }
+      }
+
+      .pp-dev-info__settings-reset {
+        align-self: flex-start;
+        font-size: 11px;
+        color: var(--pp-dev-info-color-primary);
+        cursor: pointer;
+
+        &:hover {
+          text-decoration: underline;
+        }
+      }
+    }
+
     &__wrap-btn {
       box-sizing: border-box;
       display: flex;
@@ -409,18 +652,104 @@ $pp-dev-height: 32px;
     }
 
     &.closed {
-      transform: translateX(calc(100% - $pp-dev-height));
       z-index: 100002;
 
       & .pp-dev-info__wrap-btn {
         &:hover {
           animation: arrowHover 1.2s linear infinite;
         }
+      }
+    }
 
-        &-arrow {
-          transform: rotate(180deg);
+    // Corner variants: placement, center-facing radius/shadow, direction-aware
+    // minimize (.closed) and auto-hide slides. The corner class is always rendered
+    // on the panel root (server default: bottom-right).
+    @each $name, $c in $pp-dev-corners {
+      &.pp-dev-info--#{$name} {
+        #{map.get($c, v)}: 0;
+        #{map.get($c, h)}: 0;
+        border-radius: map.get($c, radius);
+        box-shadow: map.get($c, shadow);
+        #{map.get($c, edge)}: 1px solid rgba(34, 34, 34, 0.08);
+
+        .pp-dev-info__settings {
+          #{map.get($c, v)}: calc(100% + 8px);
+          #{map.get($c, h)}: 0;
+        }
+
+        @if map.get($c, sx) == 1 {
+          &.closed {
+            transform: translateX(calc(100% - $pp-dev-height));
+
+            .pp-dev-info__wrap-btn-arrow {
+              transform: rotate(180deg);
+            }
+          }
+
+          &.pp-dev-info--auto-hide:not(.is-peeking):not(.is-dragging) {
+            transform: translateX(calc(100% - $pp-dev-peek));
+            box-shadow: map.get($c, shadow), inset $pp-dev-peek 0 0 0 var(--pp-dev-info-color-primary);
+
+            // Extended invisible hover zone on the inner side of the 4px strip
+            &::after {
+              content: '';
+              position: absolute;
+              top: -6px;
+              bottom: -6px;
+              left: -8px;
+              width: 8px;
+            }
+          }
+        } @else {
+          .pp-dev-info__wrap-btn {
+            order: 99;
+
+            &-arrow {
+              transform: rotate(180deg);
+            }
+          }
+
+          &.closed {
+            transform: translateX(calc(-100% + $pp-dev-height));
+
+            .pp-dev-info__wrap-btn-arrow {
+              transform: rotate(0deg);
+            }
+          }
+
+          &.pp-dev-info--auto-hide:not(.is-peeking):not(.is-dragging) {
+            transform: translateX(calc(-100% + $pp-dev-peek));
+            box-shadow: map.get($c, shadow), inset (-$pp-dev-peek) 0 0 0 var(--pp-dev-info-color-primary);
+
+            &::after {
+              content: '';
+              position: absolute;
+              top: -6px;
+              bottom: -6px;
+              right: -8px;
+              width: 8px;
+            }
+          }
         }
       }
+    }
+
+    &.pp-dev-info--auto-hide {
+      z-index: 100002;
+    }
+
+    &.is-dragging {
+      transition: none;
+      user-select: none;
+      cursor: grabbing;
+
+      .pp-dev-info__drag-handle {
+        cursor: grabbing;
+      }
+    }
+
+    &.pp-dev-info--hidden {
+      display: none;
     }
 
     .sync-button {
@@ -567,6 +896,15 @@ $pp-dev-height: 32px;
         --pp-dev-info-color-white: #000000;
         --pp-dev-info-color-black: #ffffff;
       }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &.pp-dev-info,
+    .pp-dev-info,
+    .pp-dev-info__popup,
+    .pp-dev-info__settings {
+      transition: none;
     }
   }
 }
