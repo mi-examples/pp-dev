@@ -1,3 +1,10 @@
+# [0.20.0-beta.6](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.5...v0.20.0-beta.6) (2026-07-06)
+
+
+### Features
+
+* **PP-3449:** configurable dev panel position, hide and auto-hide modes ([315d6fc](https://github.com/mi-examples/pp-dev/commit/315d6fc4182c1128f77fe192a425e3f816970f6f))
+
 # [0.20.0-beta.5](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.4...v0.20.0-beta.5) (2026-07-06)
 
 
