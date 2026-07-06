@@ -1,3 +1,10 @@
+# [0.20.0-beta.5](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.4...v0.20.0-beta.5) (2026-07-06)
+
+
+### Bug Fixes
+
+* **PP-3449:** stop request inspector from swallowing proxied PUT/POST bodies ([610a993](https://github.com/mi-examples/pp-dev/commit/610a9933ac0a7ec19ee349ff7c6490b605a739ed))
+
 # [0.20.0-beta.4](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.3...v0.20.0-beta.4) (2026-07-02)
 
 
