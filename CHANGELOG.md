@@ -1,3 +1,10 @@
+# [1.0.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-07-07)
+
+
+### Features
+
+* **PP-3449:** add Dev Panel guide to README (position, auto-hide, hide/restore) ([54b8331](https://github.com/mi-examples/pp-dev/commit/54b833163bf65372f6ba55f5910cd7e3332261a9))
+
 # [1.0.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.6...v1.0.0-beta.1) (2026-07-07)
 
 
