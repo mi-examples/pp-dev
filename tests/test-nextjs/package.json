@@ -22,7 +22,7 @@
     "extract-zip": "^2.0.1",
     "file-type": "^22.0.1",
     "formdata-node": "^6.0.3",
-    "http-proxy-middleware": "^4.1.1",
+    "http-proxy-middleware": "^4.2.0",
     "isbinaryfile": "^6.0.0",
     "jsdom": "29.1.1",
     "memory-cache": "^0.2.0",
@@ -53,7 +53,7 @@
     "postcss": "^8.5.16",
     "rollup": "^4.62.2",
     "tailwindcss": "^4",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.0",
     "typescript": "^6"
   },
   "overrides": {

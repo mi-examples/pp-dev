@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "@metricinsights/pp-dev": "file:../../metricinsights-pp-dev-latest.tgz",
-    "jquery": "^3.7.1",
+    "jquery": "^4.0.0",
     "luxon": "^3.7.2"
   },
   "devDependencies": {
-    "@types/jquery": "^3.5.34",
+    "@types/jquery": "^4.0.1",
     "@types/luxon": "^3.7.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.3"
