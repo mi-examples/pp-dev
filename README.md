@@ -204,7 +204,8 @@ snapped to any corner. Runtime choices are persisted in the browser's `localStor
 the config until "Reset to config defaults" is clicked in the popover. The URL params
 `?pp-dev-panel=show` / `?pp-dev-panel=hide` set a persistent override too — handy for restoring a
 hidden panel or taking clean screenshots. Note that `localStorage` is origin-scoped, so overrides
-apply to every pp-dev app served on the same host and port.
+apply to every pp-dev app served on the same host and port. See the [Dev Panel](#dev-panel)
+section for the full feature description.
 
 ### Validation
 
@@ -405,6 +406,47 @@ module.exports = withPPDev({
 ## Vite Configuration
 
 For custom build configuration, create a `vite.config` file. See [Vite Configuration](https://vitejs.dev/config/) for details.
+
+## Dev Panel
+
+pp-dev injects a floating dev panel into every served page. It shows the package name and version, the backend URL, the template mode and the App ID, and hosts the template **Sync** button. Since 1.0 the panel is fully repositionable and can be hidden.
+
+### Position
+
+The panel can be anchored to any of the four screen corners (default: bottom-right). Three ways to move it:
+
+- **Drag & snap** — grab the grip handle (six dots on the panel's left side) and drag; on release the panel snaps to the nearest corner. Dragging works across iframes and is cancelled with <kbd>Escape</kbd>.
+- **Settings popover** — click the gear icon and pick a corner in the 2×2 grid.
+- **Config default** — set `devPanel.position` in `pp-dev.config` (see below).
+
+The minimize arrow, the panel's shadow, rounded corner and slide direction all mirror automatically for left/top placements. Sync notification popups stack from the screen edge opposite the panel so they never cover it.
+
+### Auto-hide
+
+Toggle **Auto-hide** in the settings popover (or set `devPanel.autoHide: true`). The panel slides behind the nearest screen edge leaving a 4px accent strip; hovering the strip for ~300 ms slides it out, and it hides again ~500 ms after the pointer leaves. Keyboard focus inside the panel keeps it revealed. While auto-hide is active the minimize arrow acts as a **pin** button that returns the panel to normal mode.
+
+### Hiding and restoring
+
+**Hide panel** in the settings popover (or `devPanel.hidden: true`) removes the panel from view entirely. To bring it back, open any page with `?pp-dev-panel=show` in the URL — the override persists across reloads. The symmetric `?pp-dev-panel=hide` hides it, which is handy for demos and clean screenshots.
+
+### State persistence
+
+Runtime choices are saved in the browser's `localStorage` (`pp-dev-info-position`, `pp-dev-info-auto-hide`, `pp-dev-info-hidden`) and take precedence over config values. **Reset to config defaults** in the settings popover clears all overrides. Storage is origin-scoped: overrides apply to every pp-dev app served on the same host and port, and a Metric Insights page that clears origin storage will reset them to config defaults.
+
+### Configuration
+
+```typescript
+// pp-dev.config.ts
+export default defineConfig({
+  devPanel: {
+    position: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+    hidden: false,            // hide the panel entirely (restore with ?pp-dev-panel=show)
+    autoHide: false,          // slide behind the screen edge, reveal on hover
+  },
+});
+```
+
+See the [`devPanel` option reference](#devpanel--dev-panel-appearance) for details.
 
 ## Request Inspector
 
