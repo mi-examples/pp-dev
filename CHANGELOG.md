@@ -1,3 +1,15 @@
+# [1.0.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.6...v1.0.0-beta.1) (2026-07-07)
+
+
+* feat(PP-3449)!: update dependencies and start the 1.0 release line ([abdad45](https://github.com/mi-examples/pp-dev/commit/abdad45b87e752d7468994f821841adc9e288e70))
+
+
+### BREAKING CHANGES
+
+* pp-dev moves to the 1.0 release line. Node.js >= 24
+is required (declared in engines) and the package is no longer
+published under the 0.x version scheme.
+
 # [0.20.0-beta.6](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.5...v0.20.0-beta.6) (2026-07-06)
 
 
