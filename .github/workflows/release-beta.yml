@@ -3,6 +3,14 @@ name: Beta Release
 on:
   push:
     branches: [develop]
+  # Manual re-run for releases that failed mid-way: `[skip ci]` release commits
+  # never trigger the push event, and re-running a failed run pins the old SHA,
+  # so semantic-release refuses with "local branch is behind the remote one".
+  workflow_dispatch:
+
+concurrency:
+  group: release-beta
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -11,6 +19,8 @@ permissions:
 
 jobs:
   release-beta:
+    # Guard manual runs: beta releases may only be dispatched from develop.
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
