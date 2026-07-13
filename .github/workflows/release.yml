@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing v* tag to (re)publish (e.g. v1.0.0-beta.2). Required when dispatching from a branch — the workflow file runs from the dispatch ref, but the published code comes from this tag.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -14,28 +19,20 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org/
-          cache: 'npm'
-
-      - name: Extract version from tag
+      - name: Resolve version
         id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "This workflow must be run against a version tag (e.g. v1.0.0)."
+          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+
+          if [[ "$TAG" != v* ]]; then
+            echo "This workflow must be run against a version tag (e.g. v1.0.0), or pass the 'tag' input when dispatching from a branch."
             exit 1
           fi
 
-          VERSION=${GITHUB_REF_NAME#v}
+          VERSION=${TAG#v}
+          echo "git_tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           # Prerelease versions (e.g. 1.0.0-beta.1) publish under the "beta" dist-tag so they
@@ -46,7 +43,21 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
           fi
 
-          echo "Releasing version: $VERSION"
+          echo "Releasing version: $VERSION (git tag: $TAG)"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.version.outputs.git_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci --no-audit
@@ -62,8 +73,11 @@ jobs:
           fi
           echo "Build verification passed"
 
+      # --allow-same-version: tags created by semantic-release point at the
+      # chore(release) commit where package.json already carries the tag's version;
+      # plain `npm version` fails with "Version not changed" there.
       - name: Update package version
-        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version
+        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Upgrade npm for OIDC trusted publishing
         run: npm install -g npm@latest --no-audit
@@ -74,8 +88,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.git_tag }}
+          name: Release ${{ steps.version.outputs.git_tag }}
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.tag == 'beta' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -18,6 +18,8 @@ export type {
   ProxyConfig,
   BuildConfig,
   SyncConfig,
+  DevPanelConfig,
+  DevPanelPosition,
   MiMode,
   MiInclude,
   AppType,
@@ -39,7 +41,7 @@ declare module 'next' {
   }
 }
 
-const PP_DEV_CONFIG_GROUPS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector']);
+const PP_DEV_CONFIG_GROUPS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector', 'devPanel']);
 
 function mergePPDevConfigs(...configs: Array<PPDevConfig | undefined>): PPDevConfig {
   const merged: PPDevConfig = {};

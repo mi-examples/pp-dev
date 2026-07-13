@@ -1,3 +1,53 @@
+# [1.0.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-07-07)
+
+
+### Features
+
+* **PP-3449:** add Dev Panel guide to README (position, auto-hide, hide/restore) ([54b8331](https://github.com/mi-examples/pp-dev/commit/54b833163bf65372f6ba55f5910cd7e3332261a9))
+
+# [1.0.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.6...v1.0.0-beta.1) (2026-07-07)
+
+
+* feat(PP-3449)!: update dependencies and start the 1.0 release line ([abdad45](https://github.com/mi-examples/pp-dev/commit/abdad45b87e752d7468994f821841adc9e288e70))
+
+
+### Features
+
+* **PP-3449:** add Dev Panel guide to README (position, auto-hide, hide/restore) ([54b8331](https://github.com/mi-examples/pp-dev/commit/54b833163bf65372f6ba55f5910cd7e3332261a9))
+
+
+### BREAKING CHANGES
+
+* pp-dev moves to the 1.0 release line. Node.js >= 24
+is required (declared in engines) and the package is no longer
+published under the 0.x version scheme.
+
+# [1.0.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.6...v1.0.0-beta.1) (2026-07-07)
+
+
+* feat(PP-3449)!: update dependencies and start the 1.0 release line ([abdad45](https://github.com/mi-examples/pp-dev/commit/abdad45b87e752d7468994f821841adc9e288e70))
+
+
+### BREAKING CHANGES
+
+* pp-dev moves to the 1.0 release line. Node.js >= 24
+is required (declared in engines) and the package is no longer
+published under the 0.x version scheme.
+
+# [0.20.0-beta.6](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.5...v0.20.0-beta.6) (2026-07-06)
+
+
+### Features
+
+* **PP-3449:** configurable dev panel position, hide and auto-hide modes ([315d6fc](https://github.com/mi-examples/pp-dev/commit/315d6fc4182c1128f77fe192a425e3f816970f6f))
+
+# [0.20.0-beta.5](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.4...v0.20.0-beta.5) (2026-07-06)
+
+
+### Bug Fixes
+
+* **PP-3449:** stop request inspector from swallowing proxied PUT/POST bodies ([610a993](https://github.com/mi-examples/pp-dev/commit/610a9933ac0a7ec19ee349ff7c6490b605a739ed))
+
 # [0.20.0-beta.4](https://github.com/mi-examples/pp-dev/compare/v0.20.0-beta.3...v0.20.0-beta.4) (2026-07-02)
 
 

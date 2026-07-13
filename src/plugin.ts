@@ -13,7 +13,7 @@ import { createInternalServer } from './lib/internal.middleware.js';
 import { getTokenErrorInfo } from './lib/helpers/index.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
-import { registerInspectorRoutes } from './lib/request-inspector.js';
+import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -95,6 +95,17 @@ export interface InspectorConfig {
   captureLimit?: number;
 }
 
+export type DevPanelPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export interface DevPanelConfig {
+  /** Screen corner the dev panel is anchored to. @default 'bottom-right' */
+  position?: DevPanelPosition;
+  /** Fully hide the panel. Restore in the browser with ?pp-dev-panel=show. @default false */
+  hidden?: boolean;
+  /** Auto-hide: the panel slides behind the screen edge leaving a thin strip; hover reveals it. @default false */
+  autoHide?: boolean;
+}
+
 export interface PPDevConfig {
   mi?: MiConfig;
   app?: AppConfig;
@@ -102,6 +113,7 @@ export interface PPDevConfig {
   build?: BuildConfig;
   sync?: SyncConfig;
   inspector?: InspectorConfig;
+  devPanel?: DevPanelConfig;
 }
 
 // ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
@@ -138,7 +150,12 @@ export interface NormalizedVitePPDevOptions {
   inspectorEnabled: boolean;
   inspectorMaxMemory: number;
   inspectorCaptureLimit: number;
+  devPanelPosition: DevPanelPosition;
+  devPanelHidden: boolean;
+  devPanelAutoHide: boolean;
 }
+
+const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -176,12 +193,16 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
   if (requiresPageAppId && !config.app?.id) {
     throw new Error('[pp-dev] app.id is required when backend page data is loaded for app.type "page"');
   }
+
+  if (config.devPanel?.position !== undefined && !DEV_PANEL_POSITIONS.includes(config.devPanel.position)) {
+    throw new Error(`[pp-dev] devPanel.position must be one of: ${DEV_PANEL_POSITIONS.join(', ')}`);
+  }
 }
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
 export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
-  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {} } = config;
+  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {} } = config;
 
   const miMode = mi.mode ?? 'standalone';
   const appType = app.type ?? 'template';
@@ -262,6 +283,9 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
     inspectorEnabled: inspector.enabled ?? true,
     inspectorMaxMemory: inspector.maxMemory ?? 1 * 1024 * 1024 * 1024,
     inspectorCaptureLimit: inspector.captureLimit ?? 10 * 1024 * 1024,
+    devPanelPosition: devPanel.position ?? 'bottom-right',
+    devPanelHidden: devPanel.hidden ?? false,
+    devPanelAutoHide: devPanel.autoHide ?? false,
   };
 }
 
@@ -300,6 +324,9 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     inspectorEnabled,
     inspectorMaxMemory,
     inspectorCaptureLimit,
+    devPanelPosition,
+    devPanelHidden,
+    devPanelAutoHide,
   } = options || {};
 
   let isFirstRequest = true;
@@ -314,6 +341,9 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         appId,
         templateLess,
         v7Features,
+        devPanelPosition,
+        devPanelHidden,
+        devPanelAutoHide,
       };
 
       if (v7Features) {
@@ -355,7 +385,20 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         const internalServer = createInternalServer();
 
         registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
-        server.middlewares.use(internalServer);
+
+        // Only route internal pp-dev paths into the Express app. Mounting it for all
+        // paths would run its global express.json()/urlencoded() body parsers, which
+        // consume the request stream before the proxy can pipe it to the backend
+        // (the backend then waits for a body that never arrives and replies 408).
+        server.middlewares.use((req, res, next) => {
+          if (req.url?.startsWith('/@api/') || req.url?.startsWith(INSPECTOR_PATH)) {
+            internalServer(req as never, res as never, next);
+
+            return;
+          }
+
+          next();
+        });
       }
 
       if (backendBaseURL) {

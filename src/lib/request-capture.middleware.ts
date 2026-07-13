@@ -21,27 +21,34 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
     const id = store.allocateId();
     const startTime = Date.now();
 
-    // Capture request body by tapping into data events without consuming the stream
+    // Capture the request body by patching req.emit rather than attaching a 'data'
+    // listener: a listener would switch the stream into flowing mode, and buffered
+    // chunks would be emitted (and lost) before a downstream consumer — e.g. the
+    // proxy — attaches its own reader. Patching emit observes chunks only when
+    // something downstream actually reads the stream, leaving its state untouched.
     const reqChunks: Buffer[] = [];
     let reqSize = 0;
     let reqTruncated = false;
 
-    req.on('data', (chunk: Buffer | string) => {
-      if (reqTruncated) {
-        return;
+    const origReqEmit = req.emit.bind(req);
+
+    req.emit = ((event: string | symbol, ...args: unknown[]): boolean => {
+      if (event === 'data' && !reqTruncated) {
+        const chunk = args[0];
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+
+        reqSize += buf.byteLength;
+
+        if (reqSize <= captureLimit) {
+          reqChunks.push(buf);
+        } else {
+          reqTruncated = true;
+          reqChunks.length = 0; // free memory for partial chunks
+        }
       }
 
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-
-      reqSize += buf.byteLength;
-
-      if (reqSize <= captureLimit) {
-        reqChunks.push(buf);
-      } else {
-        reqTruncated = true;
-        reqChunks.length = 0; // free memory for partial chunks
-      }
-    });
+      return origReqEmit(event as never, ...(args as never[]));
+    }) as typeof req.emit;
 
     // Capture response body by wrapping write/end
     const resChunks: Buffer[] = [];

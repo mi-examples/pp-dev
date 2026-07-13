@@ -1051,6 +1051,9 @@ cli
                 backendBaseURL,
                 templateLess,
                 appId,
+                devPanelPosition: _normalized.devPanelPosition,
+                devPanelHidden: _normalized.devPanelHidden,
+                devPanelAutoHide: _normalized.devPanelAutoHide,
               });
 
               return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', withPanel));
