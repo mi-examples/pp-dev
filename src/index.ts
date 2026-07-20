@@ -10,6 +10,9 @@ import { getConfig, getPkg } from './config.js';
 import type { PPDevConfig } from './plugin.js';
 import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from './constants.js';
 import { createLogger } from './lib/logger.js';
+import { applyDistZipOverride, applyVersionManifestOverride, ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
+
+export type { ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
 
 export type { PPDevConfig } from './config.js';
 export type {
@@ -148,7 +151,7 @@ function resolveRepositoryUrl(repository: unknown): string | undefined {
   return undefined;
 }
 
-export async function getViteConfig(): Promise<InlineConfig> {
+export async function getViteConfig(overrides?: ResolvedBuildCliOverrides): Promise<InlineConfig> {
   const pkg = getPkg();
 
   const templateName = pkg.name;
@@ -158,6 +161,15 @@ export async function getViteConfig(): Promise<InlineConfig> {
   validatePPDevConfig(ppDevConfig, templateName);
 
   const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, templateName);
+
+  if (overrides) {
+    normalizedPPDevConfig.distZip = applyDistZipOverride(
+      normalizedPPDevConfig.distZip,
+      overrides,
+      `${templateName}.zip`,
+    );
+    normalizedPPDevConfig.versionPlugin = applyVersionManifestOverride(normalizedPPDevConfig.versionPlugin, overrides);
+  }
 
   // Lazy import vitePPDev to avoid loading plugin module during Next.js config evaluation
   const { default: vitePPDev } = await import('./plugin.js');
