@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "pp-dev next",
-    "build": "next build",
+    "build": "pp-dev next-build --changelog",
     "start": "next start",
     "reinstall": "npm i ../../metricinsights-pp-dev-latest.tgz",
     "lint": "next lint"
