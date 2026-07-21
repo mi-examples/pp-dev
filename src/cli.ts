@@ -1626,7 +1626,7 @@ cli
 
         const projectPkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
 
-        if (versionPlugin !== false) {
+        if (versionPlugin !== false && versionPlugin.enabled !== false) {
           writeBuildVersionManifest({
             outDir,
             packageVersion: typeof projectPkg.version === 'string' ? projectPkg.version : '0.0.0',
