@@ -223,9 +223,18 @@ pp-dev validates your config at startup and reports problems clearly:
 
 ### Environment Variables
 
-| Variable          | Description                                     |
-|-------------------|-------------------------------------------------|
-| `MI_ACCESS_TOKEN` | Default value for `mi.token` when not set in config |
+| Variable                        | Description                                                                        |
+|----------------------------------|-------------------------------------------------------------------------------------|
+| `MI_ACCESS_TOKEN`                | Default value for `mi.token` when not set in config                                 |
+| `PP_DEV_DIST_ZIP`                | `true`/`false` — override `build.zip` for `pp-dev build` / `pp-dev next-build`       |
+| `PP_DEV_DIST_ZIP_DIR`            | Override the ZIP output directory (`build.zip.outDir`)                              |
+| `PP_DEV_DIST_ZIP_FILENAME`       | Override the ZIP file name (`build.zip.fileName`)                                   |
+| `PP_DEV_VERSION_MANIFEST`        | `true`/`false` — override `build.versionFile` (VERSION/BUILD-MANIFEST generation)    |
+| `PP_DEV_VERSION_FILE_TEMPLATE`   | Override the VERSION file name template                                             |
+
+The `PP_DEV_DIST_ZIP*`/`PP_DEV_VERSION_*` variables are read by `pp-dev build` and
+`pp-dev next-build`; an equivalent CLI flag always takes precedence over its env var. See
+[Build](#build) / [Next.js Build](#nextjs-build).
 
 **Local development and network exposure**: pp-dev is a **development** tool. It assumes a trusted machine. Personal access tokens and session helpers are still sensitive: they can authenticate to your Metric Insights backend as you.
 
@@ -330,13 +339,57 @@ pp-dev next [options]
 pp-dev build [options]
 ```
 
-| Option               | Default   | Description                       |
-| -------------------- | --------- | --------------------------------- |
-| `[root]`             | `.`       | Root directory of the application |
-| `--target <target>`  | `modules` | Transpile target                  |
-| `--outDir <dir>`     | `dist`    | Output directory                  |
-| `--assetsDir <dir>`  | `assets`  | Assets directory under outDir     |
-| `--changelog [file]` | `true`    | Create changelog file             |
+| Option                          | Default   | Description                                            |
+| ------------------------------- | --------- | ------------------------------------------------------ |
+| `[root]`                        | `.`       | Root directory of the application                      |
+| `--target <target>`             | `modules` | Transpile target                                       |
+| `--outDir <dir>`                | `dist`    | Output directory                                       |
+| `--assetsDir <dir>`             | `assets`  | Assets directory under outDir                          |
+| `--changelog [file]`            | `true`    | Create changelog file                                  |
+| `--distZip` / `--no-distZip`    | see below | Override `build.zip` — pack (or skip) the output ZIP   |
+| `--distZipDir <dir>`            | see below | Override the ZIP output directory (`build.zip.outDir`) |
+| `--distZipFilename <file>`      | see below | Override the ZIP file name (`build.zip.fileName`)      |
+| `--versionManifest` / `--no-versionManifest` | see below | Override `build.versionFile` — emit (or skip) VERSION/BUILD-MANIFEST |
+| `--versionFileTemplate <tpl>`   | see below | Override the VERSION file name template                |
+
+The `--distZip*`/`--versionManifest*` flags (and their `PP_DEV_*` env var equivalents, see
+[Environment Variables](#environment-variables)) let CI or ad-hoc builds override the `build.zip`
+and `build.versionFile` config without editing `pp-dev.config`. Precedence: CLI flag > env var >
+config file > built-in default. The same flags are available on `pp-dev next-build` (below).
+
+### Next.js Build
+
+```bash
+pp-dev next-build [options]
+```
+
+Plain `next build` only produces the Next.js static export — no VERSION file, BUILD-MANIFEST, or
+ZIP archive. `pp-dev next-build` runs `next build` and then applies the same post-build steps as
+`pp-dev build`, so Next.js and Vite templates produce build artifacts in the same format:
+
+1. Runs `next build` (requires `output: 'export'` in `next.config`)
+2. Writes `VERSION-*.json` + `BUILD-MANIFEST.json` into the export directory (`build.versionFile`)
+3. Zips the export directory into `dist-zip/<name>.zip` (`build.zip`)
+
+Use it in place of `next build` in your `package.json`:
+
+```json
+{
+  "scripts": {
+    "build": "pp-dev next-build --changelog"
+  }
+}
+```
+
+| Option                          | Default   | Description                                            |
+| ------------------------------- | --------- | ------------------------------------------------------ |
+| `[root]`                        | `.`       | Root directory of the application                      |
+| `--changelog [file]`            | `true`    | Create changelog file                                  |
+| `--distZip` / `--no-distZip`    | see below | Override `build.zip` — pack (or skip) the output ZIP   |
+| `--distZipDir <dir>`            | see below | Override the ZIP output directory (`build.zip.outDir`) |
+| `--distZipFilename <file>`      | see below | Override the ZIP file name (`build.zip.fileName`)      |
+| `--versionManifest` / `--no-versionManifest` | see below | Override `build.versionFile` — emit (or skip) VERSION/BUILD-MANIFEST |
+| `--versionFileTemplate <tpl>`   | see below | Override the VERSION file name template                |
 
 ### Migration
 
@@ -388,10 +441,13 @@ pp-dev generate-icon-font [source] [destination] [options]
    ```json
    {
      "scripts": {
-       "dev": "pp-dev next"
+       "dev": "pp-dev next",
+       "build": "pp-dev next-build"
      }
    }
    ```
+   `pp-dev next-build` replaces a plain `next build` so the Next.js template produces the same
+   VERSION/BUILD-MANIFEST/ZIP artifacts as `pp-dev build` — see [Next.js Build](#nextjs-build).
 3. Wrap your Next.js config:
 
 ```javascript
