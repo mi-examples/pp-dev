@@ -1,3 +1,16 @@
+# [1.1.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.0.0...v1.1.0-beta.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* address new npm audit advisories in root and test fixtures ([c02c3dc](https://github.com/mi-examples/pp-dev/commit/c02c3dc94a06d238df3c4383fb906b335db54eed))
+
+
+### Features
+
+* add `next-build` command for Next.js build output parity with `pp-dev build` ([f16871e](https://github.com/mi-examples/pp-dev/commit/f16871ebbc05588800805cb2bd1ccfd27d25f763))
+* extract shared next-build helpers and CLI/env build-output overrides ([cd455ac](https://github.com/mi-examples/pp-dev/commit/cd455ac4b8488178f72416d43267b4545aa508c9))
+
 # [1.0.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-07-07)
 
 
