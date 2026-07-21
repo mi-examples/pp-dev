@@ -36,6 +36,14 @@ export const PATH_PAGE_PREFIX = '/p';
 export const PATH_TEMPLATE_PREFIX = '/pt';
 export const PATH_TEMPLATE_LOCAL_PREFIX = '/pl';
 
+/**
+ * Set (to '1') in the child `next build` process spawned by `pp-dev next-build` (and the
+ * WS-triggered sync build in DistService). `withPPDev()` checks this during the production
+ * build phase to tell a wrapped `next build` apart from a bare one, so it can nudge users
+ * running `next build` directly toward `pp-dev next-build` (VERSION/BUILD-MANIFEST/zip parity).
+ */
+export const PP_DEV_NEXT_BUILD_ENV_VAR = 'PP_DEV_NEXT_BUILD';
+
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',
   '.pp-dev.config.cjs',

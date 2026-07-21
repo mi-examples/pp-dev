@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "pp-dev next",
-    "build": "next build",
+    "build": "pp-dev next-build --changelog",
     "start": "next start",
     "reinstall": "npm i ../../metricinsights-pp-dev-latest.tgz",
     "lint": "next lint"
@@ -30,7 +30,7 @@
   },
   "overrides": {
     "@xmldom/xmldom": ">=0.8.12",
-    "brace-expansion": "5.0.6",
+    "brace-expansion": "5.0.7",
     "esbuild": ">=0.28.1",
     "file-type": "^22.0.0",
     "flatted": ">=3.4.2",

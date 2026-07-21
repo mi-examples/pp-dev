@@ -8,8 +8,17 @@ import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
 import { getConfig, getPkg } from './config.js';
 import type { PPDevConfig } from './plugin.js';
-import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from './constants.js';
+import {
+  PATH_PAGE_PREFIX,
+  PATH_TEMPLATE_PREFIX,
+  PATH_TEMPLATE_LOCAL_PREFIX,
+  PP_DEV_NEXT_BUILD_ENV_VAR,
+} from './constants.js';
 import { createLogger } from './lib/logger.js';
+import { colors } from './lib/helpers/color.helper.js';
+import { applyDistZipOverride, applyVersionManifestOverride, ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
+
+export type { ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
 
 export type { PPDevConfig } from './config.js';
 export type {
@@ -148,7 +157,7 @@ function resolveRepositoryUrl(repository: unknown): string | undefined {
   return undefined;
 }
 
-export async function getViteConfig(): Promise<InlineConfig> {
+export async function getViteConfig(overrides?: ResolvedBuildCliOverrides): Promise<InlineConfig> {
   const pkg = getPkg();
 
   const templateName = pkg.name;
@@ -158,6 +167,15 @@ export async function getViteConfig(): Promise<InlineConfig> {
   validatePPDevConfig(ppDevConfig, templateName);
 
   const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, templateName);
+
+  if (overrides) {
+    normalizedPPDevConfig.distZip = applyDistZipOverride(
+      normalizedPPDevConfig.distZip,
+      overrides,
+      `${templateName}.zip`,
+    );
+    normalizedPPDevConfig.versionPlugin = applyVersionManifestOverride(normalizedPPDevConfig.versionPlugin, overrides);
+  }
 
   // Lazy import vitePPDev to avoid loading plugin module during Next.js config evaluation
   const { default: vitePPDev } = await import('./plugin.js');
@@ -311,7 +329,15 @@ export function withPPDev(
   return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {
     try {
       const { constants } = await safeNextImport();
-      const { PHASE_DEVELOPMENT_SERVER } = constants;
+      const { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } = constants;
+
+      if (phase === PHASE_PRODUCTION_BUILD && !process.env[PP_DEV_NEXT_BUILD_ENV_VAR]) {
+        createLogger().warn(
+          colors.yellow(
+            '⚠ Building with plain `next build`. Use `pp-dev next-build` instead to get VERSION/BUILD-MANIFEST/zip build output in the same format as `pp-dev build` (see the "Next.js Build" section in the pp-dev README).',
+          ),
+        );
+      }
 
       const config = await getConfig();
       const pkg = getPkg();

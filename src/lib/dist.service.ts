@@ -6,13 +6,13 @@ import * as process from 'process';
 import * as child_process from 'child_process';
 import * as console from 'console';
 import * as os from 'os';
-import { createRequire } from 'module';
 import extractZip from 'extract-zip';
-import JSZip from 'jszip';
 import { createLogger } from './logger.js';
 import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
+import { zipDirectoryToBuffer } from './helpers/zip.helper.js';
+import { runNextBuildProcess } from './next-build-runner.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
@@ -705,7 +705,7 @@ export class DistService {
 
     this.logger.info(colors.cyan('[DistService] Next.js build started'));
 
-    await this.runNextBuild(projectRoot);
+    await runNextBuildProcess(projectRoot);
 
     this.logger.info(colors.cyan('[DistService] Next.js build finished'));
 
@@ -723,68 +723,7 @@ export class DistService {
       packageBranchName: this.nextBuild!.packageBranchName,
     });
 
-    return await this.zipDirectory(outDir);
-  }
-
-  /** Run `next build` in `projectRoot`, resolving the `next` binary from the app itself. */
-  private runNextBuild(projectRoot: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      let nextBin: string;
-
-      try {
-        const require = createRequire(path.join(projectRoot, 'package.json'));
-        const nextPkgPath = require.resolve('next/package.json');
-
-        nextBin = path.resolve(path.dirname(nextPkgPath), 'dist/bin/next');
-      } catch {
-        reject(new Error(`Unable to resolve the "next" binary from ${projectRoot}. Is Next.js installed?`));
-
-        return;
-      }
-
-      const proc = child_process.spawn(process.execPath, [nextBin, 'build'], {
-        cwd: projectRoot,
-        env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
-        stdio: 'inherit',
-      });
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`next build exited with code ${code}`));
-
-          return;
-        }
-
-        resolve();
-      });
-
-      proc.on('error', reject);
-    });
-  }
-
-  /** Zip a directory's contents (paths relative to `dir`) into an in-memory Buffer. */
-  private async zipDirectory(dir: string): Promise<Buffer> {
-    const zip = new JSZip();
-
-    const addDir = async (current: string): Promise<void> => {
-      const entries = await fs.readdir(current, { withFileTypes: true });
-
-      for (const entry of entries) {
-        const full = path.join(current, entry.name);
-
-        if (entry.isDirectory()) {
-          await addDir(full);
-        } else if (entry.isFile()) {
-          const relativePath = path.relative(dir, full).replace(/\\/g, '/');
-
-          zip.file(relativePath, await fs.readFile(full));
-        }
-      }
-    };
-
-    await addDir(dir);
-
-    return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    return await zipDirectoryToBuffer(outDir);
   }
 
   private async isDirectory(target: string): Promise<boolean> {
