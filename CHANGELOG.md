@@ -1,3 +1,10 @@
+# [1.1.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.1.0-beta.2...v1.1.0-beta.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* don't log VERSION/BUILD-MANIFEST written when versionFile is disabled ([100820c](https://github.com/mi-examples/pp-dev/commit/100820cddc0d283c00850e640e5dae7b065c0db4)), closes [#208](https://github.com/mi-examples/pp-dev/issues/208)
+
 # [1.1.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.1.0-beta.1...v1.1.0-beta.2) (2026-07-21)
 
 
