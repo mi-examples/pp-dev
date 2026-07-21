@@ -33,6 +33,7 @@ import {
   PATH_PAGE_PREFIX,
   PATH_TEMPLATE_PREFIX,
   PATH_TEMPLATE_LOCAL_PREFIX,
+  PP_DEV_NEXT_BUILD_ENV_VAR,
 } from './constants.js';
 import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
 import { RequestStore } from './lib/request-store.js';
@@ -1149,6 +1150,10 @@ cli
           let exportDistDir: string | undefined = config?.distDir;
 
           try {
+            // Not a real `next build` — just peeking at the prod config for distDir. Suppress
+            // withPPDev()'s "use pp-dev next-build" nudge for this internal lookup.
+            process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
+
             const prodConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
 
             exportDistDir = prodConfig?.distDir ?? exportDistDir;
@@ -1563,6 +1568,10 @@ cli
       const logger = createLogger(options.logLevel);
       const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
       const cliOverrides = resolveBuildCliOverrides(options);
+
+      // Also covers the `loadConfig()` call below, which evaluates the Next.js config (and thus
+      // `withPPDev()`) in this process before `runNextBuildProcess()` spawns the actual `next build`.
+      process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
 
       try {
         const { constants } = await safeNextImport();

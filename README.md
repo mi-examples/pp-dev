@@ -371,6 +371,11 @@ ZIP archive. `pp-dev next-build` runs `next build` and then applies the same pos
 2. Writes `VERSION-*.json` + `BUILD-MANIFEST.json` into the export directory (`build.versionFile`)
 3. Zips the export directory into `dist-zip/<name>.zip` (`build.zip`)
 
+If a project using `withPPDev()` still runs plain `next build` (e.g. directly, or via a `build`
+script nobody updated), `withPPDev()` prints a console warning during the production build phase
+suggesting `pp-dev next-build` instead. The warning is suppressed automatically when the build was
+started by `pp-dev next-build` itself.
+
 Use it in place of `next build` in your `package.json`:
 
 ```json
