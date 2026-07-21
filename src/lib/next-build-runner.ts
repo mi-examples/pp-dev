@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as child_process from 'child_process';
 import * as process from 'process';
 import { createRequire } from 'module';
+import { PP_DEV_NEXT_BUILD_ENV_VAR } from '../constants.js';
 
 /** Run `next build` in `projectRoot`, resolving the `next` binary from the app itself. */
 export function runNextBuildProcess(projectRoot: string): Promise<void> {
@@ -21,7 +22,7 @@ export function runNextBuildProcess(projectRoot: string): Promise<void> {
 
     const proc = child_process.spawn(process.execPath, [nextBin, 'build'], {
       cwd: projectRoot,
-      env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
+      env: Object.assign({}, process.env, { NODE_ENV: 'production', [PP_DEV_NEXT_BUILD_ENV_VAR]: '1' }),
       stdio: 'inherit',
     });
 
