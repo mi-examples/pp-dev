@@ -1,3 +1,10 @@
+## [1.1.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.1.0...v1.1.1-beta.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* address npm audit vulnerabilities in root and test fixtures ([342706d](https://github.com/mi-examples/pp-dev/commit/342706d27725211b0cc21f7c703e69222771f8cf))
+
 # [1.1.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.1.0-beta.2...v1.1.0-beta.3) (2026-07-21)
 
 
