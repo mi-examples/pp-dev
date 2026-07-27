@@ -21,6 +21,7 @@ function replaceDir(src, dest) {
 if (existsSync(npmRoot)) {
   replaceDir(join(root, 'node_modules', 'brace-expansion'), join(npmRoot, 'node_modules', 'brace-expansion'));
   replaceDir(join(root, 'node_modules', 'ip-address'), join(npmRoot, 'node_modules', 'ip-address'));
+  replaceDir(join(root, 'node_modules', 'tar'), join(npmRoot, 'node_modules', 'tar'));
   replaceDir(
     join(root, 'node_modules', 'picomatch'),
     join(npmRoot, 'node_modules', 'tinyglobby', 'node_modules', 'picomatch'),
