@@ -1,6 +1,6 @@
 # `__template_variables.json` schema (MI reference)
 
-This file is what Metric Insights (MI) writes/reads for a Portal Page **template**'s variables — its definitions (types, defaults, per-field config) live here, while the *live* values a page currently has are stored separately on the page itself (see below). pp-dev's "Setup variables…"/"Export variables…" dev-panel features (`src/lib/page-variables-diff.ts`, `src/lib/client.service.ts`) read and write this file's contents; the older backup/sync flow (`src/lib/dist.service.ts`, `TEMPLATE_VARIABLES_FILE_NAME`) only ever tracked it as an opaque blob (hash) for diffing, never parsing it.
+This file is what Metric Insights (MI) writes/reads for a Portal Page **template**'s variables — its definitions (types, defaults, per-field config) live here, while the *live* values a page currently has are stored separately on the page itself (see below). pp-dev's standalone [Variables Editor](./README.md#variables-editor) page (`src/lib/variables-editor.ts`, backed by `src/lib/page-variables-diff.ts`) reads and writes this file's contents; the older backup/sync flow (`src/lib/dist.service.ts`, `TEMPLATE_VARIABLES_FILE_NAME`) only ever tracked it as an opaque blob (hash) for diffing, never parsing it.
 
 ## File location
 
@@ -81,15 +81,15 @@ For a `select`/`multi-select` column, `source` (defaults to `'static'` if omitte
 
 pp-dev validates list items against this schema (`validateListItems` in `src/lib/page-variables-diff.ts`, best-effort/warning-only like everything else here): each item must be an object with every declared field present and no undeclared extra fields, `color` fields must match a hex pattern, and `select`/`multi-select` fields are checked against `options` (a plain `string[]`) when present. A flat list (empty `additional_options`) skips all of this — items are just left as whatever they are.
 
-## `list` values in pp-dev's uploaded/downloaded values file
+## `list` values in the Variables Editor's Values-tab JSON mode
 
 On the wire (and in `default_value`), a `list` value is always a **JSON-encoded array packed into a string** — e.g. the string `["a","b"]`, not a nested array. Written naively into a JSON file, that means double-escaping: `"value": "[\"a\",\"b\"]"`.
 
-To avoid making a human write that by hand, pp-dev's values file (the one uploaded via "Setup variables…" / downloaded via "Export variables…") allows `value` to be a **native JSON array** for `list`-type entries — `"value": ["a","b"]` — and converts at the file I/O boundary only:
+To avoid making a human write that by hand, the Variables Editor's Values tab — both its JSON mode (`View/edit raw JSON`, including the Save/Import-to-file buttons) and the file it writes — allows `value` to be a **native JSON array** for `list`-type entries — `"value": ["a","b"]` — and converts at the display/parse boundary only (`toExportableValueRows`/`fromExportableValueRows` in `src/lib/variables-editor.ts`):
 
-- **Upload** (`ClientService#parseUploadedPageVariables`, `src/lib/client.service.ts`): if `value` isn't a string, it's `JSON.stringify`'d immediately into MI's plain-string form before anything else touches it.
-- **Download** (`ClientService#toExportablePageVariables`, same file): the reverse — for any entry whose schema tag has `tag_type: "list"`, the stored string is `JSON.parse`'d back into a native array before the file is written, falling back to the raw string if it isn't valid JSON.
-- Everything in between — `page-variables-diff.ts`'s diff/export/apply logic — only ever sees plain strings; it has no awareness of this convenience conversion.
+- **Display/export**: for any entry whose schema tag has `tag_type: "list"`, the stored string is `JSON.parse`'d back into a native array before it's shown in the JSON textarea or saved to a file, falling back to the raw string if it isn't valid JSON.
+- **Parse/import**: the reverse — if `value` isn't a string, it's `JSON.stringify`'d immediately into MI's plain-string form before being sent anywhere.
+- Everything in between — the `PUT /@api/variables/values` endpoint and `page-variables-diff.ts`'s export/validation logic — only ever sees plain strings; neither has any awareness of this convenience conversion.
 
 ## What MI's own "Create/Edit Variable" form actually shows
 

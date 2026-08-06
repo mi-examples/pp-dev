@@ -509,6 +509,26 @@ export default defineConfig({
 
 See the [`devPanel` option reference](#devpanel--dev-panel-appearance) for details.
 
+### Page variables
+
+For pages with a template (`app.type: 'template'`), the settings popover has:
+
+- **Reload variables** — refetches the page's live variable values from MI right now (bypassing the usual request-level cache) and reloads the page, so `[VarName]` substitution reflects a just-saved value without restarting the dev server.
+- **Open variables editor…** — opens the standalone [Variables Editor](#variables-editor) page.
+
+Pages without a template (`app.type: 'page'`) have no variables, so this group — and the button that opens the editor — is hidden.
+
+### Variables Editor
+
+A standalone page at `/@pp-dev/variables-editor`, alongside the [Request Inspector](#request-inspector), with two tabs:
+
+- **Schema** — view/edit the template's `__template_variables.json` (add/remove variables, change type, default, `additional_options`, etc.), with a raw-JSON escape hatch.
+- **Values** — edit the page's live variable values in place, with type-aware widgets (searchable select for `static` options, a per-item form for `list`, …). A JSON mode (`View/edit raw JSON`) shows/accepts the same values as plain JSON — list-type values as native arrays, not double-escaped strings — with **Save to JSON file…** / **Import from JSON file…** buttons, and flags values that don't match a declared option, changed since the last load, or aren't in the schema.
+
+Both the active tab and Values' JSON mode are reflected in the URL (`?tab=values&mode=json`), so a specific view can be bookmarked or shared.
+
+See [`TEMPLATE_VARIABLES.md`](./TEMPLATE_VARIABLES.md) — also shipped inside the published package — for the `__template_variables.json` schema this feature reads.
+
 ## Request Inspector
 
 pp-dev includes a built-in request inspector that captures every proxied and locally-served HTTP request made during development. It is enabled by default.
