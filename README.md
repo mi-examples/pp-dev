@@ -18,6 +18,8 @@ lives of PP developers easier:
 
 pp-dev is based on [Vite](https://vitejs.dev/).
 
+📸 **[Feature tour](./docs/features.md)** — screenshots of the dev panel, Request Inspector, and Variables Editor.
+
 ## Installation
 
 ```bash
@@ -472,6 +474,8 @@ For custom build configuration, create a `vite.config` file. See [Vite Configura
 
 pp-dev injects a floating dev panel into every served page. It shows the package name and version, the backend URL, the template mode and the App ID, and hosts the template **Sync** button. Since 1.0 the panel is fully repositionable and can be hidden.
 
+![Dev panel settings popover](./docs/screenshots/03-panel-settings.png)
+
 ### Position
 
 The panel can be anchored to any of the four screen corners (default: bottom-right). Three ways to move it:
@@ -486,13 +490,17 @@ The minimize arrow, the panel's shadow, rounded corner and slide direction all m
 
 Toggle **Auto-hide** in the settings popover (or set `devPanel.autoHide: true`). The panel slides behind the nearest screen edge leaving a 4px accent strip; hovering the strip for ~300 ms slides it out, and it hides again ~500 ms after the pointer leaves. Keyboard focus inside the panel keeps it revealed. While auto-hide is active the minimize arrow acts as a **pin** button that returns the panel to normal mode.
 
+### Theme
+
+The settings popover has an **Auto / Dark / Light** switcher. "Auto" follows the OS/browser preference; the other two force an override. The choice is shared (via the same `localStorage` key) with the standalone [Request Inspector](#request-inspector) and [Variables Editor](#variables-editor) pages, which also each have their own copy of the switcher for when they're opened directly without the panel present.
+
 ### Hiding and restoring
 
 **Hide panel** in the settings popover (or `devPanel.hidden: true`) removes the panel from view entirely. To bring it back, open any page with `?pp-dev-panel=show` in the URL — the override persists across reloads. The symmetric `?pp-dev-panel=hide` hides it, which is handy for demos and clean screenshots.
 
 ### State persistence
 
-Runtime choices are saved in the browser's `localStorage` (`pp-dev-info-position`, `pp-dev-info-auto-hide`, `pp-dev-info-hidden`) and take precedence over config values. **Reset to config defaults** in the settings popover clears all overrides. Storage is origin-scoped: overrides apply to every pp-dev app served on the same host and port, and a Metric Insights page that clears origin storage will reset them to config defaults.
+Runtime choices are saved in the browser's `localStorage` (`pp-dev-info-position`, `pp-dev-info-auto-hide`, `pp-dev-info-hidden`, `pp-dev-info-theme`) and take precedence over config values. **Reset to config defaults** in the settings popover clears all overrides. Storage is origin-scoped: overrides apply to every pp-dev app served on the same host and port, and a Metric Insights page that clears origin storage will reset them to config defaults.
 
 ### Configuration
 
@@ -523,9 +531,16 @@ Pages without a template (`app.type: 'page'`) have no variables, so this group �
 A standalone page at `/@pp-dev/variables-editor`, alongside the [Request Inspector](#request-inspector), with two tabs:
 
 - **Schema** — view/edit the template's `__template_variables.json` (add/remove variables, change type, default, `additional_options`, etc.), with a raw-JSON escape hatch.
+
+![Variables Editor — Schema tab](./docs/screenshots/06-editor-schema.png)
+
 - **Values** — edit the page's live variable values in place, with type-aware widgets (searchable select for `static` options, a per-item form for `list`, …). A JSON mode (`View/edit raw JSON`) shows/accepts the same values as plain JSON — list-type values as native arrays, not double-escaped strings — with **Save to JSON file…** / **Import from JSON file…** buttons, and flags values that don't match a declared option, changed since the last load, or aren't in the schema.
 
+![Variables Editor — Values tab](./docs/screenshots/09-editor-values.png)
+
 Both the active tab and Values' JSON mode are reflected in the URL (`?tab=values&mode=json`), so a specific view can be bookmarked or shared.
+
+See the [feature tour](./docs/features.md#variables-editor) for more screenshots, including the advanced/raw-JSON views and the theme switcher.
 
 See [`TEMPLATE_VARIABLES.md`](./TEMPLATE_VARIABLES.md) — also shipped inside the published package — for the `__template_variables.json` schema this feature reads.
 
@@ -541,6 +556,12 @@ Open `http://localhost:3000/@pp-dev/inspector` (replace port as needed) in any b
 - Full request and response headers, with a **Copy** button per section
 - Request and response bodies rendered as text for JSON/HTML/CSS/plain-text content types, with **Copy** and **Save** buttons
 - Binary bodies (images, fonts, archives) show metadata only and offer a **Save** button
+
+![Request Inspector — request list](./docs/screenshots/04-inspector-list.png)
+
+Selecting a request opens the detail pane with headers and a syntax-highlighted body:
+
+![Request Inspector — request detail](./docs/screenshots/05-inspector-detail.png)
 - A **Clear** button in the top-right removes all stored entries
 
 ### Source badges
