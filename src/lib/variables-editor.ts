@@ -339,6 +339,9 @@ textarea{resize:vertical;min-height:32px}
 .col-type{width:130px}
 .col-source{width:110px}
 .col-actions{width:70px;text-align:right}
+.col-expand{width:26px;padding-left:8px!important;padding-right:0!important}
+.ve-expand-btn{width:22px;height:22px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1;color:var(--text2)}
+.ve-expand-btn:hover{color:var(--text)}
 .raw-toggle{margin-bottom:10px}
 .raw-editor{width:100%;height:min(60vh,600px);font-family:var(--font-mono);font-size:12px;white-space:pre}
 .hint{color:var(--text3);font-size:11px;margin-top:4px}
@@ -857,8 +860,10 @@ function rerenderKeepingAdvancedOpen(i) {
 
   if (wasOpen) {
     const after = document.getElementById('advanced-' + i);
+    const btn = document.getElementById('expand-btn-' + i);
 
     if (after) { after.style.display = ''; }
+    if (btn) { btn.textContent = '▾'; btn.setAttribute('aria-expanded', 'true'); }
   }
 }
 
@@ -1057,6 +1062,9 @@ function renderSchemaTab() {
 
     return \`
     <tr>
+      <td class="col-expand">
+        <button class="btn btn-sm ve-expand-btn" id="expand-btn-\${i}" onclick="toggleSchemaAdvanced(\${i})" aria-expanded="false" title="Advanced fields (uid, tag_source, additional_options, editor flags)">▸</button>
+      </td>
       <td class="col-name">
         <input type="text" value="\${escapeHtml(tag.name || '')}" oninput="updateSchemaField(\${i},'name',this.value)" />
         \${nameWarningHint(tag.name)}
@@ -1065,12 +1073,11 @@ function renderSchemaTab() {
       <td>\${defaultValueCell}</td>
       <td><textarea class="cell-textarea" oninput="updateSchemaField(\${i},'description',this.value)">\${escapeHtml(tag.description || '')}</textarea></td>
       <td class="col-actions">
-        <button class="btn btn-sm" onclick="toggleSchemaAdvanced(\${i})">⚙</button>
         <button class="btn btn-sm" onclick="removeSchemaRow(\${i})">✕</button>
       </td>
     </tr>
     <tr class="details-row" id="advanced-\${i}" style="display:none">
-      <td colspan="5">
+      <td colspan="6">
         <div class="details-grid">
           <div><label>uid</label><input type="text" value="\${escapeHtml(tag.uid || '')}" oninput="updateSchemaField(\${i},'uid',this.value)" /></div>
           <div><label>tag_source</label>\${tagSourceCell}</div>
@@ -1089,8 +1096,8 @@ function renderSchemaTab() {
   return \`
     <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleRawMode()">View/edit raw JSON</button></div>
     <table>
-      <thead><tr><th class="col-name">Name</th><th class="col-type">Type</th><th>Default value</th><th>Description</th><th class="col-actions"></th></tr></thead>
-      <tbody>\${rows || '<tr><td colspan="5" class="empty-state">No variables yet.</td></tr>'}</tbody>
+      <thead><tr><th class="col-expand"></th><th class="col-name">Name</th><th class="col-type">Type</th><th>Default value</th><th>Description</th><th class="col-actions"></th></tr></thead>
+      <tbody>\${rows || '<tr><td colspan="6" class="empty-state">No variables yet.</td></tr>'}</tbody>
     </table>
     <button class="btn btn-sm" style="margin-top:10px" onclick="addSchemaRow()">+ Add variable</button>
     <div class="hint">Pick a known type, or choose "Custom…" to enter any value if MI adds a new tag_type.</div>
@@ -1150,8 +1157,15 @@ function updateSchemaAdditionalOptions(i, text) {
 
 function toggleSchemaAdvanced(i) {
   const row = document.getElementById('advanced-' + i);
+  const btn = document.getElementById('expand-btn-' + i);
+  const nowOpen = row.style.display === 'none';
 
-  row.style.display = row.style.display === 'none' ? '' : 'none';
+  row.style.display = nowOpen ? '' : 'none';
+
+  if (btn) {
+    btn.textContent = nowOpen ? '▾' : '▸';
+    btn.setAttribute('aria-expanded', String(nowOpen));
+  }
 }
 
 // Fallback only (network hiccup) — the server generates a real MD5 via /@api/variables/new-uid,
@@ -1195,9 +1209,13 @@ async function addSchemaRow() {
 }
 
 function removeSchemaRow(i) {
-  schemaRows.splice(i, 1);
-  setDirty(true);
-  render();
+  const name = (schemaRows[i] && schemaRows[i].name) || '(unnamed)';
+
+  showConfirmModal('Delete variable "' + name + '"? This only takes effect once you Save.', () => {
+    schemaRows.splice(i, 1);
+    setDirty(true);
+    render();
+  });
 }
 
 async function saveSchema() {
@@ -1839,9 +1857,13 @@ function addValueRow() {
 }
 
 function removeValueRow(i) {
-  valueRows.splice(i, 1);
-  setDirty(true);
-  render();
+  const name = (valueRows[i] && valueRows[i].name) || '(unnamed)';
+
+  showConfirmModal('Delete variable "' + name + '"? This only takes effect once you Save.', () => {
+    valueRows.splice(i, 1);
+    setDirty(true);
+    render();
+  });
 }
 
 async function saveValues() {
