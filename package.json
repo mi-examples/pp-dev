@@ -174,7 +174,8 @@
     "LICENSE.md",
     "pp-dev.d.ts",
     "assets",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "TEMPLATE_VARIABLES.md"
   ],
   "directories": {
     "test": "test"

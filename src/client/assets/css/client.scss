@@ -602,6 +602,40 @@ $pp-dev-corners: (
         }
       }
 
+      .pp-dev-info__settings-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(34, 34, 34, 0.12);
+      }
+
+      .pp-dev-info__vars-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .pp-dev-info__vars-btn {
+        width: 100%;
+        padding: 6px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        text-align: center;
+        color: var(--pp-dev-info-color-primary);
+        background-color: rgba(7, 91, 126, 0.1);
+        border: 1px solid rgba(7, 91, 126, 0.4);
+        transition:
+          background-color 0.2s ease,
+          border-color 0.2s ease;
+
+        &:hover {
+          background-color: rgba(7, 91, 126, 0.18);
+          border-color: rgba(7, 91, 126, 0.6);
+        }
+      }
+
       .pp-dev-info__settings-hint {
         font-size: 10px;
         line-height: 14px;
@@ -895,6 +929,22 @@ $pp-dev-corners: (
         --pp-dev-info-color-dark: #f8f9fa;
         --pp-dev-info-color-white: #000000;
         --pp-dev-info-color-black: #ffffff;
+      }
+
+      // rgba() literals below don't follow the --pp-dev-info-color-primary reassignment
+      // above, so the button fill/border are re-tinted here to match the dark-mode primary.
+      .pp-dev-info__vars-btn {
+        background-color: rgba(42, 141, 181, 0.14);
+        border-color: rgba(42, 141, 181, 0.45);
+
+        &:hover {
+          background-color: rgba(42, 141, 181, 0.24);
+          border-color: rgba(42, 141, 181, 0.65);
+        }
+      }
+
+      .pp-dev-info__settings-group {
+        border-top-color: rgba(255, 255, 255, 0.15);
       }
     }
   }

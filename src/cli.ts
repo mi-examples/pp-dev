@@ -39,6 +39,7 @@ import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
+import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
 import {
   resolveBuildCliOverrides,
   applyDistZipOverride,
@@ -1091,8 +1092,12 @@ cli
           // 5. Internal Server middleware (API endpoints + inspector UI) - essential for all routes
           const internalServerMiddleware = internalServer;
           const internalServerWrapper = (req: any, res: any, next: () => void) => {
-            // Check if this is an internal pp-dev request (API or inspector UI)
-            if (req.url?.startsWith('/@api/') || req.url?.startsWith(INSPECTOR_PATH)) {
+            // Check if this is an internal pp-dev request (API or inspector/editor UI)
+            if (
+              req.url?.startsWith('/@api/') ||
+              req.url?.startsWith(INSPECTOR_PATH) ||
+              req.url?.startsWith(VARIABLES_EDITOR_PATH)
+            ) {
               const mockNext = () => {};
 
               internalServerMiddleware(req, res, mockNext);
@@ -1199,6 +1204,7 @@ cli
           } as unknown as ViteDevServer;
 
           new ClientService(clientServiceServer, { distService, miAPI: mi });
+          registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
 
           // Route HTTP upgrades: pp-dev WS to our server, everything else (Next.js HMR)
           // to Next's own upgrade handler when available.
