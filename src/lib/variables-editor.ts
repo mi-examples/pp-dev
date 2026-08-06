@@ -303,6 +303,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .tab:hover{background:var(--bg3);color:var(--text)}
 .tab.active{background:var(--bg4);color:var(--text);border-color:var(--border2)}
 .toolbar-spacer{flex:1}
+.ve-loading-indicator{display:inline-flex;align-items:center;gap:6px;color:var(--text3);font-size:11px}
+.ve-loading-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:ve-pulse 1s ease-in-out infinite}
+.ve-skeleton{padding:16px}
+.ve-skeleton-row{height:32px;border-radius:4px;background:var(--bg3);margin-bottom:8px;animation:ve-pulse 1.4s ease-in-out infinite}
+.ve-skeleton-row:nth-child(2){width:92%}
+.ve-skeleton-row:nth-child(3){width:96%}
+.ve-skeleton-row:nth-child(4){width:88%}
+.ve-skeleton-row:nth-child(5){width:94%}
+@keyframes ve-pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .theme-switch{display:flex;gap:2px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px}
 .theme-switch button{padding:3px 8px;border:none;border-radius:3px;background:transparent;color:var(--text2);font-size:11px;cursor:pointer;font-family:var(--font-ui)}
 .theme-switch button.active{background:var(--accent);color:var(--btn-primary-fg)}
@@ -381,6 +390,7 @@ textarea{resize:vertical;min-height:32px}
       <button class="tab" id="tab-schema" onclick="switchTab('schema')">Schema</button>
       <button class="tab" id="tab-values" onclick="switchTab('values')">Values</button>
     </div>`}
+    ${templateLess ? '' : `<span class="ve-loading-indicator" id="loading-indicator" style="display:none"><span class="ve-loading-dot"></span>Refreshing…</span>`}
     <div class="toolbar-spacer"></div>
     ${templateLess ? '' : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
     <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`}
@@ -482,6 +492,16 @@ let rawMode = false;
 let dirty = false;
 let banner = null;
 
+// Background-refresh bookkeeping, one pair of (loading flag, sequence counter) per tab: a
+// stale response (superseded by a newer load for the SAME tab before it resolved) is dropped
+// rather than clobbering fresher data — see loadTabData().
+let schemaLoading = false;
+let valuesLoading = false;
+let schemaSeq = 0;
+let valuesSeq = 0;
+let autoLoadTimer = null;
+const AUTO_LOAD_DEBOUNCE_MS = 200;
+
 const contentEl = document.getElementById('content');
 
 window.addEventListener('beforeunload', (e) => {
@@ -500,6 +520,17 @@ function showBanner(type, html) {
 }
 
 function clearBanner() { banner = null; }
+
+// Shown in place of a tab's content while it's never been loaded yet (first visit, or right
+// after a hard refresh of the page) — as opposed to ve-loading-indicator, which is for a
+// background reload of a tab that already has cached content on screen.
+function renderSkeleton() {
+  let rows = '';
+
+  for (let i = 0; i < 5; i++) { rows += '<div class="ve-skeleton-row"></div>'; }
+
+  return '<div class="ve-skeleton">' + rows + '</div>';
+}
 
 // ── Data loading ─────────────────────────────────────────────────────────────
 async function loadSchema() {
@@ -530,12 +561,43 @@ async function loadValues() {
   valueRows = (data.combined || []).map((e) => Object.assign({}, e));
 }
 
+// Fetches fresh data for one tab, tracking a per-tab "loading" flag and sequence number so a
+// response that's superseded by a newer load for the SAME tab (started before this one
+// resolved) gets dropped instead of clobbering fresher data. Toggles the tab's own loading
+// flag but deliberately doesn't call render() itself — callers decide when to repaint.
+function loadTabData(tab) {
+  if (tab === 'schema') {
+    const seq = ++schemaSeq;
+
+    schemaLoading = true;
+
+    return loadSchema().then(() => {
+      if (seq === schemaSeq) { schemaLoading = false; }
+    });
+  }
+
+  const seq = ++valuesSeq;
+
+  valuesLoading = true;
+
+  return loadValues().then(() => {
+    if (seq === valuesSeq) { valuesLoading = false; }
+  });
+}
+
+// The manual "↻ Refresh" button — deliberately NOT debounced, so it's always the fast path
+// for "I just changed something in MI and want it now" (see scheduleAutoLoad for the
+// debounced, tab-switch-driven path).
 async function doRefresh() {
   clearBanner();
   setDirty(false);
 
-  if (activeTab === 'schema') { await loadSchema(); } else { await loadValues(); }
+  // loadTabData() flips the tab's loading flag synchronously before its fetch resolves, so
+  // render() has to run AFTER that call starts (not before) for the indicator to reflect it.
+  const pending = loadTabData(activeTab);
 
+  render();
+  await pending;
   render();
 }
 
@@ -547,6 +609,27 @@ function refresh() {
   }
 
   doRefresh();
+}
+
+// Debounces the network round-trip that automatically follows a tab switch: rapidly flipping
+// between tabs (or landing on one only to immediately leave it) only fires the load that's
+// still pending once things settle, rather than one request per click.
+function scheduleAutoLoad(tab) {
+  if (autoLoadTimer) { clearTimeout(autoLoadTimer); }
+
+  autoLoadTimer = setTimeout(() => {
+    autoLoadTimer = null;
+
+    // loadTabData() flips the tab's loading flag synchronously before its fetch resolves, so
+    // render() has to run AFTER this call starts (not before) for the indicator to reflect it.
+    const pending = loadTabData(tab);
+
+    if (activeTab === tab) { render(); }
+
+    pending.then(() => {
+      if (activeTab === tab) { render(); }
+    });
+  }, AUTO_LOAD_DEBOUNCE_MS);
 }
 
 function doSwitchTab(tab) {
@@ -563,7 +646,11 @@ function doSwitchTab(tab) {
   document.getElementById('tab-schema').classList.toggle('active', tab === 'schema');
   document.getElementById('tab-values').classList.toggle('active', tab === 'values');
 
-  (tab === 'schema' ? loadSchema() : loadValues()).then(render);
+  // Paint immediately with whatever's already cached for this tab (or a skeleton, if it's
+  // never been loaded) instead of leaving the previous tab's content on screen until the
+  // debounced fetch below resolves.
+  render();
+  scheduleAutoLoad(tab);
 }
 
 function switchTab(tab) {
@@ -933,6 +1020,8 @@ function onCustomSelectChange(i, selectEl, field) {
 }
 
 function renderSchemaTab() {
+  if (!schemaState) { return renderSkeleton(); }
+
   if (rawMode) {
     return \`
       <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleRawMode()">Switch to table view</button></div>
@@ -1653,6 +1742,8 @@ function onImportValuesFile(inputEl) {
 }
 
 function renderValuesTab() {
+  if (!valuesState) { return renderSkeleton(); }
+
   if (valuesRawMode) {
     return \`
       <div class="raw-toggle">
@@ -1806,6 +1897,17 @@ function render() {
   if (activeTab === 'values' && valuesRawMode) {
     refreshValuesJsonIssues();
   }
+
+  const loadingEl = document.getElementById('loading-indicator');
+
+  if (loadingEl) {
+    // Only surface the indicator when there's cached content already on screen underneath it —
+    // when there isn't (state is still null), renderSkeleton() above is the loading signal.
+    const stateForTab = activeTab === 'schema' ? schemaState : valuesState;
+    const isLoading = activeTab === 'schema' ? schemaLoading : valuesLoading;
+
+    loadingEl.style.display = isLoading && stateForTab ? '' : 'none';
+  }
 }
 
 window.switchTab = switchTab;
@@ -1844,7 +1946,9 @@ document.getElementById('tab-schema').classList.toggle('active', activeTab === '
 document.getElementById('tab-values').classList.toggle('active', activeTab === 'values');
 setUrlState(activeTab, valuesRawMode);
 
-(activeTab === 'schema' ? loadSchema() : loadValues()).then(render);
+// Skeleton first (nothing's cached yet on a fresh page load), then swap in the real content.
+render();
+loadTabData(activeTab).then(render);
 })();
 </script>
 </body>
