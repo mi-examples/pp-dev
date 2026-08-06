@@ -41,18 +41,49 @@ $pp-dev-corners: (
   ),
 );
 
+// Light/dark color maps, shared by the default (light) rules, the prefers-color-scheme:dark
+// media query (Auto), and the explicit data-pp-dev-theme override (Dark/Light picked in the
+// panel's settings popover — see src/client/theme.ts). One place to edit either palette.
+$pp-dev-light-colors: (
+  primary: #075b7e,
+  secondary: rgba(34, 34, 34, 0.64),
+  success: #077e45,
+  info: #17a2b8,
+  warning: #ffb000,
+  danger: #ac2b2b,
+  light: #f8f9fa,
+  dark: #343a40,
+  "white": #ffffff,
+  "black": #000000,
+);
+
+$pp-dev-dark-colors: (
+  primary: #2a8db5,
+  secondary: rgba(220, 220, 220, 0.64),
+  success: #0fad5e,
+  info: #2dccff,
+  warning: #ffb302,
+  danger: #e05252,
+  light: #343a40,
+  dark: #f8f9fa,
+  "white": #000000,
+  "black": #ffffff,
+);
+
+@mixin pp-dev-theme-colors($colors) {
+  @each $name, $value in $colors {
+    --pp-dev-info-color-#{$name}: #{$value};
+  }
+}
+
 .pp-dev-info-namespace {
-  // Define theme colors
-  --pp-dev-info-color-primary: #075b7e;
-  --pp-dev-info-color-secondary: rgba(34, 34, 34, 0.64);
-  --pp-dev-info-color-success: #077e45;
-  --pp-dev-info-color-info: #17a2b8;
-  --pp-dev-info-color-warning: #ffb000;
-  --pp-dev-info-color-danger: #ac2b2b;
-  --pp-dev-info-color-light: #f8f9fa;
-  --pp-dev-info-color-dark: #343a40;
-  --pp-dev-info-color-white: #ffffff;
-  --pp-dev-info-color-black: #000000;
+  // Define theme colors — light by default; overridden for Auto (media query, below) or an
+  // explicit Dark/Light pick (html[data-pp-dev-theme], below — always wins on specificity).
+  @include pp-dev-theme-colors($pp-dev-light-colors);
+
+  html[data-pp-dev-theme='light'] & {
+    @include pp-dev-theme-colors($pp-dev-light-colors);
+  }
 
   .pp-dev-info__popup {
     position: fixed;
@@ -332,6 +363,10 @@ $pp-dev-corners: (
         width: 1px;
         background-color: rgba(34, 34, 34, 0.24);
 
+        html[data-pp-dev-theme='dark'] & {
+          background-color: rgba(255, 255, 255, 0.2);
+        }
+
         @media screen and (prefers-color-scheme: dark) {
           background-color: rgba(255, 255, 255, 0.2);
         }
@@ -584,6 +619,37 @@ $pp-dev-corners: (
           &::after {
             background-color: var(--pp-dev-info-color-primary);
           }
+        }
+      }
+
+      .pp-dev-info__theme-grid {
+        display: flex;
+        gap: 4px;
+      }
+
+      .pp-dev-info__theme-btn {
+        padding: 3px 8px;
+        border: 1px solid rgba(34, 34, 34, 0.25);
+        border-radius: 3px;
+        cursor: pointer;
+        background: transparent;
+        font-size: 11px;
+        line-height: 16px;
+        color: var(--pp-dev-info-color-secondary);
+        transition:
+          border-color 0.2s ease,
+          color 0.2s ease,
+          background-color 0.2s ease;
+
+        &:hover {
+          border-color: var(--pp-dev-info-color-primary);
+          color: var(--pp-dev-info-color-primary);
+        }
+
+        &.active {
+          border-color: var(--pp-dev-info-color-primary);
+          background-color: var(--pp-dev-info-color-primary);
+          color: var(--pp-dev-info-color-white);
         }
       }
 
@@ -859,6 +925,10 @@ $pp-dev-corners: (
       height: 16px;
       background-color: rgba(34, 34, 34, 0.24);
 
+      html[data-pp-dev-theme='dark'] & {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+
       @media screen and (prefers-color-scheme: dark) {
         background-color: rgba(255, 255, 255, 0.2);
       }
@@ -915,20 +985,36 @@ $pp-dev-corners: (
       }
     }
 
-    // Dark mode support with css variables
+    // Explicit Dark pick (html[data-pp-dev-theme='dark'], set via the settings popover's Theme
+    // row — see src/client/theme.ts) — always wins over both the light default above and the
+    // Auto media query below, on selector specificity alone.
+    html[data-pp-dev-theme='dark'] & {
+      @include pp-dev-theme-colors($pp-dev-dark-colors);
+    }
+
+    html[data-pp-dev-theme='dark'] & {
+      // rgba() literals below don't follow the --pp-dev-info-color-primary reassignment
+      // above, so the button fill/border are re-tinted here to match the dark-mode primary.
+      .pp-dev-info__vars-btn {
+        background-color: rgba(42, 141, 181, 0.14);
+        border-color: rgba(42, 141, 181, 0.45);
+
+        &:hover {
+          background-color: rgba(42, 141, 181, 0.24);
+          border-color: rgba(42, 141, 181, 0.65);
+        }
+      }
+
+      .pp-dev-info__settings-group {
+        border-top-color: rgba(255, 255, 255, 0.15);
+      }
+    }
+
+    // Auto (OS/browser preference) — same values, only takes effect when no explicit
+    // html[data-pp-dev-theme] override is set (those always outrank a plain :root/& selector).
     @media screen and (prefers-color-scheme: dark) {
       & {
-        // Dark theme colors
-        --pp-dev-info-color-primary: #2a8db5;
-        --pp-dev-info-color-secondary: rgba(220, 220, 220, 0.64);
-        --pp-dev-info-color-success: #0fad5e;
-        --pp-dev-info-color-info: #2dccff;
-        --pp-dev-info-color-warning: #ffb302;
-        --pp-dev-info-color-danger: #e05252;
-        --pp-dev-info-color-light: #343a40;
-        --pp-dev-info-color-dark: #f8f9fa;
-        --pp-dev-info-color-white: #000000;
-        --pp-dev-info-color-black: #ffffff;
+        @include pp-dev-theme-colors($pp-dev-dark-colors);
       }
 
       // rgba() literals below don't follow the --pp-dev-info-color-primary reassignment

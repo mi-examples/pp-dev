@@ -1,5 +1,6 @@
 import type { Corner, PanelStateController } from './panel-state.js';
 import { CORNERS } from './panel-state.js';
+import { getStoredTheme, setTheme, type ThemeChoice } from './theme.js';
 
 const CORNER_TITLES: Record<Corner, string> = {
   'top-left': 'Top left',
@@ -7,6 +8,9 @@ const CORNER_TITLES: Record<Corner, string> = {
   'bottom-left': 'Bottom left',
   'bottom-right': 'Bottom right',
 };
+
+const THEME_CHOICES: ThemeChoice[] = ['auto', 'dark', 'light'];
+const THEME_LABELS: Record<ThemeChoice, string> = { auto: 'Auto', dark: 'Dark', light: 'Light' };
 
 function buildPopover(controller: PanelStateController, showPageVariablesGroup: boolean): HTMLDivElement {
   const state = controller.getState();
@@ -18,6 +22,13 @@ function buildPopover(controller: PanelStateController, showPageVariablesGroup: 
     const active = corner === state.position ? ' active' : '';
 
     return `<button type="button" class="pp-dev-info__corner-btn pp-dev-info__corner-btn--${corner}${active}" data-corner="${corner}" title="${CORNER_TITLES[corner]}" aria-pressed="${corner === state.position}"></button>`;
+  }).join('');
+
+  const currentTheme = getStoredTheme();
+  const themeButtons = THEME_CHOICES.map((choice) => {
+    const active = choice === currentTheme ? ' active' : '';
+
+    return `<button type="button" class="pp-dev-info__theme-btn${active}" data-theme-choice="${choice}" aria-pressed="${choice === currentTheme}">${THEME_LABELS[choice]}</button>`;
   }).join('');
 
   const pageVariablesRow = showPageVariablesGroup
@@ -45,6 +56,10 @@ function buildPopover(controller: PanelStateController, showPageVariablesGroup: 
         class="pp-dev-info__settings-toggle"
         ${state.autoHide ? 'checked' : ''}
       />
+    </div>
+    <div class="pp-dev-info__settings-row">
+      <span class="pp-dev-info__settings-label">Theme</span>
+      <div class="pp-dev-info__theme-grid">${themeButtons}</div>
     </div>
     ${pageVariablesRow}
     <div class="pp-dev-info__settings-group">
@@ -139,6 +154,20 @@ export function initPanelSettings(
 
     $popover.querySelector<HTMLInputElement>('.pp-dev-info__settings-toggle')?.addEventListener('change', (ev) => {
       controller.setAutoHide((ev.target as HTMLInputElement).checked);
+    });
+
+    $popover.querySelectorAll<HTMLButtonElement>('.pp-dev-info__theme-btn').forEach(($themeBtn) => {
+      $themeBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        setTheme($themeBtn.dataset.themeChoice as ThemeChoice);
+
+        $popover!.querySelectorAll<HTMLButtonElement>('.pp-dev-info__theme-btn').forEach(($btn) => {
+          const active = $btn === $themeBtn;
+
+          $btn.classList.toggle('active', active);
+          $btn.setAttribute('aria-pressed', String(active));
+        });
+      });
     });
 
     $popover.querySelector<HTMLButtonElement>('.pp-dev-info__settings-hide-btn')?.addEventListener('click', (ev) => {

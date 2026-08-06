@@ -6,6 +6,11 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from './storage.js';
 import { createPanelStateController, type PanelStateController } from './panel-state.js';
 import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
+import { initTheme } from './theme.js';
+
+// Applied unconditionally (even if the panel itself is hidden) — this is what makes the
+// override affect the whole injected panel, not just its own markup.
+initTheme();
 
 interface InfoPopupOptions {
   title: string;

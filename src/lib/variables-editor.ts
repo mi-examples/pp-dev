@@ -253,16 +253,46 @@ function getVariablesEditorHtml(templateLess: boolean): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Variables Editor — pp-dev</title>
+<script>
+// Set the stored theme override before first paint, so switching pages/reloading doesn't
+// flash the OS-default theme before settling on the user's explicit choice (see setTheme()).
+try {
+  var ppDevStoredTheme = localStorage.getItem('pp-dev-info-theme');
+
+  if (ppDevStoredTheme === 'dark' || ppDevStoredTheme === 'light') {
+    document.documentElement.setAttribute('data-pp-dev-theme', ppDevStoredTheme);
+  }
+} catch (e) {}
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
+:root,:root[data-pp-dev-theme="light"]{
+  --bg:#ffffff;--bg2:#f4f5f7;--bg3:#e9ebef;--bg4:#dbdee3;
+  --border:#d7dae0;--border2:#c2c6cd;
+  --text:#1a1a1e;--text2:#54566b;--text3:#8a8c9c;
+  --accent:#4f46e5;--accent2:#7c3aed;
+  --green:#16a34a;--red:#dc2626;--yellow:#a16207;--blue:#2563eb;
+  --btn-primary-fg:#ffffff;
+  --font-mono:'Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
+  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+:root[data-pp-dev-theme="dark"]{
   --bg:#1a1a1e;--bg2:#222228;--bg3:#2a2a32;--bg4:#32323c;
   --border:#3a3a46;--border2:#4a4a58;
   --text:#e0e0f0;--text2:#a0a0b8;--text3:#606078;
   --accent:#6e8efb;--accent2:#a78bfa;
   --green:#4ade80;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;
-  --font-mono:'Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
-  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --btn-primary-fg:#0d0d10;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1a1a1e;--bg2:#222228;--bg3:#2a2a32;--bg4:#32323c;
+    --border:#3a3a46;--border2:#4a4a58;
+    --text:#e0e0f0;--text2:#a0a0b8;--text3:#606078;
+    --accent:#6e8efb;--accent2:#a78bfa;
+    --green:#4ade80;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;
+    --btn-primary-fg:#0d0d10;
+  }
 }
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:13px;line-height:1.5}
 .app{display:flex;flex-direction:column;height:100vh}
@@ -273,16 +303,19 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .tab:hover{background:var(--bg3);color:var(--text)}
 .tab.active{background:var(--bg4);color:var(--text);border-color:var(--border2)}
 .toolbar-spacer{flex:1}
+.theme-switch{display:flex;gap:2px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px}
+.theme-switch button{padding:3px 8px;border:none;border-radius:3px;background:transparent;color:var(--text2);font-size:11px;cursor:pointer;font-family:var(--font-ui)}
+.theme-switch button.active{background:var(--accent);color:var(--btn-primary-fg)}
 .btn{padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;cursor:pointer;transition:background .1s}
 .btn:hover{background:var(--bg4);border-color:var(--border2)}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#0d0d10;font-weight:600}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--btn-primary-fg);font-weight:600}
 .btn-primary:hover{opacity:.9;background:var(--accent)}
 .btn-sm{padding:3px 8px;font-size:11px}
 .content{flex:1;overflow:auto;padding:14px}
 .banner{margin-bottom:12px;padding:8px 12px;border-radius:4px;font-size:12px}
-.banner-warning{background:#3a2f10;color:var(--yellow);border:1px solid #5a4a1a}
-.banner-error{background:#3a1a1a;color:var(--red);border:1px solid #5a2a2a}
-.banner-success{background:#12321f;color:var(--green);border:1px solid #1e4a2f}
+.banner-warning{background:color-mix(in srgb, var(--yellow) 15%, var(--bg));color:var(--yellow);border:1px solid color-mix(in srgb, var(--yellow) 40%, var(--bg))}
+.banner-error{background:color-mix(in srgb, var(--red) 15%, var(--bg));color:var(--red);border:1px solid color-mix(in srgb, var(--red) 40%, var(--bg))}
+.banner-success{background:color-mix(in srgb, var(--green) 15%, var(--bg));color:var(--green);border:1px solid color-mix(in srgb, var(--green) 40%, var(--bg))}
 .banner ul{margin:6px 0 0 18px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:6px 8px;color:var(--text2);border-bottom:1px solid var(--border);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
@@ -334,7 +367,7 @@ textarea{resize:vertical;min-height:32px}
 .ve-list-field label{font-size:10px;color:var(--text3);text-transform:uppercase}
 .ve-list-item-actions{flex-shrink:0}
 .ve-json-issues{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.ve-json-issue-badge{display:inline-flex;align-items:center;gap:4px;background:#3a2f10;color:var(--yellow);border:1px solid #5a4a1a;border-radius:10px;padding:2px 8px;font-size:11px;cursor:default}
+.ve-json-issue-badge{display:inline-flex;align-items:center;gap:4px;background:color-mix(in srgb, var(--yellow) 15%, var(--bg));color:var(--yellow);border:1px solid color-mix(in srgb, var(--yellow) 40%, var(--bg));border-radius:10px;padding:2px 8px;font-size:11px;cursor:default}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
@@ -347,10 +380,15 @@ textarea{resize:vertical;min-height:32px}
     ${templateLess ? '' : `<div class="tabs">
       <button class="tab" id="tab-schema" onclick="switchTab('schema')">Schema</button>
       <button class="tab" id="tab-values" onclick="switchTab('values')">Values</button>
-    </div>
+    </div>`}
     <div class="toolbar-spacer"></div>
-    <button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
+    ${templateLess ? '' : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
     <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`}
+    <div class="theme-switch" id="theme-switch">
+      <button data-theme-choice="auto" onclick="setTheme('auto')">Auto</button>
+      <button data-theme-choice="dark" onclick="setTheme('dark')">Dark</button>
+      <button data-theme-choice="light" onclick="setTheme('light')">Light</button>
+    </div>
   </div>
   <div class="content" id="content">${
     templateLess
@@ -361,6 +399,43 @@ textarea{resize:vertical;min-height:32px}
 <script>
 (function(){
 'use strict';
+
+// ── Theme (Auto/Dark/Light) ──────────────────────────────────────────────────
+// Runs unconditionally — before the templateLess early-return below — so the switcher works
+// even on the info-only page. The <head> inline script already set data-pp-dev-theme before
+// first paint; this just keeps it in sync with future picks and syncs the toolbar buttons'
+// state. Shares its localStorage key and attribute name with the dev panel and the Request
+// Inspector, so picking a theme in any of them carries over to the others.
+var THEME_STORAGE_KEY = 'pp-dev-info-theme';
+
+function getStoredTheme() {
+  try { return localStorage.getItem(THEME_STORAGE_KEY) || 'auto'; } catch (e) { return 'auto'; }
+}
+
+function applyTheme(theme) {
+  if (theme === 'dark' || theme === 'light') {
+    document.documentElement.setAttribute('data-pp-dev-theme', theme);
+  } else {
+    document.documentElement.removeAttribute('data-pp-dev-theme');
+  }
+
+  var switchEl = document.getElementById('theme-switch');
+
+  if (switchEl) {
+    Array.prototype.forEach.call(switchEl.children, function (btn) {
+      btn.classList.toggle('active', btn.dataset.themeChoice === theme);
+    });
+  }
+}
+
+function setTheme(theme) {
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) {}
+
+  applyTheme(theme);
+}
+
+applyTheme(getStoredTheme());
+window.setTheme = setTheme;
 
 // Server-rendered above: no tabs, no Refresh/Save, just the message — nothing here to wire up.
 if (${templateLess ? 'true' : 'false'}) { return; }
