@@ -526,7 +526,7 @@ function escapeHtml(s) {
 // (see DistService.saveTemplateVariablesFile). Backslash/quote-escape for the JS-string
 // context first, then HTML-escape the result so it can't break out of the attribute either.
 function escapeJsAttr(s) {
-  return escapeHtml(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+  return escapeHtml(String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"));
 }
 
 function showBanner(type, html) {
