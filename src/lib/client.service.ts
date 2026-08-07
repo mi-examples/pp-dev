@@ -52,6 +52,7 @@ export class ClientService {
     this.eventMap.set('info-data:request', this.onInfoDataRequest.bind(this));
     this.eventMap.set('template:sync', this.onTemplateSync.bind(this));
     this.eventMap.set('template:sync:action-response', this.onTemplateSyncActionResponse.bind(this));
+    this.eventMap.set('page-variables:reload', this.onPageVariablesReload.bind(this));
 
     this.logger = createLogger();
 
@@ -478,6 +479,46 @@ export class ClientService {
       this.logger.error(colors.red('Dist service or MiAPI is not defined'));
 
       return;
+    }
+  }
+
+  /**
+   * Force-refetches live page variables right now (bypassing `load-pp-data.middleware.ts`'s
+   * page-data cache), so `[VarName]` substitution reflects a just-saved value without waiting
+   * for the cache to expire or restarting the dev server. The client reloads the browser page
+   * on success so the refreshed substitution is actually visible.
+   */
+  async onPageVariablesReload(_data: unknown, client: WebSocketClient) {
+    const { miAPI } = this.opts;
+
+    if (!miAPI) {
+      client.send('page-variables:reload:response', {
+        error: 'MiAPI is not defined',
+      });
+
+      this.logger.error(colors.red('MiAPI is not defined'));
+
+      return;
+    }
+
+    try {
+      const reloaded = await miAPI.reloadPageVariables();
+
+      client.send('page-variables:reload:response', {
+        ok: true,
+        count: reloaded ? reloaded.length : 0,
+        skipped: reloaded === null,
+      });
+
+      this.logger.info(colors.green('Page variables reloaded'));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Reload variables failed';
+
+      this.logger.error(colors.red(`Reload variables failed: ${message}`));
+
+      client.send('page-variables:reload:response', {
+        error: message,
+      });
     }
   }
 }

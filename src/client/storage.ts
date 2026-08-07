@@ -6,6 +6,8 @@ export const STORAGE_KEYS = {
   position: 'pp-dev-info-position',
   autoHide: 'pp-dev-info-auto-hide',
   hidden: 'pp-dev-info-hidden',
+  /** Shared with the standalone Inspector/Variables Editor pages — same key, same values. */
+  theme: 'pp-dev-info-theme',
 } as const;
 
 export function checkLocalStorage() {

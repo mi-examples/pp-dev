@@ -2,7 +2,7 @@ import axios, { Axios } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
 import { JSDOM } from 'jsdom';
-import { AssetsAPI, PageAPI, AssetsV7API, PageTemplateAPI } from '../api/index.js';
+import { AssetsAPI, PageAPI, AssetsV7API, PageTemplateAPI, PageVariableAPI, PageVariableTagEntry } from '../api/index.js';
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { createLogger } from './logger.js';
 import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
@@ -52,6 +52,7 @@ export class MiAPI {
   private assetsApi: AssetsAPI;
   private pageApi: PageAPI;
   private pageTemplateApi: PageTemplateAPI;
+  private pageVariableApi: PageVariableAPI;
 
   private logger: Logger;
 
@@ -118,6 +119,7 @@ export class MiAPI {
     this.assetsApi = new (!v7Features ? AssetsAPI : AssetsV7API)(this.#axios);
     this.pageApi = new PageAPI(this.#axios);
     this.pageTemplateApi = new PageTemplateAPI(this.#axios);
+    this.pageVariableApi = new PageVariableAPI(this.#axios);
 
     this.logger = createLogger();
   }
@@ -387,6 +389,74 @@ export class MiAPI {
 
         throw reason;
       });
+  }
+
+  /**
+   * Get the page's live variable values via the dedicated `/api/page_variable` endpoint,
+   * looked up by numeric page id (`page_id`) rather than `internal_name` — this skips the
+   * extra page lookup that resolving `internal_name` would otherwise require.
+   * Independent from `getPageVariables()`/`#pageVars` (used for `[VarName]` HTML substitution).
+   *
+   * @param headers
+   */
+  async getLivePageVariables(headers: Headers = this.#headers): Promise<PageVariableTagEntry[]> {
+    const pageId = this.appId!;
+    const start = Date.now();
+
+    this.logger.info(colors.cyan(`[page-variables] Fetching live variables for page ID ${pageId} (page_id lookup)`));
+
+    const tags = await this.pageVariableApi.getById(pageId, this.#clearHeaders(headers));
+
+    this.logger.info(
+      colors.green(`[page-variables] Fetched ${tags.length} live variable(s) for page ID ${pageId} in ${Date.now() - start}ms`),
+    );
+
+    return tags;
+  }
+
+  /**
+   * Write page variable values back to MI via the dedicated `/api/page_variable` endpoint,
+   * looked up by numeric page id (`page_id`) rather than `internal_name`.
+   *
+   * @param tags
+   * @param headers
+   */
+  async applyPageVariables(tags: PageVariableTagEntry[], headers: Headers = this.#headers): Promise<void> {
+    const pageId = this.appId!;
+    const start = Date.now();
+
+    this.logger.info(
+      colors.cyan(`[page-variables] Applying ${tags.length} variable(s) to page ID ${pageId} (page_id lookup)`),
+    );
+
+    await this.pageVariableApi.updateById(pageId, tags, this.#clearHeaders(headers));
+
+    this.logger.info(
+      colors.green(`[page-variables] Applied variables to page ID ${pageId} in ${Date.now() - start}ms`),
+    );
+  }
+
+  /** Whether this page has no associated template — no `__template_variables.json`, no page variables. */
+  get isTemplateLess(): boolean {
+    return !!this.templateLess;
+  }
+
+  /**
+   * Force-refetch the page's live variable values (and title) right now, bypassing whatever
+   * request-level cache normally gates re-fetching (see `load-pp-data.middleware.ts`'s 3-minute
+   * page-data cache). Used by the dev panel's "Reload variables" button so `[VarName]`
+   * substitution in `buildPage()` reflects a just-saved value without waiting for that cache to
+   * expire or restarting the dev server. No-op (returns `null`) for templateLess pages or before
+   * `appId` is known (nothing to reload yet).
+   *
+   * @param headers
+   */
+  async reloadPageVariables(headers: Headers = this.#headers): Promise<{ name: string; value: string }[] | null> {
+    if (this.templateLess || typeof this.appId === 'undefined') {
+      return null;
+    }
+
+    return this.getPageVariables(this.appId, headers);
   }
 
   /**

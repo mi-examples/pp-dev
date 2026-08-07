@@ -573,6 +573,13 @@ export class DistService {
     return crypto.createHash('sha256').update(fileData).digest('hex');
   }
 
+  /** Raw content of `public/__template_variables.json`, or `null` if missing/unreadable. */
+  async readPublicTemplateVariablesFile(): Promise<Buffer | null> {
+    const templateVariablesPath = path.resolve(process.cwd(), 'public', TEMPLATE_VARIABLES_FILE_NAME);
+
+    return await fs.readFile(templateVariablesPath).catch(() => null);
+  }
+
   async saveTemplateVariablesFile(content: Buffer): Promise<string> {
     const templateVariablesPath = path.resolve(process.cwd(), 'public', TEMPLATE_VARIABLES_FILE_NAME);
 

@@ -1,5 +1,6 @@
 import type { Corner, PanelStateController } from './panel-state.js';
 import { CORNERS } from './panel-state.js';
+import { getStoredTheme, setTheme, type ThemeChoice } from './theme.js';
 
 const CORNER_TITLES: Record<Corner, string> = {
   'top-left': 'Top left',
@@ -8,7 +9,10 @@ const CORNER_TITLES: Record<Corner, string> = {
   'bottom-right': 'Bottom right',
 };
 
-function buildPopover(controller: PanelStateController): HTMLDivElement {
+const THEME_CHOICES: ThemeChoice[] = ['auto', 'dark', 'light'];
+const THEME_LABELS: Record<ThemeChoice, string> = { auto: 'Auto', dark: 'Dark', light: 'Light' };
+
+function buildPopover(controller: PanelStateController, showPageVariablesGroup: boolean): HTMLDivElement {
   const state = controller.getState();
   const $popover = document.createElement('div');
 
@@ -19,6 +23,24 @@ function buildPopover(controller: PanelStateController): HTMLDivElement {
 
     return `<button type="button" class="pp-dev-info__corner-btn pp-dev-info__corner-btn--${corner}${active}" data-corner="${corner}" title="${CORNER_TITLES[corner]}" aria-pressed="${corner === state.position}"></button>`;
   }).join('');
+
+  const currentTheme = getStoredTheme();
+  const themeButtons = THEME_CHOICES.map((choice) => {
+    const active = choice === currentTheme ? ' active' : '';
+
+    return `<button type="button" class="pp-dev-info__theme-btn${active}" data-theme-choice="${choice}" aria-pressed="${choice === currentTheme}">${THEME_LABELS[choice]}</button>`;
+  }).join('');
+
+  const pageVariablesRow = showPageVariablesGroup
+    ? `
+    <div class="pp-dev-info__settings-group">
+      <span class="pp-dev-info__settings-label">Page variables</span>
+      <div class="pp-dev-info__vars-buttons">
+        <button type="button" class="pp-dev-info__vars-btn pp-dev-info__reload-vars-btn" title="Refetch live values from MI now, then reload the page">Reload variables</button>
+        <button type="button" class="pp-dev-info__vars-btn pp-dev-info__open-editor-btn">Open variables editor…</button>
+      </div>
+    </div>`
+    : '';
 
   $popover.innerHTML = `
     <div class="pp-dev-info__settings-title">Panel settings</div>
@@ -34,6 +56,17 @@ function buildPopover(controller: PanelStateController): HTMLDivElement {
         class="pp-dev-info__settings-toggle"
         ${state.autoHide ? 'checked' : ''}
       />
+    </div>
+    <div class="pp-dev-info__settings-row">
+      <span class="pp-dev-info__settings-label">Theme</span>
+      <div class="pp-dev-info__theme-grid">${themeButtons}</div>
+    </div>
+    ${pageVariablesRow}
+    <div class="pp-dev-info__settings-group">
+      <span class="pp-dev-info__settings-label">Dev tools</span>
+      <div class="pp-dev-info__vars-buttons">
+        <button type="button" class="pp-dev-info__vars-btn pp-dev-info__open-inspector-btn">Open request inspector…</button>
+      </div>
     </div>
     <button type="button" class="pp-dev-info__settings-hide-btn">Hide panel</button>
     <div class="pp-dev-info__settings-hint">Restore with <code>?pp-dev-panel=show</code> in the URL</div>
@@ -62,6 +95,9 @@ function syncPopover($popover: HTMLDivElement, controller: PanelStateController)
 
 export interface PanelSettingsHooks {
   onOpenChange?: (open: boolean) => void;
+  onOpenVariablesEditorClick?: () => void;
+  onOpenInspectorClick?: () => void;
+  onReloadVariablesClick?: () => void;
 }
 
 /** Settings popover: corner picker, auto-hide toggle, hide button, reset. */
@@ -105,7 +141,9 @@ export function initPanelSettings(
   };
 
   const open = () => {
-    $popover = buildPopover(controller);
+    const showPageVariablesGroup = $panel.dataset.templateLess !== 'true';
+
+    $popover = buildPopover(controller, showPageVariablesGroup);
 
     $popover.querySelectorAll<HTMLButtonElement>('.pp-dev-info__corner-btn').forEach(($cornerBtn) => {
       $cornerBtn.addEventListener('click', (ev) => {
@@ -118,10 +156,42 @@ export function initPanelSettings(
       controller.setAutoHide((ev.target as HTMLInputElement).checked);
     });
 
+    $popover.querySelectorAll<HTMLButtonElement>('.pp-dev-info__theme-btn').forEach(($themeBtn) => {
+      $themeBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        setTheme($themeBtn.dataset.themeChoice as ThemeChoice);
+
+        $popover!.querySelectorAll<HTMLButtonElement>('.pp-dev-info__theme-btn').forEach(($btn) => {
+          const active = $btn === $themeBtn;
+
+          $btn.classList.toggle('active', active);
+          $btn.setAttribute('aria-pressed', String(active));
+        });
+      });
+    });
+
     $popover.querySelector<HTMLButtonElement>('.pp-dev-info__settings-hide-btn')?.addEventListener('click', (ev) => {
       ev.preventDefault();
       close();
       controller.setHidden(true);
+    });
+
+    $popover.querySelector<HTMLButtonElement>('.pp-dev-info__open-editor-btn')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      close();
+      hooks?.onOpenVariablesEditorClick?.();
+    });
+
+    $popover.querySelector<HTMLButtonElement>('.pp-dev-info__reload-vars-btn')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      close();
+      hooks?.onReloadVariablesClick?.();
+    });
+
+    $popover.querySelector<HTMLButtonElement>('.pp-dev-info__open-inspector-btn')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      close();
+      hooks?.onOpenInspectorClick?.();
     });
 
     const $reset = $popover.querySelector<HTMLElement>('.pp-dev-info__settings-reset');

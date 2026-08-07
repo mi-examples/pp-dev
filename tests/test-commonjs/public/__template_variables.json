@@ -16,6 +16,180 @@
       "description": "Value for test",
       "use_js_code_ind": "N",
       "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2342,
+      "portal_page_template_id": 313,
+      "name": "variable-select",
+      "uid": "a1a1a1a1b2b2b2b2c3c3c3c3d4d4d4d4",
+      "default_value": "opt1",
+      "additional_options": [
+        {
+          "id": "opt1",
+          "text": "Option One"
+        },
+        {
+          "id": "opt2",
+          "text": "Option Two"
+        },
+        {
+          "id": "opt3",
+          "text": "Option Three"
+        }
+      ],
+      "tag_type": "select",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 1,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "Single-select value for test",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2343,
+      "portal_page_template_id": 313,
+      "name": "variable-multiselect",
+      "uid": "b2b2b2b2c3c3c3c3d4d4d4d4e5e5e5e5",
+      "default_value": "tag1,tag2",
+      "additional_options": [
+        {
+          "id": "tag1",
+          "text": "Tag One"
+        },
+        {
+          "id": "tag2",
+          "text": "Tag Two"
+        },
+        {
+          "id": "tag3",
+          "text": "Tag Three"
+        }
+      ],
+      "tag_type": "multiselect",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 2,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "Multi-select value for test",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2344,
+      "portal_page_template_id": 313,
+      "name": "variable-list",
+      "uid": "c3c3c3c3d4d4d4d4e5e5e5e5f6f6f6f6",
+      "default_value": "[\"Item One\",\"Item Two\"]",
+      "additional_options": "",
+      "tag_type": "list",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 3,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "List (JSON array) value for test",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2349,
+      "portal_page_template_id": 313,
+      "name": "variable-list-objects",
+      "uid": "b3b3b3b3c4c4c4c4d5d5d5d5e6e6e6e6",
+      "default_value": "[{\"id\":\"1\",\"label\":\"First\"},{\"id\":\"2\",\"label\":\"Second\"}]",
+      "additional_options": [
+        {
+          "name": "id",
+          "type": "textarea"
+        },
+        {
+          "name": "label",
+          "type": "textarea"
+        }
+      ],
+      "tag_type": "list",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 8,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "List of objects for test — additional_options defines the per-item fields (id, label); each list item is an object keyed by those field names",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2345,
+      "portal_page_template_id": 313,
+      "name": "variable-boolean",
+      "uid": "d4d4d4d4e5e5e5e5f6f6f6f6a1a1a1a1",
+      "default_value": "true",
+      "additional_options": "",
+      "tag_type": "boolean",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 4,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "Boolean value for test",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2346,
+      "portal_page_template_id": 313,
+      "name": "variable-color",
+      "uid": "e5e5e5e5f6f6f6f6a1a1a1a1b2b2b2b2",
+      "default_value": "#075b7e",
+      "additional_options": "",
+      "tag_type": "color",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 5,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "Color value for test",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2347,
+      "portal_page_template_id": 313,
+      "name": "variable-file",
+      "uid": "f6f6f6f6a1a1a1a1b2b2b2b2c3c3c3c3",
+      "default_value": "",
+      "additional_options": "",
+      "tag_type": "file",
+      "tag_source": "static",
+      "javascript_code": null,
+      "display_order": 6,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "File value for test",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
+    },
+    {
+      "portal_page_template_tag_id": 2348,
+      "portal_page_template_id": 313,
+      "name": "variable-select-dataset",
+      "uid": "a2a2a2a2b3b3b3b3c4c4c4c4d5d5d5d5",
+      "default_value": "",
+      "additional_options": {
+        "source": "dataset",
+        "name": "segments"
+      },
+      "tag_type": "select",
+      "tag_source": "dataset",
+      "javascript_code": null,
+      "display_order": 7,
+      "use_hmtl_editor_ind": "N",
+      "use_json_editor_ind": "N",
+      "description": "Dataset-driven select for test (no enumerable options — pp-dev should skip enum validation)",
+      "use_js_code_ind": "N",
+      "use_raw_html_ind": "N"
     }
   ],
   "settings": {
