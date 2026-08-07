@@ -463,7 +463,11 @@ const KNOWN_TAG_SOURCES = ['static','page','element','folder','segment','dataset
 // page_entity — populate their own option list, so additional_options doesn't apply there).
 const HAND_ENTERED_OPTION_SOURCES = ['static','segment','element','dataset_data'];
 // Matches MI's own "Create/Edit Variable" form: letters, digits, underscore, whitespace, hyphen.
-const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\s-]+$/;
+// Doubled backslash: this sits inside getVariablesEditorHtml()'s outer template literal, which
+// consumes one level of backslash-escaping when the .ts source is parsed — a bare \s here would
+// collapse to a literal "s", silently dropping whitespace from the allowed character class (see
+// the identical pitfall fixed for escapeJsAttr() below).
+const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\\s-]+$/;
 // Lets a link like /@pp-dev/variables-editor?tab=values open directly on that tab.
 function tabFromUrl() {
   return new URLSearchParams(window.location.search).get('tab') === 'values' ? 'values' : 'schema';

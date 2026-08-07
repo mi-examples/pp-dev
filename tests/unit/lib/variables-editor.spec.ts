@@ -362,5 +362,27 @@ describe('registerVariablesEditorRoutes', () => {
         expect(() => new Function(script)).not.toThrow();
       }
     });
+
+    // Same template-literal backslash pitfall as above, but silent rather than a SyntaxError:
+    // a bare \s in the source collapses to a literal "s", so the embedded regex still parses
+    // fine but silently stops matching whitespace — the "Contains a character..." hint would
+    // then fire on every name containing a space. Extract the actual embedded regex text so a
+    // future regression here fails a test instead of only showing up as a UI bug report.
+    it('embeds a client-side NAME_FORMAT_REGEX that still allows whitespace in names', async () => {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const html = res.body as string;
+      const match = html.match(/const NAME_FORMAT_REGEX = (\/.*\/);/);
+
+      expect(match).not.toBeNull();
+
+      const re = new Function(`return ${match![1]};`)();
+
+      expect(re.test('Connection Report Meta')).toBe(true);
+      expect(re.test('bad$name')).toBe(false);
+    });
   });
 });
