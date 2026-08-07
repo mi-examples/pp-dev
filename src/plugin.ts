@@ -14,7 +14,7 @@ import { colors, getTokenErrorInfo } from './lib/helpers/index.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
-import { registerVariablesEditorRoutes } from './lib/variables-editor.js';
+import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -638,7 +638,25 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         // `.route` string property on whatever's mounted (to track its mount path) — colliding
         // with and overwriting Express's own `app.route` *method*. Any route registered on this
         // app *after* it's been mounted crashes with "this.route is not a function".
-        server.middlewares.use(internalServer);
+        //
+        // Only route internal pp-dev paths into the Express app (see the matching inspector
+        // gate above) — mounting it for all paths would run its global express.json()/
+        // urlencoded() body parsers, which consume the request stream before the proxy can
+        // pipe it to the backend (the backend then waits for a body that never arrives and
+        // replies 408).
+        server.middlewares.use((req, res, next) => {
+          if (
+            req.url?.startsWith('/@api/login') ||
+            req.url?.startsWith('/@api/variables/') ||
+            req.url?.startsWith(VARIABLES_EDITOR_PATH)
+          ) {
+            internalServer(req as never, res as never, next);
+
+            return;
+          }
+
+          next();
+        });
 
         return () => {
           server.middlewares.use(

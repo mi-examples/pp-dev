@@ -176,7 +176,9 @@
     "pp-dev.d.ts",
     "assets",
     "CHANGELOG.md",
-    "TEMPLATE_VARIABLES.md"
+    "TEMPLATE_VARIABLES.md",
+    "docs/features.md",
+    "docs/screenshots"
   ],
   "directories": {
     "test": "test"

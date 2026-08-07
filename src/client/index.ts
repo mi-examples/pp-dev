@@ -114,6 +114,7 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
 
 let panelController: PanelStateController | null = null;
 let startReloadVariablesFlow: (() => void) | null = null;
+let pendingReloadVariablesPopup: { close: () => void } | null = null;
 
 function updatePopupPositions() {
   const popups = document.querySelectorAll<HTMLElement>('.pp-dev-info-namespace:not(.pp-dev-info)');
@@ -507,6 +508,9 @@ if (hot) {
   }
 
   hot.on('page-variables:reload:response', (payload: PageVariablesReloadResponsePayload) => {
+    pendingReloadVariablesPopup?.close();
+    pendingReloadVariablesPopup = null;
+
     if ('error' in payload) {
       infoPopup({
         title: 'Reload variables error',
@@ -538,6 +542,14 @@ if (hot) {
   });
 
   startReloadVariablesFlow = () => {
+    pendingReloadVariablesPopup?.close();
+    pendingReloadVariablesPopup = infoPopup({
+      title: 'Reloading variables',
+      content: 'Refetching live values from MI…',
+      type: 'info',
+      duration: 0,
+    });
+
     hot.send('page-variables:reload', {});
   };
 }

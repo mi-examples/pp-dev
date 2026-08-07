@@ -56,7 +56,6 @@ $pp-dev-light-colors: (
   "white": #ffffff,
   "black": #000000,
 );
-
 $pp-dev-dark-colors: (
   primary: #2a8db5,
   secondary: rgba(220, 220, 220, 0.64),
@@ -73,6 +72,24 @@ $pp-dev-dark-colors: (
 @mixin pp-dev-theme-colors($colors) {
   @each $name, $value in $colors {
     --pp-dev-info-color-#{$name}: #{$value};
+  }
+}
+
+// rgba() literals don't follow the --pp-dev-info-color-primary reassignment above,
+// so the button fill/border are re-tinted here to match the dark-mode primary.
+@mixin pp-dev-dark-tints {
+  .pp-dev-info__vars-btn {
+    background-color: rgba(42, 141, 181, 0.14);
+    border-color: rgba(42, 141, 181, 0.45);
+
+    &:hover {
+      background-color: rgba(42, 141, 181, 0.24);
+      border-color: rgba(42, 141, 181, 0.65);
+    }
+  }
+
+  .pp-dev-info__settings-group {
+    border-top-color: rgba(255, 255, 255, 0.15);
   }
 }
 
@@ -369,6 +386,10 @@ $pp-dev-dark-colors: (
 
         @media screen and (prefers-color-scheme: dark) {
           background-color: rgba(255, 255, 255, 0.2);
+
+          html[data-pp-dev-theme='light'] & {
+            background-color: rgba(34, 34, 34, 0.24);
+          }
         }
       }
 
@@ -651,6 +672,11 @@ $pp-dev-dark-colors: (
           background-color: var(--pp-dev-info-color-primary);
           color: var(--pp-dev-info-color-white);
         }
+
+        &:focus-visible {
+          outline: 2px solid var(--pp-dev-info-color-primary);
+          outline-offset: 1px;
+        }
       }
 
       .pp-dev-info__settings-hide-btn {
@@ -699,6 +725,11 @@ $pp-dev-dark-colors: (
         &:hover {
           background-color: rgba(7, 91, 126, 0.18);
           border-color: rgba(7, 91, 126, 0.6);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--pp-dev-info-color-primary);
+          outline-offset: 1px;
         }
       }
 
@@ -931,6 +962,10 @@ $pp-dev-dark-colors: (
 
       @media screen and (prefers-color-scheme: dark) {
         background-color: rgba(255, 255, 255, 0.2);
+
+        html[data-pp-dev-theme='light'] & {
+          background-color: rgba(34, 34, 34, 0.24);
+        }
       }
     }
 
@@ -990,48 +1025,14 @@ $pp-dev-dark-colors: (
     // Auto media query below, on selector specificity alone.
     html[data-pp-dev-theme='dark'] & {
       @include pp-dev-theme-colors($pp-dev-dark-colors);
-    }
-
-    html[data-pp-dev-theme='dark'] & {
-      // rgba() literals below don't follow the --pp-dev-info-color-primary reassignment
-      // above, so the button fill/border are re-tinted here to match the dark-mode primary.
-      .pp-dev-info__vars-btn {
-        background-color: rgba(42, 141, 181, 0.14);
-        border-color: rgba(42, 141, 181, 0.45);
-
-        &:hover {
-          background-color: rgba(42, 141, 181, 0.24);
-          border-color: rgba(42, 141, 181, 0.65);
-        }
-      }
-
-      .pp-dev-info__settings-group {
-        border-top-color: rgba(255, 255, 255, 0.15);
-      }
+      @include pp-dev-dark-tints;
     }
 
     // Auto (OS/browser preference) — same values, only takes effect when no explicit
     // html[data-pp-dev-theme] override is set (those always outrank a plain :root/& selector).
     @media screen and (prefers-color-scheme: dark) {
-      & {
-        @include pp-dev-theme-colors($pp-dev-dark-colors);
-      }
-
-      // rgba() literals below don't follow the --pp-dev-info-color-primary reassignment
-      // above, so the button fill/border are re-tinted here to match the dark-mode primary.
-      .pp-dev-info__vars-btn {
-        background-color: rgba(42, 141, 181, 0.14);
-        border-color: rgba(42, 141, 181, 0.45);
-
-        &:hover {
-          background-color: rgba(42, 141, 181, 0.24);
-          border-color: rgba(42, 141, 181, 0.65);
-        }
-      }
-
-      .pp-dev-info__settings-group {
-        border-top-color: rgba(255, 255, 255, 0.15);
-      }
+      @include pp-dev-theme-colors($pp-dev-dark-colors);
+      @include pp-dev-dark-tints;
     }
   }
 

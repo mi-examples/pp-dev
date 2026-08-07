@@ -35,7 +35,7 @@ function buildPopover(controller: PanelStateController, showPageVariablesGroup: 
     ? `
     <div class="pp-dev-info__settings-group">
       <span class="pp-dev-info__settings-label">Page variables</span>
-      <div class="pp-dev-info__vars-buttons">
+      <div class="pp-dev-info__vars-buttons" role="group" aria-label="Page variables">
         <button type="button" class="pp-dev-info__vars-btn pp-dev-info__reload-vars-btn" title="Refetch live values from MI now, then reload the page">Reload variables</button>
         <button type="button" class="pp-dev-info__vars-btn pp-dev-info__open-editor-btn">Open variables editor…</button>
       </div>
@@ -59,12 +59,12 @@ function buildPopover(controller: PanelStateController, showPageVariablesGroup: 
     </div>
     <div class="pp-dev-info__settings-row">
       <span class="pp-dev-info__settings-label">Theme</span>
-      <div class="pp-dev-info__theme-grid">${themeButtons}</div>
+      <div class="pp-dev-info__theme-grid" role="group" aria-label="Theme">${themeButtons}</div>
     </div>
     ${pageVariablesRow}
     <div class="pp-dev-info__settings-group">
       <span class="pp-dev-info__settings-label">Dev tools</span>
-      <div class="pp-dev-info__vars-buttons">
+      <div class="pp-dev-info__vars-buttons" role="group" aria-label="Dev tools">
         <button type="button" class="pp-dev-info__vars-btn pp-dev-info__open-inspector-btn">Open request inspector…</button>
       </div>
     </div>
@@ -176,22 +176,18 @@ export function initPanelSettings(
       controller.setHidden(true);
     });
 
-    $popover.querySelector<HTMLButtonElement>('.pp-dev-info__open-editor-btn')?.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      close();
-      hooks?.onOpenVariablesEditorClick?.();
-    });
+    const actions: [string, (() => void) | undefined][] = [
+      ['.pp-dev-info__open-editor-btn', hooks?.onOpenVariablesEditorClick],
+      ['.pp-dev-info__reload-vars-btn', hooks?.onReloadVariablesClick],
+      ['.pp-dev-info__open-inspector-btn', hooks?.onOpenInspectorClick],
+    ];
 
-    $popover.querySelector<HTMLButtonElement>('.pp-dev-info__reload-vars-btn')?.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      close();
-      hooks?.onReloadVariablesClick?.();
-    });
-
-    $popover.querySelector<HTMLButtonElement>('.pp-dev-info__open-inspector-btn')?.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      close();
-      hooks?.onOpenInspectorClick?.();
+    actions.forEach(([selector, hook]) => {
+      $popover!.querySelector<HTMLButtonElement>(selector)?.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        close();
+        hook?.();
+      });
     });
 
     const $reset = $popover.querySelector<HTMLElement>('.pp-dev-info__settings-reset');

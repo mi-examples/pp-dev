@@ -400,7 +400,11 @@ export class MiAPI {
    * @param headers
    */
   async getLivePageVariables(headers: Headers = this.#headers): Promise<PageVariableTagEntry[]> {
-    const pageId = this.appId!;
+    if (typeof this.appId === 'undefined') {
+      throw new Error('Cannot fetch live page variables before the page ID is known');
+    }
+
+    const pageId = this.appId;
     const start = Date.now();
 
     this.logger.info(colors.cyan(`[page-variables] Fetching live variables for page ID ${pageId} (page_id lookup)`));
@@ -422,7 +426,11 @@ export class MiAPI {
    * @param headers
    */
   async applyPageVariables(tags: PageVariableTagEntry[], headers: Headers = this.#headers): Promise<void> {
-    const pageId = this.appId!;
+    if (typeof this.appId === 'undefined') {
+      throw new Error('Cannot apply page variables before the page ID is known');
+    }
+
+    const pageId = this.appId;
     const start = Date.now();
 
     this.logger.info(

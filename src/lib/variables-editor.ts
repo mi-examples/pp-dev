@@ -398,9 +398,9 @@ textarea{resize:vertical;min-height:32px}
     ${templateLess ? '' : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
     <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`}
     <div class="theme-switch" id="theme-switch">
-      <button data-theme-choice="auto" onclick="setTheme('auto')">Auto</button>
-      <button data-theme-choice="dark" onclick="setTheme('dark')">Dark</button>
-      <button data-theme-choice="light" onclick="setTheme('light')">Light</button>
+      <button data-theme-choice="auto" aria-pressed="false" onclick="setTheme('auto')">Auto</button>
+      <button data-theme-choice="dark" aria-pressed="false" onclick="setTheme('dark')">Dark</button>
+      <button data-theme-choice="light" aria-pressed="false" onclick="setTheme('light')">Light</button>
     </div>
   </div>
   <div class="content" id="content">${
@@ -436,7 +436,10 @@ function applyTheme(theme) {
 
   if (switchEl) {
     Array.prototype.forEach.call(switchEl.children, function (btn) {
-      btn.classList.toggle('active', btn.dataset.themeChoice === theme);
+      var isActive = btn.dataset.themeChoice === theme;
+
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
     });
   }
 }
@@ -515,6 +518,15 @@ function setDirty(v) { dirty = v; }
 
 function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Escapes a value for embedding inside a single-quoted JS string literal that itself sits
+// inside an HTML attribute (e.g. onclick="fn('...')") — schema-derived names (column names,
+// tag names) aren't trusted local input, since the schema can come from a server backup ZIP
+// (see DistService.saveTemplateVariablesFile). Backslash/quote-escape for the JS-string
+// context first, then HTML-escape the result so it can't break out of the attribute either.
+function escapeJsAttr(s) {
+  return escapeHtml(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
 }
 
 function showBanner(type, html) {
@@ -1468,6 +1480,7 @@ function listItemHtml(config, item, i, itemIndex) {
 
   const fieldsHtml = config.map((col) => {
     const colName = typeof col === 'string' ? col : col.name;
+    const colNameJs = escapeJsAttr(colName);
     const colType = typeof col === 'string' ? 'textarea' : (col.type || 'textarea');
     const rawVal = typeof item === 'object' && item !== null ? item[colName] : '';
     const val = rawVal != null ? String(rawVal) : '';
@@ -1475,7 +1488,7 @@ function listItemHtml(config, item, i, itemIndex) {
     if (colType === 'color') {
       const safe = /^#[0-9a-fA-F]{3,8}$/.test(val) ? val : '#000000';
 
-      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><input type="color" value="' + safe + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colName + '\\',this.value)" /></div>';
+      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><input type="color" value="' + safe + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" /></div>';
     }
 
     if (colType === 'select' || colType === 'multi-select') {
@@ -1484,16 +1497,16 @@ function listItemHtml(config, item, i, itemIndex) {
       const selected = isMulti ? val.split(',').filter(Boolean) : [val];
       const optionsHtml = opts.map((o) => '<option value="' + escapeHtml(o) + '"' + (selected.indexOf(o) !== -1 ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('');
 
-      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><select ' + (isMulti ? 'multiple' : '') + ' onchange="onListItemSelectChange(' + i + ',' + itemIndex + ',\\'' + colName + '\\',this,' + isMulti + ')">' + optionsHtml + '</select></div>';
+      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><select ' + (isMulti ? 'multiple' : '') + ' onchange="onListItemSelectChange(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this,' + isMulti + ')">' + optionsHtml + '</select></div>';
     }
 
     if (colType === 'file') {
       // Kept as a plain path input — the full browse/upload combo is reserved for top-level
       // "file" variables; adding it per list-column too isn't worth the complexity here.
-      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><input type="text" value="' + escapeHtml(val) + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colName + '\\',this.value)" /></div>';
+      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><input type="text" value="' + escapeHtml(val) + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" /></div>';
     }
 
-    return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><textarea oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colName + '\\',this.value)">' + escapeHtml(val) + '</textarea></div>';
+    return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><textarea oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)">' + escapeHtml(val) + '</textarea></div>';
   }).join('');
 
   return '<div class="ve-list-item ve-list-item-cols"><div class="ve-list-item-fields">' + fieldsHtml + '</div><div class="ve-list-item-actions">' + removeBtn + '</div></div>';

@@ -317,9 +317,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
     </div>
     <div class="toolbar-spacer"></div>
     <div class="theme-switch" id="theme-switch">
-      <button data-theme-choice="auto" onclick="setTheme('auto')">Auto</button>
-      <button data-theme-choice="dark" onclick="setTheme('dark')">Dark</button>
-      <button data-theme-choice="light" onclick="setTheme('light')">Light</button>
+      <button data-theme-choice="auto" aria-pressed="false" onclick="setTheme('auto')">Auto</button>
+      <button data-theme-choice="dark" aria-pressed="false" onclick="setTheme('dark')">Dark</button>
+      <button data-theme-choice="light" aria-pressed="false" onclick="setTheme('light')">Light</button>
     </div>
     <button class="btn btn-sm btn-danger" onclick="clearAll()">Clear</button>
   </div>
@@ -393,7 +393,10 @@ function applyTheme(theme) {
 
   if (switchEl) {
     Array.prototype.forEach.call(switchEl.children, (btn) => {
-      btn.classList.toggle('active', btn.dataset.themeChoice === theme);
+      const isActive = btn.dataset.themeChoice === theme;
+
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
     });
   }
 }
