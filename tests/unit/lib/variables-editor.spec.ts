@@ -341,5 +341,26 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body).not.toContain('id="tab-schema"');
       expect(res.body).not.toContain('id="save-btn"');
     });
+
+    // Every `<script>` block is built via string concatenation inside one giant template
+    // literal — a backslash-escaping mistake there (e.g. a regex like /\\/) is invisible to
+    // `tsc`/eslint (it's just characters inside a string) and only breaks at runtime when the
+    // browser parses it, which none of the tests above would ever catch. `new Function` parses
+    // without executing, so this fails fast on any embedded-script SyntaxError.
+    it('embeds syntactically valid client-side JavaScript in every <script> block', async () => {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const html = res.body as string;
+      const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+
+      expect(scripts.length).toBeGreaterThan(0);
+
+      for (const script of scripts) {
+        expect(() => new Function(script)).not.toThrow();
+      }
+    });
   });
 });
