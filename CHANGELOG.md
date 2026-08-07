@@ -1,3 +1,10 @@
+# [1.2.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.2.0-beta.2...v1.2.0-beta.3) (2026-08-07)
+
+
+### Bug Fixes
+
+* Variables Editor client script fails to parse, blanking the whole UI ([2e48b2e](https://github.com/mi-examples/pp-dev/commit/2e48b2e69c12124a6d300503a80b40f649de1316))
+
 # [1.2.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.2.0-beta.1...v1.2.0-beta.2) (2026-08-07)
 
 
