@@ -1,3 +1,10 @@
+# [1.2.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.2.0-beta.1...v1.2.0-beta.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* address CodeRabbit review feedback on PR [#227](https://github.com/mi-examples/pp-dev/issues/227) ([3f64e42](https://github.com/mi-examples/pp-dev/commit/3f64e42a9ffd213160fd14d300e0516099b8683d))
+
 # [1.2.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.1.1-beta.1...v1.2.0-beta.1) (2026-08-07)
 
 
