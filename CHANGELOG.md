@@ -1,3 +1,26 @@
+# [1.2.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.2.0-beta.1...v1.2.0-beta.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* address CodeRabbit review feedback on PR [#227](https://github.com/mi-examples/pp-dev/issues/227) ([3f64e42](https://github.com/mi-examples/pp-dev/commit/3f64e42a9ffd213160fd14d300e0516099b8683d))
+
+# [1.2.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.1.1-beta.1...v1.2.0-beta.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* address npm audit vulnerabilities in root and test fixtures ([a33aad3](https://github.com/mi-examples/pp-dev/commit/a33aad3ca7a24078d6a8293ebe45e065baf62d0b))
+* Variables Editor — ergonomic advanced-fields toggle, confirm before delete ([6cc96ee](https://github.com/mi-examples/pp-dev/commit/6cc96eef13dfeb12684e136e43ade115981a33d4))
+* Variables Editor tab switch no longer blanks out until the fetch resolves ([399930d](https://github.com/mi-examples/pp-dev/commit/399930d4da7e1e846f52648cfeae9509b9c36402))
+
+
+### Features
+
+* add Auto/Dark/Light theme switcher, shared across the dev panel, Inspector, and Variables Editor ([b6f72a6](https://github.com/mi-examples/pp-dev/commit/b6f72a68181105dd620db967307bd3e3575911fe))
+* add page-variables API and schema/export/validation helpers ([36c727e](https://github.com/mi-examples/pp-dev/commit/36c727e7feeb45805ccae76984aaa755be2e8d7b))
+* add standalone Variables Editor page with dev-panel entry points ([40bc88e](https://github.com/mi-examples/pp-dev/commit/40bc88e45fd9b25d4a6d47249ef791272ff92c20))
+
 ## [1.1.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.1.0...v1.1.1-beta.1) (2026-07-27)
 
 

@@ -125,7 +125,7 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
 
       const {
         backendBaseURL,
-        templateLess,
+        templateLess = false,
         appId,
         canSync = true,
         devPanelPosition = 'bottom-right',

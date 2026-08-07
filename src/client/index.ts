@@ -6,6 +6,11 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from './storage.js';
 import { createPanelStateController, type PanelStateController } from './panel-state.js';
 import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
+import { initTheme } from './theme.js';
+
+// Applied unconditionally (even if the panel itself is hidden) — this is what makes the
+// override affect the whole injected panel, not just its own markup.
+initTheme();
 
 interface InfoPopupOptions {
   title: string;
@@ -31,6 +36,8 @@ interface ConfirmModalOptions {
   confirmText: string;
   cancelText: string;
 }
+
+type PageVariablesReloadResponsePayload = { ok: true; count: number; skipped: boolean } | { error: string };
 
 let activePopups = 0;
 const POPUP_OFFSET = 10;
@@ -106,6 +113,8 @@ function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
 }
 
 let panelController: PanelStateController | null = null;
+let startReloadVariablesFlow: (() => void) | null = null;
+let pendingReloadVariablesPopup: { close: () => void } | null = null;
 
 function updatePopupPositions() {
   const popups = document.querySelectorAll<HTMLElement>('.pp-dev-info-namespace:not(.pp-dev-info)');
@@ -163,7 +172,7 @@ function animatePopup($popup: HTMLDivElement, type: 'enter' | 'exit') {
   });
 }
 
-function infoPopup(opts: InfoPopupOptions) {
+function infoPopup(opts: InfoPopupOptions): { close: () => void } {
   const $popup = createPopupElement(opts);
   const $closeButton = $popup.querySelector('.pp-dev-info__popup-title-close');
 
@@ -228,6 +237,8 @@ function infoPopup(opts: InfoPopupOptions) {
 
     requestAnimationFrame(scheduleDismiss);
   }
+
+  return { close: removePopup };
 }
 
 function closeAllConfirmModals() {
@@ -340,6 +351,9 @@ if ($infoPanel) {
 
   initPanelSettings($infoPanel, panelController, {
     onOpenChange: (open) => autoHide.keepPeeked(open),
+    onOpenVariablesEditorClick: () => window.open(window.location.origin + '/@pp-dev/variables-editor', '_blank'),
+    onOpenInspectorClick: () => window.open(window.location.origin + '/@pp-dev/inspector', '_blank'),
+    onReloadVariablesClick: () => startReloadVariablesFlow?.(),
   });
 
   panelController.onChange((state) => {
@@ -492,4 +506,50 @@ if (hot) {
       hot.send('template:sync', {});
     });
   }
+
+  hot.on('page-variables:reload:response', (payload: PageVariablesReloadResponsePayload) => {
+    pendingReloadVariablesPopup?.close();
+    pendingReloadVariablesPopup = null;
+
+    if ('error' in payload) {
+      infoPopup({
+        title: 'Reload variables error',
+        content: payload.error,
+        type: 'danger',
+      });
+
+      return;
+    }
+
+    if (payload.skipped) {
+      infoPopup({
+        title: 'Nothing to reload',
+        content: 'This page has no template variables to refresh.',
+        type: 'warning',
+      });
+
+      return;
+    }
+
+    infoPopup({
+      title: 'Variables reloaded',
+      content: `Refetched ${payload.count} variable(s) from MI. Reloading the page…`,
+      type: 'success',
+      duration: 1200,
+    });
+
+    setTimeout(() => window.location.reload(), 600);
+  });
+
+  startReloadVariablesFlow = () => {
+    pendingReloadVariablesPopup?.close();
+    pendingReloadVariablesPopup = infoPopup({
+      title: 'Reloading variables',
+      content: 'Refetching live values from MI…',
+      type: 'info',
+      duration: 0,
+    });
+
+    hot.send('page-variables:reload', {});
+  };
 }

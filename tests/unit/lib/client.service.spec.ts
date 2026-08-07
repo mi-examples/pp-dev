@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ViteDevServer, WebSocketClient } from 'vite';
 import { ClientService } from '../../../src/lib/client.service.js';
+import type { DistService } from '../../../src/lib/dist.service.js';
+import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /**
  * Regression tests for the WebSocket "broadcast to all clients" bug.
@@ -62,5 +64,92 @@ describe('ClientService — targeted WebSocket responses', () => {
     });
     expect(other.send).not.toHaveBeenCalled();
     expect(server.ws.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClientService — page-variables:reload', () => {
+  const handlers = new Map<string, (...args: any[]) => void>();
+  let server: ViteDevServer;
+
+  function makeClient(): WebSocketClient {
+    return { send: vi.fn() } as unknown as WebSocketClient;
+  }
+
+  beforeEach(() => {
+    handlers.clear();
+
+    server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          handlers.set(event, handler);
+        }),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+  });
+
+  it('errors when miAPI is not configured', async () => {
+    new ClientService(server);
+
+    const client = makeClient();
+
+    await handlers.get('page-variables:reload')!({}, client);
+
+    expect(client.send).toHaveBeenCalledWith('page-variables:reload:response', {
+      error: 'MiAPI is not defined',
+    });
+  });
+
+  it('reports the refetched count on success', async () => {
+    const miAPI = {
+      reloadPageVariables: vi.fn().mockResolvedValue([{ name: 'title', value: 'Hello' }]),
+    } as unknown as MiAPI;
+
+    new ClientService(server, { miAPI });
+
+    const client = makeClient();
+
+    await handlers.get('page-variables:reload')!({}, client);
+
+    expect(client.send).toHaveBeenCalledWith('page-variables:reload:response', {
+      ok: true,
+      count: 1,
+      skipped: false,
+    });
+  });
+
+  it('reports skipped:true for a templateLess page (reloadPageVariables resolves null)', async () => {
+    const miAPI = {
+      reloadPageVariables: vi.fn().mockResolvedValue(null),
+    } as unknown as MiAPI;
+
+    new ClientService(server, { miAPI });
+
+    const client = makeClient();
+
+    await handlers.get('page-variables:reload')!({}, client);
+
+    expect(client.send).toHaveBeenCalledWith('page-variables:reload:response', {
+      ok: true,
+      count: 0,
+      skipped: true,
+    });
+  });
+
+  it('sends an error response when reloadPageVariables throws', async () => {
+    const miAPI = {
+      reloadPageVariables: vi.fn().mockRejectedValue(new Error('boom')),
+    } as unknown as MiAPI;
+
+    new ClientService(server, { miAPI });
+
+    const client = makeClient();
+
+    await handlers.get('page-variables:reload')!({}, client);
+
+    expect(client.send).toHaveBeenCalledWith('page-variables:reload:response', {
+      error: 'boom',
+    });
   });
 });

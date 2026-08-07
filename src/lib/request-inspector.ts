@@ -132,16 +132,49 @@ function getInspectorHtml(captureLimit: number): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Request Inspector — pp-dev</title>
+<script>
+// Set the stored theme override before first paint, so switching pages/reloading doesn't
+// flash the OS-default theme before settling on the user's explicit choice (see setTheme()).
+try {
+  var ppDevStoredTheme = localStorage.getItem('pp-dev-info-theme');
+
+  if (ppDevStoredTheme === 'dark' || ppDevStoredTheme === 'light') {
+    document.documentElement.setAttribute('data-pp-dev-theme', ppDevStoredTheme);
+  }
+} catch (e) {}
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
+:root,:root[data-pp-dev-theme="light"]{
+  --bg:#ffffff;--bg2:#f4f5f7;--bg3:#e9ebef;--bg4:#dbdee3;
+  --border:#d7dae0;--border2:#c2c6cd;
+  --text:#1a1a1e;--text2:#54566b;--text3:#8a8c9c;
+  --accent:#4f46e5;--accent2:#7c3aed;
+  --green:#16a34a;--red:#dc2626;--yellow:#a16207;--blue:#2563eb;--orange:#c2410c;--purple:#9333ea;
+  --json-text:#24292f;--json-key:#0550ae;--json-str:#0a3069;--json-num:#953800;--json-bool:#cf222e;
+  --btn-primary-fg:#ffffff;
+  --font-mono:'Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
+  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+:root[data-pp-dev-theme="dark"]{
   --bg:#1a1a1e;--bg2:#222228;--bg3:#2a2a32;--bg4:#32323c;
   --border:#3a3a46;--border2:#4a4a58;
   --text:#e0e0f0;--text2:#a0a0b8;--text3:#606078;
   --accent:#6e8efb;--accent2:#a78bfa;
   --green:#4ade80;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;--orange:#fb923c;--purple:#c084fc;
-  --font-mono:'Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
-  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --json-text:#c9d1d9;--json-key:#79b8ff;--json-str:#9ecbff;--json-num:#f8c555;--json-bool:#f97583;
+  --btn-primary-fg:#0d0d10;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1a1a1e;--bg2:#222228;--bg3:#2a2a32;--bg4:#32323c;
+    --border:#3a3a46;--border2:#4a4a58;
+    --text:#e0e0f0;--text2:#a0a0b8;--text3:#606078;
+    --accent:#6e8efb;--accent2:#a78bfa;
+    --green:#4ade80;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;--orange:#fb923c;--purple:#c084fc;
+    --json-text:#c9d1d9;--json-key:#79b8ff;--json-str:#9ecbff;--json-num:#f8c555;--json-bool:#f97583;
+    --btn-primary-fg:#0d0d10;
+  }
 }
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:13px;line-height:1.5}
 
@@ -151,6 +184,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .toolbar-title{font-weight:600;font-size:14px;color:var(--text);margin-right:4px}
 .toolbar-badge{font-size:11px;padding:2px 7px;border-radius:10px;background:var(--bg4);color:var(--text2)}
 .toolbar-spacer{flex:1}
+.theme-switch{display:flex;gap:2px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px}
+.theme-switch button{padding:3px 8px;border:none;border-radius:3px;background:transparent;color:var(--text2);font-size:11px;cursor:pointer;font-family:var(--font-ui)}
+.theme-switch button.active{background:var(--accent);color:var(--btn-primary-fg)}
 .mem-bar-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)}
 .mem-bar{width:80px;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden}
 .mem-bar-fill{height:100%;background:var(--accent);transition:width .4s}
@@ -175,25 +211,25 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .req-item{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 9px;border-bottom:1px solid var(--border);border-left:3px solid transparent;cursor:pointer;user-select:none;transition:background .1s,border-left-color .1s}
 .req-item:hover{background:var(--bg3)}
 .req-item.selected{background:var(--bg4);border-left-color:var(--accent) !important}
-.req-item.src-proxy{border-left-color:#6366f1}
-.req-item.src-proxy-cache{border-left-color:#d97706}
+.req-item.src-proxy{border-left-color:var(--accent2)}
+.req-item.src-proxy-cache{border-left-color:var(--yellow)}
 .req-item.src-local{border-left-color:transparent}
 
 .method-badge{font-size:10px;font-weight:700;padding:2px 5px;border-radius:3px;min-width:38px;text-align:center;letter-spacing:.4px;flex-shrink:0}
-.m-GET{background:#1a3a2a;color:var(--green)}
-.m-POST{background:#1a2a3a;color:var(--blue)}
-.m-PUT{background:#3a2a1a;color:var(--orange)}
-.m-PATCH{background:#2a2a1a;color:var(--yellow)}
-.m-DELETE{background:#3a1a1a;color:var(--red)}
-.m-HEAD,.m-OPTIONS{background:#2a1a3a;color:var(--purple)}
+.m-GET{background:color-mix(in srgb, var(--green) 20%, var(--bg));color:var(--green)}
+.m-POST{background:color-mix(in srgb, var(--blue) 20%, var(--bg));color:var(--blue)}
+.m-PUT{background:color-mix(in srgb, var(--orange) 20%, var(--bg));color:var(--orange)}
+.m-PATCH{background:color-mix(in srgb, var(--yellow) 20%, var(--bg));color:var(--yellow)}
+.m-DELETE{background:color-mix(in srgb, var(--red) 20%, var(--bg));color:var(--red)}
+.m-HEAD,.m-OPTIONS{background:color-mix(in srgb, var(--purple) 20%, var(--bg));color:var(--purple)}
 .m-other{background:var(--bg4);color:var(--text2)}
 
 .req-url{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text)}
 .req-meta{display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex-shrink:0;font-size:10px;color:var(--text3)}
 .req-status-row{display:flex;align-items:center;gap:4px}
 .source-letter{font-size:9px;font-weight:700;width:15px;height:15px;display:flex;align-items:center;justify-content:center;border-radius:2px;flex-shrink:0}
-.src-letter-proxy{background:#1e1e3a;color:#6366f1}
-.src-letter-proxy-cache{background:#2a2010;color:#d97706}
+.src-letter-proxy{background:color-mix(in srgb, var(--accent2) 20%, var(--bg));color:var(--accent2)}
+.src-letter-proxy-cache{background:color-mix(in srgb, var(--yellow) 20%, var(--bg));color:var(--yellow)}
 .src-letter-local{background:var(--bg4);color:var(--text3)}
 .status-badge{font-size:10px;font-weight:600;padding:1px 4px;border-radius:2px}
 .s-2xx{color:var(--green)}
@@ -203,9 +239,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .s-pending{color:var(--text3)}
 
 .source-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:2px 7px;border-radius:10px}
-.src-local{background:#1e2a1e;color:#86efac}
-.src-proxy{background:#1e1e3a;color:#a5b4fc}
-.src-proxy-cache{background:#2a2010;color:#fcd34d}
+.src-local{background:color-mix(in srgb, var(--green) 20%, var(--bg));color:var(--green)}
+.src-proxy{background:color-mix(in srgb, var(--accent2) 20%, var(--bg));color:var(--accent2)}
+.src-proxy-cache{background:color-mix(in srgb, var(--yellow) 20%, var(--bg));color:var(--yellow)}
 
 .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:8px;padding:40px}
 .empty-icon{font-size:40px;opacity:.5}
@@ -236,12 +272,12 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .kv-table td:last-child{color:var(--text);word-break:break-all}
 
 .body-content{white-space:pre-wrap;word-break:break-all;color:var(--text);line-height:1.6;max-height:400px;overflow:auto}
-.body-content.json{color:#c9d1d9}
-.body-json-key{color:#79b8ff}
-.body-json-str{color:#9ecbff}
-.body-json-num{color:#f8c555}
-.body-json-bool{color:#f97583}
-.body-json-null{color:#f97583;font-style:italic}
+.body-content.json{color:var(--json-text)}
+.body-json-key{color:var(--json-key)}
+.body-json-str{color:var(--json-str)}
+.body-json-num{color:var(--json-num)}
+.body-json-bool{color:var(--json-bool)}
+.body-json-null{color:var(--json-bool);font-style:italic}
 .body-binary{color:var(--text3);font-style:italic;padding:8px 0}
 .body-image{max-width:100%;max-height:300px;object-fit:contain;margin-top:4px;border:1px solid var(--border);border-radius:4px}
 .truncated-note{font-size:11px;color:var(--yellow);margin-top:4px;font-family:var(--font-ui)}
@@ -256,7 +292,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 /* ── Buttons ── */
 .btn{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;cursor:pointer;transition:background .1s}
 .btn:hover{background:var(--bg4);border-color:var(--border2)}
-.btn-danger:hover{background:#3a1a1a;border-color:#6a2a2a;color:var(--red)}
+.btn-danger:hover{background:color-mix(in srgb, var(--red) 15%, var(--bg));border-color:color-mix(in srgb, var(--red) 45%, var(--bg));color:var(--red)}
 .btn-sm{padding:2px 7px;font-size:11px}
 
 /* ── Live indicator ── */
@@ -280,6 +316,11 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
       <span id="mem-text">0 B / 1 GB</span>
     </div>
     <div class="toolbar-spacer"></div>
+    <div class="theme-switch" id="theme-switch">
+      <button data-theme-choice="auto" aria-pressed="false" onclick="setTheme('auto')">Auto</button>
+      <button data-theme-choice="dark" aria-pressed="false" onclick="setTheme('dark')">Dark</button>
+      <button data-theme-choice="light" aria-pressed="false" onclick="setTheme('light')">Light</button>
+    </div>
     <button class="btn btn-sm btn-danger" onclick="clearAll()">Clear</button>
   </div>
   <div class="split">
@@ -329,6 +370,45 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 <script>
 (function(){
 'use strict';
+
+// ── Theme (Auto/Dark/Light) ──────────────────────────────────────────────────
+// The <head> inline script already set data-pp-dev-theme before first paint; this just keeps
+// it in sync with future picks and syncs the toolbar buttons' state. Shares its localStorage
+// key and attribute name with the dev panel and the Variables Editor, so picking a theme in
+// any of them carries over to the others.
+const THEME_STORAGE_KEY = 'pp-dev-info-theme';
+
+function getStoredTheme() {
+  try { return localStorage.getItem(THEME_STORAGE_KEY) || 'auto'; } catch (e) { return 'auto'; }
+}
+
+function applyTheme(theme) {
+  if (theme === 'dark' || theme === 'light') {
+    document.documentElement.setAttribute('data-pp-dev-theme', theme);
+  } else {
+    document.documentElement.removeAttribute('data-pp-dev-theme');
+  }
+
+  const switchEl = document.getElementById('theme-switch');
+
+  if (switchEl) {
+    Array.prototype.forEach.call(switchEl.children, (btn) => {
+      const isActive = btn.dataset.themeChoice === theme;
+
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
+    });
+  }
+}
+
+function setTheme(theme) {
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) {}
+
+  applyTheme(theme);
+}
+
+applyTheme(getStoredTheme());
+window.setTheme = setTheme;
 
 const CAPTURE_LIMIT = ${captureLimit};
 
