@@ -687,7 +687,11 @@ function syntaxHighlightJson(str) {
     const parsed = JSON.parse(str);
 
     str = JSON.stringify(parsed, null, 2);
-  } catch { /* use as-is */ }
+  } catch {
+    // Invalid JSON can contain arbitrary HTML. It cannot be token-highlighted safely because
+    // unmatched text is preserved by the replacement below, so render it as escaped plain text.
+    return esc(str);
+  }
 
   return str.replace(/("(\\\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"\\s*:?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function(m) {
     if (/^"/.test(m)) {
