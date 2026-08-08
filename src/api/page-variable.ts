@@ -15,23 +15,33 @@ function isPageVariableTagEntry(value: unknown): value is PageVariableTagEntry {
   );
 }
 
-/** `tags` may come back as a JSON string or an already-parsed array depending on backend version. */
-export function normalizePageVariableTags(tags: PageVariableTagEntry[] | string): PageVariableTagEntry[] {
-  if (Array.isArray(tags)) {
-    return tags.filter(isPageVariableTagEntry);
-  }
+/**
+ * `tags` may come back as a JSON string or an already-parsed array depending on backend
+ * version. Reject the complete payload when any part is malformed: callers use the returned
+ * array for full-replacement writes, so silently dropping entries could delete live values.
+ */
+export function normalizePageVariableTags(tags: unknown): PageVariableTagEntry[] {
+  let parsed = tags;
 
-  try {
-    const parsed = JSON.parse(tags) as unknown;
-
-    if (!Array.isArray(parsed)) {
-      return [];
+  if (typeof tags === 'string') {
+    try {
+      parsed = JSON.parse(tags) as unknown;
+    } catch {
+      throw new TypeError('Page variable response contains invalid JSON in "tags".');
     }
-
-    return parsed.filter(isPageVariableTagEntry);
-  } catch {
-    return [];
   }
+
+  if (!Array.isArray(parsed)) {
+    throw new TypeError('Page variable response must contain a "tags" array.');
+  }
+
+  const malformedIndex = parsed.findIndex((entry) => !isPageVariableTagEntry(entry));
+
+  if (malformedIndex !== -1) {
+    throw new TypeError(`Page variable response contains a malformed entry at index ${malformedIndex}.`);
+  }
+
+  return parsed;
 }
 
 export class PageVariableAPI extends BaseAPI {
@@ -55,7 +65,7 @@ export class PageVariableAPI extends BaseAPI {
       })
     ).data;
 
-    return normalizePageVariableTags(data?.tags ?? []);
+    return normalizePageVariableTags(data?.tags);
   }
 
   /** PUT `/api/page_variable?page_id={pageId}` */

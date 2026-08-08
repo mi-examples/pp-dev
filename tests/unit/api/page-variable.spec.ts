@@ -15,21 +15,20 @@ describe('normalizePageVariableTags', () => {
     expect(normalizePageVariableTags(tags)).toEqual(tags);
   });
 
-  it('filters out malformed entries from an array', () => {
+  it('rejects the complete array when an entry is malformed', () => {
     const tags = [{ name: 'a', value: '1' }, { name: 'b' }, { value: '2' }, 'not-an-object'] as any;
 
-    expect(normalizePageVariableTags(tags)).toEqual([{ name: 'a', value: '1' }]);
+    expect(() => normalizePageVariableTags(tags)).toThrow('malformed entry at index 1');
   });
 
   it('parses a JSON-stringified array', () => {
-    expect(normalizePageVariableTags(JSON.stringify([{ name: 'a', value: '1' }]))).toEqual([
-      { name: 'a', value: '1' },
-    ]);
+    expect(normalizePageVariableTags(JSON.stringify([{ name: 'a', value: '1' }]))).toEqual([{ name: 'a', value: '1' }]);
   });
 
-  it('returns an empty array for invalid JSON or a non-array payload', () => {
-    expect(normalizePageVariableTags('not json')).toEqual([]);
-    expect(normalizePageVariableTags(JSON.stringify({ not: 'an array' }))).toEqual([]);
+  it('rejects invalid JSON, non-array payloads, and missing tags', () => {
+    expect(() => normalizePageVariableTags('not json')).toThrow('invalid JSON');
+    expect(() => normalizePageVariableTags(JSON.stringify({ not: 'an array' }))).toThrow('must contain a "tags" array');
+    expect(() => normalizePageVariableTags(undefined)).toThrow('must contain a "tags" array');
   });
 });
 
@@ -51,6 +50,15 @@ describe('PageVariableAPI', () => {
     const result = await api.getById(937);
 
     expect(result).toEqual([{ name: 'title', value: 'Hello' }]);
+  });
+
+  it('rejects a malformed GET response instead of returning a partial replacement set', async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { tags: [{ name: 'valid', value: '1' }, { name: 'missing-value' }] },
+    });
+    const api = new PageVariableAPI(makeAxios({ get }));
+
+    await expect(api.getById(937)).rejects.toThrow('malformed entry at index 1');
   });
 
   it('PUTs /api/page_variable with page_id param and JSON-stringified tags body', async () => {

@@ -161,7 +161,9 @@ export function registerVariablesEditorRoutes(
       // MI's own "Create/Edit Variable" form blocks names outside this pattern; here it's a
       // warning, not a hard block, since this endpoint also has to accept legacy/imported data.
       if (!NAME_FORMAT_REGEX.test(tag.name)) {
-        warnings.push(`"${tag.name}" contains a character MI's own editor doesn't allow (only letters, digits, underscore, hyphen, and whitespace).`);
+        warnings.push(
+          `"${tag.name}" contains a character MI's own editor doesn't allow (only letters, digits, underscore, hyphen, and whitespace).`,
+        );
       }
     }
 
@@ -389,14 +391,22 @@ textarea{resize:vertical;min-height:32px}
 <div class="app">
   <div class="toolbar">
     <span class="toolbar-title">🧩 Variables Editor</span>
-    ${templateLess ? '' : `<div class="tabs">
+    ${
+      templateLess
+        ? ''
+        : `<div class="tabs">
       <button class="tab" id="tab-schema" onclick="switchTab('schema')">Schema</button>
       <button class="tab" id="tab-values" onclick="switchTab('values')">Values</button>
-    </div>`}
+    </div>`
+    }
     ${templateLess ? '' : `<span class="ve-loading-indicator" id="loading-indicator" style="display:none"><span class="ve-loading-dot"></span>Refreshing…</span>`}
     <div class="toolbar-spacer"></div>
-    ${templateLess ? '' : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
-    <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`}
+    ${
+      templateLess
+        ? ''
+        : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
+    <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`
+    }
     <div class="theme-switch" id="theme-switch">
       <button data-theme-choice="auto" aria-pressed="false" onclick="setTheme('auto')">Auto</button>
       <button data-theme-choice="dark" aria-pressed="false" onclick="setTheme('dark')">Dark</button>
@@ -552,22 +562,28 @@ function renderSkeleton() {
 }
 
 // ── Data loading ─────────────────────────────────────────────────────────────
-async function loadSchema() {
+async function loadSchema(seq) {
   const r = await fetch('/@api/variables/schema');
   const data = await r.json();
+
+  if (seq !== schemaSeq) { return; }
 
   schemaState = data;
   schemaRows = (data.schema && Array.isArray(data.schema.tags)) ? data.schema.tags.map((t) => Object.assign({}, t)) : [];
   rawMode = data.exists && !data.schema;
 }
 
-async function loadValues() {
+async function loadValues(seq) {
   const r = await fetch('/@api/variables/values');
 
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
 
-    valuesState = { schema: null, live: [], combined: [] };
+    if (seq !== valuesSeq) { return; }
+
+    // A save is a full replacement. Keep the state explicitly unavailable after a failed
+    // read so the user cannot accidentally submit an empty replacement set.
+    valuesState = null;
     valueRows = [];
     showBanner('error', escapeHtml(err.error || 'Failed to load values.'));
 
@@ -575,6 +591,8 @@ async function loadValues() {
   }
 
   const data = await r.json();
+
+  if (seq !== valuesSeq) { return; }
 
   valuesState = data;
   valueRows = (data.combined || []).map((e) => Object.assign({}, e));
@@ -590,7 +608,7 @@ function loadTabData(tab) {
 
     schemaLoading = true;
 
-    return loadSchema().then(() => {
+    return loadSchema(seq).then(() => {
       if (seq === schemaSeq) { schemaLoading = false; }
     });
   }
@@ -599,7 +617,7 @@ function loadTabData(tab) {
 
   valuesLoading = true;
 
-  return loadValues().then(() => {
+  return loadValues(seq).then(() => {
     if (seq === valuesSeq) { valuesLoading = false; }
   });
 }
@@ -1264,7 +1282,7 @@ async function saveSchema() {
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>'
     : 'Schema saved.');
 
-  await loadSchema();
+  await loadTabData('schema');
   render();
 }
 
@@ -1884,6 +1902,12 @@ function removeValueRow(i) {
 }
 
 async function saveValues() {
+  if (!valuesState) {
+    showBanner('error', 'Cannot save values until live variables have loaded successfully.');
+
+    return;
+  }
+
   let tags = valueRows;
 
   if (valuesRawMode) {
@@ -1919,7 +1943,7 @@ async function saveValues() {
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w.message) + '</li>').join('') + '</ul>'
     : 'Values saved.');
 
-  await loadValues();
+  await loadTabData('values');
   render();
 }
 

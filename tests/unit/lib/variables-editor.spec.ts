@@ -1,3 +1,4 @@
+import { JSDOM } from 'jsdom';
 import { describe, it, expect, vi } from 'vitest';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from '../../../src/lib/variables-editor.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
@@ -147,10 +148,7 @@ describe('registerVariablesEditorRoutes', () => {
       const { app } = setup();
       const res = makeRes();
 
-      await app.handlers.get('PUT /@api/variables/schema')!(
-        { body: { raw: JSON.stringify({ tags: 'nope' }) } },
-        res,
-      );
+      await app.handlers.get('PUT /@api/variables/schema')!({ body: { raw: JSON.stringify({ tags: 'nope' }) } }, res);
 
       expect(res.statusCode).toBe(400);
     });
@@ -186,13 +184,10 @@ describe('registerVariablesEditorRoutes', () => {
       expect(saveTemplateVariablesFile).toHaveBeenCalledWith(Buffer.from(raw, 'utf-8'));
     });
 
-    it('warns (without blocking) on a name MI\'s own editor would reject, but accepts a valid one', async () => {
+    it("warns (without blocking) on a name MI's own editor would reject, but accepts a valid one", async () => {
       const { app } = setup();
       const raw = JSON.stringify({
-        tags: [
-          { name: 'has a valid_name-here' },
-          { name: 'has$special!chars' },
-        ],
+        tags: [{ name: 'has a valid_name-here' }, { name: 'has$special!chars' }],
       });
 
       const res = makeRes();
@@ -201,18 +196,16 @@ describe('registerVariablesEditorRoutes', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.ok).toBe(true);
-      expect(res.body.warnings).toEqual([
-        expect.stringContaining('"has$special!chars" contains a character'),
-      ]);
+      expect(res.body.warnings).toEqual([expect.stringContaining('"has$special!chars" contains a character')]);
     });
   });
 
   describe('GET /@api/variables/values', () => {
     it('combines schema defaults with live values via buildPageVariablesExport', async () => {
       const distService = {
-        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(
-          Buffer.from(JSON.stringify({ tags: [{ name: 'greeting', default_value: 'hello' }] })),
-        ),
+        readPublicTemplateVariablesFile: vi
+          .fn()
+          .mockResolvedValue(Buffer.from(JSON.stringify({ tags: [{ name: 'greeting', default_value: 'hello' }] }))),
       } as unknown as DistService;
       const miAPI = {
         getLivePageVariables: vi.fn().mockResolvedValue([{ name: 'title', value: 'Live Title' }]),
@@ -259,9 +252,9 @@ describe('registerVariablesEditorRoutes', () => {
 
     it('saves and returns non-blocking warnings from validateValueAgainstTag', async () => {
       const distService = {
-        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(
-          Buffer.from(JSON.stringify({ tags: [{ name: 'flag', tag_type: 'boolean' }] })),
-        ),
+        readPublicTemplateVariablesFile: vi
+          .fn()
+          .mockResolvedValue(Buffer.from(JSON.stringify({ tags: [{ name: 'flag', tag_type: 'boolean' }] }))),
       } as unknown as DistService;
       const applyPageVariables = vi.fn().mockResolvedValue(undefined);
       const app = register({ distService, miAPI: { applyPageVariables } as unknown as MiAPI });
@@ -288,10 +281,7 @@ describe('registerVariablesEditorRoutes', () => {
       const app = register({ distService, miAPI });
       const res = makeRes();
 
-      await app.handlers.get('PUT /@api/variables/values')!(
-        { body: { tags: [{ name: 'x', value: 'y' }] } },
-        res,
-      );
+      await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x', value: 'y' }] } }, res);
 
       expect(res.statusCode).toBe(502);
     });
@@ -383,6 +373,53 @@ describe('registerVariablesEditorRoutes', () => {
 
       expect(re.test('Connection Report Meta')).toBe(true);
       expect(re.test('bad$name')).toBe(false);
+    });
+
+    it('keeps the newest values response when overlapping loads resolve out of order', async () => {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const dom = new JSDOM(res.body as string, {
+        runScripts: 'outside-only',
+        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
+      });
+      const pending: Array<(response: { ok: boolean; json: () => Promise<unknown> }) => void> = [];
+      const fetch = vi.fn(
+        () =>
+          new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
+            pending.push(resolve);
+          }),
+      );
+
+      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+
+      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+
+      dom.window.eval(scripts.at(-1)!);
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      (dom.window as unknown as { refresh: () => void }).refresh();
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      pending[1]!({
+        ok: true,
+        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'newer' }] }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      pending[0]!({
+        ok: true,
+        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'older' }] }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content tbody input');
+
+      expect(valueInput?.value).toBe('newer');
+
+      dom.window.close();
     });
   });
 });
