@@ -13,6 +13,7 @@ import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
 import { zipDirectoryToBuffer } from './helpers/zip.helper.js';
 import { runNextBuildProcess } from './next-build-runner.js';
+import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
@@ -42,6 +43,8 @@ export interface SyncOptions {
   distZipFolder?: string;
   distZipFilename?: string;
   versionFileTemplate?: string;
+  /** Build directory to zip in memory for template sync, independent of persistent ZIP output. */
+  buildInputFolder?: string;
   nextBuild?: NextBuildOptions;
 }
 
@@ -116,6 +119,7 @@ export class DistService {
   private readonly distZipFolder: string;
   private readonly distZipFilename: string;
   private readonly versionFileTemplate: string;
+  private readonly buildInputFolder?: string;
   private readonly nextBuild?: NextBuildOptions;
 
   private logger: Logger;
@@ -126,9 +130,10 @@ export class DistService {
     const {
       backupFolder = path.resolve(process.cwd(), 'backups'),
       distZipFolder = path.resolve(process.cwd(), 'dist-zip'),
-      distZipFilename = `${this.pageName}.zip`,
+      distZipFilename = createDefaultZipFileName(this.pageName),
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
       versionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json',
+      buildInputFolder,
       dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
       nextBuild,
     } = syncOptions || {};
@@ -138,8 +143,9 @@ export class DistService {
     this.dateFormat = dateFormat;
 
     this.distZipFolder = distZipFolder;
-    this.distZipFilename = distZipFilename;
-    this.versionFileTemplate = versionFileTemplate;
+    this.distZipFilename = normalizeRelativeOutputPath(distZipFilename, 'ZIP output file name');
+    this.versionFileTemplate = normalizeRelativeOutputPath(versionFileTemplate, 'VERSION file name template');
+    this.buildInputFolder = buildInputFolder;
     this.nextBuild = nextBuild;
 
     this.syncMeta();
@@ -681,6 +687,16 @@ export class DistService {
         // Colorized log output with message about build end
         this.logger.info(colors.cyan('[DistService] Build finished'));
       });
+
+      if (this.buildInputFolder) {
+        const buildInputPath = path.resolve(process.cwd(), this.buildInputFolder);
+
+        if (!(await this.isDirectory(buildInputPath))) {
+          throw new Error(`Build input directory ${buildInputPath} not found`);
+        }
+
+        return await zipDirectoryToBuffer(buildInputPath);
+      }
 
       const assetFile = path.resolve(process.cwd(), this.distZipFolder, this.distZipFilename);
 

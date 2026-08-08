@@ -49,6 +49,7 @@ import {
 import { writeBuildVersionManifest } from './lib/version-manifest.js';
 import { zipDirectoryToBuffer } from './lib/helpers/zip.helper.js';
 import { runNextBuildProcess } from './lib/next-build-runner.js';
+import { createDefaultZipFileName, resolveOutputFilePath } from './lib/output-path.js';
 
 const cli = cac('pp-dev');
 
@@ -1185,17 +1186,14 @@ cli
             // Fall back to defaults if the project package.json is unreadable.
           }
 
-          const distService =
-            _normalized.distZip !== false
-              ? new DistService(templateName ?? basename(projectRoot), {
-                  nextBuild: {
-                    projectRoot,
-                    distDir: nextExportDir,
-                    packageVersion: nextPackageVersion,
-                    packageRepositoryUrl: nextPackageRepositoryUrl,
-                  },
-                })
-              : undefined;
+          const distService = new DistService(templateName ?? basename(projectRoot), {
+            nextBuild: {
+              projectRoot,
+              distDir: nextExportDir,
+              packageVersion: nextPackageVersion,
+              packageRepositoryUrl: nextPackageRepositoryUrl,
+            },
+          });
 
           // Minimal ViteDevServer shape consumed by ClientService (`ws` + the v7 flag).
           const clientServiceServer = {
@@ -1453,7 +1451,10 @@ cli
     '--distZip',
     `[boolean] pack build output into a ZIP archive; use --no-distZip to disable (default: pp-dev config build.zip, or true). Env: PP_DEV_DIST_ZIP`,
   )
-  .option('--distZipDir <dir>', `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`)
+  .option(
+    '--distZipDir <dir>',
+    `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`,
+  )
   .option(
     '--distZipFilename <filename>',
     `[string] override the ZIP output file name (default: '<app-name>.zip'). Env: PP_DEV_DIST_ZIP_FILENAME`,
@@ -1554,7 +1555,10 @@ cli
     '--distZip',
     `[boolean] pack build output into a ZIP archive; use --no-distZip to disable (default: pp-dev config build.zip, or true). Env: PP_DEV_DIST_ZIP`,
   )
-  .option('--distZipDir <dir>', `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`)
+  .option(
+    '--distZipDir <dir>',
+    `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`,
+  )
   .option(
     '--distZipFilename <filename>',
     `[string] override the ZIP output file name (default: '<app-name>.zip'). Env: PP_DEV_DIST_ZIP_FILENAME`,
@@ -1611,7 +1615,7 @@ cli
         }
 
         const normalized = normalizePPDevConfig(ppDevConfig, templateName);
-        const distZip = applyDistZipOverride(normalized.distZip, cliOverrides, `${templateName}.zip`);
+        const distZip = applyDistZipOverride(normalized.distZip, cliOverrides, createDefaultZipFileName(templateName));
         const versionPlugin = applyVersionManifestOverride(normalized.versionPlugin, cliOverrides);
 
         logger.info(colors.cyan('[pp-dev] Running `next build`...'));
@@ -1648,9 +1652,9 @@ cli
         if (distZip !== false) {
           const zipOutDir = path.resolve(projectRoot, distZip.outDir);
           const zipSourceDir = distZip.inDir ? path.resolve(outDir, distZip.inDir) : outDir;
-          const zipFile = path.join(zipOutDir, distZip.outFileName);
+          const zipFile = resolveOutputFilePath(zipOutDir, distZip.outFileName, 'ZIP output file name');
 
-          fs.mkdirSync(zipOutDir, { recursive: true });
+          fs.mkdirSync(path.dirname(zipFile), { recursive: true });
 
           const buffer = await zipDirectoryToBuffer(zipSourceDir);
 
