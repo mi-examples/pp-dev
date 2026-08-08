@@ -17,33 +17,33 @@ const configCache = new Map<string, ConfigCache>();
 const CACHE_TTL = 30 * 1000; // 30 seconds cache
 
 // Performance optimization: Memoized package.json reading
-let packageJsonCache: { data: any; timestamp: number } | null = null;
+const packageJsonCache = new Map<string, { data: any; timestamp: number }>();
 const PACKAGE_CACHE_TTL = 60 * 1000; // 1 minute cache
 
-function getPackageJson(): any {
+function getPackageJson(projectRoot = process.cwd()): any {
   const now = Date.now();
+  const root = path.resolve(projectRoot);
+  const cached = packageJsonCache.get(root);
 
-  if (packageJsonCache && now - packageJsonCache.timestamp < PACKAGE_CACHE_TTL) {
-    return packageJsonCache.data;
+  if (cached && now - cached.timestamp < PACKAGE_CACHE_TTL) {
+    return cached.data;
   }
-
-  const cwd = process.cwd();
 
   try {
     const data = JSON.parse(
-      readFileSync(path.resolve(cwd, 'package.json'), {
+      readFileSync(path.resolve(root, 'package.json'), {
         encoding: 'utf-8',
         flag: 'r',
       }),
     );
 
-    packageJsonCache = { data, timestamp: now };
+    packageJsonCache.set(root, { data, timestamp: now });
 
     return data;
   } catch {
     const empty = {};
 
-    packageJsonCache = { data: empty, timestamp: now };
+    packageJsonCache.set(root, { data: empty, timestamp: now });
 
     return empty;
   }
@@ -60,9 +60,7 @@ async function getEsbuild() {
   return esbuildModule;
 }
 
-async function loadTsConfig<T extends object>(filePath: string) {
-  const cwd = process.cwd();
-
+async function loadTsConfig<T extends object>(filePath: string, projectRoot: string) {
   // Performance optimization: Check cache first
   const cacheKey = `ts:${filePath}`;
   const cached = configCache.get(cacheKey);
@@ -79,7 +77,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
     isESM = false;
   } else {
     // Performance optimization: Use cached package.json
-    const pkg = getPackageJson();
+    const pkg = getPackageJson(projectRoot);
 
     isESM = !!pkg && pkg.type === 'module';
   }
@@ -87,7 +85,7 @@ async function loadTsConfig<T extends object>(filePath: string) {
   const esbuild = await getEsbuild();
 
   const result = await esbuild.build({
-    absWorkingDir: cwd,
+    absWorkingDir: projectRoot,
     entryPoints: [filePath],
     outfile: 'out.js',
     write: false,
@@ -106,9 +104,10 @@ async function loadTsConfig<T extends object>(filePath: string) {
   const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const fileNameTmp = `${fileBase}.js`;
-  const fileUrl = pathToFileURL(path.resolve(cwd, fileNameTmp)).toString();
+  const tempFilePath = path.resolve(projectRoot, fileNameTmp);
+  const fileUrl = pathToFileURL(tempFilePath).toString();
 
-  writeFileSync(fileNameTmp, code);
+  writeFileSync(tempFilePath, code);
 
   let config: T = {} as T;
 
@@ -125,8 +124,8 @@ async function loadTsConfig<T extends object>(filePath: string) {
     });
   } finally {
     // Clean up temp file
-    if (existsSync(fileNameTmp)) {
-      unlink(fileNameTmp, () => {
+    if (existsSync(tempFilePath)) {
+      unlink(tempFilePath, () => {
         // Ignore errors
       });
     }
@@ -178,36 +177,38 @@ async function loadJSONConfig<T extends object>(filePath: string) {
 }
 
 // Performance optimization: Memoized directory reading
-let dirContentCache: { files: string[]; timestamp: number } | null = null;
+const dirContentCache = new Map<string, { files: string[]; timestamp: number }>();
 const DIR_CACHE_TTL = 10 * 1000; // 10 seconds cache
 
-function getDirectoryContent(): string[] {
+function getDirectoryContent(projectRoot: string): string[] {
   const now = Date.now();
+  const cached = dirContentCache.get(projectRoot);
 
-  if (dirContentCache && now - dirContentCache.timestamp < DIR_CACHE_TTL) {
-    return dirContentCache.files;
+  if (cached && now - cached.timestamp < DIR_CACHE_TTL) {
+    return cached.files;
   }
 
   const endsWithRegExp = /\.config\.(([cm]?ts)|([cm]?js)|(json))$/;
-  const cwd = process.cwd();
-  const files = readdirSync(cwd, { withFileTypes: true })
+  const files = readdirSync(projectRoot, { withFileTypes: true })
     .filter((value) => value.isFile() && endsWithRegExp.test(value.name))
     .map((value) => value.name);
 
-  dirContentCache = { files, timestamp: now };
+  dirContentCache.set(projectRoot, { files, timestamp: now });
 
   return files;
 }
 
-async function loadConfig<T extends object>(dirFiles: string[], configNames: string[]) {
+async function loadConfig<T extends object>(dirFiles: string[], configNames: string[], projectRoot: string) {
   for (const configName of configNames) {
     if (dirFiles.includes(configName)) {
+      const configPath = path.resolve(projectRoot, configName);
+
       if (/\.[cm]?ts$/i.test(configName)) {
-        return (await loadTsConfig(configName)) as T;
+        return (await loadTsConfig(configPath, projectRoot)) as T;
       } else if (/\.[cm]?js$/i.test(configName)) {
-        return (await loadJsConfig(path.resolve('.', configName))) as T;
+        return (await loadJsConfig(configPath)) as T;
       } else if (configName.endsWith('.json')) {
-        return (await loadJSONConfig(path.resolve('.', configName))) as T;
+        return (await loadJSONConfig(configPath)) as T;
       }
     }
   }
@@ -215,24 +216,25 @@ async function loadConfig<T extends object>(dirFiles: string[], configNames: str
   return null;
 }
 
-export function getPkg() {
-  return getPackageJson();
+export function getPkg(projectRoot = process.cwd()) {
+  return getPackageJson(projectRoot);
 }
 
-export async function getConfig(): Promise<PPDevConfig> {
-  const dirContent = getDirectoryContent();
+export async function getConfig(projectRoot = process.cwd()): Promise<PPDevConfig> {
+  const root = path.resolve(projectRoot);
+  const dirContent = getDirectoryContent(root);
 
   let config: PPDevConfig = {};
   let configFound = false;
 
-  const newConfig = await loadConfig<PPDevConfig>(dirContent, PP_DEV_CONFIG_NAMES as never as string[]);
+  const newConfig = await loadConfig<PPDevConfig>(dirContent, PP_DEV_CONFIG_NAMES as never as string[], root);
 
   if (newConfig) {
     config = newConfig;
     configFound = true;
   }
 
-  const pkg = getPackageJson();
+  const pkg = getPackageJson(root);
 
   const packageConfig = pkg['pp-dev'];
 
@@ -245,6 +247,6 @@ export async function getConfig(): Promise<PPDevConfig> {
 
 export function clearConfigCache() {
   configCache.clear();
-  packageJsonCache = null;
-  dirContentCache = null;
+  packageJsonCache.clear();
+  dirContentCache.clear();
 }

@@ -50,6 +50,35 @@ function highlightJsonFromGeneratedClient(html: string, input: string): string {
   return context.output;
 }
 
+describe('registerInspectorRoutes', () => {
+  it('registers routes and keeps stores isolated for every app instance', () => {
+    const firstApp = makeApp();
+    const secondApp = makeApp();
+    const firstRes: any = { json: (body: unknown) => (firstRes.body = body) };
+    const secondRes: any = { json: (body: unknown) => (secondRes.body = body) };
+
+    registerInspectorRoutes(firstApp, new RequestStore(1_000));
+    registerInspectorRoutes(secondApp, new RequestStore(2_000));
+
+    firstApp.handlers.get('GET /@api/requests/stats')!({}, firstRes);
+    secondApp.handlers.get('GET /@api/requests/stats')!({}, secondRes);
+
+    expect(firstRes.body.maxMemory).toBe(1_000);
+    expect(secondRes.body.maxMemory).toBe(2_000);
+  });
+
+  it('updates the store when the same app is registered again', () => {
+    const app = makeApp();
+    const res: any = { json: (body: unknown) => (res.body = body) };
+
+    registerInspectorRoutes(app, new RequestStore(1_000));
+    registerInspectorRoutes(app, new RequestStore(2_000));
+    app.handlers.get('GET /@api/requests/stats')!({}, res);
+
+    expect(res.body.maxMemory).toBe(2_000);
+  });
+});
+
 describe('request inspector JSON rendering', () => {
   it('escapes invalid JSON before inserting it into the detail HTML', () => {
     const payload = '</pre><img src=x onerror=alert(1)>';

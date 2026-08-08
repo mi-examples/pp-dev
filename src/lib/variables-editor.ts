@@ -18,10 +18,11 @@ const KNOWN_TAG_TYPES = new Set(['text', 'select', 'multiselect', 'file', 'list'
 const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\s-]+$/;
 const MISSING_DEPS_ERROR = 'Dist service or MiAPI is not defined';
 
-// Routes are installed once for the lifetime of the shared internal Express app; restarting
-// the dev server (config watch) only swaps `current` to point at the fresh deps.
-let routesInstalled = false;
-let current: { distService?: DistService; miAPI: MiAPI } | undefined;
+interface VariablesEditorRouteState {
+  deps: { distService?: DistService; miAPI: MiAPI };
+}
+
+const routeStates = new WeakMap<Application, VariablesEditorRouteState>();
 
 /** `null` when the file is missing, unreadable, or not valid `{tags: [...]}`. */
 async function readSchema(distService: DistService | undefined): Promise<TemplateVariablesSchema | null> {
@@ -48,17 +49,21 @@ export function registerVariablesEditorRoutes(
   app: Application,
   deps: { distService?: DistService; miAPI: MiAPI },
 ): void {
-  current = deps;
+  const existing = routeStates.get(app);
 
-  if (routesInstalled) {
+  if (existing) {
+    existing.deps = deps;
+
     return;
   }
 
-  routesInstalled = true;
+  const current: VariablesEditorRouteState = { deps };
+
+  routeStates.set(app, current);
 
   // ── API: read the schema file ───────────────────────────────────────────────
   app.get('/@api/variables/schema', async (_req, res) => {
-    const { distService } = current!;
+    const { distService } = current.deps;
 
     if (!distService) {
       res.status(503).json({ error: MISSING_DEPS_ERROR });
@@ -90,7 +95,7 @@ export function registerVariablesEditorRoutes(
 
   // ── API: write the schema file ──────────────────────────────────────────────
   app.put('/@api/variables/schema', async (req, res) => {
-    const { distService } = current!;
+    const { distService } = current.deps;
 
     if (!distService) {
       res.status(503).json({ error: MISSING_DEPS_ERROR });
@@ -174,7 +179,7 @@ export function registerVariablesEditorRoutes(
 
   // ── API: read live values (+ schema, + the combined "what to show" view) ───
   app.get('/@api/variables/values', async (_req, res) => {
-    const { distService, miAPI } = current!;
+    const { distService, miAPI } = current.deps;
 
     try {
       const schema = await readSchema(distService);
@@ -192,7 +197,7 @@ export function registerVariablesEditorRoutes(
 
   // ── API: write live values (full replacement, matches MI's own PUT) ────────
   app.put('/@api/variables/values', async (req, res) => {
-    const { distService, miAPI } = current!;
+    const { distService, miAPI } = current.deps;
     const tags = req.body?.tags;
 
     if (
@@ -244,7 +249,7 @@ export function registerVariablesEditorRoutes(
   app.get(VARIABLES_EDITOR_PATH, (_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
-    res.end(getVariablesEditorHtml(current!.miAPI.isTemplateLess));
+    res.end(getVariablesEditorHtml(current.deps.miAPI.isTemplateLess));
   });
 }
 
@@ -506,10 +511,12 @@ let activeTab = tabFromUrl();
 let schemaState = null;   // { exists, schema, raw, parseError }
 let valuesState = null;   // { schema, live, combined }
 let schemaRows = [];      // working copy of tags, edited in place
+const invalidAdditionalOptionsRows = new WeakSet();
 let valueRows = [];       // working copy of {name, value}
 let valuesRawMode = activeTab === 'values' && valuesJsonModeFromUrl();
 let rawMode = false;
 let dirty = false;
+let editSeq = 0;
 let banner = null;
 
 // Background-refresh bookkeeping, one pair of (loading flag, sequence counter) per tab: a
@@ -528,7 +535,11 @@ window.addEventListener('beforeunload', (e) => {
   if (dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
-function setDirty(v) { dirty = v; }
+function setDirty(v) {
+  dirty = v;
+
+  if (v) { editSeq += 1; }
+}
 
 function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -543,8 +554,22 @@ function escapeJsAttr(s) {
   return escapeHtml(String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"));
 }
 
-function showBanner(type, html) {
+function showBanner(type, html, preserveContent) {
   banner = { type, html };
+
+  if (preserveContent) {
+    const existingBanner = contentEl.querySelector(':scope > .banner');
+    const bannerEl = document.createElement('div');
+
+    if (existingBanner) { existingBanner.remove(); }
+
+    bannerEl.className = 'banner banner-' + type;
+    bannerEl.innerHTML = html;
+    contentEl.prepend(bannerEl);
+
+    return;
+  }
+
   render();
 }
 
@@ -1182,8 +1207,10 @@ function updateSchemaField(i, field, value) {
 function updateSchemaAdditionalOptions(i, text) {
   try {
     schemaRows[i].additional_options = text.trim() ? JSON.parse(text) : '';
+    invalidAdditionalOptionsRows.delete(schemaRows[i]);
   } catch {
-    schemaRows[i].additional_options = text; // keep raw text; server will reject on save if truly invalid
+    schemaRows[i].additional_options = text;
+    invalidAdditionalOptionsRows.add(schemaRows[i]);
   }
 
   setDirty(true);
@@ -1258,9 +1285,20 @@ async function saveSchema() {
   if (rawMode) {
     raw = document.getElementById('raw-editor').value;
   } else {
+    const invalidAdditionalOptionsIndex = schemaRows.findIndex((row) => invalidAdditionalOptionsRows.has(row));
+
+    if (invalidAdditionalOptionsIndex !== -1) {
+      const tagName = schemaRows[invalidAdditionalOptionsIndex].name || ('row ' + (invalidAdditionalOptionsIndex + 1));
+
+      showBanner('error', 'additional_options must be valid JSON for "' + escapeHtml(tagName) + '".');
+
+      return;
+    }
+
     raw = JSON.stringify(Object.assign({}, schemaState.schema, { tags: schemaRows }), null, 2);
   }
 
+  const saveEditSeq = editSeq;
   const r = await fetch('/@api/variables/schema', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1274,13 +1312,20 @@ async function saveSchema() {
     return;
   }
 
-  setDirty(false);
-
   const warnings = data.warnings || [];
-
-  showBanner(warnings.length ? 'warning' : 'success', warnings.length
+  const hasNewerEdits = editSeq !== saveEditSeq;
+  const message = warnings.length
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>'
-    : 'Schema saved.');
+    : 'Schema saved.';
+
+  if (hasNewerEdits) {
+    showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
+
+    return;
+  }
+
+  setDirty(false);
+  showBanner(warnings.length ? 'warning' : 'success', message);
 
   await loadTabData('schema');
   render();
@@ -1922,6 +1967,7 @@ async function saveValues() {
     }
   }
 
+  const saveEditSeq = editSeq;
   const r = await fetch('/@api/variables/values', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1935,13 +1981,20 @@ async function saveValues() {
     return;
   }
 
-  setDirty(false);
-
   const warnings = data.warnings || [];
-
-  showBanner(warnings.length ? 'warning' : 'success', warnings.length
+  const hasNewerEdits = editSeq !== saveEditSeq;
+  const message = warnings.length
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w.message) + '</li>').join('') + '</ul>'
-    : 'Values saved.');
+    : 'Values saved.';
+
+  if (hasNewerEdits) {
+    showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
+
+    return;
+  }
+
+  setDirty(false);
+  showBanner(warnings.length ? 'warning' : 'success', message);
 
   await loadTabData('values');
   render();

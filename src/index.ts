@@ -6,6 +6,7 @@ import { clientInjectionPlugin, miTopBarPlugin } from './plugins/index.js';
 import header from './banner/header.js';
 import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
+import { loadPPDevEnv } from './lib/env.js';
 import { getConfig, getPkg } from './config.js';
 import type { PPDevConfig } from './plugin.js';
 import {
@@ -162,12 +163,24 @@ function resolveRepositoryUrl(repository: unknown): string | undefined {
   return undefined;
 }
 
-export async function getViteConfig(overrides?: ResolvedBuildCliOverrides): Promise<InlineConfig> {
-  const pkg = getPkg();
+export interface ViteConfigEnvironment {
+  mode?: string;
+  root?: string;
+}
+
+export async function getViteConfig(
+  overrides?: ResolvedBuildCliOverrides,
+  environment: ViteConfigEnvironment = {},
+): Promise<InlineConfig> {
+  const projectRoot = environment.root ?? process.cwd();
+
+  loadPPDevEnv(environment.mode, projectRoot);
+
+  const pkg = getPkg(projectRoot);
 
   const templateName = pkg.name;
 
-  const ppDevConfig = await getConfig();
+  const ppDevConfig = await getConfig(projectRoot);
 
   validatePPDevConfig(ppDevConfig, templateName);
 

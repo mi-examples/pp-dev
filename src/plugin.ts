@@ -621,7 +621,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           templateName,
           Object.assign(
             {
-              backupDir: syncBackupsDir,
+              backupFolder: syncBackupsDir,
               buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
             },
             typeof distZip === 'object'

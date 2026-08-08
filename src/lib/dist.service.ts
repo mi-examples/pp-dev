@@ -225,6 +225,14 @@ export class DistService {
     return filePath.replace(/\\/g, '/');
   }
 
+  private normalizeBackupManifestPath(filePath: string): string {
+    try {
+      return normalizeRelativeOutputPath(filePath, 'VERSION manifest file path');
+    } catch {
+      throw new Error(`VERSION manifest file path "${filePath}" resolves outside the backup root`);
+    }
+  }
+
   private async normalizeExtractedRootDir(extractedDir: string): Promise<string> {
     let currentDir = extractedDir;
 
@@ -446,7 +454,13 @@ export class DistService {
             throw new Error(`VERSION manifest contains invalid hash for file: ${relativePath}`);
           }
 
-          normalizedManifestFiles[this.pathToPosix(relativePath)] = expectedHash;
+          const normalizedPath = this.normalizeBackupManifestPath(relativePath);
+
+          if (Object.prototype.hasOwnProperty.call(normalizedManifestFiles, normalizedPath)) {
+            throw new Error(`VERSION manifest contains duplicate normalized file path: ${normalizedPath}`);
+          }
+
+          normalizedManifestFiles[normalizedPath] = expectedHash;
         }
 
         const calculatedManifestChecksum = this.buildManifestChecksum(normalizedManifestFiles);
