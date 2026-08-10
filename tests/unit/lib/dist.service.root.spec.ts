@@ -76,6 +76,22 @@ describe('DistService — root-scoped path resolution', () => {
     expect(readBack?.toString('utf-8')).toBe('{"a":1}');
   });
 
+  it('resolves an explicit relative backupFolder against the explicit root, not process.cwd()', async () => {
+    // eslint-disable-next-line no-new -- the constructor's fire-and-forget syncMeta() creates the folder
+    new DistService('test-app', {
+      root: projectRoot,
+      backupFolder: 'backups',
+    });
+
+    // Don't call checkMeta() ourselves: the constructor already kicked one off in the
+    // background (unawaited), and a second concurrent call races its mkdir. Poll instead.
+    await vi.waitFor(() => {
+      expect(fs.existsSync(path.join(projectRoot, 'backups'))).toBe(true);
+    });
+
+    expect(fs.existsSync(path.join(unrelatedCwd, 'backups'))).toBe(false);
+  });
+
   it('defaults root to process.cwd() when not provided', async () => {
     const service = new DistService('test-app', {});
 
