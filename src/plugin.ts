@@ -339,7 +339,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   } = options || {};
 
   let isFirstRequest = true;
-  let baseDir = process.cwd();
 
   return {
     name: 'vite-pp-dev',
@@ -357,10 +356,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
       if (v7Features) {
         config.base = `/pl/${templateName}`;
-      }
-
-      if (config.root) {
-        baseDir = config.root;
       }
 
       return config;
@@ -621,6 +616,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           templateName,
           Object.assign(
             {
+              root: server.config.root,
               backupFolder: syncBackupsDir,
               buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
             },

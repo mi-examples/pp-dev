@@ -15,6 +15,8 @@ import { normalizeRelativeOutputPath, resolveOutputFilePath } from './output-pat
 
 export interface VersionManifestConfig {
   outDir: string;
+  /** Project root that a relative `outDir` resolves against. @default process.cwd() */
+  root?: string;
   packageVersion: string;
   versionFileTemplate?: string;
   packageRepositoryUrl?: string;
@@ -212,8 +214,8 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
     return;
   }
 
-  const { outDir, versionFileTemplate, packageVersion } = config;
-  const outDirResolved = path.resolve(process.cwd(), outDir);
+  const { outDir, root = process.cwd(), versionFileTemplate, packageVersion } = config;
+  const outDirResolved = path.resolve(root, outDir);
 
   if (!statSync(outDirResolved, { throwIfNoEntry: false })?.isDirectory()) {
     return;

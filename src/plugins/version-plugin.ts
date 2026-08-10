@@ -11,6 +11,7 @@ interface VersionPluginConfig extends VersionPluginOptions {
 
 export function versionPlugin(config: VersionPluginConfig): Plugin {
   let outDir = config.outDir;
+  let root = process.cwd();
 
   return {
     name: 'pp-dev-version',
@@ -19,11 +20,13 @@ export function versionPlugin(config: VersionPluginConfig): Plugin {
 
     configResolved(resolvedConfig) {
       outDir = resolvedConfig.build.outDir;
+      root = resolvedConfig.root ?? root;
     },
 
     closeBundle() {
       writeBuildVersionManifest({
         outDir,
+        root,
         packageVersion: config.packageVersion,
         versionFileTemplate: config.versionFileTemplate,
         packageRepositoryUrl: config.packageRepositoryUrl,

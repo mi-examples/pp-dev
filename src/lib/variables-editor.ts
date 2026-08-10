@@ -588,8 +588,19 @@ function renderSkeleton() {
 
 // ── Data loading ─────────────────────────────────────────────────────────────
 async function loadSchema(seq) {
-  const r = await fetch('/@api/variables/schema');
-  const data = await r.json();
+  let data;
+
+  try {
+    const r = await fetch('/@api/variables/schema');
+
+    data = await r.json();
+  } catch (e) {
+    if (seq !== schemaSeq) { return; }
+
+    showBanner('error', 'Failed to load the schema: ' + escapeHtml(e.message));
+
+    return;
+  }
 
   if (seq !== schemaSeq) { return; }
 
@@ -599,7 +610,19 @@ async function loadSchema(seq) {
 }
 
 async function loadValues(seq) {
-  const r = await fetch('/@api/variables/values');
+  let r;
+
+  try {
+    r = await fetch('/@api/variables/values');
+  } catch (e) {
+    if (seq !== valuesSeq) { return; }
+
+    valuesState = null;
+    valueRows = [];
+    showBanner('error', 'Failed to load values: ' + escapeHtml(e.message));
+
+    return;
+  }
 
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
@@ -615,7 +638,19 @@ async function loadValues(seq) {
     return;
   }
 
-  const data = await r.json();
+  let data;
+
+  try {
+    data = await r.json();
+  } catch (e) {
+    if (seq !== valuesSeq) { return; }
+
+    valuesState = null;
+    valueRows = [];
+    showBanner('error', 'Failed to parse the values response: ' + escapeHtml(e.message));
+
+    return;
+  }
 
   if (seq !== valuesSeq) { return; }
 

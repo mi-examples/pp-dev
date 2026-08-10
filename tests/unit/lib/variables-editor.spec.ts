@@ -1,4 +1,3 @@
-import { JSDOM } from 'jsdom';
 import { describe, it, expect, vi } from 'vitest';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from '../../../src/lib/variables-editor.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
@@ -413,6 +412,7 @@ describe('registerVariablesEditorRoutes', () => {
 
       app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
 
+      const { JSDOM } = await import('jsdom');
       const dom = new JSDOM(res.body as string, {
         runScripts: 'outside-only',
         url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
@@ -454,12 +454,40 @@ describe('registerVariablesEditorRoutes', () => {
       dom.window.close();
     });
 
+    it('shows an error banner instead of hanging when the initial values fetch rejects', async () => {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const { JSDOM } = await import('jsdom');
+      const dom = new JSDOM(res.body as string, {
+        runScripts: 'outside-only',
+        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
+      });
+      const fetch = vi.fn().mockRejectedValue(new Error('network down'));
+
+      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+
+      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+
+      dom.window.eval(scripts.at(-1)!);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
+        'Failed to load values: network down',
+      );
+
+      dom.window.close();
+    });
+
     it('does not save malformed additional_options text as a string', async () => {
       const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
       const res = makeRes();
 
       app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
 
+      const { JSDOM } = await import('jsdom');
       const dom = new JSDOM(res.body as string, {
         runScripts: 'outside-only',
         url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`,
@@ -505,6 +533,7 @@ describe('registerVariablesEditorRoutes', () => {
 
       app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
 
+      const { JSDOM } = await import('jsdom');
       const dom = new JSDOM(res.body as string, {
         runScripts: 'outside-only',
         url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,

@@ -56,8 +56,10 @@ export function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
   $titleText.classList.add('pp-dev-info__popup-title-text');
   $titleText.textContent = opts.title;
 
-  const $close = document.createElement('div');
+  const $close = document.createElement('button');
 
+  $close.type = 'button';
+  $close.setAttribute('aria-label', 'Close');
   $close.classList.add('pp-dev-info__popup-title-close');
   $close.innerHTML = `
     <svg
