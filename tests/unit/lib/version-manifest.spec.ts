@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -35,6 +35,27 @@ describe('writeBuildVersionManifest output path', () => {
       expect(existsSync(path.join(outDir, 'BUILD-MANIFEST.json'))).toBe(true);
     } finally {
       rmSync(outDir, { force: true, recursive: true });
+    }
+  });
+
+  it('resolves a relative outDir against the explicit root, not process.cwd()', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-root-'));
+    const originalCwd = process.cwd();
+
+    try {
+      mkdirSync(path.join(root, 'dist'));
+      process.chdir(tmpdir());
+
+      writeBuildVersionManifest({
+        outDir: 'dist',
+        root,
+        packageVersion: '1.0.0',
+      });
+
+      expect(existsSync(path.join(root, 'dist', 'BUILD-MANIFEST.json'))).toBe(true);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { force: true, recursive: true });
     }
   });
 });
