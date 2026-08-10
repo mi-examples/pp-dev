@@ -17,4 +17,13 @@ describe('createPopupElement', () => {
     expect(popup.innerHTML).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(popup.querySelector('.pp-dev-info__popup-title-icon svg')).not.toBeNull();
   });
+
+  it('renders the close control as a focusable, labeled button', () => {
+    const popup = createPopupElement({ title: 'Title', content: 'Content' });
+    const $close = popup.querySelector('.pp-dev-info__popup-title-close');
+
+    expect($close?.tagName).toBe('BUTTON');
+    expect($close?.getAttribute('type')).toBe('button');
+    expect($close?.getAttribute('aria-label')).toBe('Close');
+  });
 });

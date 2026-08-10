@@ -176,6 +176,10 @@ $pp-dev-dark-colors: (
         align-items: center;
         justify-content: center;
         margin-top: 2px;
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
         color: rgba(34, 34, 34, 0.64);
         border-radius: 2px;
         transition: color 0.2s ease;
@@ -183,6 +187,11 @@ $pp-dev-dark-colors: (
 
         &:hover {
           color: var(--pp-dev-info-color-dark);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--pp-dev-info-popup-accent);
+          outline-offset: 1px;
         }
 
         svg {
