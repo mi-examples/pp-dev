@@ -132,7 +132,7 @@ export class DistService {
 
     const {
       root = process.cwd(),
-      backupFolder = path.resolve(root, 'backups'),
+      backupFolder = 'backups',
       distZipFolder = path.resolve(root, 'dist-zip'),
       distZipFilename = createDefaultZipFileName(this.pageName),
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
@@ -143,7 +143,10 @@ export class DistService {
     } = syncOptions || {};
 
     this.root = root;
-    this.backupFolder = backupFolder;
+    // Resolve eagerly (not just at the default) — checkMeta()/saveBackup() use this value
+    // directly without prepending root, so an explicit relative backupFolder must be
+    // anchored here or it silently falls back to process.cwd() at those call sites.
+    this.backupFolder = path.resolve(root, backupFolder);
     this.backupNameTemplate = backupNameTemplate;
     this.dateFormat = dateFormat;
 
