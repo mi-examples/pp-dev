@@ -5,23 +5,30 @@ export const INSPECTOR_PATH = '/@pp-dev/inspector';
 
 const DEFAULT_LIST_LIMIT = 500;
 
-// Routes are installed once for the lifetime of the shared `internalServer` app; restarting
-// the dev server (config watch) only swaps `current` to point at the fresh store/capture limit.
-let routesInstalled = false;
-let current: { store: RequestStore; captureLimit: number } | undefined;
+interface InspectorRouteState {
+  store: RequestStore;
+  captureLimit: number;
+}
+
+const routeStates = new WeakMap<Application, InspectorRouteState>();
 
 export function registerInspectorRoutes(app: Application, store: RequestStore, captureLimit = 10 * 1024 * 1024): void {
-  current = { store, captureLimit };
+  const existing = routeStates.get(app);
 
-  if (routesInstalled) {
+  if (existing) {
+    existing.store = store;
+    existing.captureLimit = captureLimit;
+
     return;
   }
 
-  routesInstalled = true;
+  const current: InspectorRouteState = { store, captureLimit };
+
+  routeStates.set(app, current);
 
   // ── API: list requests ────────────────────────────────────────────────────────
   app.get('/@api/requests', (req, res) => {
-    const { store: activeStore } = current!;
+    const { store: activeStore } = current;
     const { limit, offset, method, search } = req.query as Record<string, string | undefined>;
     const parsedLimit = limit !== undefined ? parseInt(limit, 10) : undefined;
     const items = activeStore.list({
@@ -42,7 +49,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
 
   // ── API: stats ────────────────────────────────────────────────────────────────
   app.get('/@api/requests/stats', (_req, res) => {
-    const { store: activeStore } = current!;
+    const { store: activeStore } = current;
 
     res.json({
       total: activeStore.size,
@@ -55,7 +62,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
 
   // ── API: get single request with bodies ───────────────────────────────────────
   app.get('/@api/requests/:id', (req, res) => {
-    const entry = current!.store.get(req.params.id);
+    const entry = current.store.get(req.params.id);
 
     if (!entry) {
       res.status(404).json({ error: 'Not found', id: req.params.id });
@@ -89,7 +96,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
 
   // ── API: clear all requests ───────────────────────────────────────────────────
   app.delete('/@api/requests', (_req, res) => {
-    current!.store.clear();
+    current.store.clear();
     res.json({ ok: true });
   });
 
@@ -97,7 +104,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
   app.get(INSPECTOR_PATH, (_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
-    res.end(getInspectorHtml(current!.captureLimit));
+    res.end(getInspectorHtml(current.captureLimit));
   });
 }
 
@@ -687,7 +694,11 @@ function syntaxHighlightJson(str) {
     const parsed = JSON.parse(str);
 
     str = JSON.stringify(parsed, null, 2);
-  } catch { /* use as-is */ }
+  } catch {
+    // Invalid JSON can contain arbitrary HTML. It cannot be token-highlighted safely because
+    // unmatched text is preserved by the replacement below, so render it as escaped plain text.
+    return esc(str);
+  }
 
   return str.replace(/("(\\\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"\\s*:?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function(m) {
     if (/^"/.test(m)) {

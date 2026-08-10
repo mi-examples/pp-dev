@@ -1,8 +1,9 @@
 import { createHash } from 'crypto';
 import { execSync } from 'child_process';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { normalizeRelativeOutputPath, resolveOutputFilePath } from './output-path.js';
 
 /**
  * Build-output version manifest generation, shared by the Vite `versionPlugin`
@@ -222,7 +223,11 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
   const manifestDate = now.toISOString();
   const currentDate = manifestDate.replace(/:/g, '-');
   const resolvedVersionFileTemplate = versionFileTemplate ?? DEFAULT_VERSION_FILE_TEMPLATE;
-  const versionFileName = resolveVersionFileName(resolvedVersionFileTemplate, packageVersion, currentDate);
+  const versionFileName = normalizeRelativeOutputPath(
+    resolveVersionFileName(resolvedVersionFileTemplate, packageVersion, currentDate),
+    'VERSION output file name',
+  );
+  const manifestPath = resolveOutputFilePath(outDirResolved, versionFileName, 'VERSION output file name');
 
   const allPaths = walkDir(outDirResolved, outDirResolved, new Set([versionFileName, BUILD_MANIFEST_FILE_NAME]));
   const files: Record<string, string> = {};
@@ -249,7 +254,6 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
     helperVersion,
   };
 
-  const manifestPath = path.join(outDirResolved, versionFileName);
   const buildManifestPath = path.join(outDirResolved, BUILD_MANIFEST_FILE_NAME);
   const buildManifest: BuildManifest = {
     schemaVersion: BUILD_MANIFEST_SCHEMA_VERSION,
@@ -264,6 +268,7 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
     },
   };
 
+  mkdirSync(path.dirname(manifestPath), { recursive: true });
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
   writeFileSync(buildManifestPath, JSON.stringify(buildManifest, null, 2), 'utf-8');
 }

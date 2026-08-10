@@ -5,6 +5,7 @@
  *
  * Precedence: CLI flag > `PP_DEV_*` env var > pp-dev config (`build.zip` / `build.versionFile`).
  */
+import { normalizeRelativeOutputPath } from './output-path.js';
 
 export interface BuildOverrideCLIOptions {
   distZip?: boolean;
@@ -69,16 +70,26 @@ export function applyDistZipOverride(
     return false;
   }
 
-  if (overrides.distZipEnabled !== true && overrides.distZipDir === undefined && overrides.distZipFilename === undefined) {
-    return base;
+  if (
+    overrides.distZipEnabled !== true &&
+    overrides.distZipDir === undefined &&
+    overrides.distZipFilename === undefined
+  ) {
+    return base === false
+      ? false
+      : {
+          ...base,
+          outFileName: normalizeRelativeOutputPath(base.outFileName, 'ZIP output file name'),
+        };
   }
 
   const baseConfig: DistZipConfig = base === false ? { outFileName: defaultFileName, outDir: 'dist-zip' } : base;
+  const outFileName = overrides.distZipFilename ?? baseConfig.outFileName;
 
   return {
     ...baseConfig,
     ...(overrides.distZipDir !== undefined ? { outDir: overrides.distZipDir } : {}),
-    ...(overrides.distZipFilename !== undefined ? { outFileName: overrides.distZipFilename } : {}),
+    outFileName: normalizeRelativeOutputPath(outFileName, 'ZIP output file name'),
   };
 }
 
@@ -92,14 +103,26 @@ export function applyVersionManifestOverride(
   }
 
   if (overrides.versionManifestEnabled !== true && overrides.versionFileTemplate === undefined) {
+    if (base !== false && base.versionFileTemplate !== undefined) {
+      return {
+        ...base,
+        versionFileTemplate: normalizeRelativeOutputPath(base.versionFileTemplate, 'VERSION file name template'),
+      };
+    }
+
     return base;
   }
 
   const baseConfig: VersionManifestConfig = base === false ? { enabled: true } : base;
+  const versionFileTemplate = overrides.versionFileTemplate ?? baseConfig.versionFileTemplate;
+  const normalizedVersionFileTemplate =
+    versionFileTemplate !== undefined
+      ? normalizeRelativeOutputPath(versionFileTemplate, 'VERSION file name template')
+      : undefined;
 
   return {
     ...baseConfig,
     enabled: true,
-    ...(overrides.versionFileTemplate !== undefined ? { versionFileTemplate: overrides.versionFileTemplate } : {}),
+    ...(normalizedVersionFileTemplate !== undefined ? { versionFileTemplate: normalizedVersionFileTemplate } : {}),
   };
 }

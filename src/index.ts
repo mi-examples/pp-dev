@@ -6,6 +6,7 @@ import { clientInjectionPlugin, miTopBarPlugin } from './plugins/index.js';
 import header from './banner/header.js';
 import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
+import { loadPPDevEnv } from './lib/env.js';
 import { getConfig, getPkg } from './config.js';
 import type { PPDevConfig } from './plugin.js';
 import {
@@ -16,7 +17,12 @@ import {
 } from './constants.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
-import { applyDistZipOverride, applyVersionManifestOverride, ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
+import {
+  applyDistZipOverride,
+  applyVersionManifestOverride,
+  ResolvedBuildCliOverrides,
+} from './lib/build-cli-overrides.js';
+import { createDefaultZipFileName } from './lib/output-path.js';
 
 export type { ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
 
@@ -157,12 +163,24 @@ function resolveRepositoryUrl(repository: unknown): string | undefined {
   return undefined;
 }
 
-export async function getViteConfig(overrides?: ResolvedBuildCliOverrides): Promise<InlineConfig> {
-  const pkg = getPkg();
+export interface ViteConfigEnvironment {
+  mode?: string;
+  root?: string;
+}
+
+export async function getViteConfig(
+  overrides?: ResolvedBuildCliOverrides,
+  environment: ViteConfigEnvironment = {},
+): Promise<InlineConfig> {
+  const projectRoot = environment.root ?? process.cwd();
+
+  loadPPDevEnv(environment.mode, projectRoot);
+
+  const pkg = getPkg(projectRoot);
 
   const templateName = pkg.name;
 
-  const ppDevConfig = await getConfig();
+  const ppDevConfig = await getConfig(projectRoot);
 
   validatePPDevConfig(ppDevConfig, templateName);
 
@@ -172,7 +190,7 @@ export async function getViteConfig(overrides?: ResolvedBuildCliOverrides): Prom
     normalizedPPDevConfig.distZip = applyDistZipOverride(
       normalizedPPDevConfig.distZip,
       overrides,
-      `${templateName}.zip`,
+      createDefaultZipFileName(templateName),
     );
     normalizedPPDevConfig.versionPlugin = applyVersionManifestOverride(normalizedPPDevConfig.versionPlugin, overrides);
   }
@@ -215,7 +233,7 @@ export async function getViteConfig(overrides?: ResolvedBuildCliOverrides): Prom
         typeof distZip === 'object'
           ? distZip
           : {
-              outFileName: `${templateName}.zip`,
+              outFileName: createDefaultZipFileName(templateName),
             },
       ),
       enforce: 'post',
@@ -322,8 +340,7 @@ function createBasePath(
  */
 export function withPPDev(
   nextjsConfig:
-    | NextConfig
-    | ((phase: string, nextConfig?: { defaultConfig?: any }) => NextConfig | Promise<NextConfig>),
+    NextConfig | ((phase: string, nextConfig?: { defaultConfig?: any }) => NextConfig | Promise<NextConfig>),
   ppDevConfig?: PPDevConfig,
 ) {
   return async (phase: string, nextConfig: { defaultConfig?: any } = {}): Promise<NextConfig> => {

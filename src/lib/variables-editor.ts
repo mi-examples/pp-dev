@@ -18,10 +18,11 @@ const KNOWN_TAG_TYPES = new Set(['text', 'select', 'multiselect', 'file', 'list'
 const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\s-]+$/;
 const MISSING_DEPS_ERROR = 'Dist service or MiAPI is not defined';
 
-// Routes are installed once for the lifetime of the shared internal Express app; restarting
-// the dev server (config watch) only swaps `current` to point at the fresh deps.
-let routesInstalled = false;
-let current: { distService?: DistService; miAPI: MiAPI } | undefined;
+interface VariablesEditorRouteState {
+  deps: { distService?: DistService; miAPI: MiAPI };
+}
+
+const routeStates = new WeakMap<Application, VariablesEditorRouteState>();
 
 /** `null` when the file is missing, unreadable, or not valid `{tags: [...]}`. */
 async function readSchema(distService: DistService | undefined): Promise<TemplateVariablesSchema | null> {
@@ -48,17 +49,21 @@ export function registerVariablesEditorRoutes(
   app: Application,
   deps: { distService?: DistService; miAPI: MiAPI },
 ): void {
-  current = deps;
+  const existing = routeStates.get(app);
 
-  if (routesInstalled) {
+  if (existing) {
+    existing.deps = deps;
+
     return;
   }
 
-  routesInstalled = true;
+  const current: VariablesEditorRouteState = { deps };
+
+  routeStates.set(app, current);
 
   // ── API: read the schema file ───────────────────────────────────────────────
   app.get('/@api/variables/schema', async (_req, res) => {
-    const { distService } = current!;
+    const { distService } = current.deps;
 
     if (!distService) {
       res.status(503).json({ error: MISSING_DEPS_ERROR });
@@ -90,7 +95,7 @@ export function registerVariablesEditorRoutes(
 
   // ── API: write the schema file ──────────────────────────────────────────────
   app.put('/@api/variables/schema', async (req, res) => {
-    const { distService } = current!;
+    const { distService } = current.deps;
 
     if (!distService) {
       res.status(503).json({ error: MISSING_DEPS_ERROR });
@@ -161,7 +166,9 @@ export function registerVariablesEditorRoutes(
       // MI's own "Create/Edit Variable" form blocks names outside this pattern; here it's a
       // warning, not a hard block, since this endpoint also has to accept legacy/imported data.
       if (!NAME_FORMAT_REGEX.test(tag.name)) {
-        warnings.push(`"${tag.name}" contains a character MI's own editor doesn't allow (only letters, digits, underscore, hyphen, and whitespace).`);
+        warnings.push(
+          `"${tag.name}" contains a character MI's own editor doesn't allow (only letters, digits, underscore, hyphen, and whitespace).`,
+        );
       }
     }
 
@@ -172,7 +179,7 @@ export function registerVariablesEditorRoutes(
 
   // ── API: read live values (+ schema, + the combined "what to show" view) ───
   app.get('/@api/variables/values', async (_req, res) => {
-    const { distService, miAPI } = current!;
+    const { distService, miAPI } = current.deps;
 
     try {
       const schema = await readSchema(distService);
@@ -190,7 +197,7 @@ export function registerVariablesEditorRoutes(
 
   // ── API: write live values (full replacement, matches MI's own PUT) ────────
   app.put('/@api/variables/values', async (req, res) => {
-    const { distService, miAPI } = current!;
+    const { distService, miAPI } = current.deps;
     const tags = req.body?.tags;
 
     if (
@@ -242,7 +249,7 @@ export function registerVariablesEditorRoutes(
   app.get(VARIABLES_EDITOR_PATH, (_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
-    res.end(getVariablesEditorHtml(current!.miAPI.isTemplateLess));
+    res.end(getVariablesEditorHtml(current.deps.miAPI.isTemplateLess));
   });
 }
 
@@ -389,14 +396,22 @@ textarea{resize:vertical;min-height:32px}
 <div class="app">
   <div class="toolbar">
     <span class="toolbar-title">🧩 Variables Editor</span>
-    ${templateLess ? '' : `<div class="tabs">
+    ${
+      templateLess
+        ? ''
+        : `<div class="tabs">
       <button class="tab" id="tab-schema" onclick="switchTab('schema')">Schema</button>
       <button class="tab" id="tab-values" onclick="switchTab('values')">Values</button>
-    </div>`}
+    </div>`
+    }
     ${templateLess ? '' : `<span class="ve-loading-indicator" id="loading-indicator" style="display:none"><span class="ve-loading-dot"></span>Refreshing…</span>`}
     <div class="toolbar-spacer"></div>
-    ${templateLess ? '' : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
-    <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`}
+    ${
+      templateLess
+        ? ''
+        : `<button class="btn btn-sm" onclick="refresh()">↻ Refresh</button>
+    <button class="btn btn-sm btn-primary" id="save-btn" onclick="save()">Save</button>`
+    }
     <div class="theme-switch" id="theme-switch">
       <button data-theme-choice="auto" aria-pressed="false" onclick="setTheme('auto')">Auto</button>
       <button data-theme-choice="dark" aria-pressed="false" onclick="setTheme('dark')">Dark</button>
@@ -463,7 +478,11 @@ const KNOWN_TAG_SOURCES = ['static','page','element','folder','segment','dataset
 // page_entity — populate their own option list, so additional_options doesn't apply there).
 const HAND_ENTERED_OPTION_SOURCES = ['static','segment','element','dataset_data'];
 // Matches MI's own "Create/Edit Variable" form: letters, digits, underscore, whitespace, hyphen.
-const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\s-]+$/;
+// Doubled backslash: this sits inside getVariablesEditorHtml()'s outer template literal, which
+// consumes one level of backslash-escaping when the .ts source is parsed — a bare \s here would
+// collapse to a literal "s", silently dropping whitespace from the allowed character class (see
+// the identical pitfall fixed for escapeJsAttr() below).
+const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\\s-]+$/;
 // Lets a link like /@pp-dev/variables-editor?tab=values open directly on that tab.
 function tabFromUrl() {
   return new URLSearchParams(window.location.search).get('tab') === 'values' ? 'values' : 'schema';
@@ -492,10 +511,12 @@ let activeTab = tabFromUrl();
 let schemaState = null;   // { exists, schema, raw, parseError }
 let valuesState = null;   // { schema, live, combined }
 let schemaRows = [];      // working copy of tags, edited in place
+const invalidAdditionalOptionsRows = new WeakSet();
 let valueRows = [];       // working copy of {name, value}
 let valuesRawMode = activeTab === 'values' && valuesJsonModeFromUrl();
 let rawMode = false;
 let dirty = false;
+let editSeq = 0;
 let banner = null;
 
 // Background-refresh bookkeeping, one pair of (loading flag, sequence counter) per tab: a
@@ -514,7 +535,11 @@ window.addEventListener('beforeunload', (e) => {
   if (dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
-function setDirty(v) { dirty = v; }
+function setDirty(v) {
+  dirty = v;
+
+  if (v) { editSeq += 1; }
+}
 
 function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -529,8 +554,22 @@ function escapeJsAttr(s) {
   return escapeHtml(String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"));
 }
 
-function showBanner(type, html) {
+function showBanner(type, html, preserveContent) {
   banner = { type, html };
+
+  if (preserveContent) {
+    const existingBanner = contentEl.querySelector(':scope > .banner');
+    const bannerEl = document.createElement('div');
+
+    if (existingBanner) { existingBanner.remove(); }
+
+    bannerEl.className = 'banner banner-' + type;
+    bannerEl.innerHTML = html;
+    contentEl.prepend(bannerEl);
+
+    return;
+  }
+
   render();
 }
 
@@ -548,22 +587,28 @@ function renderSkeleton() {
 }
 
 // ── Data loading ─────────────────────────────────────────────────────────────
-async function loadSchema() {
+async function loadSchema(seq) {
   const r = await fetch('/@api/variables/schema');
   const data = await r.json();
+
+  if (seq !== schemaSeq) { return; }
 
   schemaState = data;
   schemaRows = (data.schema && Array.isArray(data.schema.tags)) ? data.schema.tags.map((t) => Object.assign({}, t)) : [];
   rawMode = data.exists && !data.schema;
 }
 
-async function loadValues() {
+async function loadValues(seq) {
   const r = await fetch('/@api/variables/values');
 
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
 
-    valuesState = { schema: null, live: [], combined: [] };
+    if (seq !== valuesSeq) { return; }
+
+    // A save is a full replacement. Keep the state explicitly unavailable after a failed
+    // read so the user cannot accidentally submit an empty replacement set.
+    valuesState = null;
     valueRows = [];
     showBanner('error', escapeHtml(err.error || 'Failed to load values.'));
 
@@ -571,6 +616,8 @@ async function loadValues() {
   }
 
   const data = await r.json();
+
+  if (seq !== valuesSeq) { return; }
 
   valuesState = data;
   valueRows = (data.combined || []).map((e) => Object.assign({}, e));
@@ -586,7 +633,7 @@ function loadTabData(tab) {
 
     schemaLoading = true;
 
-    return loadSchema().then(() => {
+    return loadSchema(seq).then(() => {
       if (seq === schemaSeq) { schemaLoading = false; }
     });
   }
@@ -595,7 +642,7 @@ function loadTabData(tab) {
 
   valuesLoading = true;
 
-  return loadValues().then(() => {
+  return loadValues(seq).then(() => {
     if (seq === valuesSeq) { valuesLoading = false; }
   });
 }
@@ -1160,8 +1207,10 @@ function updateSchemaField(i, field, value) {
 function updateSchemaAdditionalOptions(i, text) {
   try {
     schemaRows[i].additional_options = text.trim() ? JSON.parse(text) : '';
+    invalidAdditionalOptionsRows.delete(schemaRows[i]);
   } catch {
-    schemaRows[i].additional_options = text; // keep raw text; server will reject on save if truly invalid
+    schemaRows[i].additional_options = text;
+    invalidAdditionalOptionsRows.add(schemaRows[i]);
   }
 
   setDirty(true);
@@ -1236,9 +1285,20 @@ async function saveSchema() {
   if (rawMode) {
     raw = document.getElementById('raw-editor').value;
   } else {
+    const invalidAdditionalOptionsIndex = schemaRows.findIndex((row) => invalidAdditionalOptionsRows.has(row));
+
+    if (invalidAdditionalOptionsIndex !== -1) {
+      const tagName = schemaRows[invalidAdditionalOptionsIndex].name || ('row ' + (invalidAdditionalOptionsIndex + 1));
+
+      showBanner('error', 'additional_options must be valid JSON for "' + escapeHtml(tagName) + '".');
+
+      return;
+    }
+
     raw = JSON.stringify(Object.assign({}, schemaState.schema, { tags: schemaRows }), null, 2);
   }
 
+  const saveEditSeq = editSeq;
   const r = await fetch('/@api/variables/schema', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1252,15 +1312,22 @@ async function saveSchema() {
     return;
   }
 
-  setDirty(false);
-
   const warnings = data.warnings || [];
-
-  showBanner(warnings.length ? 'warning' : 'success', warnings.length
+  const hasNewerEdits = editSeq !== saveEditSeq;
+  const message = warnings.length
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>'
-    : 'Schema saved.');
+    : 'Schema saved.';
 
-  await loadSchema();
+  if (hasNewerEdits) {
+    showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
+
+    return;
+  }
+
+  setDirty(false);
+  showBanner(warnings.length ? 'warning' : 'success', message);
+
+  await loadTabData('schema');
   render();
 }
 
@@ -1880,6 +1947,12 @@ function removeValueRow(i) {
 }
 
 async function saveValues() {
+  if (!valuesState) {
+    showBanner('error', 'Cannot save values until live variables have loaded successfully.');
+
+    return;
+  }
+
   let tags = valueRows;
 
   if (valuesRawMode) {
@@ -1894,6 +1967,7 @@ async function saveValues() {
     }
   }
 
+  const saveEditSeq = editSeq;
   const r = await fetch('/@api/variables/values', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1907,15 +1981,22 @@ async function saveValues() {
     return;
   }
 
-  setDirty(false);
-
   const warnings = data.warnings || [];
-
-  showBanner(warnings.length ? 'warning' : 'success', warnings.length
+  const hasNewerEdits = editSeq !== saveEditSeq;
+  const message = warnings.length
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w.message) + '</li>').join('') + '</ul>'
-    : 'Values saved.');
+    : 'Values saved.';
 
-  await loadValues();
+  if (hasNewerEdits) {
+    showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
+
+    return;
+  }
+
+  setDirty(false);
+  showBanner(warnings.length ? 'warning' : 'success', message);
+
+  await loadTabData('values');
   render();
 }
 

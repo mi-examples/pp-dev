@@ -1,7 +1,9 @@
 name: Beta Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [develop]
   # Manual re-run for releases that failed mid-way: `[skip ci]` release commits
   # never trigger the push event, and re-running a failed run pins the old SHA,
@@ -13,14 +15,22 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: write
   issues: write
   pull-requests: write
 
 jobs:
   release-beta:
-    # Guard manual runs: beta releases may only be dispatched from develop.
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/develop'
+    # Automatic releases require a successful push-triggered CI run on develop.
+    # Manual retries are restricted to develop and verify that its current SHA passed CI below.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'develop') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,6 +38,29 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Verify successful CI for manual release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ci_run_id="$(gh run list \
+            --workflow ci.yml \
+            --branch develop \
+            --commit "$GITHUB_SHA" \
+            --event push \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')"
+
+          if [[ -z "$ci_run_id" ]]; then
+            echo "No successful CI run found for develop commit $GITHUB_SHA"
+            exit 1
+          fi
+
+          echo "Verified successful CI run: $ci_run_id"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -61,4 +94,4 @@ jobs:
       - name: Release Beta
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+        run: npm run release

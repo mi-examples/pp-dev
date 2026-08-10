@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
-import type { Plugin } from 'vite';
+import type { Plugin, ResolvedConfig } from 'vite';
 import { versionPlugin } from '../../../src/plugins/version-plugin.js';
 
 function invokeCloseBundle(plugin: Plugin) {
@@ -26,6 +26,22 @@ function invokeCloseBundle(plugin: Plugin) {
   }
 }
 
+function invokeConfigResolved(plugin: Plugin, outDir: string) {
+  const hook = plugin.configResolved;
+
+  if (!hook) {
+    return;
+  }
+
+  const config = { build: { outDir } } as ResolvedConfig;
+
+  if (typeof hook === 'function') {
+    hook(config);
+  } else if (typeof hook === 'object' && hook !== null && 'handler' in hook) {
+    hook.handler(config);
+  }
+}
+
 describe('versionPlugin', () => {
   let tempDir: string;
   const originalCwd = process.cwd();
@@ -41,6 +57,24 @@ describe('versionPlugin', () => {
   });
 
   describe('closeBundle', () => {
+    it('writes manifests to the resolved Vite outDir', () => {
+      const configuredOutDir = join(tempDir, 'dist');
+      const resolvedOutDir = join(tempDir, 'custom-build');
+      const plugin = versionPlugin({
+        outDir: configuredOutDir,
+        packageVersion: '1.2.3',
+      });
+
+      mkdirSync(resolvedOutDir, { recursive: true });
+      writeFileSync(join(resolvedOutDir, 'index.html'), '<html>custom</html>', 'utf-8');
+
+      invokeConfigResolved(plugin, resolvedOutDir);
+      invokeCloseBundle(plugin);
+
+      expect(existsSync(join(resolvedOutDir, 'BUILD-MANIFEST.json'))).toBe(true);
+      expect(existsSync(join(configuredOutDir, 'BUILD-MANIFEST.json'))).toBe(false);
+    });
+
     it('should create VERSION JSON with version, date, checksum, and files', () => {
       const outDir = join(tempDir, 'dist');
 

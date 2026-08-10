@@ -15,6 +15,7 @@ import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
+import { createDefaultZipFileName, normalizeRelativeOutputPath } from './lib/output-path.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -230,10 +231,13 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
   if (zipCfg === false) {
     distZip = false;
   } else if (zipCfg === true || zipCfg === undefined) {
-    distZip = { outFileName: `${resolvedName}.zip`, outDir: 'dist-zip' };
+    distZip = { outFileName: createDefaultZipFileName(resolvedName), outDir: 'dist-zip' };
   } else {
     distZip = {
-      outFileName: zipCfg.fileName ?? `${resolvedName}.zip`,
+      outFileName: normalizeRelativeOutputPath(
+        zipCfg.fileName ?? createDefaultZipFileName(resolvedName),
+        'build.zip.fileName',
+      ),
       outDir: zipCfg.outDir ?? 'dist-zip',
       ...(zipCfg.inDir ? { inDir: zipCfg.inDir } : {}),
     };
@@ -248,7 +252,10 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
     versionPlugin = { versionFileTemplate: defaultVersionFileTemplate, enabled: true };
   } else {
     versionPlugin = {
-      versionFileTemplate: vfCfg.fileNameTemplate ?? defaultVersionFileTemplate,
+      versionFileTemplate: normalizeRelativeOutputPath(
+        vfCfg.fileNameTemplate ?? defaultVersionFileTemplate,
+        'build.versionFile.fileNameTemplate',
+      ),
       enabled: vfCfg.enabled ?? true,
     };
   }
@@ -317,6 +324,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     enableProxyCache,
     proxyCacheTTL,
     disableSSLValidation,
+    outDir,
     distZip,
     versionPlugin,
     syncBackupsDir,
@@ -609,26 +617,26 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           }
         });
 
-        const distService =
-          distZip !== false
-            ? new DistService(
-                templateName,
-                Object.assign(
-                  { backupDir: syncBackupsDir },
-                  typeof distZip === 'object'
-                    ? {
-                        distZipFolder: distZip.outDir,
-                        distZipFilename: distZip.outFileName,
-                      }
-                    : undefined,
-                  typeof versionPlugin === 'object'
-                    ? {
-                        versionFileTemplate: versionPlugin.versionFileTemplate,
-                      }
-                    : undefined,
-                ),
-              )
-            : undefined;
+        const distService = new DistService(
+          templateName,
+          Object.assign(
+            {
+              backupFolder: syncBackupsDir,
+              buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
+            },
+            typeof distZip === 'object'
+              ? {
+                  distZipFolder: distZip.outDir,
+                  distZipFilename: distZip.outFileName,
+                }
+              : undefined,
+            typeof versionPlugin === 'object'
+              ? {
+                  versionFileTemplate: versionPlugin.versionFileTemplate,
+                }
+              : undefined,
+          ),
+        );
 
         new ClientService(server, { distService, miAPI: mi });
         registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
