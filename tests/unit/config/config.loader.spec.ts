@@ -157,6 +157,42 @@ describe('Config Loader', () => {
     });
   });
 
+  describe('explicit project root', () => {
+    it('loads config and package metadata from the requested project instead of cwd', async () => {
+      const projectRoot = join(testDir, 'apps', 'target-app');
+
+      mkdirSync(projectRoot, { recursive: true });
+      writeFileSync(
+        join(testDir, 'package.json'),
+        JSON.stringify({
+          name: 'workspace-root',
+          'pp-dev': { mi: { url: 'https://workspace.example.com' } },
+        }),
+      );
+      writeFileSync(
+        join(projectRoot, 'package.json'),
+        JSON.stringify({
+          name: 'target-app',
+          'pp-dev': { mi: { url: 'https://target.example.com' } },
+        }),
+      );
+
+      const { getConfig, getPkg, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const workspaceConfig = await getConfig();
+      const workspacePkg = getPkg();
+      const config = await getConfig(projectRoot);
+      const pkg = getPkg(projectRoot);
+
+      expect(workspaceConfig.mi?.url).toBe('https://workspace.example.com');
+      expect(workspacePkg.name).toBe('workspace-root');
+      expect(config.mi?.url).toBe('https://target.example.com');
+      expect(pkg.name).toBe('target-app');
+    });
+  });
+
   describe('Config Caching', () => {
     it('should cache package.json reads', async () => {
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', version: '1.0.0' }));

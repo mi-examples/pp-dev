@@ -26,8 +26,10 @@ jobs:
         run: |
           TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
 
-          if [[ "$TAG" != v* ]]; then
-            echo "This workflow must be run against a version tag (e.g. v1.0.0), or pass the 'tag' input when dispatching from a branch."
+          # Prerelease identifiers follow SemVer: a purely-numeric identifier must not have a
+          # leading zero (e.g. "01" is invalid), but an identifier containing a letter/hyphen may.
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Tag must be a valid SemVer value prefixed with v (for example, v1.0.0 or v1.0.0-beta.2)."
             exit 1
           fi
 
@@ -48,9 +50,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.version.outputs.git_tag }}
+          ref: refs/tags/${{ steps.version.outputs.git_tag }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify release tag
+        env:
+          GIT_TAG: ${{ steps.version.outputs.git_tag }}
+        run: git show-ref --verify --quiet "refs/tags/$GIT_TAG"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -77,13 +84,19 @@ jobs:
       # chore(release) commit where package.json already carries the tag's version;
       # plain `npm version` fails with "Version not changed" there.
       - name: Update package version
-        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      # Pinned (not @latest) so the OIDC trusted-publishing toolchain is reproducible and
+      # reviewed — bump this deliberately via a dependency update, not implicitly on each run.
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest --no-audit
+        run: npm install -g npm@11.17.0 --no-audit
 
       - name: Publish to npm
-        run: npm publish --access public --tag ${{ steps.version.outputs.tag }}
+        env:
+          NPM_DIST_TAG: ${{ steps.version.outputs.tag }}
+        run: npm publish --access public --tag "$NPM_DIST_TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

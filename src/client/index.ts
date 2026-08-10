@@ -7,20 +7,11 @@ import { createPanelStateController, type PanelStateController } from './panel-s
 import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
 import { initTheme } from './theme.js';
+import { createPopupElement, type InfoPopupOptions } from './popup.js';
 
 // Applied unconditionally (even if the panel itself is hidden) — this is what makes the
 // override affect the whole injected panel, not just its own markup.
 initTheme();
-
-interface InfoPopupOptions {
-  title: string;
-  content: string;
-  style?: string;
-  className?: string;
-  duration?: number;
-  onClose?: () => void;
-  type?: 'success' | 'danger' | 'info' | 'warning';
-}
 
 interface SyncActionRequiredPayload {
   requestId: string;
@@ -50,9 +41,6 @@ const activeConfirmModals = new Map<
   { resolve: (value: boolean) => void; onKeyDown: (event: KeyboardEvent) => void }
 >();
 
-const ICON_SIZE = 16;
-const CLOSE_ICON_SIZE = 12;
-
 function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
   const entry = activeConfirmModals.get(overlay);
 
@@ -65,51 +53,6 @@ function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
   activeConfirmModals.delete(overlay);
   overlay.remove();
   entry.resolve(result);
-}
-
-const TYPE_ICONS: Record<NonNullable<InfoPopupOptions['type']>, string> = {
-  success: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`,
-  danger: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
-  warning: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
-  info: `<svg viewBox="0 0 24 24" width="${ICON_SIZE}" height="${ICON_SIZE}" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
-};
-
-function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
-  const $popup = document.createElement('div');
-
-  $popup.classList.add('pp-dev-info-namespace');
-
-  const typeClass = opts.type ? `pp-dev-info__popup--${opts.type}` : '';
-  const iconHtml = opts.type ? `<div class="pp-dev-info__popup-title-icon">${TYPE_ICONS[opts.type]}</div>` : '';
-
-  const template = `
-    <div class="pp-dev-info__popup ${typeClass} ${opts.className || ''}" style="${opts.style || ''}">
-      <div class="pp-dev-info__popup-title">
-        ${iconHtml}
-        <div class="pp-dev-info__popup-title-text">${opts.title}</div>
-        <div class="pp-dev-info__popup-title-close">
-          <svg
-            viewBox="0 0 24 24"
-            width="${CLOSE_ICON_SIZE}"
-            height="${CLOSE_ICON_SIZE}"
-            stroke="currentColor"
-            stroke-width="1.5"
-            fill="none"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M18 6L6 18"></path>
-            <path d="M6 6l12 12"></path>
-          </svg>
-        </div>
-      </div>
-      <div class="pp-dev-info__popup-content">${opts.content}</div>
-    </div>
-  `;
-
-  $popup.innerHTML = template;
-
-  return $popup;
 }
 
 let panelController: PanelStateController | null = null;
@@ -489,7 +432,7 @@ if (hot) {
         } else if ('syncedAt' in payload && typeof payload.syncedAt !== 'undefined') {
           infoPopup({
             title: 'Sync success',
-            content: `Synced at ${new Date(payload.syncedAt).toLocaleString()}.<br />Backup filename: ${
+            content: `Synced at ${new Date(payload.syncedAt).toLocaleString()}.\nBackup filename: ${
               payload.backupFilename
             }`,
             type: 'success',

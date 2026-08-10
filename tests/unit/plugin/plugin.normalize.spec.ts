@@ -187,6 +187,24 @@ describe('normalizePPDevConfig', () => {
       const n = normalizePPDevConfig({ app: { name: 'custom-name' }, build: { zip: true } }, 'fallback');
       expect((n.distZip as any).outFileName).toBe('custom-name.zip');
     });
+
+    it('creates a flat default zip filename for a scoped package name', () => {
+      const n = normalizePPDevConfig({ build: { zip: true } }, '@scope/my-app');
+
+      expect((n.distZip as any).outFileName).toBe('scope-my-app.zip');
+    });
+
+    it('preserves a custom zip path inside the output directory', () => {
+      const n = normalizePPDevConfig({ build: { zip: { fileName: 'releases/custom.zip' } } }, 'my-app');
+
+      expect((n.distZip as any).outFileName).toBe('releases/custom.zip');
+    });
+
+    it('rejects a custom zip path outside the output directory', () => {
+      expect(() => normalizePPDevConfig({ build: { zip: { fileName: '../package.json' } } }, 'my-app')).toThrow(
+        'build.zip.fileName must stay inside its output directory',
+      );
+    });
   });
 
   describe('build.versionFile normalization', () => {
@@ -206,6 +224,18 @@ describe('normalizePPDevConfig', () => {
         'app',
       );
       expect(n.versionPlugin).toEqual({ versionFileTemplate: 'CUSTOM.json', enabled: false });
+    });
+
+    it('preserves a nested VERSION filename template inside the build directory', () => {
+      const n = normalizePPDevConfig({ build: { versionFile: { fileNameTemplate: 'metadata/VERSION.json' } } }, 'app');
+
+      expect(n.versionPlugin).toMatchObject({ versionFileTemplate: 'metadata/VERSION.json' });
+    });
+
+    it('rejects a VERSION filename template outside the build directory', () => {
+      expect(() =>
+        normalizePPDevConfig({ build: { versionFile: { fileNameTemplate: '..\\package.json' } } }, 'app'),
+      ).toThrow('build.versionFile.fileNameTemplate must stay inside its output directory');
     });
   });
 
@@ -236,10 +266,7 @@ describe('normalizePPDevConfig', () => {
     });
 
     it('maps explicit devPanel options', () => {
-      const n = normalizePPDevConfig(
-        { devPanel: { position: 'top-left', hidden: true, autoHide: true } },
-        'app',
-      );
+      const n = normalizePPDevConfig({ devPanel: { position: 'top-left', hidden: true, autoHide: true } }, 'app');
       expect(n.devPanelPosition).toBe('top-left');
       expect(n.devPanelHidden).toBe(true);
       expect(n.devPanelAutoHide).toBe(true);
@@ -298,9 +325,9 @@ describe('validatePPDevConfig', () => {
   });
 
   it('throws if mi.include is set with embedding mode', () => {
-    expect(() =>
-      validatePPDevConfig({ mi: { mode: 'embedding', include: 'top-bar' } }, 'app'),
-    ).toThrow('mi.include requires mi.mode to be "standalone"');
+    expect(() => validatePPDevConfig({ mi: { mode: 'embedding', include: 'top-bar' } }, 'app')).toThrow(
+      'mi.include requires mi.mode to be "standalone"',
+    );
   });
 
   it('throws if mi.url missing + mode=embedding', () => {
@@ -312,7 +339,9 @@ describe('validatePPDevConfig', () => {
   });
 
   it('warns (does not throw) if mi.url missing + standalone + page', () => {
-    expect(() => validatePPDevConfig({ mi: { mode: 'standalone' }, app: { type: 'page', id: 1 } }, 'app')).not.toThrow();
+    expect(() =>
+      validatePPDevConfig({ mi: { mode: 'standalone' }, app: { type: 'page', id: 1 } }, 'app'),
+    ).not.toThrow();
   });
 
   it('throws if app.type=template without app.id', () => {
@@ -323,10 +352,7 @@ describe('validatePPDevConfig', () => {
 
   it('throws if app.type=page + standalone without app.id', () => {
     expect(() =>
-      validatePPDevConfig(
-        { mi: { url: 'https://mi.example.com', mode: 'standalone' }, app: { type: 'page' } },
-        'app',
-      ),
+      validatePPDevConfig({ mi: { url: 'https://mi.example.com', mode: 'standalone' }, app: { type: 'page' } }, 'app'),
     ).toThrow('app.id is required when backend page data is loaded for app.type "page"');
   });
 

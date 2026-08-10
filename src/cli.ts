@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
 import { watch } from 'chokidar';
 import { cac } from 'cac';
-import { ServerOptions, BuildOptions, LogLevel, InlineConfig, loadEnv } from 'vite';
+import { ServerOptions, BuildOptions, LogLevel, InlineConfig } from 'vite';
 import { VERSION } from './constants.js';
 import { bindShortcuts } from './shortcuts.js';
 import { getViteConfig } from './index.js';
@@ -49,6 +49,8 @@ import {
 import { writeBuildVersionManifest } from './lib/version-manifest.js';
 import { zipDirectoryToBuffer } from './lib/helpers/zip.helper.js';
 import { runNextBuildProcess } from './lib/next-build-runner.js';
+import { createDefaultZipFileName, resolveOutputFilePath } from './lib/output-path.js';
+import { loadPPDevEnv } from './lib/env.js';
 
 const cli = cac('pp-dev');
 
@@ -396,25 +398,19 @@ cli
         // output structure is preserved even after bundling so require()
         // is ok here
         const { createServer } = await import('vite');
+        const mode = options.mode || 'development';
+        const envDir = path.resolve(process.cwd(), root ?? '.');
+
+        loadPPDevEnv(mode, envDir);
 
         const configFromFile = await loadConfigFromFile(
-          { mode: options.mode || 'development', command: 'serve' },
+          { mode, command: 'serve' },
           options.config,
           root,
           options.logLevel,
         );
 
-        let config = await getViteConfig();
-
-        const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
-
-        if (envVars) {
-          Object.keys(envVars).forEach((key) => {
-            if (key.startsWith('MI_')) {
-              process.env[key] = envVars[key];
-            }
-          });
-        }
+        let config = await getViteConfig(undefined, { mode, root: envDir });
 
         if (configFromFile) {
           const { plugins, ...fileConfig } = configFromFile.config;
@@ -459,7 +455,7 @@ cli
 
         server.printUrls();
 
-        const serveConfig = await getConfig();
+        const serveConfig = await getConfig(envDir);
 
         if (serveConfig.inspector?.enabled !== false) {
           const localUrl = server.resolvedUrls?.local[0];
@@ -650,20 +646,9 @@ cli
           (importConfig as any).default;
 
         const opts = cleanOptions(options);
-
-        // Load environment variables
-        const envVars = loadEnv(options.mode || 'development', root ?? process.cwd(), '');
-
-        if (envVars) {
-          Object.keys(envVars).forEach((key) => {
-            if (key.startsWith('MI_')) {
-              process.env[key] = envVars[key];
-            }
-          });
-        }
-
-        // Load project root
         const projectRoot = root ? join(process.cwd(), root) : process.cwd();
+
+        loadPPDevEnv(options.mode || 'development', projectRoot);
 
         logger.info(projectRoot);
 
@@ -677,7 +662,7 @@ cli
         if (Object.keys(ppDevConfig).length === 0) {
           try {
             const { getConfig } = await import('./config.js');
-            const standaloneConfig = await getConfig();
+            const standaloneConfig = await getConfig(projectRoot);
 
             if (Object.keys(standaloneConfig).length > 0) {
               ppDevConfig = standaloneConfig;
@@ -700,7 +685,7 @@ cli
 
         try {
           const { getPkg } = await import('./config.js');
-          const pkg = getPkg();
+          const pkg = getPkg(projectRoot);
 
           templateName = pkg.name;
         } catch {
@@ -1185,17 +1170,16 @@ cli
             // Fall back to defaults if the project package.json is unreadable.
           }
 
-          const distService =
-            _normalized.distZip !== false
-              ? new DistService(templateName ?? basename(projectRoot), {
-                  nextBuild: {
-                    projectRoot,
-                    distDir: nextExportDir,
-                    packageVersion: nextPackageVersion,
-                    packageRepositoryUrl: nextPackageRepositoryUrl,
-                  },
-                })
-              : undefined;
+          const distService = new DistService(templateName ?? basename(projectRoot), {
+            root: projectRoot,
+            backupFolder: path.resolve(projectRoot, _normalized.syncBackupsDir),
+            nextBuild: {
+              projectRoot,
+              distDir: nextExportDir,
+              packageVersion: nextPackageVersion,
+              packageRepositoryUrl: nextPackageRepositoryUrl,
+            },
+          });
 
           // Minimal ViteDevServer shape consumed by ClientService (`ws` + the v7 flag).
           const clientServiceServer = {
@@ -1453,7 +1437,10 @@ cli
     '--distZip',
     `[boolean] pack build output into a ZIP archive; use --no-distZip to disable (default: pp-dev config build.zip, or true). Env: PP_DEV_DIST_ZIP`,
   )
-  .option('--distZipDir <dir>', `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`)
+  .option(
+    '--distZipDir <dir>',
+    `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`,
+  )
   .option(
     '--distZipFilename <filename>',
     `[string] override the ZIP output file name (default: '<app-name>.zip'). Env: PP_DEV_DIST_ZIP_FILENAME`,
@@ -1473,14 +1460,19 @@ cli
     const cliOverrides = resolveBuildCliOverrides(options);
 
     try {
+      const mode = options.mode || 'production';
+      const envDir = path.resolve(process.cwd(), root ?? '.');
+
+      loadPPDevEnv(mode, envDir);
+
       const configFromFile = await loadConfigFromFile(
-        { mode: options.mode || 'production', command: 'build' },
+        { mode, command: 'build' },
         options.config,
         root,
         options.logLevel,
       );
 
-      let config = await getViteConfig(cliOverrides);
+      let config = await getViteConfig(cliOverrides, { mode, root: envDir });
 
       if (configFromFile) {
         const { plugins, ...fileConfig } = configFromFile.config;
@@ -1554,7 +1546,10 @@ cli
     '--distZip',
     `[boolean] pack build output into a ZIP archive; use --no-distZip to disable (default: pp-dev config build.zip, or true). Env: PP_DEV_DIST_ZIP`,
   )
-  .option('--distZipDir <dir>', `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`)
+  .option(
+    '--distZipDir <dir>',
+    `[string] override the ZIP output directory (default: 'dist-zip'). Env: PP_DEV_DIST_ZIP_DIR`,
+  )
   .option(
     '--distZipFilename <filename>',
     `[string] override the ZIP output file name (default: '<app-name>.zip'). Env: PP_DEV_DIST_ZIP_FILENAME`,
@@ -1580,6 +1575,8 @@ cli
       process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
 
       try {
+        loadPPDevEnv(options.mode || 'production', projectRoot);
+
         const { constants } = await safeNextImport();
 
         const importConfig = await import('next/dist/server/config.js');
@@ -1597,7 +1594,7 @@ cli
         if (Object.keys(ppDevConfig).length === 0) {
           const { getConfig } = await import('./config.js');
 
-          ppDevConfig = await getConfig();
+          ppDevConfig = await getConfig(projectRoot);
         }
 
         let templateName: string;
@@ -1605,13 +1602,13 @@ cli
         try {
           const { getPkg } = await import('./config.js');
 
-          templateName = getPkg().name;
+          templateName = getPkg(projectRoot).name;
         } catch {
           templateName = path.basename(projectRoot);
         }
 
         const normalized = normalizePPDevConfig(ppDevConfig, templateName);
-        const distZip = applyDistZipOverride(normalized.distZip, cliOverrides, `${templateName}.zip`);
+        const distZip = applyDistZipOverride(normalized.distZip, cliOverrides, createDefaultZipFileName(templateName));
         const versionPlugin = applyVersionManifestOverride(normalized.versionPlugin, cliOverrides);
 
         logger.info(colors.cyan('[pp-dev] Running `next build`...'));
@@ -1648,9 +1645,9 @@ cli
         if (distZip !== false) {
           const zipOutDir = path.resolve(projectRoot, distZip.outDir);
           const zipSourceDir = distZip.inDir ? path.resolve(outDir, distZip.inDir) : outDir;
-          const zipFile = path.join(zipOutDir, distZip.outFileName);
+          const zipFile = resolveOutputFilePath(zipOutDir, distZip.outFileName, 'ZIP output file name');
 
-          fs.mkdirSync(zipOutDir, { recursive: true });
+          fs.mkdirSync(path.dirname(zipFile), { recursive: true });
 
           const buffer = await zipDirectoryToBuffer(zipSourceDir);
 
@@ -1760,14 +1757,19 @@ cli
   .action(async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
     try {
+      const mode = options.mode || 'production';
+      const envDir = path.resolve(process.cwd(), root ?? '.');
+
+      loadPPDevEnv(mode, envDir);
+
       const configFromFile = await loadConfigFromFile(
-        { mode: options.mode || 'production', command: 'build' },
+        { mode, command: 'build' },
         options.config,
         root,
         options.logLevel,
       );
 
-      let config = await getViteConfig();
+      let config = await getViteConfig(undefined, { mode, root: envDir });
 
       if (configFromFile) {
         const { plugins, ...fileConfig } = configFromFile.config;
@@ -1817,14 +1819,19 @@ cli
       filterDuplicateOptions(options);
 
       try {
+        const mode = options.mode || 'production';
+        const envDir = path.resolve(process.cwd(), root ?? '.');
+
+        loadPPDevEnv(mode, envDir);
+
         const configFromFile = await loadConfigFromFile(
-          { mode: options.mode || 'production', command: 'build' },
+          { mode, command: 'build' },
           options.config,
           root,
           options.logLevel,
         );
 
-        let config = await getViteConfig();
+        let config = await getViteConfig(undefined, { mode, root: envDir });
 
         if (configFromFile) {
           const { plugins, ...fileConfig } = configFromFile.config;

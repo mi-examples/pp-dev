@@ -53,8 +53,8 @@ $pp-dev-light-colors: (
   danger: #ac2b2b,
   light: #f8f9fa,
   dark: #343a40,
-  "white": #ffffff,
-  "black": #000000,
+  'white': #ffffff,
+  'black': #000000,
 );
 $pp-dev-dark-colors: (
   primary: #2a8db5,
@@ -65,8 +65,8 @@ $pp-dev-dark-colors: (
   danger: #e05252,
   light: #343a40,
   dark: #f8f9fa,
-  "white": #000000,
-  "black": #ffffff,
+  'white': #000000,
+  'black': #ffffff,
 );
 
 @mixin pp-dev-theme-colors($colors) {
@@ -170,12 +170,15 @@ $pp-dev-dark-colors: (
 
       &-close {
         cursor: pointer;
-        width: 12px;
-        height: 12px;
+        min-width: 24px;
+        min-height: 24px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-top: 2px;
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
         color: rgba(34, 34, 34, 0.64);
         border-radius: 2px;
         transition: color 0.2s ease;
@@ -183,6 +186,11 @@ $pp-dev-dark-colors: (
 
         &:hover {
           color: var(--pp-dev-info-color-dark);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--pp-dev-info-popup-accent);
+          outline-offset: 1px;
         }
 
         svg {
@@ -205,6 +213,7 @@ $pp-dev-dark-colors: (
       line-height: 18px;
       text-align: left;
       word-break: break-word;
+      white-space: pre-line;
     }
 
     &--success {
@@ -819,7 +828,9 @@ $pp-dev-dark-colors: (
 
           &.pp-dev-info--auto-hide:not(.is-peeking):not(.is-dragging) {
             transform: translateX(calc(100% - $pp-dev-peek));
-            box-shadow: map.get($c, shadow), inset $pp-dev-peek 0 0 0 var(--pp-dev-info-color-primary);
+            box-shadow:
+              map.get($c, shadow),
+              inset $pp-dev-peek 0 0 0 var(--pp-dev-info-color-primary);
 
             // Extended invisible hover zone on the inner side of the 4px strip
             &::after {
@@ -850,7 +861,9 @@ $pp-dev-dark-colors: (
 
           &.pp-dev-info--auto-hide:not(.is-peeking):not(.is-dragging) {
             transform: translateX(calc(-100% + $pp-dev-peek));
-            box-shadow: map.get($c, shadow), inset (-$pp-dev-peek) 0 0 0 var(--pp-dev-info-color-primary);
+            box-shadow:
+              map.get($c, shadow),
+              inset (-$pp-dev-peek) 0 0 0 var(--pp-dev-info-color-primary);
 
             &::after {
               content: '';

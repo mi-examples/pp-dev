@@ -1,6 +1,14 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 
 const testType = process.env.TEST_TYPE;
+
+async function waitForPanelTransition(minimizeBtn: Locator): Promise<void> {
+  await minimizeBtn.evaluate(async (button) => {
+    const panel = button.closest('.pp-dev-info');
+
+    await Promise.all(panel?.getAnimations().map((animation) => animation.finished) ?? []);
+  });
+}
 
 test.describe('Toolbar Minimize Functionality', () => {
   // Skip toolbar tests for Next.js
@@ -52,6 +60,8 @@ test.describe('Toolbar Minimize Functionality', () => {
     // Minimize
     await minimizeBtn.click({ force: true });
     await expect(toolbar).toHaveClass(/closed/);
+
+    await waitForPanelTransition(minimizeBtn);
 
     // Restore
     await minimizeBtn.click({ force: true });
@@ -120,6 +130,10 @@ test.describe('Toolbar Minimize Functionality', () => {
 
     // SVG should have 'closed' class
     await expect(minimizeSvg).toHaveClass(/closed/);
+
+    // The panel moves while minimizing. Wait for that transition so the next mouse click
+    // targets the button at its settled position instead of coordinates it has already left.
+    await waitForPanelTransition(minimizeBtn);
 
     // Click to restore
     await minimizeBtn.click({ force: true });
