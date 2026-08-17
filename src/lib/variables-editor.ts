@@ -278,6 +278,7 @@ try {
   --border:#d7dae0;--border2:#c2c6cd;
   --text:#1a1a1e;--text2:#54566b;--text3:#8a8c9c;
   --accent:#4f46e5;--accent2:#7c3aed;
+  --m-accent:var(--accent);--m-bg2:var(--bg2);
   --green:#16a34a;--red:#dc2626;--yellow:#a16207;--blue:#2563eb;
   --btn-primary-fg:#ffffff;
   --font-mono:'Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
@@ -288,6 +289,7 @@ try {
   --border:#3a3a46;--border2:#4a4a58;
   --text:#e0e0f0;--text2:#a0a0b8;--text3:#606078;
   --accent:#6e8efb;--accent2:#a78bfa;
+  --m-accent:var(--accent);--m-bg2:var(--bg2);
   --green:#4ade80;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;
   --btn-primary-fg:#0d0d10;
 }
@@ -297,6 +299,7 @@ try {
     --border:#3a3a46;--border2:#4a4a58;
     --text:#e0e0f0;--text2:#a0a0b8;--text3:#606078;
     --accent:#6e8efb;--accent2:#a78bfa;
+    --m-accent:var(--accent);--m-bg2:var(--bg2);
     --green:#4ade80;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;
     --btn-primary-fg:#0d0d10;
   }
@@ -326,65 +329,152 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .btn:hover{background:var(--bg4);border-color:var(--border2)}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:var(--btn-primary-fg);font-weight:600}
 .btn-primary:hover{opacity:.9;background:var(--accent)}
-.btn-sm{padding:3px 8px;font-size:11px}
+.btn-sm{padding:5px 8px;font-size:11px;min-width:30px;min-height:30px;}
 .content{flex:1;overflow:auto;padding:14px}
 .banner{margin-bottom:12px;padding:8px 12px;border-radius:4px;font-size:12px}
 .banner-warning{background:color-mix(in srgb, var(--yellow) 15%, var(--bg));color:var(--yellow);border:1px solid color-mix(in srgb, var(--yellow) 40%, var(--bg))}
 .banner-error{background:color-mix(in srgb, var(--red) 15%, var(--bg));color:var(--red);border:1px solid color-mix(in srgb, var(--red) 40%, var(--bg))}
 .banner-success{background:color-mix(in srgb, var(--green) 15%, var(--bg));color:var(--green);border:1px solid color-mix(in srgb, var(--green) 40%, var(--bg))}
 .banner ul{margin:6px 0 0 18px}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:6px 8px;color:var(--text2);border-bottom:1px solid var(--border);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
-td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+thead{border-radius:6px 6px 0 0;overflow:hidden}
+thead th{padding:8px 8px 6px}
+th{text-align:left;padding:6px 8px;color:var(--text2);border-bottom:1px solid var(--border);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:var(--bg2)}
+thead th:first-child{border-radius:6px 0 0 0}
+thead th:last-child{border-radius:0 6px 0 0}
+td{padding:12px 8px;;vertical-align:top}
 tr:hover td{background:var(--bg2)}
-input[type=text],select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;font-family:var(--font-mono);outline:none}
+input[type=text],select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;font-family:var(--font-mono);outline:none;min-height:30px;}
 input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent)}
-input[type=color]{width:40px;height:26px;padding:0;border:1px solid var(--border);border-radius:4px;background:var(--bg3)}
+input[type=color]{max-width:150px;width:100%;height:30px;padding:0;border:1px solid var(--border);border-radius:4px;background:var(--bg3)}
 textarea{resize:vertical;min-height:32px}
-.cell-textarea{min-height:56px}
+.cell-textarea{min-height:30px;height:30px;resize:none;overflow:hidden;line-height:1.8;}
 .col-name{width:180px}
 .col-type{width:130px}
 .col-source{width:110px}
 .col-actions{width:70px;text-align:right}
-.col-expand{width:26px;padding-left:8px!important;padding-right:0!important}
-.ve-expand-btn{width:22px;height:22px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1;color:var(--text2)}
+.col-expand{width:48px;padding-left:0px;padding-right:0!important}
+.ve-expand-cell{display:flex;align-items:center;gap:2px}
+.ve-schema-row-handle{flex-shrink:0;width:18px;height:22px;display:inline-flex;align-items:center;justify-content:center;cursor:grab;color:var(--text3);user-select:none;border:none;background:transparent;font-size:20px;line-height:1;padding:0;letter-spacing:-2px}
+.ve-schema-row-handle:hover{color:var(--text2)}
+.ve-schema-row-handle:active{cursor:grabbing}
+tr.schema-row.is-dragging td,tr.details-row.is-dragging td{opacity:.45}
+tr.schema-row.is-drop-target td,tr.details-row.is-drop-target td{box-shadow:inset 0 2px 0 var(--accent)}
+.ve-expand-btn{width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1;color:var(--text2)}
 .ve-expand-btn:hover{color:var(--text)}
 .raw-toggle{margin-bottom:10px}
 .raw-editor{width:100%;height:min(60vh,600px);font-family:var(--font-mono);font-size:12px;white-space:pre}
-.hint{color:var(--text3);font-size:11px;margin-top:4px}
-.details-row td{background:var(--bg2);padding:8px}
-.details-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
-.details-grid label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:2px}
-.badge{font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg4);color:var(--text3)}
+.hint{color:var(--text3);font-size:11px;}
+.details-row td{background:var(--bg2);padding:16px}
+.details-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.details-grid-item-wrapper{display:flex;gap:12px;grid-column:1/-1;}
+.details-grid label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px}
+.badge{font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg4);color:var(--text3);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.badge-source-dataset{background:color-mix(in srgb, var(--yellow) 22%, var(--bg));color:var(--yellow)}
+.badge-source-static{background:var(--bg4);color:var(--text3)}
+.ve-values-layout{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 115px);min-height:320px}
+.ve-values-detail > .ve-values-layout{height:100%;min-height:0}
+.ve-values-nav{width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;min-height:0}
+.ve-values-nav-list{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0}
+.ve-values-nav-item{display:flex;align-items:center;gap:8px;min-height:30px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;text-align:left;width:100%;font-family:var(--font-ui);font-size:12px}
+.ve-values-nav-item:hover{border-color:var(--border2);background:var(--bg3)}
+.ve-values-nav-item.is-active{border-color:var(--m-accent);background:color-mix(in srgb, var(--m-accent) 12%, var(--m-bg2))}
+.ve-values-nav-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.ve-values-nav-item.is-active .ve-values-nav-dot{background:var(--m-accent)}
+.ve-values-nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono)}
+.ve-values-nav-badges{display:flex;gap:4px;flex-shrink:0;align-items:center}
+.ve-values-nav-add{border-style:dashed;justify-content:center;background:transparent}
+.ve-values-nav-add:hover{background:var(--bg3)}
+.ve-values-detail{flex:1;min-width:0;overflow:auto;padding-right: 10px}
+.ve-values-anchor{scroll-margin-top:12px}
+.ve-values-anchor.is-active{border-color:var(--accent)}
+.ve-values-anchor + .ve-values-anchor{margin-top:24px;padding-top:10px;}
+.ve-values-detail-header{display:flex;align-items:center;gap:8px}
+.ve-values-detail-title{font-family:var(--font-mono);font-size:13px;font-weight:600}
+.ve-values-detail-header .ve-values-field-label{flex:1;min-width:0}
+.ve-values-detail-header .btn{margin-left:auto;flex-shrink:0}
+.ve-values-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.ve-values-field{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0}
+.ve-values-field.is-wide{grid-column:1/-1}
+.ve-values-field-label{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)}
+.ve-values-field-label > span:first-child{font-family:var(--font-mono)}
+.ve-values-field textarea,.ve-values-field input[type=text],.ve-values-field select{min-height:30px;height:30px;resize:none;overflow:hidden}
+.ve-values-empty{color:var(--text3);padding:24px 0}
+.ve-values-list-items{display:flex;flex-direction:column;gap:12px}
+.ve-values-list-item{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 8px 16px;display:flex;gap:6px;align-items:flex-start;transition:opacity .12s ease,border-color .12s ease,box-shadow .12s ease}
+.ve-values-list-item.is-dragging{opacity:.45}
+.ve-values-list-item.is-drop-target{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ve-values-list-item-handle{flex-shrink:0;width:22px;align-self:stretch;display:inline-flex;align-items:center;justify-content:center;cursor:grab;color:var(--text3);user-select:none;border:none;background:transparent;font-size:16px;line-height:1;padding:0;letter-spacing:-2px}
+.ve-values-list-item-handle:hover{color:var(--text2)}
+.ve-values-list-item-handle:active{cursor:grabbing}
+.ve-values-list-item > .ve-values-fields{flex:1;min-width:0}
 .checkbox-row{display:flex;flex-wrap:wrap;gap:4px 16px}
 .details-grid .checkbox-label{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);text-transform:none;margin-bottom:0}
 .checkbox-label input{width:auto}
 .empty-state{color:var(--text3);text-align:center;padding:40px}
 .ve-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100}
-.ve-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:16px;width:min(400px,90vw);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.ve-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:16px;width:min(400px,90vw);box-shadow:0 8px 24px rgba(0,0,0,.4);position:relative}
+.ve-modal-diff{width:min(860px,94vw);min-width:min(500px,90vw);min-height:min(300px,80vh);max-height:85vh;display:flex;flex-direction:column}
 .ve-modal-wide{width:min(560px,90vw)}
 .ve-modal-title{font-size:12px;color:var(--text2);margin-bottom:8px}
+.ve-modal-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.ve-modal-title-row .ve-modal-title{margin-bottom:0;flex:1}
+.ve-modal-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .ve-modal-body{font-size:12px;line-height:1.6;max-height:60vh;overflow-y:auto}
+.ve-modal-diff .ve-modal-body{flex:1;max-height:none;min-height:0;display:flex;flex-direction:column;gap:8px}
+.ve-diff-nav{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.ve-diff-nav .btn{min-width:30px;min-height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.ve-diff-nav-count{font-size:12px;color:var(--text2);font-variant-numeric:tabular-nums;min-width:4.5em}
+.ve-diff{background:var(--bg);border:1px solid var(--border);border-radius:6px;overflow:auto;flex:1;min-height:180px;font-family:var(--font-mono);font-size:11px;line-height:1.55}
+.ve-diff-line{display:flex;gap:8px;padding:1px 8px;white-space:pre-wrap;word-break:break-word}
+.ve-diff-prefix{flex-shrink:0;width:12px;user-select:none;opacity:.8}
+.ve-diff-line.is-add{background:color-mix(in srgb, var(--green) 14%, var(--bg));color:var(--text)}
+.ve-diff-line.is-remove{background:color-mix(in srgb, var(--red) 14%, var(--bg));color:var(--text)}
+.ve-diff-line.is-add .ve-diff-prefix{color:var(--green)}
+.ve-diff-line.is-remove .ve-diff-prefix{color:var(--red)}
+.ve-diff-line.is-current-change{outline:1px solid var(--accent);outline-offset:-1px;}
+.ve-diff-inline-add{background:color-mix(in srgb, var(--green) 35%, transparent);color:var(--green);font-weight:700;border-radius:2px}
+.ve-diff-inline-remove{background:color-mix(in srgb, var(--red) 35%, transparent);color:color-mix(in srgb, var(--red) 80%, #fff);font-weight:700;border-radius:2px}
+.ve-diff-empty{padding:24px;color:var(--text3);text-align:center}
 .ve-modal-body pre{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px;font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;word-break:break-word}
 .ve-modal-body code{background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--font-mono)}
-.ve-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.ve-modal-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:12px}
+.ve-modal-actions .hint{margin:0;margin-right:auto;text-align:left}
 .ve-combo{position:relative}
 .ve-combo-input{margin-bottom:0}
 .ve-combo-list{position:absolute;left:0;right:0;top:100%;z-index:10;max-height:220px;overflow-y:auto;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;margin-top:2px;box-shadow:0 4px 12px rgba(0,0,0,.3)}
 .ve-combo-option{padding:5px 8px;font-size:12px;cursor:pointer}
 .ve-combo-option:hover{background:var(--bg4)}
-.ve-combo-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
-.ve-chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:2px 4px 2px 8px;font-size:11px}
+.ve-combo-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.ve-chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:2px 4px 2px 8px;font-size:11px}
 .ve-chip button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:0 2px}
 .ve-chip button:hover{color:var(--text)}
 .ve-list-items{display:flex;flex-direction:column;gap:6px}
 .ve-list-item{display:flex;gap:6px;align-items:flex-start}
 .ve-list-item > input[type=text]{flex:1}
 .ve-list-item-cols{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px;display:flex;gap:8px;align-items:flex-start}
-.ve-list-item-fields{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
-.ve-list-field{display:flex;flex-direction:column;gap:2px}
-.ve-list-field label{font-size:10px;color:var(--text3);text-transform:uppercase}
+.ve-list-item-fields{display:flex;flex-direction:column;gap:8px;width:100%}
+.ve-list-field{display:flex;flex-direction:column;gap:6px;max-width:450px;width:100%;}
+.ve-list-field label{font-size:10px;color:var(--text3);}
+.ve-list-field textarea,.ve-list-field input[type=text],.ve-list-field select{min-height:30px;height:30px;resize:none;overflow:hidden}
 .ve-list-item-actions{flex-shrink:0}
+.box-style{border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg3)}
+.ve-ao-columns{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.ve-ao-column{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 8px 16px;display:flex;gap:6px;align-items:flex-start;transition:opacity .12s ease,border-color .12s ease,box-shadow .12s ease}
+.ve-ao-column.is-dragging{opacity:.45}
+.ve-ao-column.is-drop-target{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ve-ao-column-handle{flex-shrink:0;width:22px;align-self:stretch;display:inline-flex;align-items:center;justify-content:center;cursor:grab;color:var(--text3);user-select:none;border:none;background:transparent;font-size:16px;line-height:1;padding:0;letter-spacing:-2px}
+.ve-ao-column-handle:hover{color:var(--text2)}
+.ve-ao-column-handle:active{cursor:grabbing}
+.ve-ao-column-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.ve-ao-column-top{display:flex;gap:6px;align-items:flex-end}
+.ve-ao-column-field{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ve-ao-column-field label{font-size:10px;color:var(--text3);text-transform:none;margin-bottom:0;font-family:var(--font-mono)}
+.ve-ao-column-name{position:relative;min-width:0}
+.ve-ao-column-name input{width:100%;padding-right:28px;font-family:var(--font-mono)}
+.ve-ao-column-remove{position:absolute;right:0px;top:50%;transform:translateY(-50%);width:24px;height:24px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.ve-ao-column-bottom{display:flex;gap:6px;align-items:flex-end}
+.ve-ao-column-bottom > .ve-ao-column-field{flex:1;min-width:0}
 .ve-json-issues{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .ve-json-issue-badge{display:inline-flex;align-items:center;gap:4px;background:color-mix(in srgb, var(--yellow) 15%, var(--bg));color:var(--yellow);border:1px solid color-mix(in srgb, var(--yellow) 40%, var(--bg));border-radius:10px;padding:2px 8px;font-size:11px;cursor:default}
 ::-webkit-scrollbar{width:8px;height:8px}
@@ -477,6 +567,9 @@ const KNOWN_TAG_SOURCES = ['static','page','element','folder','segment','dataset
 // loaded live from MI (the rest — dataset/announcement/group/category/custom_attribute/page/
 // page_entity — populate their own option list, so additional_options doesn't apply there).
 const HAND_ENTERED_OPTION_SOURCES = ['static','segment','element','dataset_data'];
+// list-tag column editor: field types + sources allowed on a select/multi-select column.
+const LIST_COLUMN_TYPES = ['textarea','select','multi-select','color','file'];
+const LIST_COLUMN_SOURCES = ['static','dataset','group','category','custom_attribute'];
 // Matches MI's own "Create/Edit Variable" form: letters, digits, underscore, whitespace, hyphen.
 // Doubled backslash: this sits inside getVariablesEditorHtml()'s outer template literal, which
 // consumes one level of backslash-escaping when the .ts source is parsed — a bare \s here would
@@ -513,11 +606,15 @@ let valuesState = null;   // { schema, live, combined }
 let schemaRows = [];      // working copy of tags, edited in place
 const invalidAdditionalOptionsRows = new WeakSet();
 let valueRows = [];       // working copy of {name, value}
+let selectedValueIndex = 0;
+let selectedListItemIndex = 0;
 let valuesRawMode = activeTab === 'values' && valuesJsonModeFromUrl();
 let rawMode = false;
 let dirty = false;
 let editSeq = 0;
 let banner = null;
+// Last-known saved JSON for each tab — used to build the post-save GitHub-style diff.
+let jsonBaseline = { schema: '', values: '' };
 
 // Background-refresh bookkeeping, one pair of (loading flag, sequence counter) per tab: a
 // stale response (superseded by a newer load for the SAME tab before it resolved) is dropped
@@ -607,6 +704,7 @@ async function loadSchema(seq) {
   schemaState = data;
   schemaRows = (data.schema && Array.isArray(data.schema.tags)) ? data.schema.tags.map((t) => Object.assign({}, t)) : [];
   rawMode = data.exists && !data.schema;
+  jsonBaseline.schema = snapshotSchemaJson();
 }
 
 async function loadValues(seq) {
@@ -656,6 +754,301 @@ async function loadValues(seq) {
 
   valuesState = data;
   valueRows = (data.combined || []).map((e) => Object.assign({}, e));
+  jsonBaseline.values = snapshotValuesJson();
+}
+
+function snapshotSchemaJson() {
+  if (!schemaState) { return ''; }
+
+  if (rawMode) {
+    const editorEl = document.getElementById('raw-editor');
+
+    return editorEl ? editorEl.value : (schemaState.raw || '');
+  }
+
+  if (schemaState.raw && (!schemaState.schema || !Array.isArray(schemaRows))) {
+    return schemaState.raw;
+  }
+
+  try {
+    return JSON.stringify(Object.assign({}, schemaState.schema || {}, { tags: schemaRows }), null, 2);
+  } catch (e) {
+    return schemaState.raw || '';
+  }
+}
+
+function snapshotValuesJson(rows) {
+  try {
+    return JSON.stringify(toExportableValueRows(rows || valueRows), null, 2);
+  } catch (e) {
+    return '[]';
+  }
+}
+
+function normalizeJsonText(text) {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch (e) {
+    return String(text || '');
+  }
+}
+
+// Longest common subsequence line indices — small enough for template-variable JSON files.
+function lcsLineMatrix(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  return dp;
+}
+
+function computeLineDiff(beforeText, afterText) {
+  // Doubled backslash: outer getVariablesEditorHtml() template literal consumes one level.
+  const a = String(beforeText || '').split('\\n');
+  const b = String(afterText || '').split('\\n');
+  const dp = lcsLineMatrix(a, b);
+  const lines = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      lines.push({ type: 'equal', text: a[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      lines.push({ type: 'remove', text: a[i] });
+      i++;
+    } else {
+      lines.push({ type: 'add', text: b[j] });
+      j++;
+    }
+  }
+
+  while (i < a.length) {
+    lines.push({ type: 'remove', text: a[i++] });
+  }
+
+  while (j < b.length) {
+    lines.push({ type: 'add', text: b[j++] });
+  }
+
+  // Pair adjacent remove+add as inline-highlighted changes.
+  const paired = [];
+
+  for (let k = 0; k < lines.length; k++) {
+    const cur = lines[k];
+    const next = lines[k + 1];
+
+    if (cur.type === 'remove' && next && next.type === 'add') {
+      paired.push({ type: 'remove', text: cur.text, pair: next.text });
+      paired.push({ type: 'add', text: next.text, pair: cur.text });
+      k++;
+    } else {
+      paired.push(cur);
+    }
+  }
+
+  return paired;
+}
+
+function inlineDiffHtml(text, pair, mode) {
+  if (pair == null || pair === text) {
+    return escapeHtml(text);
+  }
+
+  let start = 0;
+  const minLen = Math.min(text.length, pair.length);
+
+  while (start < minLen && text.charAt(start) === pair.charAt(start)) {
+    start++;
+  }
+
+  let endOld = text.length;
+  let endNew = pair.length;
+
+  while (endOld > start && endNew > start && text.charAt(endOld - 1) === pair.charAt(endNew - 1)) {
+    endOld--;
+    endNew--;
+  }
+
+  const before = escapeHtml(text.slice(0, start));
+  const mid = escapeHtml(text.slice(start, endOld));
+  const after = escapeHtml(text.slice(endOld));
+  const cls = mode === 'add' ? 've-diff-inline-add' : 've-diff-inline-remove';
+
+  return before + (mid ? '<span class="' + cls + '">' + mid + '</span>' : '') + after;
+}
+
+function renderJsonDiffHtml(beforeText, afterText) {
+  const before = normalizeJsonText(beforeText);
+  const after = normalizeJsonText(afterText);
+
+  if (before === after) {
+    return { html: '<div class="ve-diff-empty">No differences in the JSON file.</div>', changeCount: 0 };
+  }
+
+  const lines = computeLineDiff(before, after);
+  let changeCount = 0;
+  let inHunk = false;
+
+  const html = '<div class="ve-diff">' + lines.map((line) => {
+    if (line.type === 'equal') {
+      inHunk = false;
+
+      return '<div class="ve-diff-line"><span class="ve-diff-prefix"> </span><span>' + escapeHtml(line.text) + '</span></div>';
+    }
+
+    const attrs = !inHunk
+      ? ' data-change-index="' + changeCount + '"'
+      : '';
+
+    if (!inHunk) {
+      changeCount++;
+      inHunk = true;
+    }
+
+    if (line.type === 'remove') {
+      return '<div class="ve-diff-line is-remove"' + attrs + '><span class="ve-diff-prefix">-</span><span>' +
+        inlineDiffHtml(line.text, line.pair, 'remove') + '</span></div>';
+    }
+
+    return '<div class="ve-diff-line is-add"' + attrs + '><span class="ve-diff-prefix">+</span><span>' +
+      inlineDiffHtml(line.text, line.pair, 'add') + '</span></div>';
+  }).join('') + '</div>';
+
+  return { html: html, changeCount: changeCount };
+}
+
+function showJsonDiffModal(beforeText, afterText, onConfirm) {
+  const diff = renderJsonDiffHtml(beforeText, afterText);
+  const hasChanges = diff.changeCount > 0;
+  const overlay = document.createElement('div');
+
+  overlay.className = 've-modal-overlay';
+  overlay.innerHTML =
+    '<div class="ve-modal ve-modal-diff" role="dialog" aria-modal="true">' +
+      '<div class="ve-modal-title-row">' +
+        '<div class="ve-modal-title">JSON changes</div>' +
+        '<button type="button" class="btn btn-sm ve-modal-close" title="Close" aria-label="Close">✕</button>' +
+      '</div>' +
+      '<div class="ve-modal-body">' +
+        (hasChanges
+          ? '<div class="ve-diff-nav">' +
+              '<button type="button" class="btn btn-sm ve-diff-prev" title="Previous change" aria-label="Previous change">←</button>' +
+              '<button type="button" class="btn btn-sm ve-diff-next" title="Next change" aria-label="Next change">→</button>' +
+              '<span class="ve-diff-nav-count">1 / ' + diff.changeCount + '</span>' +
+            '</div>'
+          : '') +
+        diff.html +
+      '</div>' +
+      '<div class="ve-modal-actions">' +
+        '<div class="hint">Review added (+) and removed (−) lines, including inline highlights for changed segments.</div>' +
+        '<button type="button" class="btn btn-sm ve-modal-cancel">Cancel</button>' +
+        '<button type="button" class="btn btn-sm btn-primary ve-modal-ok">Save Changes</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+  overlay.querySelector('.ve-modal-ok').focus();
+
+  let currentChange = 0;
+
+  function updateChangeNav() {
+    const countEl = overlay.querySelector('.ve-diff-nav-count');
+    const prevBtn = overlay.querySelector('.ve-diff-prev');
+    const nextBtn = overlay.querySelector('.ve-diff-next');
+    const diffEl = overlay.querySelector('.ve-diff');
+
+    if (!hasChanges || !diffEl) { return; }
+
+    Array.prototype.forEach.call(diffEl.querySelectorAll('.ve-diff-line.is-current-change'), function (el) {
+      el.classList.remove('is-current-change');
+    });
+
+    const target = diffEl.querySelector('.ve-diff-line[data-change-index="' + currentChange + '"]');
+
+    if (target) {
+      target.classList.add('is-current-change');
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
+    if (countEl) {
+      countEl.textContent = (currentChange + 1) + ' / ' + diff.changeCount;
+    }
+
+    if (prevBtn) { prevBtn.disabled = currentChange <= 0; }
+    if (nextBtn) { nextBtn.disabled = currentChange >= diff.changeCount - 1; }
+  }
+
+  if (hasChanges) {
+    overlay.querySelector('.ve-diff-prev').addEventListener('click', function () {
+      if (currentChange > 0) {
+        currentChange--;
+        updateChangeNav();
+      }
+    });
+    overlay.querySelector('.ve-diff-next').addEventListener('click', function () {
+      if (currentChange < diff.changeCount - 1) {
+        currentChange++;
+        updateChangeNav();
+      }
+    });
+    // Wait a frame so the modal layout is ready before scrolling.
+    requestAnimationFrame(function () { updateChangeNav(); });
+  }
+
+  function close(confirmed) {
+    overlay.remove();
+
+    if (confirmed && typeof onConfirm === 'function') {
+      onConfirm();
+    }
+  }
+
+  overlay.querySelector('.ve-modal-ok').addEventListener('click', () => close(true));
+  overlay.querySelector('.ve-modal-cancel').addEventListener('click', () => close(false));
+  overlay.querySelector('.ve-modal-close').addEventListener('click', () => close(false));
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target === overlay) { close(false); }
+  });
+  overlay.addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowLeft' && hasChanges) {
+      ev.preventDefault();
+
+      if (currentChange > 0) {
+        currentChange--;
+        updateChangeNav();
+      }
+
+      return;
+    }
+
+    if (ev.key === 'ArrowRight' && hasChanges) {
+      ev.preventDefault();
+
+      if (currentChange < diff.changeCount - 1) {
+        currentChange++;
+        updateChangeNav();
+      }
+
+      return;
+    }
+
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      close(true);
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      close(false);
+    }
+  });
 }
 
 // Fetches fresh data for one tab, tracking a per-tab "loading" flag and sequence number so a
@@ -1143,7 +1536,7 @@ function renderSchemaTab() {
       : '';
 
     const defaultValueCell = vis.defaultValue
-      ? '<textarea class="cell-textarea" oninput="updateSchemaField(' + i + ',\\'default_value\\',this.value)">' + escapeHtml(tag.default_value || '') + '</textarea>'
+      ? '<textarea class="cell-textarea" oninput="autosizeCellTextarea(this);updateSchemaField(' + i + ',\\'default_value\\',this.value)">' + escapeHtml(tag.default_value || '') + '</textarea>'
       : '<textarea class="cell-textarea" disabled title="MI\\'s own editor has no Default Value field for this tag_type.">' + escapeHtml(tag.default_value || '') + '</textarea>';
 
     const tagSourceCell = vis.tagSource
@@ -1151,13 +1544,18 @@ function renderSchemaTab() {
       : '<span class="badge">' + escapeHtml(tag.tag_source || 'static') + '</span> <div class="hint">Only configurable for select/multiselect in MI\\'s own editor.</div>';
 
     const additionalOptionsCell = vis.additionalOptions
-      ? '<textarea oninput="updateSchemaAdditionalOptions(' + i + ',this.value)">' + escapeHtml(additionalOptionsRaw) + '</textarea>'
-      : '<textarea disabled title="Not used for this tag_type/tag_source combination in MI\\'s own editor.">' + escapeHtml(additionalOptionsRaw) + '</textarea>';
+      ? '<textarea id="ao-raw-' + i + '" oninput="updateSchemaAdditionalOptions(' + i + ',this.value)">' + escapeHtml(additionalOptionsRaw) + '</textarea>'
+      : '<textarea id="ao-raw-' + i + '" disabled title="Not used for this tag_type/tag_source combination in MI\\'s own editor.">' + escapeHtml(additionalOptionsRaw) + '</textarea>';
+
+    const listColumnsEditor = tag.tag_type === 'list' ? listColumnsEditorHtml(tag, i) : '';
 
     return \`
-    <tr>
+    <tr class="schema-row" data-row-index="\${i}" ondragover="onSchemaRowDragOver(event)" ondrop="onSchemaRowDrop(event)" ondragleave="onSchemaRowDragLeave(event)">
       <td class="col-expand">
-        <button class="btn btn-sm ve-expand-btn" id="expand-btn-\${i}" onclick="toggleSchemaAdvanced(\${i})" aria-expanded="false" title="Advanced fields (uid, tag_source, additional_options, editor flags)">▸</button>
+        <div class="ve-expand-cell">
+          <span class="ve-schema-row-handle" draggable="true" ondragstart="onSchemaRowDragStart(event)" ondragend="onSchemaRowDragEnd(event)" title="Drag to reorder" aria-label="Drag to reorder" role="button" tabindex="0">⠿</span>
+          <button class="btn btn-sm ve-expand-btn" id="expand-btn-\${i}" onclick="toggleSchemaAdvanced(\${i})" aria-expanded="false" title="Advanced fields (uid, tag_source, additional_options, editor flags)">▸</button>
+        </div>
       </td>
       <td class="col-name">
         <input type="text" value="\${escapeHtml(tag.name || '')}" oninput="updateSchemaField(\${i},'name',this.value)" />
@@ -1165,22 +1563,26 @@ function renderSchemaTab() {
       </td>
       <td class="col-type">\${typeSelectCell(tag, i)}</td>
       <td>\${defaultValueCell}</td>
-      <td><textarea class="cell-textarea" oninput="updateSchemaField(\${i},'description',this.value)">\${escapeHtml(tag.description || '')}</textarea></td>
+      <td><textarea class="cell-textarea" oninput="autosizeCellTextarea(this);updateSchemaField(\${i},'description',this.value)">\${escapeHtml(tag.description || '')}</textarea></td>
       <td class="col-actions">
         <button class="btn btn-sm" onclick="removeSchemaRow(\${i})">✕</button>
       </td>
     </tr>
-    <tr class="details-row" id="advanced-\${i}" style="display:none">
-      <td colspan="6">
+    <tr class="details-row" id="advanced-\${i}" data-row-index="\${i}" style="display:none;" ondragover="onSchemaRowDragOver(event)" ondrop="onSchemaRowDrop(event)" ondragleave="onSchemaRowDragLeave(event)">
+      <td colspan="6" style="border:none;">
         <div class="details-grid">
-          <div><label>uid</label><input type="text" value="\${escapeHtml(tag.uid || '')}" oninput="updateSchemaField(\${i},'uid',this.value)" /></div>
-          <div><label>tag_source</label>\${tagSourceCell}</div>
-          \${editorFlagsRow(tag, i, vis)}
-          <div style="grid-column:1/-1">
+          <div class="details-grid-item-wrapper">
+            <div class="box-style"><label>uid</label><input type="text" value="\${escapeHtml(tag.uid || '')}" oninput="updateSchemaField(\${i},'uid',this.value)" /></div>
+            <div class="box-style"><label>tag_source</label>\${tagSourceCell}</div>
+            <div class="box-style" style="height:fit-content;">\${editorFlagsRow(tag, i, vis)}</div>
+          </div>
+          <div class="box-style" style="grid-column:1/-1">
             <label>additional_options (raw JSON) <button type="button" class="btn btn-sm" style="text-transform:none;padding:0 6px;margin-left:4px" onclick="showAdditionalOptionsHelp(\${i})" title="What goes here for this type/source?">?</button></label>
             \${additionalOptionsCell}
             <div class="hint">\${additionalOptionsHint(tag)}</div>
+            
           </div>
+          \${listColumnsEditor}
         </div>
       </td>
     </tr>
@@ -1239,6 +1641,20 @@ function updateSchemaField(i, field, value) {
   setDirty(true);
 }
 
+function autosizeCellTextarea(el) {
+  if (!el || el.type === 'color' || el.type === 'checkbox') { return; }
+
+  el.style.height = '0';
+  el.style.height = Math.max(30, el.scrollHeight) + 'px';
+}
+
+function autosizeAllCellTextareas() {
+  Array.prototype.forEach.call(
+    document.querySelectorAll('.cell-textarea, .ve-list-field textarea, .ve-list-field input[type=text], .ve-list-field select, .ve-values-field textarea, .ve-values-field input[type=text], .ve-values-field select'),
+    autosizeCellTextarea
+  );
+}
+
 function updateSchemaAdditionalOptions(i, text) {
   try {
     schemaRows[i].additional_options = text.trim() ? JSON.parse(text) : '';
@@ -1249,6 +1665,327 @@ function updateSchemaAdditionalOptions(i, text) {
   }
 
   setDirty(true);
+}
+
+// Normalize list-tag additional_options into editable column objects. Non-array values
+// (flat-list "" / invalid raw text) become an empty column list — editing via the UI replaces them.
+function listColumnsFor(tag) {
+  const opts = tag && tag.additional_options;
+
+  if (!Array.isArray(opts)) { return []; }
+
+  return opts.map((c) => (typeof c === 'string' ? { name: c, type: 'textarea' } : Object.assign({}, c)));
+}
+
+function syncAdditionalOptionsRaw(i) {
+  const ta = document.getElementById('ao-raw-' + i);
+
+  if (!ta || ta.disabled) { return; }
+
+  const value = schemaRows[i].additional_options;
+
+  ta.value = value !== undefined && value !== '' ? JSON.stringify(value) : '';
+}
+
+// Persist select/multi-select columns without a redundant source when options are present —
+// source is only kept when there is no options list (non-static / empty options).
+function normalizeListColumn(col) {
+  const out = Object.assign({ name: '', type: 'textarea' }, col);
+  const type = out.type || 'textarea';
+  const isSelect = type === 'select' || type === 'multi-select';
+
+  if (!isSelect) {
+    delete out.source;
+    delete out.options;
+
+    return out;
+  }
+
+  if (Array.isArray(out.options) && out.options.length) {
+    delete out.source;
+  } else {
+    delete out.options;
+
+    if (!out.source) {
+      out.source = 'static';
+    }
+  }
+
+  return out;
+}
+
+function commitListColumns(i, columns, rerender) {
+  const normalized = columns.map(normalizeListColumn);
+
+  schemaRows[i].additional_options = normalized.length ? normalized : '';
+  invalidAdditionalOptionsRows.delete(schemaRows[i]);
+  setDirty(true);
+
+  if (rerender) {
+    rerenderKeepingAdvancedOpen(i);
+  } else {
+    syncAdditionalOptionsRaw(i);
+  }
+}
+
+function listColumnSelectOptions(values, selected) {
+  return values.map((v) =>
+    '<option value="' + escapeHtml(v) + '"' + (v === selected ? ' selected' : '') + '>' + escapeHtml(v) + '</option>'
+  ).join('');
+}
+
+function listColumnItemHtml(col, i, colIndex) {
+  const name = col.name != null ? String(col.name) : '';
+  const type = LIST_COLUMN_TYPES.indexOf(col.type) !== -1 ? col.type : (col.type || 'textarea');
+  const isSelect = type === 'select' || type === 'multi-select';
+  const source = col.source || 'static';
+  const optionsText = Array.isArray(col.options) ? col.options.join(', ') : '';
+
+  const typeOptions = listColumnSelectOptions(
+    LIST_COLUMN_TYPES.indexOf(type) !== -1 ? LIST_COLUMN_TYPES : LIST_COLUMN_TYPES.concat([type]),
+    type
+  );
+
+  let bottom =
+    '<div class="ve-ao-column-field">' +
+      '<label>type</label>' +
+      '<select onchange="updateListColumnField(' + i + ',' + colIndex + ',\\'type\\',this.value)">' + typeOptions + '</select>' +
+    '</div>';
+
+  if (isSelect) {
+    const sourceOptions = listColumnSelectOptions(
+      LIST_COLUMN_SOURCES.indexOf(source) !== -1 ? LIST_COLUMN_SOURCES : LIST_COLUMN_SOURCES.concat([source]),
+      source
+    );
+
+    bottom +=
+      '<div class="ve-ao-column-field">' +
+        '<label>source</label>' +
+        '<select onchange="updateListColumnField(' + i + ',' + colIndex + ',\\'source\\',this.value)">' + sourceOptions + '</select>' +
+      '</div>';
+
+    if (source === 'static') {
+      bottom +=
+        '<div class="ve-ao-column-field">' +
+          '<label>options</label>' +
+          '<input type="text" value="' + escapeHtml(optionsText) + '" placeholder="Options (comma-separated)" oninput="updateListColumnOptions(' + i + ',' + colIndex + ',this.value)" />' +
+        '</div>';
+    }
+  }
+
+  return '<div class="ve-ao-column" data-row="' + i + '" data-col-index="' + colIndex + '" ondragover="onListColumnDragOver(event)" ondrop="onListColumnDrop(event)" ondragleave="onListColumnDragLeave(event)">' +
+    '<span class="ve-ao-column-handle" draggable="true" ondragstart="onListColumnDragStart(event)" ondragend="onListColumnDragEnd(event)" title="Drag to reorder" aria-label="Drag to reorder" role="button" tabindex="0">⠿</span>' +
+    '<div class="ve-ao-column-fields">' +
+      '<div class="ve-ao-column-top">' +
+        '<div class="ve-ao-column-field">' +
+          '<label>name</label>' +
+          '<div class="ve-ao-column-name">' +
+            '<input type="text" value="' + escapeHtml(name) + '" oninput="updateListColumnField(' + i + ',' + colIndex + ',\\'name\\',this.value)" placeholder="Column name" />' +
+            '<button type="button" class="btn btn-sm ve-ao-column-remove" onclick="removeListColumn(' + i + ',' + colIndex + ')" title="Remove column">✕</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ve-ao-column-bottom">' + bottom + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function listColumnsEditorHtml(tag, i) {
+  const cols = listColumnsFor(tag);
+  const itemsHtml = cols.map((col, colIndex) => listColumnItemHtml(col, i, colIndex)).join('');
+
+  return '<div class="box-style" style="grid-column:1/-1">' +
+    '<label>additional_options (UI version)<button type="button" class="btn btn-sm" style="text-transform:none;padding:0 6px;margin-left:4px" onclick="showListColumnsHelp()" title="What is additional_options for list?">?</button></label>' +
+    
+    '<div class="ve-ao-columns">' + itemsHtml + '</div>' +
+    '<button type="button" class="btn btn-sm" style="margin-top:8px" onclick="addListColumn(' + i + ')">+ Add column</button>' +
+  '</div>';
+}
+
+function showListColumnsHelp() {
+  showInfoModal(
+    'additional_options — list',
+    '<p>An array of column definitions — each list item becomes an object keyed by these names. Supported field <code>types</code>: <code>textarea</code>, <code>color</code>, <code>select</code>, <code>multi-select</code>, <code>file</code>.</p>' +
+    '<p>Edited below as a column editor — reordering/adding/removing there is the same thing as hand-editing this JSON array, just without needing to write JSON.</p>'
+  );
+}
+
+function addListColumn(i) {
+  const cols = listColumnsFor(schemaRows[i]);
+
+  cols.push({ name: '', type: 'textarea' });
+  commitListColumns(i, cols, true);
+}
+
+function removeListColumn(i, colIndex) {
+  const cols = listColumnsFor(schemaRows[i]);
+
+  cols.splice(colIndex, 1);
+  commitListColumns(i, cols, true);
+}
+
+var listColumnDrag = null;
+
+function onListColumnDragStart(ev) {
+  const col = ev.target.closest('.ve-ao-column');
+
+  if (!col) { return; }
+
+  listColumnDrag = {
+    row: Number(col.dataset.row),
+    fromIndex: Number(col.dataset.colIndex),
+  };
+  col.classList.add('is-dragging');
+  ev.dataTransfer.effectAllowed = 'move';
+  // Firefox requires setData for the drag to start.
+  ev.dataTransfer.setData('text/plain', String(listColumnDrag.fromIndex));
+}
+
+function onListColumnDragOver(ev) {
+  // Schema-row reordering can pass over list-column cards inside an open advanced panel —
+  // accept the drag here so the drop isn't blocked by nested handlers.
+  if (schemaRowDrag) {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+
+    const details = ev.currentTarget.closest('tr.details-row');
+
+    if (details) { details.classList.add('is-drop-target'); }
+
+    return;
+  }
+
+  if (!listColumnDrag) { return; }
+
+  const col = ev.currentTarget;
+
+  if (Number(col.dataset.row) !== listColumnDrag.row) { return; }
+
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  col.classList.add('is-drop-target');
+}
+
+function onListColumnDragLeave(ev) {
+  const col = ev.currentTarget;
+
+  // Ignore leave events that stay inside the same column card (child elements).
+  if (col.contains(ev.relatedTarget)) { return; }
+
+  col.classList.remove('is-drop-target');
+
+  if (schemaRowDrag) {
+    const details = col.closest('tr.details-row');
+
+    if (details && !details.contains(ev.relatedTarget)) {
+      details.classList.remove('is-drop-target');
+    }
+  }
+}
+
+function onListColumnDrop(ev) {
+  ev.preventDefault();
+
+  const col = ev.currentTarget;
+
+  col.classList.remove('is-drop-target');
+
+  if (schemaRowDrag) {
+    const details = col.closest('tr.details-row');
+
+    if (!details) { return; }
+
+    details.classList.remove('is-drop-target');
+
+    const toIndex = Number(details.dataset.rowIndex);
+    const fromIndex = schemaRowDrag.fromIndex;
+
+    schemaRowDrag = null;
+
+    if (fromIndex !== toIndex) {
+      reorderSchemaRow(fromIndex, toIndex);
+    }
+
+    return;
+  }
+
+  if (!listColumnDrag || Number(col.dataset.row) !== listColumnDrag.row) { return; }
+
+  const toIndex = Number(col.dataset.colIndex);
+  const fromIndex = listColumnDrag.fromIndex;
+
+  listColumnDrag = null;
+
+  if (fromIndex === toIndex) { return; }
+
+  reorderListColumn(Number(col.dataset.row), fromIndex, toIndex);
+}
+
+function onListColumnDragEnd() {
+  listColumnDrag = null;
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-ao-column.is-dragging, .ve-ao-column.is-drop-target'), function (el) {
+    el.classList.remove('is-dragging', 'is-drop-target');
+  });
+}
+
+function reorderListColumn(i, fromIndex, toIndex) {
+  const cols = listColumnsFor(schemaRows[i]);
+
+  if (fromIndex < 0 || fromIndex >= cols.length || toIndex < 0 || toIndex >= cols.length) { return; }
+
+  const moved = cols.splice(fromIndex, 1)[0];
+
+  cols.splice(toIndex, 0, moved);
+  commitListColumns(i, cols, true);
+}
+
+function updateListColumnField(i, colIndex, field, value) {
+  const cols = listColumnsFor(schemaRows[i]);
+  const col = Object.assign({ name: '', type: 'textarea' }, cols[colIndex]);
+
+  if (field === 'name') {
+    col.name = value;
+  } else if (field === 'type') {
+    col.type = value;
+
+    if (value !== 'select' && value !== 'multi-select') {
+      delete col.source;
+      delete col.options;
+    } else if (Array.isArray(col.options) && col.options.length) {
+      delete col.source;
+    } else if (!col.source) {
+      col.source = 'static';
+    }
+  } else if (field === 'source') {
+    col.source = value;
+
+    if (value !== 'static') {
+      delete col.options;
+    }
+  }
+
+  cols[colIndex] = col;
+  commitListColumns(i, cols, field === 'type' || field === 'source');
+}
+
+function updateListColumnOptions(i, colIndex, text) {
+  const cols = listColumnsFor(schemaRows[i]);
+  const col = Object.assign({ name: '', type: 'textarea' }, cols[colIndex]);
+  const options = text.split(',').map((s) => s.trim()).filter(Boolean);
+
+  if (options.length) {
+    col.options = options;
+    delete col.source;
+  } else {
+    delete col.options;
+
+    if (!col.source) {
+      col.source = 'static';
+    }
+  }
+
+  cols[colIndex] = col;
+  commitListColumns(i, cols, false);
 }
 
 function toggleSchemaAdvanced(i) {
@@ -1314,8 +2051,119 @@ function removeSchemaRow(i) {
   });
 }
 
+function schemaRowOpenKey(tag, i) {
+  return tag && tag.uid ? String(tag.uid) : (tag && tag.name ? 'name:' + tag.name : 'idx:' + i);
+}
+
+function collectOpenAdvancedKeys() {
+  const open = [];
+
+  schemaRows.forEach((tag, i) => {
+    const el = document.getElementById('advanced-' + i);
+
+    if (el && el.style.display !== 'none') {
+      open.push(schemaRowOpenKey(tag, i));
+    }
+  });
+
+  return open;
+}
+
+function restoreOpenAdvancedKeys(openKeys) {
+  if (!openKeys || !openKeys.length) { return; }
+
+  schemaRows.forEach((tag, i) => {
+    if (openKeys.indexOf(schemaRowOpenKey(tag, i)) === -1) { return; }
+
+    const after = document.getElementById('advanced-' + i);
+    const btn = document.getElementById('expand-btn-' + i);
+
+    if (after) { after.style.display = ''; }
+    if (btn) {
+      btn.textContent = '▾';
+      btn.setAttribute('aria-expanded', 'true');
+    }
+  });
+}
+
+var schemaRowDrag = null;
+
+function onSchemaRowDragStart(ev) {
+  const row = ev.target.closest('tr.schema-row');
+
+  if (!row) { return; }
+
+  const fromIndex = Number(row.dataset.rowIndex);
+
+  schemaRowDrag = { fromIndex: fromIndex };
+  row.classList.add('is-dragging');
+
+  const details = document.getElementById('advanced-' + fromIndex);
+
+  if (details) { details.classList.add('is-dragging'); }
+
+  ev.dataTransfer.effectAllowed = 'move';
+  // Firefox requires setData for the drag to start.
+  ev.dataTransfer.setData('text/plain', String(fromIndex));
+}
+
+function onSchemaRowDragOver(ev) {
+  if (!schemaRowDrag) { return; }
+
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  ev.currentTarget.classList.add('is-drop-target');
+}
+
+function onSchemaRowDragLeave(ev) {
+  const row = ev.currentTarget;
+
+  if (row.contains(ev.relatedTarget)) { return; }
+
+  row.classList.remove('is-drop-target');
+}
+
+function onSchemaRowDrop(ev) {
+  ev.preventDefault();
+
+  const row = ev.currentTarget;
+
+  row.classList.remove('is-drop-target');
+
+  if (!schemaRowDrag) { return; }
+
+  const toIndex = Number(row.dataset.rowIndex);
+  const fromIndex = schemaRowDrag.fromIndex;
+
+  schemaRowDrag = null;
+
+  if (fromIndex === toIndex) { return; }
+
+  reorderSchemaRow(fromIndex, toIndex);
+}
+
+function onSchemaRowDragEnd() {
+  schemaRowDrag = null;
+  Array.prototype.forEach.call(document.querySelectorAll('tr.schema-row.is-dragging, tr.schema-row.is-drop-target, tr.details-row.is-dragging, tr.details-row.is-drop-target'), function (el) {
+    el.classList.remove('is-dragging', 'is-drop-target');
+  });
+}
+
+function reorderSchemaRow(fromIndex, toIndex) {
+  if (fromIndex < 0 || fromIndex >= schemaRows.length || toIndex < 0 || toIndex >= schemaRows.length) { return; }
+
+  const openKeys = collectOpenAdvancedKeys();
+  const moved = schemaRows.splice(fromIndex, 1)[0];
+
+  schemaRows.splice(toIndex, 0, moved);
+  setDirty(true);
+  render();
+  restoreOpenAdvancedKeys(openKeys);
+}
+
 async function saveSchema() {
   let raw;
+  const beforeText = jsonBaseline.schema;
 
   if (rawMode) {
     raw = document.getElementById('raw-editor').value;
@@ -1333,6 +2181,17 @@ async function saveSchema() {
     raw = JSON.stringify(Object.assign({}, schemaState.schema, { tags: schemaRows }), null, 2);
   }
 
+  if (normalizeJsonText(beforeText) === normalizeJsonText(raw)) {
+    setDirty(false);
+    showBanner('success', 'No JSON changes to save.');
+
+    return;
+  }
+
+  showJsonDiffModal(beforeText, raw, () => commitSchemaSave(raw));
+}
+
+async function commitSchemaSave(raw) {
   const saveEditSeq = editSeq;
   const r = await fetch('/@api/variables/schema', {
     method: 'PUT',
@@ -1361,6 +2220,7 @@ async function saveSchema() {
 
   setDirty(false);
   showBanner(warnings.length ? 'warning' : 'success', message);
+  jsonBaseline.schema = raw;
 
   await loadTabData('schema');
   render();
@@ -1378,7 +2238,7 @@ function schemaTagFor(name) {
 function descriptionHint(tag) {
   if (!tag || !tag.description) { return ''; }
 
-  return '<div class="hint" style="white-space:pre-wrap">' + escapeHtml(tag.description) + '</div>';
+  return '<div class="hint" style="white-space:pre-wrap;margin-bottom: 8px;">' + escapeHtml(tag.description) + '</div>';
 }
 
 // The plain-text default already matches MI's own fallback (a multiline input); on top of
@@ -1388,7 +2248,7 @@ function descriptionHint(tag) {
 // third (use_json_editor_ind) is accepted by MI's create form but never actually acted upon by
 // its value editor either — shown here only as an FYI, no widget change.
 function textValueCell(tag, row, i) {
-  const widget = '<textarea class="cell-textarea" oninput="updateValueField(' + i + ', this.value)">' + escapeHtml(row.value) + '</textarea>';
+  const widget = '<textarea class="cell-textarea" oninput="autosizeCellTextarea(this);updateValueField(' + i + ', this.value)">' + escapeHtml(row.value) + '</textarea>';
   let note = '';
 
   if (tag.use_hmtl_editor_ind === 'Y') {
@@ -1553,44 +2413,93 @@ function parseListItems(row) {
   }
 }
 
+function sourceBadgeHtml(source) {
+  if (!source) { return ''; }
+
+  const kind = String(source).toLowerCase();
+  const extra = kind === 'dataset' ? ' badge-source-dataset' : kind === 'static' ? ' badge-source-static' : '';
+
+  return '<span class="badge' + extra + '">' + escapeHtml(source) + '</span>';
+}
+
+function typeBadgeHtml(type) {
+  if (!type) { return ''; }
+
+  return '<span class="badge">' + escapeHtml(type) + '</span>';
+}
+
+function listItemLabel(config, item, itemIndex) {
+  if (!config) {
+    const val = typeof item === 'string' ? item : String(item != null ? item : '');
+
+    return val || ('Item ' + (itemIndex + 1));
+  }
+
+  const parts = [];
+
+  config.forEach((col) => {
+    const colName = typeof col === 'string' ? col : col.name;
+    const raw = item && typeof item === 'object' ? item[colName] : '';
+
+    if (raw != null && String(raw).trim()) {
+      parts.push(String(raw).trim());
+    }
+  });
+
+  return parts.slice(0, 2).join(' · ') || ('Item ' + (itemIndex + 1));
+}
+
+function listFieldLabelHtml(colName, source) {
+  return '<div class="ve-values-field-label"><span>' + escapeHtml(colName) + '</span>' + sourceBadgeHtml(source) + '</div>';
+}
+
 function listValueWidget(tag, row, i) {
   const items = parseListItems(row);
 
   if (items === null) {
-    return '<textarea oninput="updateValueField(' + i + ', this.value)">' + escapeHtml(row.value) + '</textarea>' +
-      '<div class="hint" style="color:var(--red)">Not a valid JSON array — edit as raw text above, or fix it via "View/edit raw JSON".</div>';
+    return '<div class="ve-values-field is-wide"><div class="ve-values-field-label"><span>value</span></div>' +
+      '<textarea class="cell-textarea" oninput="autosizeCellTextarea(this);updateValueField(' + i + ', this.value)">' + escapeHtml(row.value) + '</textarea>' +
+      '<div class="hint" style="color:var(--red)">Not a valid JSON array — edit as raw text above, or fix it via "View/edit raw JSON".</div></div>';
   }
 
   const config = listConfigFor(tag);
-  const itemsHtml = items.map((item, itemIndex) => listItemHtml(config, item, i, itemIndex)).join('');
+  const itemsHtml = items.map((item, itemIndex) => {
+    return '<div class="ve-values-list-item" data-value-index="' + i + '" data-item-index="' + itemIndex + '"' +
+      ' ondragover="onListItemDragOver(event)" ondrop="onListItemDrop(event)" ondragleave="onListItemDragLeave(event)">' +
+      '<span class="ve-values-list-item-handle" draggable="true" ondragstart="onListItemDragStart(event)" ondragend="onListItemDragEnd(event)" title="Drag to reorder" aria-label="Drag to reorder" role="button" tabindex="0">⠿</span>' +
+      listItemFieldsHtml(config, item, i, itemIndex) +
+    '</div>';
+  }).join('');
 
-  return '<div class="ve-list-items" id="list-items-' + i + '">' + (itemsHtml || '<div class="hint">No items yet.</div>') + '</div>' +
-    '<button type="button" class="btn btn-sm" style="margin-top:6px" onclick="addListItem(' + i + ')">+ Add item</button>';
+  return '<div class="ve-values-list-items">' +
+    (itemsHtml || '<div class="ve-values-empty">No items yet.</div>') +
+  '</div>' +
+    '<button type="button" class="ve-values-nav-item ve-values-nav-add" style="margin-top:12px;width:auto" onclick="addListItem(' + i + ')">+ Add item</button>';
 }
 
-function listItemHtml(config, item, i, itemIndex) {
-  const removeBtn = '<button type="button" class="btn btn-sm" onclick="removeListItem(' + i + ',' + itemIndex + ')">✕</button>';
-
+function listItemFieldsHtml(config, item, i, itemIndex) {
   if (!config) {
     const val = typeof item === 'string' ? item : String(item != null ? item : '');
 
-    return '<div class="ve-list-item">' +
-      '<input type="text" value="' + escapeHtml(val) + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',null,this.value)" />' +
-      removeBtn +
-      '</div>';
+    return '<div class="ve-values-fields"><div class="ve-values-field is-wide">' +
+      '<textarea class="cell-textarea" oninput="autosizeCellTextarea(this);updateListItemField(' + i + ',' + itemIndex + ',null,this.value)">' + escapeHtml(val) + '</textarea>' +
+    '</div></div>';
   }
 
   const fieldsHtml = config.map((col) => {
     const colName = typeof col === 'string' ? col : col.name;
     const colNameJs = escapeJsAttr(colName);
     const colType = typeof col === 'string' ? 'textarea' : (col.type || 'textarea');
+    const colSource = typeof col === 'object' && col.source ? col.source : (colType === 'select' || colType === 'multi-select' ? 'static' : '');
     const rawVal = typeof item === 'object' && item !== null ? item[colName] : '';
     const val = rawVal != null ? String(rawVal) : '';
+    const wide = colType === 'textarea' || colType === 'file' || val.length > 48 ? ' is-wide' : '';
 
     if (colType === 'color') {
       const safe = /^#[0-9a-fA-F]{3,8}$/.test(val) ? val : '#000000';
 
-      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><input type="color" value="' + safe + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" /></div>';
+      return '<div class="ve-values-field">' + listFieldLabelHtml(colName, colSource) +
+        '<input type="color" value="' + safe + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" /></div>';
     }
 
     if (colType === 'select' || colType === 'multi-select') {
@@ -1599,19 +2508,15 @@ function listItemHtml(config, item, i, itemIndex) {
       const selected = isMulti ? val.split(',').filter(Boolean) : [val];
       const optionsHtml = opts.map((o) => '<option value="' + escapeHtml(o) + '"' + (selected.indexOf(o) !== -1 ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('');
 
-      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><select ' + (isMulti ? 'multiple' : '') + ' onchange="onListItemSelectChange(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this,' + isMulti + ')">' + optionsHtml + '</select></div>';
+      return '<div class="ve-values-field">' + listFieldLabelHtml(colName, colSource) +
+        '<select ' + (isMulti ? 'multiple ' : '') + 'onchange="autosizeCellTextarea(this);onListItemSelectChange(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this,' + isMulti + ')">' + optionsHtml + '</select></div>';
     }
 
-    if (colType === 'file') {
-      // Kept as a plain path input — the full browse/upload combo is reserved for top-level
-      // "file" variables; adding it per list-column too isn't worth the complexity here.
-      return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><input type="text" value="' + escapeHtml(val) + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" /></div>';
-    }
-
-    return '<div class="ve-list-field"><label>' + escapeHtml(colName) + '</label><textarea oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)">' + escapeHtml(val) + '</textarea></div>';
+    return '<div class="ve-values-field' + wide + '">' + listFieldLabelHtml(colName, colSource) +
+      '<textarea class="cell-textarea" oninput="autosizeCellTextarea(this);updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)">' + escapeHtml(val) + '</textarea></div>';
   }).join('');
 
-  return '<div class="ve-list-item ve-list-item-cols"><div class="ve-list-item-fields">' + fieldsHtml + '</div><div class="ve-list-item-actions">' + removeBtn + '</div></div>';
+  return '<div class="ve-values-fields">' + fieldsHtml + '</div>';
 }
 
 function onListItemSelectChange(i, itemIndex, fieldName, selectEl, isMulti) {
@@ -1653,6 +2558,8 @@ function addListItem(i) {
   }
 
   valueRows[i].value = JSON.stringify(items);
+  selectedValueIndex = i;
+  selectedListItemIndex = items.length - 1;
   setDirty(true);
   render();
 }
@@ -1662,6 +2569,87 @@ function removeListItem(i, itemIndex) {
 
   items.splice(itemIndex, 1);
   valueRows[i].value = JSON.stringify(items);
+  selectedValueIndex = i;
+  selectedListItemIndex = Math.min(itemIndex, Math.max(0, items.length - 1));
+  setDirty(true);
+  render();
+}
+
+var listItemDrag = null;
+
+function onListItemDragStart(ev) {
+  const item = ev.target.closest('.ve-values-list-item');
+
+  if (!item) { return; }
+
+  listItemDrag = {
+    valueIndex: Number(item.dataset.valueIndex),
+    fromIndex: Number(item.dataset.itemIndex),
+  };
+  item.classList.add('is-dragging');
+  ev.dataTransfer.effectAllowed = 'move';
+  // Firefox requires setData for the drag to start.
+  ev.dataTransfer.setData('text/plain', String(listItemDrag.fromIndex));
+}
+
+function onListItemDragOver(ev) {
+  if (!listItemDrag) { return; }
+
+  const item = ev.currentTarget;
+
+  if (Number(item.dataset.valueIndex) !== listItemDrag.valueIndex) { return; }
+
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  item.classList.add('is-drop-target');
+}
+
+function onListItemDragLeave(ev) {
+  const item = ev.currentTarget;
+
+  // Ignore leave events that stay inside the same item card (child elements).
+  if (item.contains(ev.relatedTarget)) { return; }
+
+  item.classList.remove('is-drop-target');
+}
+
+function onListItemDrop(ev) {
+  ev.preventDefault();
+
+  const item = ev.currentTarget;
+
+  item.classList.remove('is-drop-target');
+
+  if (!listItemDrag || Number(item.dataset.valueIndex) !== listItemDrag.valueIndex) { return; }
+
+  const toIndex = Number(item.dataset.itemIndex);
+  const fromIndex = listItemDrag.fromIndex;
+
+  listItemDrag = null;
+
+  if (fromIndex === toIndex) { return; }
+
+  reorderListItem(Number(item.dataset.valueIndex), fromIndex, toIndex);
+}
+
+function onListItemDragEnd() {
+  listItemDrag = null;
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-values-list-item.is-dragging, .ve-values-list-item.is-drop-target'), function (el) {
+    el.classList.remove('is-dragging', 'is-drop-target');
+  });
+}
+
+function reorderListItem(i, fromIndex, toIndex) {
+  const items = parseListItems(valueRows[i]) || [];
+
+  if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length) { return; }
+
+  const moved = items.splice(fromIndex, 1)[0];
+
+  items.splice(toIndex, 0, moved);
+  valueRows[i].value = JSON.stringify(items);
+  selectedValueIndex = i;
+  selectedListItemIndex = toIndex;
   setDirty(true);
   render();
 }
@@ -1874,6 +2862,127 @@ function onImportValuesFile(inputEl) {
   inputEl.value = '';
 }
 
+function valuesNavItemHtml(row, i, isActive) {
+  const tag = schemaTagFor(row.name);
+  const type = tag ? (tag.tag_type || 'text') : 'unknown';
+  const showsSource = tag && (tag.tag_type === 'select' || tag.tag_type === 'multiselect' || tag.tag_type === 'list');
+  const source = showsSource ? (tag.tag_source || 'static') : '';
+
+  return '<button type="button" class="ve-values-nav-item' + (isActive ? ' is-active' : '') + '" data-value-index="' + i + '" onclick="selectValueRow(' + i + ')">' +
+    '<span class="ve-values-nav-dot"></span>' +
+    '<span class="ve-values-nav-label">' + escapeHtml(row.name || '(unnamed)') + '</span>' +
+    '<span class="ve-values-nav-badges">' + typeBadgeHtml(type) + sourceBadgeHtml(source) + '</span>' +
+  '</button>';
+}
+
+function valuesDetailHtml(row, i) {
+  const tag = schemaTagFor(row.name);
+  const type = tag ? (tag.tag_type || 'text') : '';
+  const source = tag && tag.tag_source ? tag.tag_source : '';
+  const isList = type === 'list';
+
+  const header = '<div class="ve-values-detail-header">' +
+    '<div class="ve-values-detail-title">' + escapeHtml(row.name || '(unnamed)') + '</div>' +
+    listFieldLabelHtml(type || 'value', source) +
+    '<button type="button" class="btn btn-sm" onclick="removeValueRow(' + i + ')" title="Delete variable">✕</button>' +
+  '</div>';
+
+  if (isList) {
+    return header + descriptionHint(tag) + listValueWidget(tag, row, i);
+  }
+
+  return header + descriptionHint(tag) +
+    '<div class="ve-values-fields"><div class="ve-values-field is-wide">' +
+      valueEditorCell(row, i) +
+    '</div></div>';
+}
+
+function updateValueNavActive(i) {
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-values-nav-list .ve-values-nav-item[data-value-index]'), function (el) {
+    const active = Number(el.dataset.valueIndex) === i;
+
+    el.classList.toggle('is-active', active);
+
+    if (active) {
+      el.scrollIntoView({ block: 'nearest' });
+    }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-values-anchor[data-value-index]'), function (el) {
+    el.classList.toggle('is-active', Number(el.dataset.valueIndex) === i);
+  });
+}
+
+function scrollToValueRow(i, smooth) {
+  const detail = document.querySelector('.ve-values-detail');
+  const target = document.getElementById('value-item-' + i);
+
+  if (!detail || !target) { return; }
+
+  const top = target.getBoundingClientRect().top - detail.getBoundingClientRect().top + detail.scrollTop;
+
+  detail.scrollTo({ top: Math.max(0, top - 8), behavior: smooth ? 'smooth' : 'auto' });
+}
+
+var valueNavScrollLock = false;
+var valueNavScrollLockTimer = null;
+
+function selectValueRow(i) {
+  selectedValueIndex = i;
+  selectedListItemIndex = 0;
+  updateValueNavActive(i);
+  valueNavScrollLock = true;
+
+  if (valueNavScrollLockTimer) { clearTimeout(valueNavScrollLockTimer); }
+
+  scrollToValueRow(i, true);
+  valueNavScrollLockTimer = setTimeout(function () {
+    valueNavScrollLock = false;
+    valueNavScrollLockTimer = null;
+  }, 500);
+}
+
+function syncValueNavFromScroll() {
+  if (valueNavScrollLock) { return; }
+
+  const detail = document.querySelector('.ve-values-detail');
+
+  if (!detail) { return; }
+
+  const anchors = detail.querySelectorAll('.ve-values-anchor[data-value-index]');
+
+  if (!anchors.length) { return; }
+
+  const nearBottom = detail.scrollTop + detail.clientHeight >= detail.scrollHeight - 4;
+  let current;
+
+  if (nearBottom) {
+    current = Number(anchors[anchors.length - 1].dataset.valueIndex);
+  } else {
+    const threshold = detail.getBoundingClientRect().top + 24;
+
+    current = Number(anchors[0].dataset.valueIndex) || 0;
+    Array.prototype.forEach.call(anchors, function (el) {
+      if (el.getBoundingClientRect().top <= threshold) {
+        current = Number(el.dataset.valueIndex);
+      }
+    });
+  }
+
+  if (current !== selectedValueIndex) {
+    selectedValueIndex = current;
+    updateValueNavActive(current);
+  }
+}
+
+function bindValuesDetailScroll() {
+  const detail = document.querySelector('.ve-values-detail');
+
+  if (!detail || detail.dataset.scrollBound === '1') { return; }
+
+  detail.dataset.scrollBound = '1';
+  detail.addEventListener('scroll', syncValueNavFromScroll, { passive: true });
+}
+
 function renderValuesTab() {
   if (!valuesState) { return renderSkeleton(); }
 
@@ -1891,31 +3000,36 @@ function renderValuesTab() {
     \`;
   }
 
-  const rows = valueRows.map((row, i) => {
-    const tag = schemaTagFor(row.name);
-    // Source only means anything for select/multiselect (it picks where the options come
-    // from) — leave a dash for every other type instead of repeating "static" everywhere.
-    const showsSource = tag && (tag.tag_type === 'select' || tag.tag_type === 'multiselect');
-    const sourceCell = showsSource ? '<span class="badge">' + escapeHtml(tag.tag_source || 'static') + '</span>' : '<span class="hint">—</span>';
-
+  if (!valueRows.length) {
     return \`
-      <tr>
-        <td class="col-name">\${escapeHtml(row.name)}\${descriptionHint(tag)}</td>
-        <td class="col-type"><span class="badge">\${tag ? escapeHtml(tag.tag_type || 'text') : 'unknown'}</span></td>
-        <td class="col-source">\${sourceCell}</td>
-        <td>\${valueEditorCell(row, i)}</td>
-        <td class="col-actions"><button class="btn btn-sm" onclick="removeValueRow(\${i})">✕</button></td>
-      </tr>
+      <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleValuesRawMode()">View/edit raw JSON</button></div>
+      <div class="ve-values-layout">
+        <div class="ve-values-nav">
+          <div class="ve-values-nav-list"></div>
+          <button type="button" class="ve-values-nav-item ve-values-nav-add" onclick="addValueRow()">+ Add item</button>
+        </div>
+        <div class="ve-values-detail box-style"><div class="ve-values-empty">No variables yet.</div></div>
+      </div>
     \`;
-  }).join('');
+  }
+
+  if (selectedValueIndex < 0 || selectedValueIndex >= valueRows.length) {
+    selectedValueIndex = 0;
+  }
+
+  const navHtml = valueRows.map((row, i) => valuesNavItemHtml(row, i, i === selectedValueIndex)).join('');
+  const detailHtml = valueRows.map((row, i) =>
+    '<div class="ve-values-anchor box-style' + (i === selectedValueIndex ? ' is-active' : '') + '" id="value-item-' + i + '" data-value-index="' + i + '">' + valuesDetailHtml(row, i) + '</div>'
+  ).join('');
 
   return \`
     <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleValuesRawMode()">View/edit raw JSON</button></div>
-    <table>
-      <thead><tr><th class="col-name">Name</th><th class="col-type">Type</th><th class="col-source">Source</th><th>Value</th><th class="col-actions"></th></tr></thead>
-      <tbody>\${rows || '<tr><td colspan="5" class="empty-state">No variables yet.</td></tr>'}</tbody>
-    </table>
-    <button class="btn btn-sm" style="margin-top:10px" onclick="addValueRow()">+ Add variable</button>
+    <div class="ve-values-layout">
+      <div class="ve-values-nav">
+        <div class="ve-values-nav-list">\${navHtml}</div>
+      </div>
+      <div class="ve-values-detail">\${detailHtml}</div>
+    </div>
   \`;
 }
 
@@ -1966,6 +3080,8 @@ function addValueRow() {
     if (!name) { return; }
 
     valueRows.push({ name, value: '' });
+    selectedValueIndex = valueRows.length - 1;
+    selectedListItemIndex = 0;
     setDirty(true);
     render();
   });
@@ -1976,6 +3092,8 @@ function removeValueRow(i) {
 
   showConfirmModal('Delete variable "' + name + '"? This only takes effect once you Save.', () => {
     valueRows.splice(i, 1);
+    selectedValueIndex = Math.min(i, Math.max(0, valueRows.length - 1));
+    selectedListItemIndex = 0;
     setDirty(true);
     render();
   });
@@ -1989,6 +3107,7 @@ async function saveValues() {
   }
 
   let tags = valueRows;
+  const beforeText = jsonBaseline.values;
 
   if (valuesRawMode) {
     try {
@@ -2002,6 +3121,19 @@ async function saveValues() {
     }
   }
 
+  const afterText = snapshotValuesJson(tags);
+
+  if (normalizeJsonText(beforeText) === normalizeJsonText(afterText)) {
+    setDirty(false);
+    showBanner('success', 'No JSON changes to save.');
+
+    return;
+  }
+
+  showJsonDiffModal(beforeText, afterText, () => commitValuesSave(tags, afterText));
+}
+
+async function commitValuesSave(tags, afterText) {
   const saveEditSeq = editSeq;
   const r = await fetch('/@api/variables/values', {
     method: 'PUT',
@@ -2030,6 +3162,7 @@ async function saveValues() {
 
   setDirty(false);
   showBanner(warnings.length ? 'warning' : 'success', message);
+  jsonBaseline.values = afterText;
 
   await loadTabData('values');
   render();
@@ -2044,6 +3177,12 @@ function render() {
   const bannerHtml = banner ? '<div class="banner banner-' + banner.type + '">' + banner.html + '</div>' : '';
 
   contentEl.innerHTML = bannerHtml + (activeTab === 'schema' ? renderSchemaTab() : renderValuesTab());
+  autosizeAllCellTextareas();
+
+  if (activeTab === 'values' && !valuesRawMode) {
+    bindValuesDetailScroll();
+    scrollToValueRow(selectedValueIndex, false);
+  }
 
   if (activeTab === 'values' && valuesRawMode) {
     refreshValuesJsonIssues();
@@ -2066,14 +3205,33 @@ window.refresh = refresh;
 window.save = save;
 window.toggleRawMode = toggleRawMode;
 window.updateSchemaField = updateSchemaField;
+window.autosizeCellTextarea = autosizeCellTextarea;
 window.onCustomSelectChange = onCustomSelectChange;
 window.updateSchemaAdditionalOptions = updateSchemaAdditionalOptions;
 window.updateEditorFlag = updateEditorFlag;
 window.showAdditionalOptionsHelp = showAdditionalOptionsHelp;
+window.showListColumnsHelp = showListColumnsHelp;
+window.addListColumn = addListColumn;
+window.removeListColumn = removeListColumn;
+window.reorderListColumn = reorderListColumn;
+window.onListColumnDragStart = onListColumnDragStart;
+window.onListColumnDragOver = onListColumnDragOver;
+window.onListColumnDragLeave = onListColumnDragLeave;
+window.onListColumnDrop = onListColumnDrop;
+window.onListColumnDragEnd = onListColumnDragEnd;
+window.updateListColumnField = updateListColumnField;
+window.updateListColumnOptions = updateListColumnOptions;
 window.toggleSchemaAdvanced = toggleSchemaAdvanced;
 window.addSchemaRow = addSchemaRow;
 window.removeSchemaRow = removeSchemaRow;
+window.reorderSchemaRow = reorderSchemaRow;
+window.onSchemaRowDragStart = onSchemaRowDragStart;
+window.onSchemaRowDragOver = onSchemaRowDragOver;
+window.onSchemaRowDragLeave = onSchemaRowDragLeave;
+window.onSchemaRowDrop = onSchemaRowDrop;
+window.onSchemaRowDragEnd = onSchemaRowDragEnd;
 window.updateValueField = updateValueField;
+window.selectValueRow = selectValueRow;
 window.addValueRow = addValueRow;
 window.removeValueRow = removeValueRow;
 window.toggleValuesRawMode = toggleValuesRawMode;
@@ -2089,6 +3247,12 @@ window.onComboOptionPick = onComboOptionPick;
 window.onChipRemove = onChipRemove;
 window.addListItem = addListItem;
 window.removeListItem = removeListItem;
+window.reorderListItem = reorderListItem;
+window.onListItemDragStart = onListItemDragStart;
+window.onListItemDragOver = onListItemDragOver;
+window.onListItemDragLeave = onListItemDragLeave;
+window.onListItemDrop = onListItemDrop;
+window.onListItemDragEnd = onListItemDragEnd;
 window.updateListItemField = updateListItemField;
 window.onListItemSelectChange = onListItemSelectChange;
 window.setDirty = setDirty;
