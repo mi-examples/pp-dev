@@ -28,9 +28,10 @@ function makeProxyRes(headers: IncomingMessage['headers'], statusCode = 200, sta
   return proxyRes;
 }
 
-function makeRes() {
+function makeRes({ writeReturns = true }: { writeReturns?: boolean } = {}) {
   const chunks: Buffer[] = [];
   const headers: Record<string, unknown> = {};
+  const drainListeners: Array<() => void> = [];
 
   const res = {
     statusCode: 200,
@@ -45,7 +46,11 @@ function makeRes() {
     write(chunk: Buffer | string) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
 
-      return true;
+      return writeReturns;
+    },
+    /** Fires the `drain` a real ServerResponse emits once its write queue empties. */
+    drain() {
+      drainListeners.splice(0).forEach((listener) => listener());
     },
     end(chunk?: Buffer | string) {
       if (chunk) {
@@ -57,7 +62,11 @@ function makeRes() {
     on() {
       return res;
     },
-    once() {
+    once(event: string, listener: () => void) {
+      if (event === 'drain') {
+        drainListeners.push(listener);
+      }
+
       return res;
     },
     emit() {
@@ -226,6 +235,37 @@ describe('streamResponseInterceptor', () => {
     await runStream(proxyRes, res, (stream) => stream.end('data: ok\n\n'));
 
     expect('x-missing' in res.headers).toBe(false);
+  });
+
+  it.each(['application/json', 'application/json; charset=utf-8', 'application/xml'])(
+    'applies the interceptor to a chunked %s body',
+    async (contentType) => {
+      const proxyRes = makeProxyRes({
+        'content-type': contentType,
+        'transfer-encoding': 'chunked',
+        'x-accel-buffering': 'no',
+      });
+      const res = makeRes();
+
+      await runStream(proxyRes, res, (stream) => stream.end(`{"next":"https://${upstreamHost}/a"}\n`));
+
+      expect(res.body).toBe(`{"next":"https://${localHost}/a"}\n`);
+    },
+  );
+
+  it('pauses the upstream stream until the client response drains', async () => {
+    const proxyRes = makeProxyRes({ 'content-type': 'text/event-stream' });
+    const res = makeRes({ writeReturns: false });
+
+    await runStream(proxyRes, res, (stream) => stream.write(`data: https://${upstreamHost}/a\n\n`));
+
+    expect(proxyRes.isPaused()).toBe(true);
+
+    res.drain();
+
+    expect(proxyRes.isPaused()).toBe(false);
+
+    proxyRes.end();
   });
 
   it('flushes a line that never breaks once it exceeds the pending limit', async () => {

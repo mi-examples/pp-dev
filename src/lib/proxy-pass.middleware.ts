@@ -31,8 +31,18 @@ const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 
 export const PROXY_HEADER = 'X-PP-Proxy';
 
-/** Content types whose streamed payload is safe to run the text interceptor over. */
-const TEXTUAL_CONTENT_TYPE_REGEXP = /^text\/|(?:^|\+)(?:json|xml)\b|\bjavascript\b/i;
+/** Media types whose streamed payload is safe to run the text interceptor over. */
+const TEXTUAL_MEDIA_TYPE_REGEXPS = [
+  /^text\//,
+  /^application\/(?:[\w.-]+\+)?(?:json|xml)$/,
+  /^application\/(?:x-)?(?:java|ecma)script$/,
+];
+
+function isTextualContentType(contentType: string): boolean {
+  const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
+
+  return TEXTUAL_MEDIA_TYPE_REGEXPS.some((pattern) => pattern.test(mediaType));
+}
 
 /**
  * Longest chunk we hold back while waiting for a line break. A stream that never emits one
@@ -55,7 +65,7 @@ function isRewritableStream(headers: IncomingMessage['headers']): boolean {
 
   const contentType = headers['content-type'];
 
-  return typeof contentType === 'string' && TEXTUAL_CONTENT_TYPE_REGEXP.test(contentType);
+  return typeof contentType === 'string' && isTextualContentType(contentType);
 }
 
 /**
@@ -99,9 +109,24 @@ export function streamResponseInterceptor(interceptor?: (data: Buffer, encoding:
     const decoder = new StringDecoder('utf8');
     let pending = '';
 
+    let waitingForDrain = false;
+
+    // piping handled backpressure for us; writing by hand means honouring it here.
     const flush = (text: string) => {
-      if (text) {
-        res.write(interceptor(Buffer.from(text, 'utf8'), 'utf8'));
+      if (!text) {
+        return;
+      }
+
+      const flushed = res.write(interceptor(Buffer.from(text, 'utf8'), 'utf8'));
+
+      if (!flushed && !waitingForDrain) {
+        waitingForDrain = true;
+        proxyRes.pause();
+
+        res.once('drain', () => {
+          waitingForDrain = false;
+          proxyRes.resume();
+        });
       }
     };
 
