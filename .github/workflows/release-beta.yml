@@ -94,4 +94,13 @@ jobs:
       - name: Release Beta
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # For a workflow_run event, GITHUB_REF is the ref of the workflow FILE (the repo's
+          # default branch, main) rather than the branch that triggered it (develop) — even
+          # though the checkout step above explicitly checks out develop's commit. semantic-
+          # release's env-ci detection reads only GITHUB_REF to pick the release branch, so
+          # left alone it decides it's releasing from main and tries to push there, which the
+          # branch protection rules reject. This job only ever runs for develop (see the `if:`
+          # above), so it's always correct to force it here.
+          GITHUB_REF: refs/heads/develop
+          GITHUB_REF_NAME: develop
         run: npm run release
