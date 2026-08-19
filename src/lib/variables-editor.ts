@@ -1001,7 +1001,9 @@ function showJsonDiffModal(beforeText, afterText, onConfirm) {
       }
     });
     // Wait a frame so the modal layout is ready before scrolling.
-    requestAnimationFrame(function () { updateChangeNav(); });
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () { updateChangeNav(); });
+    }
   }
 
   function close(confirmed) {
@@ -2916,7 +2918,7 @@ function scrollToValueRow(i, smooth) {
   const detail = document.querySelector('.ve-values-detail');
   const target = document.getElementById('value-item-' + i);
 
-  if (!detail || !target) { return; }
+  if (!detail || !target || typeof detail.scrollTo !== 'function') { return; }
 
   const top = target.getBoundingClientRect().top - detail.getBoundingClientRect().top + detail.scrollTop;
 

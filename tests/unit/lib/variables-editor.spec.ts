@@ -447,7 +447,7 @@ describe('registerVariablesEditorRoutes', () => {
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content tbody input');
+      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
 
       expect(valueInput?.value).toBe('newer');
 
@@ -562,11 +562,13 @@ describe('registerVariablesEditorRoutes', () => {
         save: () => void;
         updateValueField: (index: number, value: string) => void;
       };
-      const valueInputBeforeSave = dom.window.document.querySelector<HTMLInputElement>('#content tbody input')!;
+      const valueInputBeforeSave = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input')!;
 
       valueInputBeforeSave.value = 'submitted';
       editorWindow.updateValueField(0, 'submitted');
       editorWindow.save();
+      // save() now opens a confirmation diff modal instead of saving immediately — confirm it.
+      dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
       expect(fetch).toHaveBeenCalledTimes(2);
 
       valueInputBeforeSave.value = 'newer unsaved edit';
@@ -582,7 +584,7 @@ describe('registerVariablesEditorRoutes', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content tbody input');
+      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
 
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(valueInput?.value).toBe('newer unsaved edit');
