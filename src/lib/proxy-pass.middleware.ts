@@ -5,6 +5,7 @@ import { Express } from 'express';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
+import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { MiAPI } from './pp.middleware';
 import type { NextHandleFunction } from 'connect';
@@ -30,14 +31,130 @@ const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 
 export const PROXY_HEADER = 'X-PP-Proxy';
 
-// TODO: Implement interceptor for streaming responses
-function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: BufferEncoding) => Buffer) {
+/** Media types whose streamed payload is safe to run the text interceptor over. */
+const TEXTUAL_MEDIA_TYPE_REGEXPS = [
+  /^text\//,
+  /^application\/(?:[\w.-]+\+)?(?:json|xml)$/,
+  /^application\/(?:x-)?(?:java|ecma)script$/,
+];
+
+function isTextualContentType(contentType: string): boolean {
+  const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
+
+  return TEXTUAL_MEDIA_TYPE_REGEXPS.some((pattern) => pattern.test(mediaType));
+}
+
+/**
+ * Longest chunk we hold back while waiting for a line break. A stream that never emits one
+ * (or emits very long lines) is flushed once it reaches this size so the client keeps
+ * receiving data and memory stays bounded.
+ */
+const MAX_PENDING_STREAM_CHUNK = 64 * 1024;
+
+/**
+ * Streamed bodies are only rewritten when they are plain text we can decode: a
+ * `content-encoding` means the bytes are compressed, and a non-textual `content-type` (the
+ * `x-accel-buffering: no` path also carries binary downloads) must reach the client untouched.
+ */
+function isRewritableStream(headers: IncomingMessage['headers']): boolean {
+  const contentEncoding = headers['content-encoding'];
+
+  if (typeof contentEncoding === 'string' && contentEncoding.trim() && contentEncoding.trim() !== 'identity') {
+    return false;
+  }
+
+  const contentType = headers['content-type'];
+
+  return typeof contentType === 'string' && isTextualContentType(contentType);
+}
+
+/**
+ * Streams a proxied response to the client, applying {@link interceptor} to the decoded text
+ * as it flows. Complete lines are forwarded immediately (an SSE event always ends with a line
+ * break, so nothing is delayed) while a trailing partial line is held back, which keeps a
+ * replaced value from being split across two chunks and missed.
+ */
+export function streamResponseInterceptor(interceptor?: (data: Buffer, encoding: BufferEncoding) => Buffer) {
   return async <T extends IncomingMessage>(proxyRes: T, req: T, res: ServerResponse<T>) => {
+    const rewrite = interceptor && isRewritableStream(proxyRes.headers);
+
+    res.statusCode = proxyRes.statusCode ?? res.statusCode;
+
+    if (proxyRes.statusMessage) {
+      res.statusMessage = proxyRes.statusMessage;
+    }
+
     res.setHeader(PROXY_HEADER, 1);
 
-    res.setHeaders(new Map(Object.entries(proxyRes.headers)) as any);
+    for (const [name, value] of Object.entries(proxyRes.headers)) {
+      if (value === undefined) {
+        continue;
+      }
 
-    proxyRes.pipe(res);
+      // The rewritten payload no longer matches the upstream length.
+      if (rewrite && name.toLowerCase() === 'content-length') {
+        continue;
+      }
+
+      res.setHeader(name, value);
+    }
+
+    if (!rewrite) {
+      proxyRes.pipe(res);
+
+      return;
+    }
+
+    // Decodes incrementally so a multi-byte character split across chunks stays intact.
+    const decoder = new StringDecoder('utf8');
+    let pending = '';
+
+    let waitingForDrain = false;
+
+    // piping handled backpressure for us; writing by hand means honouring it here.
+    const flush = (text: string) => {
+      if (!text) {
+        return;
+      }
+
+      const flushed = res.write(interceptor(Buffer.from(text, 'utf8'), 'utf8'));
+
+      if (!flushed && !waitingForDrain) {
+        waitingForDrain = true;
+        proxyRes.pause();
+
+        res.once('drain', () => {
+          waitingForDrain = false;
+          proxyRes.resume();
+        });
+      }
+    };
+
+    proxyRes.on('data', (chunk: Buffer) => {
+      pending += decoder.write(chunk);
+
+      const lastBreak = pending.lastIndexOf('\n');
+
+      if (lastBreak !== -1) {
+        flush(pending.slice(0, lastBreak + 1));
+        pending = pending.slice(lastBreak + 1);
+      }
+
+      if (pending.length >= MAX_PENDING_STREAM_CHUNK) {
+        flush(pending);
+        pending = '';
+      }
+    });
+
+    proxyRes.on('end', () => {
+      flush(pending + decoder.end());
+      pending = '';
+      res.end();
+    });
+
+    proxyRes.on('error', () => {
+      res.end();
+    });
   };
 }
 
