@@ -8,6 +8,7 @@ import { colors } from './helpers/color.helper';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import extractZip from 'extract-zip';
+import { rejectSymlinks } from './helpers/zip.helper.js';
 
 export const changelogTemplate = /* HTML */ `<!DOCTYPE html>
   <html lang="en">
@@ -398,7 +399,8 @@ export class ChangelogGenerator {
   private async unzipFile(assetPath: string, destinationPath: string): Promise<void> {
     fs.rmSync(destinationPath, { force: true, recursive: true });
 
-    return extractZip(assetPath, { dir: destinationPath });
+    await extractZip(assetPath, { dir: destinationPath });
+    await rejectSymlinks(destinationPath);
   }
 
   private normalizeAssetFolderPath(assetPath: string): string {
