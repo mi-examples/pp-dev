@@ -11,7 +11,7 @@ import { createLogger } from './logger.js';
 import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
-import { zipDirectoryToBuffer } from './helpers/zip.helper.js';
+import { zipDirectoryToBuffer, rejectSymlinks } from './helpers/zip.helper.js';
 import { runNextBuildProcess } from './next-build-runner.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
 
@@ -357,6 +357,7 @@ export class DistService {
       await fs.mkdir(extractedDir, { recursive: true });
       await fs.writeFile(zipPath, backupFile);
       await extractZip(zipPath, { dir: extractedDir });
+      await rejectSymlinks(extractedDir);
 
       const contentRootDir = await this.normalizeExtractedRootDir(extractedDir);
       const allFiles = await this.listFilesRecursive(contentRootDir);

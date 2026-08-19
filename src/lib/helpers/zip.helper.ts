@@ -26,3 +26,26 @@ export async function zipDirectoryToBuffer(dir: string): Promise<Buffer> {
 
   return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
+
+/**
+ * Recursively throws if `dir` contains a symlink.
+ *
+ * extract-zip does not validate symlink targets (GHSA-jmr9-qjv8-65gv, unpatched as of writing),
+ * so a malicious archive can plant a symlink that points outside the extraction directory. Call
+ * this right after extraction and before any code reads/writes through the extracted paths.
+ */
+export async function rejectSymlinks(dir: string): Promise<void> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Zip archive contains a symlink ("${entry.name}"), which is not allowed`);
+    }
+
+    if (entry.isDirectory()) {
+      await rejectSymlinks(fullPath);
+    }
+  }
+}
