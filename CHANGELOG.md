@@ -1,3 +1,10 @@
+# [1.3.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.3.0-beta.1...v1.3.0-beta.2) (2026-08-28)
+
+
+### Bug Fixes
+
+* **ci:** run the beta release in-workflow instead of via workflow_run ([69f1282](https://github.com/mi-examples/pp-dev/commit/69f1282ff1f94947c0108c0ad96f82cd65414462))
+
 # [1.3.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.2.2...v1.3.0-beta.1) (2026-08-28)
 
 
