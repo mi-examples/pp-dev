@@ -4,6 +4,7 @@ import { DistService } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
 import {
   buildPageVariablesExport,
+  planPageVariablesImport,
   validateValueAgainstTag,
   PageVariableEntry,
   PageVariableValidationIssue,
@@ -245,6 +246,62 @@ export function registerVariablesEditorRoutes(
     res.json({ uid: createHash('md5').update(randomUUID()).digest('hex') });
   });
 
+  // ── API: candidate pages to import values from — every other page, pages sharing the
+  // current template flagged so the UI can list them first ──────────────────────────────
+  app.get('/@api/variables/pages', async (_req, res) => {
+    const { miAPI } = current.deps;
+
+    try {
+      const allPages = await miAPI.listPages();
+      const currentPage = allPages.find((page) => page.internal_name === miAPI.internalPageName) ?? null;
+
+      const pages = allPages
+        .filter((page) => page.internal_name !== miAPI.internalPageName)
+        .map((page) => ({
+          id: page.id,
+          name: page.name,
+          internal_name: page.internal_name,
+          sameTemplate: !!currentPage && (
+            currentPage.template_id != null
+              ? page.template_id === currentPage.template_id
+              : !!currentPage.template && page.template === currentPage.template
+          ),
+        }));
+
+      res.json({ pages, currentPageName: currentPage?.name ?? null });
+    } catch (error) {
+      res.status(502).json({
+        error: 'Failed to fetch the page list.',
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // ── API: plan an import of another page's live values into the current page's schema —
+  // matched by name, then checked against the target variable's type ─────────────────────
+  app.get('/@api/variables/import-plan/:pageId', async (req, res) => {
+    const { distService, miAPI } = current.deps;
+    const pageId = Number(req.params.pageId);
+
+    if (!Number.isInteger(pageId) || pageId <= 0) {
+      res.status(400).json({ error: 'pageId must be a positive integer.' });
+
+      return;
+    }
+
+    try {
+      const schema = await readSchema(distService);
+      const sourceValues = await miAPI.getPageVariablesFor(pageId);
+
+      res.json(planPageVariablesImport(schema, sourceValues));
+    } catch (error) {
+      res.status(502).json({
+        error: 'Failed to fetch values from the selected page.',
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   // ── Web UI ───────────────────────────────────────────────────────────────────
   app.get(VARIABLES_EDITOR_PATH, (_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -477,6 +534,32 @@ tr.schema-row.is-drop-target td,tr.details-row.is-drop-target td{box-shadow:inse
 .ve-ao-column-bottom > .ve-ao-column-field{flex:1;min-width:0}
 .ve-json-issues{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .ve-json-issue-badge{display:inline-flex;align-items:center;gap:4px;background:color-mix(in srgb, var(--yellow) 15%, var(--bg));color:var(--yellow);border:1px solid color-mix(in srgb, var(--yellow) 40%, var(--bg));border-radius:10px;padding:2px 8px;font-size:11px;cursor:default}
+.ve-modal-back{background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;padding:0 0 4px;font-family:var(--font-ui);display:block}
+.ve-import-search{position:relative;margin-bottom:12px}
+.ve-import-search input{padding-left:28px}
+.ve-import-search::before{content:"⌕";position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none}
+.ve-import-section-title{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;font-weight:600}
+.ve-import-section-title:first-child{margin-top:0}
+.ve-import-page-list{display:flex;flex-direction:column;gap:5px}
+.ve-import-page-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);cursor:pointer;font-family:var(--font-ui);font-size:12px}
+.ve-import-page-row:hover{border-color:var(--accent)}
+.ve-import-page-name{font-weight:500}
+.ve-import-page-slug{font-size:11px;color:var(--text3);font-family:var(--font-mono);margin-left:auto;flex-shrink:0}
+.ve-import-empty{padding:20px 4px;text-align:center;color:var(--text3);font-size:12px}
+.ve-import-list-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ve-import-list-head .badge{background:color-mix(in srgb, var(--green) 18%, var(--bg));color:var(--green)}
+.ve-import-select-all{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text2);cursor:pointer;text-transform:none}
+.ve-import-list{display:flex;flex-direction:column;gap:6px}
+.ve-import-row{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);cursor:pointer}
+.ve-import-row input[type=checkbox]{margin-top:2px;flex-shrink:0}
+.ve-import-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.ve-import-row-top{display:flex;align-items:center;gap:8px}
+.ve-import-row-name{font-family:var(--font-mono);font-size:12px;font-weight:600}
+.ve-import-row-value{font-size:11.5px;color:var(--text2);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ve-import-swatch{width:12px;height:12px;border-radius:3px;border:1px solid var(--border2);flex-shrink:0;display:inline-block;vertical-align:-1px;margin-right:5px}
+.ve-import-skip-row{display:flex;align-items:baseline;gap:8px;padding:7px 10px;opacity:.85}
+.ve-import-skip-row .ve-import-row-name{color:var(--text2)}
+.ve-import-skip-reason{font-size:11.5px;color:var(--text3)}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
@@ -608,6 +691,8 @@ const invalidAdditionalOptionsRows = new WeakSet();
 let valueRows = [];       // working copy of {name, value}
 let selectedValueIndex = 0;
 let selectedListItemIndex = 0;
+let importReviewCandidates = []; // last-fetched import-plan's "importable" list, for applyImportPlan()
+let importReviewPageName = '';   // source page name, for the post-apply banner
 let valuesRawMode = activeTab === 'values' && valuesJsonModeFromUrl();
 let rawMode = false;
 let dirty = false;
@@ -3017,7 +3102,10 @@ function renderValuesTab() {
 
   if (!valueRows.length) {
     return \`
-      <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleValuesRawMode()">View/edit raw JSON</button></div>
+      <div class="raw-toggle">
+        <button class="btn btn-sm" onclick="toggleValuesRawMode()">View/edit raw JSON</button>
+        <button class="btn btn-sm" onclick="openImportValuesModal()">⇄ Import from page…</button>
+      </div>
       <div class="ve-values-layout">
         <div class="ve-values-nav">
           <div class="ve-values-nav-list"></div>
@@ -3038,7 +3126,10 @@ function renderValuesTab() {
   ).join('');
 
   return \`
-    <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleValuesRawMode()">View/edit raw JSON</button></div>
+    <div class="raw-toggle">
+      <button class="btn btn-sm" onclick="toggleValuesRawMode()">View/edit raw JSON</button>
+      <button class="btn btn-sm" onclick="openImportValuesModal()">⇄ Import from page…</button>
+    </div>
     <div class="ve-values-layout">
       <div class="ve-values-nav">
         <div class="ve-values-nav-list">\${navHtml}</div>
@@ -3088,6 +3179,344 @@ function toggleValuesRawMode() {
 function updateValueField(i, value) {
   valueRows[i].value = value;
   setDirty(true);
+}
+
+// ── Values tab: "Import from page…" ─────────────────────────────────────────
+// Two-step flow, both steps rendered into the same overlay element (only its innerHTML swaps)
+// so the outer overlay's click-outside/Escape handlers, bound once here, keep working through
+// "← Back". Nothing is written to MI until the user then hits the regular Save button.
+function openImportValuesModal() {
+  closeImportModal();
+
+  const overlay = document.createElement('div');
+
+  overlay.className = 've-modal-overlay';
+  overlay.id = 've-import-overlay';
+
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target === overlay) { closeImportModal(); }
+  });
+  overlay.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      closeImportModal();
+    }
+  });
+
+  document.body.appendChild(overlay);
+  renderImportPickerStep(overlay);
+}
+
+function closeImportModal() {
+  const overlay = document.getElementById('ve-import-overlay');
+
+  if (overlay) { overlay.remove(); }
+}
+
+function backToImportPicker() {
+  const overlay = document.getElementById('ve-import-overlay');
+
+  if (overlay) { renderImportPickerStep(overlay); }
+}
+
+async function renderImportPickerStep(overlay) {
+  overlay.innerHTML =
+    '<div class="ve-modal ve-modal-wide" role="dialog" aria-modal="true">' +
+    '<div class="ve-modal-title-row">' +
+    '<div class="ve-modal-title">Import values from another page</div>' +
+    '<button type="button" class="btn btn-sm ve-modal-close" title="Close" aria-label="Close" onclick="closeImportModal()">✕</button>' +
+    '</div>' +
+    '<div class="ve-modal-body"><span class="ve-loading-indicator"><span class="ve-loading-dot"></span>Loading pages…</span></div>' +
+    '</div>';
+
+  let r;
+
+  try {
+    r = await fetch('/@api/variables/pages');
+  } catch (e) {
+    setImportBodyError(overlay, e.message);
+
+    return;
+  }
+
+  const data = await r.json().catch(() => ({}));
+
+  if (!overlay.isConnected) { return; }
+
+  if (!r.ok) {
+    setImportBodyError(overlay, data.error || 'Failed to load the page list.');
+
+    return;
+  }
+
+  const bodyEl = overlay.querySelector('.ve-modal-body');
+
+  if (!bodyEl) { return; }
+
+  bodyEl.innerHTML = importPickerBodyHtml(data.pages || []);
+
+  const filterEl = document.getElementById('ve-import-filter');
+
+  if (filterEl) { filterEl.focus(); }
+}
+
+function setImportBodyError(overlay, message) {
+  if (!overlay.isConnected) { return; }
+
+  const bodyEl = overlay.querySelector('.ve-modal-body');
+
+  if (bodyEl) { bodyEl.innerHTML = '<div class="hint" style="color:var(--red)">' + escapeHtml(message) + '</div>'; }
+}
+
+function importPickerBodyHtml(pages) {
+  if (!pages.length) {
+    return '<div class="ve-import-empty">No other pages found on this instance.</div>';
+  }
+
+  const sameTemplate = pages.filter((p) => p.sameTemplate);
+  const other = pages.filter((p) => !p.sameTemplate);
+
+  return (
+    '<div class="ve-import-search"><input type="text" id="ve-import-filter" placeholder="Filter pages…" oninput="filterImportPages(this.value)" autocomplete="off" /></div>' +
+    importPageGroupHtml('Pages using this template', sameTemplate) +
+    importPageGroupHtml('Other pages', other) +
+    '<div class="ve-import-empty" id="ve-import-page-empty" style="display:none">No pages match your filter.</div>'
+  );
+}
+
+function importPageGroupHtml(title, pages) {
+  if (!pages.length) { return ''; }
+
+  const rows = pages
+    .map(
+      (p) =>
+        '<button type="button" class="ve-import-page-row" data-search="' +
+        escapeHtml((p.name + ' ' + p.internal_name).toLowerCase()) +
+        '" onclick="selectImportSourcePage(' + p.id + ', \\'' + escapeJsAttr(p.name) + '\\')">' +
+        '<span class="ve-import-page-name">' + escapeHtml(p.name) + '</span>' +
+        '<span class="ve-import-page-slug">' + escapeHtml(p.internal_name) + '</span>' +
+        '</button>',
+    )
+    .join('');
+
+  return (
+    '<div class="ve-import-page-group">' +
+    '<div class="ve-import-section-title">' + escapeHtml(title) + '</div>' +
+    '<div class="ve-import-page-list">' + rows + '</div>' +
+    '</div>'
+  );
+}
+
+function filterImportPages(text) {
+  const needle = text.trim().toLowerCase();
+  let visible = 0;
+
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-import-page-row'), function (row) {
+    const match = !needle || row.dataset.search.indexOf(needle) !== -1;
+
+    row.style.display = match ? '' : 'none';
+
+    if (match) { visible++; }
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-import-page-group'), function (group) {
+    const anyVisible = Array.prototype.some.call(group.querySelectorAll('.ve-import-page-row'), function (row) {
+      return row.style.display !== 'none';
+    });
+
+    group.style.display = anyVisible ? '' : 'none';
+  });
+
+  const emptyEl = document.getElementById('ve-import-page-empty');
+
+  if (emptyEl) { emptyEl.style.display = visible === 0 ? '' : 'none'; }
+}
+
+async function selectImportSourcePage(pageId, pageName) {
+  const overlay = document.getElementById('ve-import-overlay');
+
+  if (!overlay) { return; }
+
+  overlay.dataset.sourcePageId = String(pageId);
+
+  overlay.innerHTML =
+    '<div class="ve-modal ve-modal-wide" role="dialog" aria-modal="true">' +
+    '<div class="ve-modal-title-row">' +
+    '<div style="flex:1;min-width:0">' +
+    '<button type="button" class="ve-modal-back" onclick="backToImportPicker()">← Back</button>' +
+    '<div class="ve-modal-title" style="margin-bottom:0">Import values from "' + escapeHtml(pageName) + '"</div>' +
+    '</div>' +
+    '<button type="button" class="btn btn-sm ve-modal-close" title="Close" aria-label="Close" onclick="closeImportModal()">✕</button>' +
+    '</div>' +
+    '<div class="ve-modal-body"><span class="ve-loading-indicator"><span class="ve-loading-dot"></span>Loading values…</span></div>' +
+    '<div class="ve-modal-actions" id="ve-import-actions"></div>' +
+    '</div>';
+
+  let r;
+
+  try {
+    r = await fetch('/@api/variables/import-plan/' + pageId);
+  } catch (e) {
+    setImportBodyError(overlay, e.message);
+
+    return;
+  }
+
+  const data = await r.json().catch(() => ({}));
+
+  // A newer pick (or Back) landed before this one resolved — drop the stale response.
+  if (!overlay.isConnected || overlay.dataset.sourcePageId !== String(pageId)) { return; }
+
+  if (!r.ok) {
+    setImportBodyError(overlay, data.error || 'Failed to load values from this page.');
+
+    return;
+  }
+
+  const bodyEl = overlay.querySelector('.ve-modal-body');
+  const actionsEl = overlay.querySelector('#ve-import-actions');
+
+  if (!bodyEl || !actionsEl) { return; }
+
+  importReviewCandidates = data.importable || [];
+  importReviewPageName = pageName;
+
+  bodyEl.innerHTML = importReviewBodyHtml(data);
+  actionsEl.innerHTML = importReviewActionsHtml(data);
+
+  const applyBtn = document.getElementById('ve-import-apply-btn');
+
+  if (applyBtn) { applyBtn.focus(); }
+}
+
+function importReviewBodyHtml(plan) {
+  const importable = plan.importable || [];
+  const skipped = plan.skipped || [];
+
+  if (!importable.length && !skipped.length) {
+    return '<div class="ve-import-empty">This page has no live variable values to import.</div>';
+  }
+
+  let html = '';
+
+  if (importable.length) {
+    html +=
+      '<div class="ve-import-list-head">' +
+      '<span class="badge">Importable (' + importable.length + ')</span>' +
+      '<label class="ve-import-select-all"><input type="checkbox" id="ve-import-select-all" checked onchange="toggleImportAll(this.checked)" /> select all</label>' +
+      '</div>' +
+      '<div class="ve-import-list">' + importable.map((c, i) => importRowHtml(c, i)).join('') + '</div>';
+  } else {
+    html += '<div class="hint">Nothing on this page matches a variable name in the current schema.</div>';
+  }
+
+  if (skipped.length) {
+    html +=
+      '<div class="ve-import-section-title">Skipped (' + skipped.length + ')</div>' +
+      '<div class="ve-import-list">' +
+      skipped
+        .map(
+          (s) =>
+            '<div class="ve-import-skip-row">' +
+            '<span class="ve-import-row-name">' + escapeHtml(s.name) + '</span>' +
+            '<span class="ve-import-skip-reason">' + escapeHtml(s.reason) + '</span>' +
+            '</div>',
+        )
+        .join('') +
+      '</div>';
+  }
+
+  return html;
+}
+
+function importRowHtml(candidate, i) {
+  return (
+    '<label class="ve-import-row">' +
+    '<input type="checkbox" class="ve-import-check" data-index="' + i + '" checked onchange="updateImportCount()" />' +
+    '<span class="ve-import-row-main">' +
+    '<span class="ve-import-row-top"><span class="ve-import-row-name">' + escapeHtml(candidate.name) + '</span>' + typeBadgeHtml(candidate.tagType) + '</span>' +
+    '<span class="ve-import-row-value">' + importValuePreviewHtml(candidate) + '</span>' +
+    '</span>' +
+    '</label>'
+  );
+}
+
+function importValuePreviewHtml(candidate) {
+  const raw = candidate.sourceValue || '';
+
+  if (candidate.tagType === 'color' && /^#[0-9a-fA-F]{3,8}$/.test(raw)) {
+    return '<span class="ve-import-swatch" style="background:' + raw + '"></span>' + escapeHtml(raw);
+  }
+
+  const preview = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
+
+  return escapeHtml(preview || '(empty)');
+}
+
+function importReviewActionsHtml(plan) {
+  const count = (plan.importable || []).length;
+
+  if (!count) {
+    return '<button type="button" class="btn btn-sm" onclick="closeImportModal()">Close</button>';
+  }
+
+  return (
+    '<span class="hint" id="ve-import-count" style="margin-right:auto">' + count + ' of ' + count + ' selected</span>' +
+    '<button type="button" class="btn btn-sm" onclick="closeImportModal()">Cancel</button>' +
+    '<button type="button" class="btn btn-sm btn-primary" id="ve-import-apply-btn" onclick="applyImportPlan()">Apply ' + count + ' selected</button>'
+  );
+}
+
+function toggleImportAll(checked) {
+  Array.prototype.forEach.call(document.querySelectorAll('.ve-import-check'), function (c) { c.checked = checked; });
+  updateImportCount();
+}
+
+function updateImportCount() {
+  const checks = document.querySelectorAll('.ve-import-check');
+  const checkedCount = document.querySelectorAll('.ve-import-check:checked').length;
+  const countEl = document.getElementById('ve-import-count');
+  const selectAllEl = document.getElementById('ve-import-select-all');
+  const applyBtn = document.getElementById('ve-import-apply-btn');
+
+  if (countEl) { countEl.textContent = checkedCount + ' of ' + checks.length + ' selected'; }
+  if (selectAllEl) { selectAllEl.checked = checkedCount === checks.length; }
+
+  if (applyBtn) {
+    applyBtn.textContent = 'Apply ' + checkedCount + ' selected';
+    applyBtn.disabled = checkedCount === 0;
+  }
+}
+
+function applyImportPlan() {
+  const checkedIndexes = Array.prototype.map.call(document.querySelectorAll('.ve-import-check:checked'), function (c) {
+    return Number(c.dataset.index);
+  });
+
+  let applied = 0;
+
+  checkedIndexes.forEach((idx) => {
+    const candidate = importReviewCandidates[idx];
+
+    if (!candidate) { return; }
+
+    const row = valueRows.find((r) => r.name === candidate.name);
+
+    if (!row) { return; }
+
+    row.value = candidate.sourceValue;
+    applied++;
+  });
+
+  const total = importReviewCandidates.length;
+  const pageName = importReviewPageName;
+
+  closeImportModal();
+
+  if (!applied) { return; }
+
+  setDirty(true);
+  showBanner('success', 'Imported ' + applied + ' of ' + total + ' variable(s) from "' + escapeHtml(pageName) + '". Save to apply.');
 }
 
 function addValueRow() {
@@ -3270,6 +3699,14 @@ window.onListItemDrop = onListItemDrop;
 window.onListItemDragEnd = onListItemDragEnd;
 window.updateListItemField = updateListItemField;
 window.onListItemSelectChange = onListItemSelectChange;
+window.openImportValuesModal = openImportValuesModal;
+window.closeImportModal = closeImportModal;
+window.backToImportPicker = backToImportPicker;
+window.selectImportSourcePage = selectImportSourcePage;
+window.filterImportPages = filterImportPages;
+window.toggleImportAll = toggleImportAll;
+window.updateImportCount = updateImportCount;
+window.applyImportPlan = applyImportPlan;
 window.setDirty = setDirty;
 
 document.getElementById('tab-schema').classList.toggle('active', activeTab === 'schema');

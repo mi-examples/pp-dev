@@ -185,6 +185,42 @@ if (APP_ID !== null && MI_ACCESS_TOKEN) {
     // Template ZIP download is skipped: server.ts rewrites its cassette entry to a synthetic
     // 404 during save, so fetching the (possibly large) archive here would only be discarded.
   }
+
+  // Variables Editor: page list + live values, for both the current page and a second page
+  // (so the "import values from another page" flow has a real cross-page pair to replay).
+  log('Fetching page list + live variable values for the Variables Editor...');
+  let otherPageId: number | null = null;
+  try {
+    const pagesRes = await fetch(`${mockMi.url}/api/page`, {
+      headers: authHeaders,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    });
+    log(`  /api/page → ${pagesRes.status}`);
+    if (pagesRes.ok) {
+      const json = (await pagesRes.json()) as { pages?: { id?: number; template_id?: number | null }[] };
+      const others = (json?.pages ?? []).filter((p) => p.id !== undefined && p.id !== APP_ID);
+      // Prefer a page sharing the current template, so the recorded pair also covers the
+      // "pages using this template" grouping — falls back to any other page otherwise.
+      const sameTemplate = templateId !== null ? others.find((p) => p.template_id === templateId) : undefined;
+
+      otherPageId = (sameTemplate ?? others[0])?.id ?? null;
+      log(`  Picked other page id for cross-page import: ${otherPageId ?? '(none found)'}`);
+    }
+  } catch (err) {
+    log(`  /api/page → error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  for (const pageId of [APP_ID, otherPageId].filter((id): id is number => id !== null)) {
+    try {
+      const varsRes = await fetch(`${mockMi.url}/api/page_variable?page_id=${pageId}`, {
+        headers: authHeaders,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+      });
+      log(`  /api/page_variable?page_id=${pageId} → ${varsRes.status}`);
+    } catch (err) {
+      log(`  /api/page_variable?page_id=${pageId} → error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 } else if (APP_ID !== null) {
   log('Skipping template API fetch (no MI_ACCESS_TOKEN).');
 }

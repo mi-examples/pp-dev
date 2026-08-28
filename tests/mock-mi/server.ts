@@ -52,6 +52,12 @@ function cassetteKey(method: string, pathname: string): string {
   return `${method.toUpperCase()}:${pathname}`;
 }
 
+// Path + query string, so e.g. /api/page_variable?page_id=937 and ?page_id=292 record and
+// replay as distinct interactions instead of colliding on a shared /api/page_variable key.
+function requestPath(url: URL): string {
+  return url.pathname + url.search;
+}
+
 function redactFilesystemPaths(value: string): string {
   return value.replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]');
 }
@@ -267,12 +273,12 @@ export async function startMockMiServer(opts: {
 
     app.use((req: Request, res: Response) => {
       const url = new URL(req.url, `http://localhost:${port}`);
-      const key = cassetteKey(req.method, url.pathname);
+      const key = cassetteKey(req.method, requestPath(url));
       const interaction = map.get(key);
 
       if (!interaction) {
         console.warn(`[mock-mi:replay] No cassette entry for ${key}`);
-        res.status(404).json({ error: 'Not in cassette', path: url.pathname });
+        res.status(404).json({ error: 'Not in cassette', path: requestPath(url) });
         return;
       }
 
@@ -294,7 +300,20 @@ export async function startMockMiServer(opts: {
 
   // ── Record mode ───────────────────────────────────────────────────────────
   if (mode === 'record') {
+    // Seed from the existing cassette (if any) so a re-record only adds/updates the
+    // interactions actually exercised this run, instead of silently dropping every entry
+    // captured in earlier sessions (e.g. a previous run that covered a different code path).
     const interactionMap = new Map<string, Interaction>();
+
+    try {
+      const existing = loadCassette(cassetteName);
+
+      for (const interaction of existing.interactions) {
+        interactionMap.set(cassetteKey(interaction.request.method, interaction.request.pathname), interaction);
+      }
+    } catch {
+      // No existing cassette for this name yet — starting fresh is correct.
+    }
 
     app.use(
       createProxyMiddleware({
@@ -308,7 +327,7 @@ export async function startMockMiServer(opts: {
             proxyRes.on('end', () => {
               const rawBuffer = Buffer.concat(chunks);
               const url = new URL(req.url ?? '/', `http://localhost:${port}`);
-              const key = cassetteKey(req.method ?? 'GET', url.pathname);
+              const key = cassetteKey(req.method ?? 'GET', requestPath(url));
               const encodingHeader = proxyRes.headers['content-encoding'];
               const encoding = String(Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader ?? '').toLowerCase();
 
@@ -340,7 +359,7 @@ export async function startMockMiServer(opts: {
               const contentType = String(storedHeaders['content-type'] ?? '');
               const binary = isBinaryContentType(contentType);
               interactionMap.set(key, {
-                request: { method: req.method ?? 'GET', pathname: url.pathname },
+                request: { method: req.method ?? 'GET', pathname: requestPath(url) },
                 response: {
                   status: proxyRes.statusCode ?? 200,
                   headers: storedHeaders,
@@ -349,7 +368,7 @@ export async function startMockMiServer(opts: {
                 },
               });
 
-              console.log(`[mock-mi:record] ${req.method} ${url.pathname} → ${proxyRes.statusCode}`);
+              console.log(`[mock-mi:record] ${req.method} ${requestPath(url)} → ${proxyRes.statusCode}`);
 
               // Forward original (compressed) response to pp-dev unchanged
               res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers as http.OutgoingHttpHeaders);

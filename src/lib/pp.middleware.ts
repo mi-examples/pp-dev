@@ -2,7 +2,7 @@ import axios, { Axios } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
 import { JSDOM } from 'jsdom';
-import { AssetsAPI, PageAPI, AssetsV7API, PageTemplateAPI, PageVariableAPI, PageVariableTagEntry } from '../api/index.js';
+import { AssetsAPI, Page, PageAPI, AssetsV7API, PageTemplateAPI, PageVariableAPI, PageVariableTagEntry } from '../api/index.js';
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { createLogger } from './logger.js';
 import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
@@ -442,6 +442,28 @@ export class MiAPI {
     this.logger.info(
       colors.green(`[page-variables] Applied variables to page ID ${pageId} in ${Date.now() - start}ms`),
     );
+  }
+
+  /**
+   * List every portal page (`/api/page`) — used by the Variables Editor's "import values from
+   * another page" picker to offer candidate source pages.
+   *
+   * @param headers
+   */
+  async listPages(headers: Headers = this.#headers): Promise<Page[]> {
+    return this.pageApi.getAll(this.#clearHeaders(headers));
+  }
+
+  /**
+   * Get another page's live variable values via `/api/page_variable`, by numeric page id.
+   * Unlike `getLivePageVariables()`, this deliberately does not touch `this.appId` — it's for
+   * reading a *different* page's values (e.g. to import from), not the current page's.
+   *
+   * @param pageId
+   * @param headers
+   */
+  async getPageVariablesFor(pageId: number, headers: Headers = this.#headers): Promise<PageVariableTagEntry[]> {
+    return this.pageVariableApi.getById(pageId, this.#clearHeaders(headers));
   }
 
   /** Whether this page has no associated template — no `__template_variables.json`, no page variables. */

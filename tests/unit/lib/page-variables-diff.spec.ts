@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildPageVariablesExport,
+  planPageVariablesImport,
   validateValueAgainstTag,
   type TemplateVariablesSchema,
   type TemplateVariableTag,
@@ -193,5 +194,122 @@ describe('buildPageVariablesExport', () => {
     expect(buildPageVariablesExport(null, [{ name: 'title', value: 'Live' }])).toEqual([
       { name: 'title', value: 'Live' },
     ]);
+  });
+});
+
+describe('planPageVariablesImport', () => {
+  it('skips a source variable with no matching name in the current schema', () => {
+    const plan = planPageVariablesImport({ tags: [{ name: 'title' }] }, [{ name: 'legacy', value: 'x' }]);
+
+    expect(plan.importable).toEqual([]);
+    expect(plan.skipped).toEqual([
+      { name: 'legacy', sourceValue: 'x', reason: "Not in the current page's schema." },
+    ]);
+  });
+
+  it('imports a matched text variable regardless of content', () => {
+    const schema: TemplateVariablesSchema = { tags: [{ name: 'title', tag_type: 'text' }] };
+    const plan = planPageVariablesImport(schema, [{ name: 'title', value: 'Q1 Recap' }]);
+
+    expect(plan.importable).toEqual([{ name: 'title', sourceValue: 'Q1 Recap', tagType: 'text' }]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('imports a select/multiselect value even when it does not match any declared option', () => {
+    const schema: TemplateVariablesSchema = {
+      tags: [{ name: 'region', tag_type: 'select', additional_options: ['east', 'west'] }],
+    };
+    const plan = planPageVariablesImport(schema, [{ name: 'region', value: 'north' }]);
+
+    expect(plan.importable).toEqual([{ name: 'region', sourceValue: 'north', tagType: 'select' }]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  describe('boolean', () => {
+    const schema: TemplateVariablesSchema = { tags: [{ name: 'flag', tag_type: 'boolean' }] };
+
+    it('imports a recognized boolean encoding', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'flag', value: 'true' }]);
+
+      expect(plan.importable).toEqual([{ name: 'flag', sourceValue: 'true', tagType: 'boolean' }]);
+    });
+
+    it('skips an unrecognized boolean value', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'flag', value: 'maybe' }]);
+
+      expect(plan.importable).toEqual([]);
+      expect(plan.skipped).toEqual([
+        { name: 'flag', sourceValue: 'maybe', reason: 'Not a recognized boolean value ("maybe").' },
+      ]);
+    });
+  });
+
+  describe('color', () => {
+    const schema: TemplateVariablesSchema = { tags: [{ name: 'accent', tag_type: 'color' }] };
+
+    it('imports a valid hex color', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'accent', value: '#2563eb' }]);
+
+      expect(plan.importable).toEqual([{ name: 'accent', sourceValue: '#2563eb', tagType: 'color' }]);
+    });
+
+    it('imports an empty value', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'accent', value: '' }]);
+
+      expect(plan.importable).toEqual([{ name: 'accent', sourceValue: '', tagType: 'color' }]);
+    });
+
+    it('skips a value that is not a recognized color', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'accent', value: 'blue' }]);
+
+      expect(plan.skipped).toEqual([
+        { name: 'accent', sourceValue: 'blue', reason: 'Not a recognized color value ("blue").' },
+      ]);
+    });
+  });
+
+  describe('list', () => {
+    const schema: TemplateVariablesSchema = { tags: [{ name: 'regions', tag_type: 'list' }] };
+
+    it('imports a valid JSON array', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'regions', value: '["east","west"]' }]);
+
+      expect(plan.importable).toEqual([{ name: 'regions', sourceValue: '["east","west"]', tagType: 'list' }]);
+    });
+
+    it('imports a JSON null as an empty list', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'regions', value: 'null' }]);
+
+      expect(plan.importable).toEqual([{ name: 'regions', sourceValue: 'null', tagType: 'list' }]);
+    });
+
+    it('imports an empty string', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'regions', value: '' }]);
+
+      expect(plan.importable).toEqual([{ name: 'regions', sourceValue: '', tagType: 'list' }]);
+    });
+
+    it('skips a JSON value that is not an array', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'regions', value: '{"a":1}' }]);
+
+      expect(plan.skipped).toEqual([
+        { name: 'regions', sourceValue: '{"a":1}', reason: 'Value is valid JSON but not an array.' },
+      ]);
+    });
+
+    it('skips a value that is not valid JSON', () => {
+      const plan = planPageVariablesImport(schema, [{ name: 'regions', value: 'not-json' }]);
+
+      expect(plan.skipped).toEqual([
+        { name: 'regions', sourceValue: 'not-json', reason: 'Value is not valid JSON.' },
+      ]);
+    });
+  });
+
+  it('degraded mode (schema === null) skips everything', () => {
+    const plan = planPageVariablesImport(null, [{ name: 'title', value: 'x' }]);
+
+    expect(plan.importable).toEqual([]);
+    expect(plan.skipped).toEqual([{ name: 'title', sourceValue: 'x', reason: "Not in the current page's schema." }]);
   });
 });
