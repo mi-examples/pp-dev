@@ -1,3 +1,24 @@
+# [1.3.0-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.2.2...v1.3.0-beta.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **ci:** allowlist extract-zip's unfixable advisory in audit-all ([670c48f](https://github.com/mi-examples/pp-dev/commit/670c48fec79bef3717ab987dd802daf1cdf361fb))
+* **ci:** force GITHUB_REF to develop in the beta release step ([af5a36d](https://github.com/mi-examples/pp-dev/commit/af5a36dee8bb8fcca4e18a81110f669ecb5eb1ce))
+* **e2e:** stop asserting a hardcoded MI auth-info shape ([6db8edf](https://github.com/mi-examples/pp-dev/commit/6db8edfcff70c61d916a719ca31b8ec9c3d48d4e))
+* **proxy:** rewrite JSON and XML streams, and respect client backpressure ([e653e93](https://github.com/mi-examples/pp-dev/commit/e653e93a5bdba03a0289a495aef361f5df3898bb))
+* **proxy:** rewrite URLs and forward status for streamed responses ([94dc9dd](https://github.com/mi-examples/pp-dev/commit/94dc9dd8e91c84d5b6513071770797a0c8ac1c5e))
+* **security:** reject unvalidated symlinks after zip extraction ([707d8cc](https://github.com/mi-examples/pp-dev/commit/707d8cc08d9ae1bb0955a111307253ed98d6b70c))
+* **variables-editor:** allow manual input for non-static list columns, treat null list value as empty array ([368e218](https://github.com/mi-examples/pp-dev/commit/368e218f4a928ab5daf756e8319c4b0dff5fa31d))
+* **variables-editor:** guard missing browser APIs, update stale test selectors ([21fa412](https://github.com/mi-examples/pp-dev/commit/21fa412ded827a9266aa4d8e8d5d524e8c36c748)), closes [#content](https://github.com/mi-examples/pp-dev/issues/content)
+* **variables-editor:** render {id,text} options correctly in list-column select widgets ([dfb031c](https://github.com/mi-examples/pp-dev/commit/dfb031c69c53f11ec5e445f3405ab6b451154d75))
+
+
+### Features
+
+* **ui:** improve variables editor schema/values UX ([6610ee5](https://github.com/mi-examples/pp-dev/commit/6610ee54056ab6c6339fc5b2549f811483ac1712))
+* **variables-editor:** import variable values from another page ([5c5bf2e](https://github.com/mi-examples/pp-dev/commit/5c5bf2eaf63499d3abb4cdc07645f378b9bdb533))
+
 # [1.2.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.2.0-beta.2...v1.2.0-beta.3) (2026-08-07)
 
 
