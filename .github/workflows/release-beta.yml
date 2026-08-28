@@ -1,13 +1,11 @@
-name: Beta Release
+name: Beta Release (manual retry)
 
+# The automatic beta release runs inside ci.yml (as a job gated on build+test, triggered by the
+# actual `push` to develop) — see that file for why. This workflow is only the manual fallback
+# for a release that failed mid-way: a `[skip ci]` release commit never triggers push, and
+# re-running a failed CI run pins the old SHA, so semantic-release refuses with "local branch is
+# behind the remote one". Dispatch this against develop to retry from its current tip instead.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [develop]
-  # Manual re-run for releases that failed mid-way: `[skip ci]` release commits
-  # never trigger the push event, and re-running a failed run pins the old SHA,
-  # so semantic-release refuses with "local branch is behind the remote one".
   workflow_dispatch:
 
 concurrency:
@@ -22,15 +20,7 @@ permissions:
 
 jobs:
   release-beta:
-    # Automatic releases require a successful push-triggered CI run on develop.
-    # Manual retries are restricted to develop and verify that its current SHA passed CI below.
-    if: >-
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'develop') ||
-      (github.event_name == 'workflow_dispatch' &&
-       github.ref == 'refs/heads/develop')
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -38,10 +28,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Verify successful CI for manual release
-        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -94,13 +82,4 @@ jobs:
       - name: Release Beta
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For a workflow_run event, GITHUB_REF is the ref of the workflow FILE (the repo's
-          # default branch, main) rather than the branch that triggered it (develop) — even
-          # though the checkout step above explicitly checks out develop's commit. semantic-
-          # release's env-ci detection reads only GITHUB_REF to pick the release branch, so
-          # left alone it decides it's releasing from main and tries to push there, which the
-          # branch protection rules reject. This job only ever runs for develop (see the `if:`
-          # above), so it's always correct to force it here.
-          GITHUB_REF: refs/heads/develop
-          GITHUB_REF_NAME: develop
         run: npm run release
