@@ -2409,6 +2409,10 @@ function parseListItems(row) {
   try {
     const parsed = row.value ? JSON.parse(row.value) : [];
 
+    // A stored "null" (MI's own encoding for "no value yet") means an empty list, not invalid
+    // JSON — only reject genuinely non-array, non-null JSON (e.g. an object or a number).
+    if (parsed === null) { return []; }
+
     return Array.isArray(parsed) ? parsed : null;
   } catch (e) {
     return null;
@@ -2506,6 +2510,15 @@ function listItemFieldsHtml(config, item, i, itemIndex) {
 
     if (colType === 'select' || colType === 'multi-select') {
       const isMulti = colType === 'multi-select';
+
+      // Only "static" ships its option list locally (col.options); every other source is
+      // populated live by MI's own editor (see additionalOptionsDetails()) and pp-dev has no
+      // API to fetch it here — fall back to free text, same as the tag-level select does.
+      if (colSource !== 'static') {
+        return '<div class="ve-values-field">' + listFieldLabelHtml(colName, colSource) +
+          '<input type="text" value="' + escapeHtml(val) + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" placeholder="source: ' + escapeHtml(colSource) + ' — no local option list" /></div>';
+      }
+
       const opts = typeof col === 'object' && Array.isArray(col.options) ? col.options : [];
       const selected = isMulti ? val.split(',').filter(Boolean) : [val];
       const optionsHtml = opts.map((o) => '<option value="' + escapeHtml(o) + '"' + (selected.indexOf(o) !== -1 ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('');
