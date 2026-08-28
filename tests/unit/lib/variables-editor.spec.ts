@@ -340,6 +340,119 @@ describe('registerVariablesEditorRoutes', () => {
     });
   });
 
+  describe('GET /@api/variables/pages', () => {
+    function page(overrides: Partial<{ id: number; name: string; internal_name: string; template_id: number | null; template: string | null }>) {
+      return {
+        id: 1,
+        name: 'Page',
+        internal_name: 'page',
+        enabled: 'Y',
+        visible_in_homepage: 'Y',
+        template_id: null,
+        template: null,
+        ...overrides,
+      };
+    }
+
+    it('excludes the current page and flags pages sharing its template first', async () => {
+      const miAPI = {
+        internalPageName: 'sales-q3',
+        listPages: vi.fn().mockResolvedValue([
+          page({ id: 1, name: 'Sales Dashboard (Q3)', internal_name: 'sales-q3', template_id: 313 }),
+          page({ id: 2, name: 'Sales Dashboard (Q1)', internal_name: 'sales-q1', template_id: 313 }),
+          page({ id: 3, name: 'Marketing Overview', internal_name: 'marketing', template_id: 99 }),
+        ]),
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/pages')!({}, res);
+
+      expect(res.body.currentPageName).toBe('Sales Dashboard (Q3)');
+      expect(res.body.pages).toEqual([
+        { id: 2, name: 'Sales Dashboard (Q1)', internal_name: 'sales-q1', sameTemplate: true },
+        { id: 3, name: 'Marketing Overview', internal_name: 'marketing', sameTemplate: false },
+      ]);
+    });
+
+    it('falls back to comparing template internal_name when template_id is absent', async () => {
+      const miAPI = {
+        internalPageName: 'current',
+        listPages: vi.fn().mockResolvedValue([
+          page({ id: 1, internal_name: 'current', template_id: null, template: 'shared-template' }),
+          page({ id: 2, internal_name: 'other', template_id: null, template: 'shared-template' }),
+        ]),
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/pages')!({}, res);
+
+      expect(res.body.pages).toEqual([{ id: 2, name: 'Page', internal_name: 'other', sameTemplate: true }]);
+    });
+
+    it('502s when listPages throws', async () => {
+      const miAPI = {
+        internalPageName: 'current',
+        listPages: vi.fn().mockRejectedValue(new Error('boom')),
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/pages')!({}, res);
+
+      expect(res.statusCode).toBe(502);
+    });
+  });
+
+  describe('GET /@api/variables/import-plan/:pageId', () => {
+    it('400s on a non-numeric pageId', async () => {
+      const app = register({ miAPI: {} as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/import-plan/:pageId')!({ params: { pageId: 'abc' } }, res);
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('plans an import against the current schema', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi
+          .fn()
+          .mockResolvedValue(Buffer.from(JSON.stringify({ tags: [{ name: 'title', tag_type: 'text' }] }))),
+      } as unknown as DistService;
+      const getPageVariablesFor = vi.fn().mockResolvedValue([
+        { name: 'title', value: 'From other page' },
+        { name: 'unknown_var', value: 'x' },
+      ]);
+      const app = register({ distService, miAPI: { getPageVariablesFor } as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/import-plan/:pageId')!({ params: { pageId: '42' } }, res);
+
+      expect(getPageVariablesFor).toHaveBeenCalledWith(42);
+      expect(res.body.importable).toEqual([{ name: 'title', sourceValue: 'From other page', tagType: 'text' }]);
+      expect(res.body.skipped).toEqual([
+        { name: 'unknown_var', sourceValue: 'x', reason: "Not in the current page's schema." },
+      ]);
+    });
+
+    it('502s when getPageVariablesFor throws', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
+      const miAPI = {
+        getPageVariablesFor: vi.fn().mockRejectedValue(new Error('boom')),
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/import-plan/:pageId')!({ params: { pageId: '1' } }, res);
+
+      expect(res.statusCode).toBe(502);
+    });
+  });
+
   describe(`GET ${VARIABLES_EDITOR_PATH}`, () => {
     it('serves an HTML page', async () => {
       const app = register({ miAPI: {} as unknown as MiAPI });

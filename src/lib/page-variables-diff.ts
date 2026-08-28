@@ -304,3 +304,96 @@ export function buildPageVariablesExport(
   }));
 }
 
+export interface ImportCandidate {
+  name: string;
+  sourceValue: string;
+  tagType: string;
+}
+
+export interface ImportSkip {
+  name: string;
+  sourceValue: string;
+  reason: string;
+}
+
+export interface PageVariablesImportPlan {
+  importable: ImportCandidate[];
+  skipped: ImportSkip[];
+}
+
+/**
+ * Whether `value` can structurally apply to `tag`'s type — a hard yes/no, unlike
+ * `validateValueAgainstTag()`'s always-a-warning checks. Deliberately skips select/multiselect's
+ * declared-option check: two pages can legitimately point a same-named select at different
+ * datasets/sources, so an option-list mismatch doesn't mean the value can't apply.
+ */
+function typeCompatibilityIssue(tag: TemplateVariableTag, value: string): string | null {
+  switch (tag.tag_type) {
+    case 'boolean':
+      return BOOLEAN_ALLOWED_VALUES.includes(value)
+        ? null
+        : `Not a recognized boolean value ("${value}").`;
+
+    case 'color':
+      return value === '' || COLOR_PATTERN.test(value) ? null : `Not a recognized color value ("${value}").`;
+
+    case 'list': {
+      if (value === '') {
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(value);
+
+        return parsed === null || Array.isArray(parsed) ? null : 'Value is valid JSON but not an array.';
+      } catch {
+        return 'Value is not valid JSON.';
+      }
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Plans an import of `sourceValues` (another page's live variable values) into the current
+ * page's schema: matches by variable name first (anything unmatched is skipped outright), then
+ * checks the matched value against the target tag's type. Nothing here writes anything — the
+ * caller decides what to actually apply.
+ */
+export function planPageVariablesImport(
+  schema: TemplateVariablesSchema | null,
+  sourceValues: PageVariableEntry[],
+): PageVariablesImportPlan {
+  const schemaMap = new Map<string, TemplateVariableTag>((schema?.tags ?? []).map((tag) => [tag.name, tag]));
+  const importable: ImportCandidate[] = [];
+  const skipped: ImportSkip[] = [];
+
+  for (const entry of sourceValues) {
+    const tag = schemaMap.get(entry.name);
+
+    if (!tag) {
+      skipped.push({
+        name: entry.name,
+        sourceValue: entry.value,
+        reason: "Not in the current page's schema.",
+      });
+
+      continue;
+    }
+
+    const issue = typeCompatibilityIssue(tag, entry.value);
+
+    if (issue) {
+      skipped.push({ name: entry.name, sourceValue: entry.value, reason: issue });
+
+      continue;
+    }
+
+    importable.push({ name: entry.name, sourceValue: entry.value, tagType: tag.tag_type || 'text' });
+  }
+
+  return { importable, skipped };
+}
+
