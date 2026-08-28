@@ -187,6 +187,8 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ authenticated: true });
+    // Asserts shape, not MI's exact auth-info schema (which has changed under us before) — this
+    // is only here to prove the proxy round-trips a real cassette response for this path.
+    expect(await res.json()).toMatchObject({ user: expect.any(Object) });
   });
 });

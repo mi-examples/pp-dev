@@ -3,6 +3,7 @@ import { BaseAPI } from './base.js';
 import { unavailablePageDataError } from './unavailable-json-api.js';
 
 export interface Page {
+  id: number;
   name: string;
   enabled: 'Y' | 'N';
   visible_in_homepage: 'Y' | 'N';
@@ -62,7 +63,7 @@ export class PageAPI extends BaseAPI {
     ).data;
   }
 
-  async create(page: Page, headers?: Headers) {
+  async create(page: Omit<Page, 'id'>, headers?: Headers) {
     return (
       await this.axios.post<{ page: Page }>('/api/page', page, {
         withCredentials: true,
