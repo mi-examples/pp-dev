@@ -1826,7 +1826,11 @@ function listColumnItemHtml(col, i, colIndex) {
   const type = LIST_COLUMN_TYPES.indexOf(col.type) !== -1 ? col.type : (col.type || 'textarea');
   const isSelect = type === 'select' || type === 'multi-select';
   const source = col.source || 'static';
-  const optionsText = Array.isArray(col.options) ? col.options.join(', ') : '';
+  // Same { id, text } | string shape as the Values tab's select widget (see listItemFieldsHtml())
+  // — show the readable text, not "[object Object]", for a column with object-shaped options.
+  // Editing this comma-separated field still only ever writes back plain strings (id === text) —
+  // this UI has never round-tripped distinct id/text pairs, only raw JSON editing does.
+  const optionsText = Array.isArray(col.options) ? col.options.map((o) => normalizeOptionEntry(o).text).join(', ') : '';
 
   const typeOptions = listColumnSelectOptions(
     LIST_COLUMN_TYPES.indexOf(type) !== -1 ? LIST_COLUMN_TYPES : LIST_COLUMN_TYPES.concat([type]),
@@ -2349,12 +2353,19 @@ function textValueCell(tag, row, i) {
   return note ? widget + '<div class="hint">' + note + '</div>' : widget;
 }
 
+// A plain string entry uses itself as both id and text; an object entry may carry either/both —
+// shared by the tag-level static option list and each list-column's own "options" (see
+// listItemFieldsHtml()), since both follow the same { id, text } | string shape.
+function normalizeOptionEntry(o) {
+  return typeof o === 'string' ? { id: o, text: o } : { id: String(o.id), text: String(o.text != null ? o.text : o.id) };
+}
+
 function normalizeStaticOptions(tag) {
   const opts = tag && tag.additional_options;
 
   if (!Array.isArray(opts)) { return []; }
 
-  return opts.map((o) => (typeof o === 'string' ? { id: o, text: o } : { id: String(o.id), text: String(o.text != null ? o.text : o.id) }));
+  return opts.map(normalizeOptionEntry);
 }
 
 function labelForOption(options, id) {
@@ -2604,9 +2615,12 @@ function listItemFieldsHtml(config, item, i, itemIndex) {
           '<input type="text" value="' + escapeHtml(val) + '" oninput="updateListItemField(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this.value)" placeholder="source: ' + escapeHtml(colSource) + ' — no local option list" /></div>';
       }
 
-      const opts = typeof col === 'object' && Array.isArray(col.options) ? col.options : [];
+      // Each entry may be a plain string or a { id, text } object (e.g. {"text":"Yes","id":"Y"}) —
+      // normalize before use, or an object entry stringifies to "[object Object]" for both the
+      // <option> value and its label.
+      const opts = (typeof col === 'object' && Array.isArray(col.options) ? col.options : []).map(normalizeOptionEntry);
       const selected = isMulti ? val.split(',').filter(Boolean) : [val];
-      const optionsHtml = opts.map((o) => '<option value="' + escapeHtml(o) + '"' + (selected.indexOf(o) !== -1 ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('');
+      const optionsHtml = opts.map((o) => '<option value="' + escapeHtml(o.id) + '"' + (selected.indexOf(o.id) !== -1 ? ' selected' : '') + '>' + escapeHtml(o.text) + '</option>').join('');
 
       return '<div class="ve-values-field">' + listFieldLabelHtml(colName, colSource) +
         '<select ' + (isMulti ? 'multiple ' : '') + 'onchange="autosizeCellTextarea(this);onListItemSelectChange(' + i + ',' + itemIndex + ',\\'' + colNameJs + '\\',this,' + isMulti + ')">' + optionsHtml + '</select></div>';
