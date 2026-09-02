@@ -1,3 +1,10 @@
+## [1.4.1-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.2...v1.4.1-beta.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **variables-editor:** allow numeric values for non-static select/multi-select list columns (PP-4107) ([cff62ca](https://github.com/mi-examples/pp-dev/commit/cff62ca24d4e713dd1afa6d625d107e1e709c1f7))
+
 ## [1.4.1-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.1...v1.4.1-beta.2) (2026-09-02)
 
 
