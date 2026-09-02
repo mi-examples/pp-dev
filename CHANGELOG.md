@@ -1,3 +1,10 @@
+## [1.4.1-beta.4](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.3...v1.4.1-beta.4) (2026-09-02)
+
+
+### Bug Fixes
+
+* **dist:** normalize SVGs to match MI's server-side re-serialization (PP-4123) ([fb8441d](https://github.com/mi-examples/pp-dev/commit/fb8441dbe8ea6394cf2ed383bff02fa5dea850d0))
+
 ## [1.4.1-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.2...v1.4.1-beta.3) (2026-09-02)
 
 
