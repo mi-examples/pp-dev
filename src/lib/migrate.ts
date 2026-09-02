@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'fs';
+import path from 'path';
+import { PP_DEV_CONFIG_NAMES } from '../constants.js';
 import type { PPDevConfig } from '../plugin.js';
 
 // ─── Legacy config shapes ─────────────────────────────────────────────────────
@@ -62,6 +65,88 @@ export function isAlreadyMigrated(config: Record<string, unknown>): boolean {
   const NEW_KEYS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector']);
 
   return Object.keys(config).some((k) => NEW_KEYS.has(k));
+}
+
+// ─── Source discovery ───────────────────────────────────────────────────────────
+
+const WATCH_CONFIG_NAMES = [
+  '.pp-watch.config.ts',
+  '.pp-watch.config.js',
+  '.pp-watch.config.json',
+  'pp-watch.config.ts',
+  'pp-watch.config.js',
+  'pp-watch.config.json',
+];
+
+export interface MigrateSourceInfo {
+  sourceFile: string;
+  isWatchConfig: boolean;
+  isPackageJsonConfig: boolean;
+}
+
+/**
+ * Locates the config to migrate: an explicit path, a dedicated pp-dev/pp-watch config file
+ * in projectRoot, or — as a fallback — the `pp-dev` field in package.json.
+ */
+export function discoverMigrateSource(projectRoot: string, configArg?: string | null): MigrateSourceInfo | null {
+  let sourceFile: string | null = configArg ?? null;
+  let isWatchConfig = false;
+
+  if (!sourceFile) {
+    for (const name of PP_DEV_CONFIG_NAMES) {
+      const candidate = path.join(projectRoot, name);
+
+      if (existsSync(candidate)) {
+        sourceFile = candidate;
+        break;
+      }
+    }
+
+    if (!sourceFile) {
+      for (const name of WATCH_CONFIG_NAMES) {
+        const candidate = path.join(projectRoot, name);
+
+        if (existsSync(candidate)) {
+          sourceFile = candidate;
+          isWatchConfig = true;
+          break;
+        }
+      }
+    }
+
+    if (!sourceFile) {
+      const pkgJsonPath = path.join(projectRoot, 'package.json');
+
+      if (existsSync(pkgJsonPath)) {
+        try {
+          const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+
+          if (pkgJson['pp-dev'] && typeof pkgJson['pp-dev'] === 'object' && !Array.isArray(pkgJson['pp-dev'])) {
+            sourceFile = pkgJsonPath;
+          }
+        } catch {
+          // Ignore unreadable/invalid package.json — caller treats this the same as "not found"
+        }
+      }
+    }
+  }
+
+  if (!sourceFile) {
+    return null;
+  }
+
+  return {
+    sourceFile,
+    isWatchConfig,
+    isPackageJsonConfig: path.basename(sourceFile) === 'package.json',
+  };
+}
+
+/** Reads the `pp-dev` field out of a package.json config source. */
+export function loadPackageJsonMigrateConfig(sourceFile: string): unknown {
+  const pkgJson = JSON.parse(readFileSync(sourceFile, 'utf-8'));
+
+  return pkgJson['pp-dev'];
 }
 
 // ─── Migration ────────────────────────────────────────────────────────────────
