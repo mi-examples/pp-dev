@@ -71,15 +71,15 @@ interface ListItemFieldConfig {
   type: 'textarea' | 'color' | 'select' | 'multi-select' | 'file';
   source?: string;               // select/multi-select only — where THIS field's options come from
   additional_options?: string;   // not actually read for select/multi-select — see below
-  options?: string[];            // select/multi-select only — the option list itself
+  options?: (string | { id?: string; text?: string })[]; // select/multi-select only — the option list itself
 }
 ```
 
 A bare string in the array is shorthand for `{ name: <that string>, type: 'textarea' }`. With `additional_options` empty (`""`), items fall back to being plain strings. `tests/test-commonjs/public/__template_variables.json` in this repo has both variants side by side: `variable-list` (flat strings) and `variable-list-objects` (column-defined — `additional_options: [{name:"id",type:"textarea"},{name:"label",type:"textarea"}]`, items like `{"id":"1","label":"First"}`).
 
-For a `select`/`multi-select` column, `source` (defaults to `'static'` if omitted) and `options` together follow the **exact same per-source rules** as the tag-level `tag_source`/`additional_options` pair described above — just fed by `options` (a plain `string[]`) instead of the tag's own `additional_options`. Concretely: with `source: 'static'` (or omitted), `options` **is** the list of choices; for any other `source`, the same live-loading/ignored-field rules apply, just scoped to this one column instead of the whole tag. MI's own list-item value editor never actually reads this column config's `additional_options` — only `options` — so leave it out rather than mirroring the tag-level shape here.
+For a `select`/`multi-select` column, `source` (defaults to `'static'` if omitted) and `options` together follow the **exact same per-source rules** as the tag-level `tag_source`/`additional_options` pair described above — just fed by `options` instead of the tag's own `additional_options`. Concretely: with `source: 'static'` (or omitted), `options` **is** the list of choices, and each entry follows the same shape as the tag-level list — a plain string, or an `{ id, text }` object; for any other `source`, the same live-loading/ignored-field rules apply, just scoped to this one column instead of the whole tag. MI's own list-item value editor never actually reads this column config's `additional_options` — only `options` — so leave it out rather than mirroring the tag-level shape here.
 
-pp-dev validates list items against this schema (`validateListItems` in `src/lib/page-variables-diff.ts`, best-effort/warning-only like everything else here): each item must be an object with every declared field present and no undeclared extra fields, `color` fields must match a hex pattern, and `select`/`multi-select` fields are checked against `options` (a plain `string[]`) when present. A flat list (empty `additional_options`) skips all of this — items are just left as whatever they are.
+pp-dev validates list items against this schema (`validateListItems` in `src/lib/page-variables-diff.ts`, best-effort/warning-only like everything else here): each item must be an object with every declared field present and no undeclared extra fields, `color` fields must match a hex pattern, and `select`/`multi-select` fields are checked against `options` when present — each entry normalized (plain string, or `{id, text}` object matched/displayed by its `text`) before comparing or rendering, so an object entry never surfaces as `"[object Object]"` in the warning message. A flat list (empty `additional_options`) skips all of this — items are just left as whatever they are.
 
 ## `list` values in the Variables Editor's Values-tab JSON mode
 
