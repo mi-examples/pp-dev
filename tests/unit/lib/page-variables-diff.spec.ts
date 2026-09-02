@@ -172,6 +172,74 @@ describe('validateValueAgainstTag', () => {
       );
     });
 
+    describe('select/multi-select column with a non-static source (PP-4107)', () => {
+      // Mirrors a real "Dimensions Filters New" tag: a select column sourced live from MI
+      // (source: 'segment') has no local `options` list, and MI may hand back the picked
+      // option's id as a JSON number (e.g. a segment id) rather than a string.
+      const nonStaticSelectTag: TemplateVariableTag = {
+        name: 'rows',
+        tag_type: 'list',
+        additional_options: [
+          'Initial Dimension Value',
+          { name: 'Dimension', type: 'select', source: 'segment' },
+          { name: 'Filters', type: 'multi-select', source: 'element' },
+          'Report Filter Column',
+        ],
+      };
+
+      it('does not warn "should be a string" for a numeric non-static select value', () => {
+        const value = JSON.stringify([
+          {
+            'Initial Dimension Value': 'x',
+            Dimension: 5,
+            Filters: 7,
+            'Report Filter Column': 'y',
+          },
+        ]);
+
+        const issues = validateValueAgainstTag(nonStaticSelectTag, value);
+
+        expect(issues.filter((issue) => issue.message.includes('should be a string'))).toEqual([]);
+      });
+
+      it('still requires a string for a non-select field (e.g. a plain textarea column)', () => {
+        const value = JSON.stringify([
+          {
+            'Initial Dimension Value': 5,
+            Dimension: '1',
+            Filters: '2',
+            'Report Filter Column': 'y',
+          },
+        ]);
+
+        const issues = validateValueAgainstTag(nonStaticSelectTag, value);
+
+        expect(issues).toContainEqual(
+          expect.objectContaining({
+            message: expect.stringContaining('field "Initial Dimension Value" should be a string, got number'),
+          }),
+        );
+      });
+
+      it('still enforces a declared static option list when one is present, even given a numeric value', () => {
+        const tagWithStaticOptions: TemplateVariableTag = {
+          name: 'rows',
+          tag_type: 'list',
+          additional_options: [{ name: 'kind', type: 'select', options: [{ id: '1', text: 'One' }] }],
+        };
+
+        const matching = validateValueAgainstTag(tagWithStaticOptions, JSON.stringify([{ kind: 1 }]));
+
+        expect(matching).toEqual([]);
+
+        const nonMatching = validateValueAgainstTag(tagWithStaticOptions, JSON.stringify([{ kind: 2 }]));
+
+        expect(nonMatching).toContainEqual(
+          expect.objectContaining({ message: expect.stringContaining('is not one of the declared options') }),
+        );
+      });
+    });
+
     it('skips per-item validation for a flat list (empty additional_options)', () => {
       const flatTag: TemplateVariableTag = { name: 'items', tag_type: 'list', additional_options: '' };
 

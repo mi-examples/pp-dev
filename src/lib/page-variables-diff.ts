@@ -114,7 +114,14 @@ function validateListItemFieldValue(
   field: ListItemFieldConfig,
   value: unknown,
 ): PageVariableValidationIssue[] {
-  if (typeof value !== 'string') {
+  const isSelectLike = field.type === 'select' || field.type === 'multi-select';
+
+  // A select/multi-select column backed by a non-static source (segment, dataset_data,
+  // element, ...) has its value picked from a list MI loads live — pp-dev has no local option
+  // list to compare against (see the "fall back to free text" case in listItemFieldsHtml()),
+  // and MI may store the picked id as a JSON number rather than a string. Only require a plain
+  // string for every other field type, where a non-string value is unambiguously wrong.
+  if (typeof value !== 'string' && !(isSelectLike && typeof value === 'number')) {
     return [
       {
         name: tagName,
@@ -124,19 +131,21 @@ function validateListItemFieldValue(
     ];
   }
 
-  if (!value) {
+  const stringValue = String(value);
+
+  if (!stringValue) {
     return [];
   }
 
   switch (field.type) {
     case 'color':
-      return COLOR_PATTERN.test(value)
+      return COLOR_PATTERN.test(stringValue)
         ? []
         : [
             {
               name: tagName,
               severity: 'warning',
-              message: `${itemLabel}: field "${field.name}" value "${value}" is not a recognized color (expected e.g. "#075b7e").`,
+              message: `${itemLabel}: field "${field.name}" value "${stringValue}" is not a recognized color (expected e.g. "#075b7e").`,
             },
           ];
 
@@ -147,13 +156,13 @@ function validateListItemFieldValue(
 
       const options = field.options.map(normalizeFieldOption);
 
-      return options.some((option) => optionMatches(option, value))
+      return options.some((option) => optionMatches(option, stringValue))
         ? []
         : [
             {
               name: tagName,
               severity: 'warning',
-              message: `${itemLabel}: field "${field.name}" value "${value}" is not one of the declared options (${options.map((o) => o.text).join(', ')}).`,
+              message: `${itemLabel}: field "${field.name}" value "${stringValue}" is not one of the declared options (${options.map((o) => o.text).join(', ')}).`,
             },
           ];
     }
@@ -164,7 +173,7 @@ function validateListItemFieldValue(
       }
 
       const options = field.options.map(normalizeFieldOption);
-      const unmatched = value
+      const unmatched = stringValue
         .split(',')
         .map((v) => v.trim())
         .filter((token) => !options.some((option) => optionMatches(option, token)));
