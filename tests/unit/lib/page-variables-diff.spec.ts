@@ -105,6 +105,65 @@ describe('validateValueAgainstTag', () => {
       );
     });
 
+    describe('object-shaped options ({id, text}), not just plain strings', () => {
+      const objectOptionsTag: TemplateVariableTag = {
+        name: 'rows',
+        tag_type: 'list',
+        additional_options: [
+          { name: 'id', type: 'textarea' },
+          { name: 'shade', type: 'color' },
+          { name: 'kind', type: 'select', options: [{ id: '1', text: 'One' }, { id: '2', text: 'Two' }] },
+          { name: 'tags', type: 'multi-select', options: [{ id: '1', text: 'One' }, { id: '2', text: 'Two' }] },
+          'plain-string-field',
+        ],
+      };
+
+      it('accepts a select value matching a declared option id', () => {
+        const value = JSON.stringify([
+          { id: '1', shade: '#000', kind: '1', tags: '1', 'plain-string-field': 'hi' },
+        ]);
+
+        expect(validateValueAgainstTag(objectOptionsTag, value)).toEqual([]);
+      });
+
+      it('accepts a select value matching a declared option text', () => {
+        const value = JSON.stringify([
+          { id: '1', shade: '#000', kind: 'Two', tags: '1', 'plain-string-field': 'hi' },
+        ]);
+
+        expect(validateValueAgainstTag(objectOptionsTag, value)).toEqual([]);
+      });
+
+      it('warns on a select value outside the declared options, rendering readable text, not [object Object]', () => {
+        const value = JSON.stringify([
+          { id: '1', shade: '#000', kind: 'nope', tags: '1', 'plain-string-field': 'hi' },
+        ]);
+
+        const issues = validateValueAgainstTag(objectOptionsTag, value);
+
+        expect(issues).toContainEqual(
+          expect.objectContaining({ message: expect.stringContaining('field "kind"') }),
+        );
+
+        const kindIssue = issues.find((issue) => issue.message.includes('field "kind"'));
+
+        expect(kindIssue?.message).toContain('One, Two');
+        expect(kindIssue?.message).not.toContain('[object Object]');
+      });
+
+      it('warns on a multi-select token outside the declared options, rendering readable text, not [object Object]', () => {
+        const value = JSON.stringify([
+          { id: '1', shade: '#000', kind: '1', tags: '1,nope', 'plain-string-field': 'hi' },
+        ]);
+
+        const issues = validateValueAgainstTag(objectOptionsTag, value);
+        const tagsIssue = issues.find((issue) => issue.message.includes('field "tags"'));
+
+        expect(tagsIssue?.message).toContain('One, Two');
+        expect(tagsIssue?.message).not.toContain('[object Object]');
+      });
+    });
+
     it('warns when a field value is not a string', () => {
       const value = JSON.stringify([{ id: 1, shade: '#000', kind: 'a', tags: 'x', 'plain-string-field': 'hi' }]);
 
