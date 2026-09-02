@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -56,6 +57,35 @@ describe('writeBuildVersionManifest output path', () => {
     } finally {
       process.chdir(originalCwd);
       rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it('normalizes .svg files to match MI (PP-4123) before hashing, so the manifest matches what actually ships', () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-'));
+
+    try {
+      const svgPath = path.join(outDir, 'icon.svg');
+
+      // SVGO-style minified input: self-closing, no XML declaration.
+      writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>');
+
+      writeBuildVersionManifest({ outDir, packageVersion: '1.0.0' });
+
+      const normalizedOnDisk = readFileSync(svgPath, 'utf-8');
+
+      // The optimizer's self-closing form must actually have been rewritten, not left as-is.
+      expect(normalizedOnDisk).not.toContain('/>');
+      expect(normalizedOnDisk.startsWith('<?xml')).toBe(true);
+
+      const [versionFileName] = readFileSync(path.join(outDir, 'BUILD-MANIFEST.json'), 'utf-8').match(
+        /"versionFile":\s*"([^"]+)"/,
+      )!.slice(1) as [string];
+      const manifest = JSON.parse(readFileSync(path.join(outDir, versionFileName), 'utf-8'));
+      const expectedHash = createHash('sha256').update(normalizedOnDisk).digest('hex');
+
+      expect(manifest.files['icon.svg']).toBe(expectedHash);
+    } finally {
+      rmSync(outDir, { force: true, recursive: true });
     }
   });
 });
