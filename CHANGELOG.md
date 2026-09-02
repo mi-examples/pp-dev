@@ -1,3 +1,10 @@
+## [1.4.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.4.0...v1.4.1-beta.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **migrate:** read pp-dev config from package.json (PP-4105) ([78c89a5](https://github.com/mi-examples/pp-dev/commit/78c89a5515d6f475b099d8c992f106c814085044))
+
 # [1.3.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.3.0-beta.2...v1.3.0-beta.3) (2026-09-02)
 
 
