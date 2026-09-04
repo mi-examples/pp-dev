@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import {
   isLegacyFlatConfig,
   isLegacyPPWatchConfig,
@@ -6,6 +9,8 @@ import {
   migrateLegacyFlatConfig,
   migratePPWatchConfig,
   generateConfigFileContent,
+  discoverMigrateSource,
+  loadPackageJsonMigrateConfig,
 } from '../../../src/lib/migrate.js';
 
 describe('migrate — detection', () => {
@@ -150,5 +155,166 @@ describe('migrate — generateConfigFileContent', () => {
     const parsed = JSON.parse(out);
     expect(parsed.mi.url).toBe('https://mi.co');
     expect(parsed.app.id).toBe(42);
+  });
+});
+
+describe('migrate — discoverMigrateSource', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `pp-dev-migrate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns null when nothing to migrate is found', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
+
+    expect(discoverMigrateSource(testDir)).toBeNull();
+  });
+
+  it('falls back to the `pp-dev` field in package.json when no dedicated config file exists', () => {
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify({ name: 'test', 'pp-dev': { backendBaseURL: 'https://pkg.example.com' } }),
+    );
+
+    const result = discoverMigrateSource(testDir);
+
+    expect(result).toEqual({
+      sourceFile: join(testDir, 'package.json'),
+      isWatchConfig: false,
+      isPackageJsonConfig: true,
+    });
+  });
+
+  it('ignores package.json when it has no `pp-dev` field', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', 'pp-dev': undefined }));
+
+    expect(discoverMigrateSource(testDir)).toBeNull();
+  });
+
+  it('ignores a non-object `pp-dev` field in package.json', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', 'pp-dev': './pp-dev.config.js' }));
+
+    expect(discoverMigrateSource(testDir)).toBeNull();
+  });
+
+  it('ignores an array `pp-dev` field in package.json', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', 'pp-dev': ['a', 'b'] }));
+
+    expect(discoverMigrateSource(testDir)).toBeNull();
+  });
+
+  it('does not throw when package.json is invalid JSON', () => {
+    writeFileSync(join(testDir, 'package.json'), '{ not valid json');
+
+    expect(discoverMigrateSource(testDir)).toBeNull();
+  });
+
+  it('prefers a dedicated pp-dev.config.json over the package.json field', () => {
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify({ name: 'test', 'pp-dev': { backendBaseURL: 'https://pkg.example.com' } }),
+    );
+    writeFileSync(join(testDir, 'pp-dev.config.json'), JSON.stringify({ backendBaseURL: 'https://file.example.com' }));
+
+    const result = discoverMigrateSource(testDir);
+
+    expect(result?.sourceFile).toBe(join(testDir, 'pp-dev.config.json'));
+    expect(result?.isPackageJsonConfig).toBe(false);
+  });
+
+  it('prefers a legacy pp-watch config file over the package.json field', () => {
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify({ name: 'test', 'pp-dev': { backendBaseURL: 'https://pkg.example.com' } }),
+    );
+    writeFileSync(join(testDir, 'pp-watch.config.json'), JSON.stringify({ baseURL: 'https://watch.example.com' }));
+
+    const result = discoverMigrateSource(testDir);
+
+    expect(result?.sourceFile).toBe(join(testDir, 'pp-watch.config.json'));
+    expect(result?.isWatchConfig).toBe(true);
+    expect(result?.isPackageJsonConfig).toBe(false);
+  });
+
+  it('respects an explicit config path even when it is package.json', () => {
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify({ name: 'test', 'pp-dev': { backendBaseURL: 'https://pkg.example.com' } }),
+    );
+
+    const explicitPath = join(testDir, 'package.json');
+    const result = discoverMigrateSource(testDir, explicitPath);
+
+    expect(result).toEqual({
+      sourceFile: explicitPath,
+      isWatchConfig: false,
+      isPackageJsonConfig: true,
+    });
+  });
+
+  it('does not fall back to package.json when an explicit non-existent path is given', () => {
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify({ name: 'test', 'pp-dev': { backendBaseURL: 'https://pkg.example.com' } }),
+    );
+
+    const explicitPath = join(testDir, 'does-not-exist.config.json');
+    const result = discoverMigrateSource(testDir, explicitPath);
+
+    // An explicit arg is trusted as-is — no fallback scan happens
+    expect(result).toEqual({
+      sourceFile: explicitPath,
+      isWatchConfig: false,
+      isPackageJsonConfig: false,
+    });
+  });
+});
+
+describe('migrate — loadPackageJsonMigrateConfig', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `pp-dev-migrate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads only the `pp-dev` field, not the whole package.json', () => {
+    const pkgJsonPath = join(testDir, 'package.json');
+
+    writeFileSync(
+      pkgJsonPath,
+      JSON.stringify({
+        name: 'test',
+        version: '1.0.0',
+        'pp-dev': { backendBaseURL: 'https://pkg.example.com', appId: 7 },
+      }),
+    );
+
+    expect(loadPackageJsonMigrateConfig(pkgJsonPath)).toEqual({
+      backendBaseURL: 'https://pkg.example.com',
+      appId: 7,
+    });
+  });
+
+  it('returns undefined when there is no `pp-dev` field', () => {
+    const pkgJsonPath = join(testDir, 'package.json');
+
+    writeFileSync(pkgJsonPath, JSON.stringify({ name: 'test' }));
+
+    expect(loadPackageJsonMigrateConfig(pkgJsonPath)).toBeUndefined();
   });
 });

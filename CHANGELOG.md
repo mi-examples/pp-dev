@@ -1,3 +1,38 @@
+## [1.4.1-beta.4](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.3...v1.4.1-beta.4) (2026-09-02)
+
+
+### Bug Fixes
+
+* **dist:** normalize SVGs to match MI's server-side re-serialization (PP-4123) ([fb8441d](https://github.com/mi-examples/pp-dev/commit/fb8441dbe8ea6394cf2ed383bff02fa5dea850d0))
+
+## [1.4.1-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.2...v1.4.1-beta.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **variables-editor:** allow numeric values for non-static select/multi-select list columns (PP-4107) ([cff62ca](https://github.com/mi-examples/pp-dev/commit/cff62ca24d4e713dd1afa6d625d107e1e709c1f7))
+
+## [1.4.1-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.1...v1.4.1-beta.2) (2026-09-02)
+
+
+### Bug Fixes
+
+* **variables-editor:** render {id,text} options correctly in list-column select validation warnings (PP-4106) ([263777f](https://github.com/mi-examples/pp-dev/commit/263777f6008d1003141e5198d9af64fa39ab0faf))
+
+## [1.4.1-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.4.0...v1.4.1-beta.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **migrate:** read pp-dev config from package.json (PP-4105) ([78c89a5](https://github.com/mi-examples/pp-dev/commit/78c89a5515d6f475b099d8c992f106c814085044))
+
+# [1.3.0-beta.3](https://github.com/mi-examples/pp-dev/compare/v1.3.0-beta.2...v1.3.0-beta.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **migrate:** read pp-dev config from package.json (PP-4105) ([78c89a5](https://github.com/mi-examples/pp-dev/commit/78c89a5515d6f475b099d8c992f106c814085044))
+
 # [1.3.0-beta.2](https://github.com/mi-examples/pp-dev/compare/v1.3.0-beta.1...v1.3.0-beta.2) (2026-08-28)
 
 

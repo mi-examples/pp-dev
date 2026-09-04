@@ -1893,6 +1893,8 @@ cli
         migrateLegacyFlatConfig,
         migratePPWatchConfig,
         generateConfigFileContent,
+        discoverMigrateSource,
+        loadPackageJsonMigrateConfig,
       } = await import('./lib/migrate.js');
 
       const format = (options.format ?? 'ts') as 'ts' | 'js' | 'json';
@@ -1900,44 +1902,19 @@ cli
       const projectRoot = process.cwd();
 
       // Discover config file to migrate
-      const watchConfigNames = [
-        '.pp-watch.config.ts',
-        '.pp-watch.config.js',
-        '.pp-watch.config.json',
-        'pp-watch.config.ts',
-        'pp-watch.config.js',
-        'pp-watch.config.json',
-      ];
+      const migrateSource = discoverMigrateSource(projectRoot, configArg);
 
-      let sourceFile: string | null = configArg ?? null;
-      let isWatchConfig = false;
-
-      if (!sourceFile) {
-        // Try pp-dev config files first
-        for (const name of PP_DEV_CONFIG_NAMES) {
-          if (fs.existsSync(path.join(projectRoot, name))) {
-            sourceFile = path.join(projectRoot, name);
-            break;
-          }
-        }
-
-        // Fall back to pp-watch config files
-        if (!sourceFile) {
-          for (const name of watchConfigNames) {
-            if (fs.existsSync(path.join(projectRoot, name))) {
-              sourceFile = path.join(projectRoot, name);
-              isWatchConfig = true;
-              break;
-            }
-          }
-        }
-      }
-
-      if (!sourceFile) {
+      if (!migrateSource) {
         logger.warn(colors.yellow('No pp-dev or pp-watch config file found in the current directory.'));
-        logger.info(colors.blue('Supported files: pp-dev.config.{ts,js,cjs,mjs,json}, .pp-watch.config.{ts,js,json}'));
+        logger.info(
+          colors.blue(
+            'Supported files: pp-dev.config.{ts,js,cjs,mjs,json}, .pp-watch.config.{ts,js,json}, or a "pp-dev" field in package.json',
+          ),
+        );
         process.exit(1);
       }
+
+      const { sourceFile, isWatchConfig, isPackageJsonConfig } = migrateSource;
 
       logger.info(colors.blue(`Found config: ${path.relative(projectRoot, sourceFile)}`));
 
@@ -1981,6 +1958,8 @@ cli
           const mod = await import(pathToFileURL(path.resolve(projectRoot, sourceFile)).toString());
 
           rawConfig = mod.default?.default ?? mod.default ?? mod;
+        } else if (isPackageJsonConfig) {
+          rawConfig = loadPackageJsonMigrateConfig(sourceFile) as Record<string, unknown>;
         } else if (sourceFile.endsWith('.json')) {
           rawConfig = JSON.parse(fs.readFileSync(sourceFile, 'utf-8'));
         }
@@ -2021,7 +2000,7 @@ cli
       }
 
       // Backup original
-      if (doBackup && fs.existsSync(sourceFile)) {
+      if (doBackup && !isPackageJsonConfig && fs.existsSync(sourceFile)) {
         const backupPath = `${sourceFile}.bak`;
 
         fs.copyFileSync(sourceFile, backupPath);
@@ -2031,7 +2010,9 @@ cli
       fs.writeFileSync(outputFile, outputContent, 'utf-8');
       logger.info(colors.green(`✅ Migration complete → ${path.relative(projectRoot, outputFile)}`));
 
-      if (sourceFile !== outputFile && fs.existsSync(sourceFile)) {
+      if (isPackageJsonConfig) {
+        logger.info(colors.yellow('You can now remove the "pp-dev" field from package.json.'));
+      } else if (sourceFile !== outputFile && fs.existsSync(sourceFile)) {
         logger.info(colors.yellow(`You can now delete the old config: ${path.relative(projectRoot, sourceFile)}`));
       }
     },

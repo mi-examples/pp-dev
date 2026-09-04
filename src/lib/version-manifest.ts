@@ -4,6 +4,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'f
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeRelativeOutputPath, resolveOutputFilePath } from './output-path.js';
+import { normalizeSvgFilesInDir } from './helpers/svg-mi-normalize.helper.js';
 
 /**
  * Build-output version manifest generation, shared by the Vite `versionPlugin`
@@ -11,6 +12,12 @@ import { normalizeRelativeOutputPath, resolveOutputFilePath } from './output-pat
  *
  * Writes `VERSION-*.json` (file checksums) and `BUILD-MANIFEST.json` into a build
  * output directory so the sync/backup analysis can compare builds consistently.
+ *
+ * Also normalizes every `.svg` file in `outDir` to match MI's own server-side SVG
+ * re-serialization (see svg-mi-normalize.helper.ts) *before* hashing — otherwise the
+ * hash never matches what MI actually stores once synced, regardless of source content
+ * (PP-4123). This is the one place shared by both build paths, so it's the natural
+ * choke point to keep the manifest honest about what will really end up on MI.
  */
 
 export interface VersionManifestConfig {
@@ -220,6 +227,8 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
   if (!statSync(outDirResolved, { throwIfNoEntry: false })?.isDirectory()) {
     return;
   }
+
+  normalizeSvgFilesInDir(outDirResolved);
 
   const now = new Date();
   const manifestDate = now.toISOString();

@@ -51,8 +51,9 @@ export interface ListItemFieldConfig {
   additional_options?: string;
   /** `select`/`multi-select` only — the option list itself when `source` is `'static'` (the
    *  default). For other `source` values, same rules as the tag-level `additional_options`
-   *  apply (e.g. `dataset_data` still expects a dataset/column config, not this array). */
-  options?: string[];
+   *  apply (e.g. `dataset_data` still expects a dataset/column config, not this array). Same
+   *  per-entry shape as the tag-level list too: a plain string, or an `{ id, text }` object. */
+  options?: (string | { id?: string; text?: string })[];
 }
 
 // MI's own page-variable UI writes literal 'true'/'false' strings; the rest are accepted
@@ -68,6 +69,19 @@ function isOptionsWithEnumerableList(
 
 function optionMatches(option: { id?: string; text?: string }, token: string): boolean {
   return option.id === token || option.text === token;
+}
+
+/** A `ListItemFieldConfig.options` entry may be a plain string or an `{ id, text }` object
+ *  (same shape as the tag-level list) — normalize before matching/display so an object entry
+ *  never gets `.includes()`-compared or `.join()`-ed as `"[object Object]"`. */
+function normalizeFieldOption(option: string | { id?: string; text?: string }): { id?: string; text: string } {
+  if (typeof option === 'string') {
+    return { id: option, text: option };
+  }
+
+  const text = option.text ?? option.id ?? '';
+
+  return { id: option.id, text };
 }
 
 /** `null` when `additional_options` doesn't declare per-item fields (flat list of primitives). */
@@ -100,7 +114,14 @@ function validateListItemFieldValue(
   field: ListItemFieldConfig,
   value: unknown,
 ): PageVariableValidationIssue[] {
-  if (typeof value !== 'string') {
+  const isSelectLike = field.type === 'select' || field.type === 'multi-select';
+
+  // A select/multi-select column backed by a non-static source (segment, dataset_data,
+  // element, ...) has its value picked from a list MI loads live — pp-dev has no local option
+  // list to compare against (see the "fall back to free text" case in listItemFieldsHtml()),
+  // and MI may store the picked id as a JSON number rather than a string. Only require a plain
+  // string for every other field type, where a non-string value is unambiguously wrong.
+  if (typeof value !== 'string' && !(isSelectLike && typeof value === 'number')) {
     return [
       {
         name: tagName,
@@ -110,46 +131,59 @@ function validateListItemFieldValue(
     ];
   }
 
-  if (!value) {
+  const stringValue = String(value);
+
+  if (!stringValue) {
     return [];
   }
 
   switch (field.type) {
     case 'color':
-      return COLOR_PATTERN.test(value)
+      return COLOR_PATTERN.test(stringValue)
         ? []
         : [
             {
               name: tagName,
               severity: 'warning',
-              message: `${itemLabel}: field "${field.name}" value "${value}" is not a recognized color (expected e.g. "#075b7e").`,
+              message: `${itemLabel}: field "${field.name}" value "${stringValue}" is not a recognized color (expected e.g. "#075b7e").`,
             },
           ];
 
-    case 'select':
-      return field.options?.length && !field.options.includes(value)
-        ? [
+    case 'select': {
+      if (!field.options?.length) {
+        return [];
+      }
+
+      const options = field.options.map(normalizeFieldOption);
+
+      return options.some((option) => optionMatches(option, stringValue))
+        ? []
+        : [
             {
               name: tagName,
               severity: 'warning',
-              message: `${itemLabel}: field "${field.name}" value "${value}" is not one of the declared options (${field.options.join(', ')}).`,
+              message: `${itemLabel}: field "${field.name}" value "${stringValue}" is not one of the declared options (${options.map((o) => o.text).join(', ')}).`,
             },
-          ]
-        : [];
+          ];
+    }
 
     case 'multi-select': {
       if (!field.options?.length) {
         return [];
       }
 
-      const unmatched = value.split(',').map((v) => v.trim()).filter((token) => !field.options!.includes(token));
+      const options = field.options.map(normalizeFieldOption);
+      const unmatched = stringValue
+        .split(',')
+        .map((v) => v.trim())
+        .filter((token) => !options.some((option) => optionMatches(option, token)));
 
       return unmatched.length
         ? [
             {
               name: tagName,
               severity: 'warning',
-              message: `${itemLabel}: field "${field.name}" value "${unmatched.join(', ')}" is not among the declared options (${field.options.join(', ')}).`,
+              message: `${itemLabel}: field "${field.name}" value "${unmatched.join(', ')}" is not among the declared options (${options.map((o) => o.text).join(', ')}).`,
             },
           ]
         : [];
