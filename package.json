@@ -140,7 +140,7 @@
     "@types/jsdom": "^28.0.3",
     "@types/node": "^26.1.0",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.6.0",
     "next": "^16.2.10",
     "prettier": "^3.9.4",
