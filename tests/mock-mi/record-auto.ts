@@ -2,7 +2,7 @@
  * Autonomous cassette recorder — no user interaction required.
  *
  * Usage (VPN must be enabled):
- *   REAL_MI_URL=https://stg7x.metricinsights.com npx tsx tests/mock-mi/record-auto.ts [cassette-name]
+ *   REAL_MI_URL=https://<your-mi-instance> npx tsx tests/mock-mi/record-auto.ts [cassette-name]
  *
  * What it does:
  *   1. Starts mock-MI server in record mode (proxies to real MI)
@@ -24,7 +24,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
 const CONFIG_PATH = path.join(TEST_APP_DIR, 'pp-dev.config.ts');
 const CASSETTE_NAME = process.argv[2] ?? 'startup';
-const REAL_MI_URL = process.env.REAL_MI_URL ?? 'https://stg7x.metricinsights.com';
+const REAL_MI_URL = process.env.REAL_MI_URL;
+
+if (!REAL_MI_URL) {
+  console.error('Set REAL_MI_URL env var to the target MI instance, e.g.:');
+  console.error('  REAL_MI_URL=https://<your-mi-instance> npx tsx tests/mock-mi/record-auto.ts');
+  process.exit(1);
+}
 const PP_DEV_JS = path.join(TEST_APP_DIR, 'node_modules/@metricinsights/pp-dev/bin/pp-dev.js');
 const STARTUP_TIMEOUT = 90_000;
 const REQUEST_TIMEOUT = 10_000;

@@ -54,7 +54,7 @@ const hasWorkerArg = playwrightArgs.some((arg) => arg === '--workers' || arg.sta
 const defaultPlaywrightArgs = hasWorkerArg ? [] : ['--workers=1'];
 const mockMode = (process.env.PP_DEV_E2E_MOCK_MODE ?? 'replay') as MockMode;
 const cassetteName = process.env.PP_DEV_E2E_CASSETTE ?? 'startup';
-const realMiUrl = process.env.REAL_MI_URL ?? 'https://stg7x.metricinsights.com';
+const realMiUrl = process.env.REAL_MI_URL;
 
 if (mockMode !== 'record' && mockMode !== 'replay') {
   throw new Error(`Unsupported PP_DEV_E2E_MOCK_MODE "${mockMode}". Expected "record" or "replay".`);

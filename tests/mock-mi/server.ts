@@ -47,6 +47,11 @@ export interface Cassette {
 export const CASSETTES_DIR = path.resolve(__dirname, 'cassettes');
 export const DEFAULT_PORT = 7331;
 const FILESYSTEM_PATH_RE = /\/(?:opt|var|srv|usr|home)\/[^\s"'<>),\]}]+/g;
+// Internal MI instance hosts must not land in a public repo.
+// The first label is swapped for "mi" and the domain for example.com, so distinct hosts stay
+// distinct (`<inst>` → mi.example.com, `<inst>-custom` → mi-custom.example.com) and URL shapes are kept.
+const MI_HOST_RE = /\b([a-z0-9]+)((?:-[a-z0-9]+)*)\.metricinsights\.com\b/gi;
+const PUBLIC_MI_HOSTS = new Set(['www', 'help', 'tools']);
 
 function cassetteKey(method: string, pathname: string): string {
   return `${method.toUpperCase()}:${pathname}`;
@@ -58,8 +63,16 @@ function requestPath(url: URL): string {
   return url.pathname + url.search;
 }
 
+function redactMiHost(host: string, first: string, rest: string): string {
+  return PUBLIC_MI_HOSTS.has(`${first}${rest}`.toLowerCase()) ? host : `mi${rest}.example.com`;
+}
+
+export function redactMiHosts(value: string): string {
+  return value.replace(MI_HOST_RE, redactMiHost);
+}
+
 function redactFilesystemPaths(value: string): string {
-  return value.replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]');
+  return redactMiHosts(value.replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]'));
 }
 
 function sanitizeHeaders(headers: Record<string, string | string[]>): Record<string, string | string[]> {
@@ -134,7 +147,8 @@ function sanitizeTextBody(body: string): string {
     .replace(/(["']?username["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1mock-ci$2')
     .replace(/(["']?first_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1Mock$2')
     .replace(/(["']?last_name["']?\s*[:=]\s*["'])[^\"']+(["'])/gi, '$1User$2')
-    .replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]');
+    .replace(FILESYSTEM_PATH_RE, '[REDACTED_PATH]')
+    .replace(MI_HOST_RE, redactMiHost);
 }
 
 function sanitizeBody(body: string, contentType: string): string {
@@ -149,9 +163,42 @@ function sanitizeBody(body: string, contentType: string): string {
   return sanitizeTextBody(body);
 }
 
-function sanitizeCassette(cassette: Cassette): Cassette {
+// Page ids the cassette actually exercises (/api/page/id/937, /api/page_variable?page_id=292, …).
+function referencedPageIds(interactions: Interaction[]): Set<number> {
+  const ids = new Set<number>();
+
+  for (const { request } of interactions) {
+    for (const m of request.pathname.matchAll(/\/api\/page\/id\/(\d+)|[?&]page_id=(\d+)/g)) {
+      ids.add(Number(m[1] ?? m[2]));
+    }
+  }
+
+  return ids;
+}
+
+// /api/page lists every page on the recording instance — hundreds of unrelated names, slugs and
+// template names. Keep only pages the cassette references so the Variables Editor page picker
+// and cross-page import still have real data to replay.
+function trimPageList(body: string, keep: Set<number>): string {
+  try {
+    const json = JSON.parse(body) as { pages?: { id?: number }[] };
+
+    if (!Array.isArray(json.pages)) {
+      return body;
+    }
+
+    return JSON.stringify({ ...json, pages: json.pages.filter((p) => p.id !== undefined && keep.has(p.id)) });
+  } catch {
+    return body;
+  }
+}
+
+export function sanitizeCassette(cassette: Cassette): Cassette {
+  const pageIds = referencedPageIds(cassette.interactions);
+
   return {
     ...cassette,
+    baseUrl: redactMiHosts(cassette.baseUrl),
     interactions: cassette.interactions.map((interaction) => {
       if (interaction.request.pathname === '/auth/info.js') {
         return {
@@ -199,6 +246,10 @@ function sanitizeCassette(cassette: Cassette): Cassette {
 
       const headers = sanitizeHeaders(interaction.response.headers);
       const contentType = String(headers['content-type'] ?? headers['Content-Type'] ?? '');
+      const body =
+        interaction.request.pathname === '/api/page'
+          ? trimPageList(interaction.response.body, pageIds)
+          : interaction.response.body;
 
       return {
         ...interaction,
@@ -208,7 +259,7 @@ function sanitizeCassette(cassette: Cassette): Cassette {
           body:
             interaction.response.bodyEncoding === 'base64'
               ? interaction.response.body
-              : sanitizeBody(interaction.response.body, contentType),
+              : sanitizeBody(body, contentType),
         },
       };
     }),
@@ -255,7 +306,7 @@ export async function startMockMiServer(opts: {
     mode,
     port = DEFAULT_PORT,
     cassetteName = 'startup',
-    realMiUrl = process.env.REAL_MI_URL ?? 'https://stg7x.metricinsights.com',
+    realMiUrl = process.env.REAL_MI_URL,
   } = opts;
 
   const app = express();
@@ -300,6 +351,10 @@ export async function startMockMiServer(opts: {
 
   // ── Record mode ───────────────────────────────────────────────────────────
   if (mode === 'record') {
+    if (!realMiUrl) {
+      throw new Error('Record mode needs the real MI instance: set REAL_MI_URL (VPN must be enabled).');
+    }
+
     // Seed from the existing cassette (if any) so a re-record only adds/updates the
     // interactions actually exercised this run, instead of silently dropping every entry
     // captured in earlier sessions (e.g. a previous run that covered a different code path).

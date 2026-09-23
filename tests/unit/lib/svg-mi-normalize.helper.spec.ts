@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { normalizeSvgFilesInDir, normalizeSvgLikeMi } from '../../../src/lib/helpers/svg-mi-normalize.helper.js';
 
-// Every "expected" string below is the exact byte content a real MI instance (stg7x) returned
+// Every "expected" string below is the exact byte content a real MI instance returned
 // after uploading the matching "input" (verified in PP-4123). MI re-serializes every SVG it
 // stores — locally reproducing that transform is what keeps the build's VERSION.json hash from
 // perpetually mismatching what MI actually ends up storing.
