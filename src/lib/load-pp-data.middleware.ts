@@ -1,5 +1,5 @@
 import type { NormalizedVitePPDevOptions } from '../plugin.js';
-import type { NextHandleFunction, IncomingMessage, NextFunction } from 'connect';
+import type { Connect } from 'vite';
 import { cutUrlParams, redirect } from './helpers/url.helper.js';
 import { Headers, MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
@@ -7,6 +7,10 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { cache } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
+
+type NextHandleFunction = Connect.NextHandleFunction;
+type IncomingMessage = Connect.IncomingMessage;
+type NextFunction = Connect.NextFunction;
 
 // Types for better type safety
 interface LoadPPDataOptions {

@@ -1,14 +1,13 @@
 import * as express from 'express';
 import * as winston from 'winston';
-import * as memoryCache from 'memory-cache';
-import type { CacheItem } from '../proxy-cache.middleware.js';
+import type { ProxyCache } from '../proxy-cache.middleware.js';
 import type { Express } from 'express';
 import { URL } from 'url';
 import { colors } from './color.helper.js';
 
 declare module 'express' {
   interface Express {
-    cache?: memoryCache.CacheClass<string, CacheItem>;
+    cache?: ProxyCache;
     config: {
       logger: winston.Logger;
     };

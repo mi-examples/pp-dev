@@ -1,11 +1,12 @@
 import { ViteDevServer } from 'vite';
-import * as memoryCache from 'memory-cache';
 import { PROXY_HEADER } from './proxy-pass.middleware.js';
-import type { NextHandleFunction } from 'connect';
+import type { Connect } from 'vite';
 import { Express } from 'express';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
+
+type NextHandleFunction = Connect.NextHandleFunction;
 
 export interface CacheItem {
   headers: Record<string, any>;
@@ -23,7 +24,7 @@ export interface ProxyCacheOpts {
 
 declare module 'vite' {
   interface ViteDevServer {
-    cache?: memoryCache.CacheClass<string, CacheItem>;
+    cache?: ProxyCache;
   }
 }
 
@@ -35,85 +36,70 @@ const DEFAULT_TTL = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_MAX_SIZE = 100 * 1024 * 1024; // 100MB
 const DEFAULT_MAX_ITEMS = 1000;
 
-// Enhanced cache with size tracking
-class EnhancedCache extends memoryCache.Cache<string, CacheItem> {
+/**
+ * In-memory TTL cache with item-count and total-size limits.
+ *
+ * Expired entries are dropped lazily (on read, and on every write). A Map iterates in insertion
+ * order and `put` re-inserts, so the first key is always the oldest write — eviction is O(1)
+ * instead of sorting every key by timestamp.
+ */
+export class ProxyCache<V extends { size: number } = CacheItem> {
+  private readonly items = new Map<string, { value: V; expiresAt: number }>();
   private totalSize = 0;
   public maxSize: number;
   public maxItems: number;
 
   constructor(maxSize: number, maxItems: number) {
-    super();
     this.maxSize = maxSize;
     this.maxItems = maxItems;
   }
 
-  put(key: string, value: CacheItem, ttl?: number): CacheItem {
-    // Remove old item if it exists to update size tracking
-    const oldItem = this.get(key);
+  get(key: string): V | null {
+    const entry = this.items.get(key);
 
-    if (oldItem) {
-      this.totalSize -= oldItem.size;
+    if (!entry) {
+      return null;
     }
 
-    // Add new item
-    const result = super.put(key, value, ttl);
+    if (entry.expiresAt <= Date.now()) {
+      this.del(key);
 
-    this.totalSize += value.size;
+      return null;
+    }
 
-    // Cleanup if limits exceeded
-    this.cleanup();
-
-    return result;
+    return entry.value;
   }
 
-  private cleanup(): void {
-    const keys = this.keys();
+  put(key: string, value: V, ttl = DEFAULT_TTL): V {
+    this.del(key);
+    this.items.set(key, { value, expiresAt: Date.now() + ttl });
+    this.totalSize += value.size;
+    this.cleanup();
 
-    // Remove oldest items if we exceed max items
-    if (keys.length > this.maxItems) {
-      const itemsToRemove = keys.length - this.maxItems;
-      const sortedKeys = keys.sort((a, b) => {
-        const itemA = this.get(a);
-        const itemB = this.get(b);
+    return value;
+  }
 
-        return (itemA?.timestamp || 0) - (itemB?.timestamp || 0);
-      });
+  del(key: string): boolean {
+    const entry = this.items.get(key);
 
-      for (let i = 0; i < itemsToRemove; i++) {
-        const key = sortedKeys[i];
-        const item = this.get(key);
-
-        if (item) {
-          this.totalSize -= item.size;
-          this.del(key);
-        }
-      }
+    if (!entry) {
+      return false;
     }
 
-    // Remove items if we exceed max size
-    while (this.totalSize > this.maxSize) {
-      const liveKeys = this.keys();
+    this.totalSize -= entry.value.size;
 
-      if (liveKeys.length === 0) {
-        break;
-      }
+    return this.items.delete(key);
+  }
 
-      const oldestKey = liveKeys.sort((a, b) => {
-        const itemA = this.get(a);
-        const itemB = this.get(b);
+  clear(): void {
+    this.items.clear();
+    this.totalSize = 0;
+  }
 
-        return (itemA?.timestamp || 0) - (itemB?.timestamp || 0);
-      })[0];
+  keys(): string[] {
+    this.purgeExpired();
 
-      const item = this.get(oldestKey);
-
-      if (item) {
-        this.totalSize -= item.size;
-        this.del(oldestKey);
-      } else {
-        break;
-      }
-    }
+    return [...this.items.keys()];
   }
 
   getTotalSize(): number {
@@ -123,10 +109,28 @@ class EnhancedCache extends memoryCache.Cache<string, CacheItem> {
   getItemCount(): number {
     return this.keys().length;
   }
+
+  private purgeExpired(): void {
+    const now = Date.now();
+
+    for (const [key, entry] of this.items) {
+      if (entry.expiresAt <= now) {
+        this.del(key);
+      }
+    }
+  }
+
+  private cleanup(): void {
+    this.purgeExpired();
+
+    while (this.items.size > 0 && (this.items.size > this.maxItems || this.totalSize > this.maxSize)) {
+      this.del(this.items.keys().next().value as string);
+    }
+  }
 }
 
-// Create enhanced cache instance
-const cache = new EnhancedCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
+// Shared cache instance
+const cache = new ProxyCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
 
 /**
  * Generates an optimized cache key from URL and query parameters
