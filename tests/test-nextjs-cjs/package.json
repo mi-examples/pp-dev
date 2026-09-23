@@ -6,54 +6,21 @@
     "dev": "pp-dev next",
     "build": "pp-dev next-build --changelog",
     "start": "next start",
-    "reinstall": "npm i ../../metricinsights-pp-dev-latest.tgz",
-    "lint": "next lint"
+    "reinstall": "npm i ../../metricinsights-pp-dev-latest.tgz"
   },
   "dependencies": {
     "@metricinsights/pp-dev": "file:../../metricinsights-pp-dev-latest.tgz",
     "next": "^16.2.10",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "sharp": "^0.35.3"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "autoprefixer": "^10",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.10",
     "postcss": "^8.5.16",
     "tailwindcss": "^4",
     "typescript": "^6"
-  },
-  "overrides": {
-    "@xmldom/xmldom": ">=0.8.12",
-    "brace-expansion": ">=5.0.9",
-    "esbuild": ">=0.28.1",
-    "file-type": "^22.0.0",
-    "flatted": ">=3.4.2",
-    "lodash": ">=4.18.0",
-    "lodash-es": ">=4.18.0",
-    "minimatch": "10.2.5",
-    "nanoid": "3.3.18",
-    "qs": ">=6.15.2",
-    "next@*": {
-      "postcss": "8.5.23"
-    },
-    "path-to-regexp": ">=8.4.0",
-    "picomatch": "4.0.4",
-    "serialize-javascript": ">=7.0.5",
-    "sharp": "^0.35.3",
-    "ip-address": ">=10.4.0",
-    "js-yaml": ">=4.3.1",
-    "undici": ">=7.29.0 <8.0.0",
-    "http-proxy-middleware": "^3.0.7",
-    "vite": "^8.0.16",
-    "vite@*": {
-      "postcss": "8.5.23"
-    },
-    "yaml": ">=2.8.3"
   }
 }

@@ -1,7 +1,10 @@
-import type { NextHandleFunction, IncomingMessage } from 'connect';
+import type { Connect } from 'vite';
 import { decodeContent, encodeContent } from './helpers/content-encoding.helper.js';
 import type { ServerResponse } from 'http';
 import { createLogger } from './logger.js';
+
+type NextHandleFunction = Connect.NextHandleFunction;
+type IncomingMessage = Connect.IncomingMessage;
 
 /**
  * Rewrite response middleware

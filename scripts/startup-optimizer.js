@@ -88,7 +88,6 @@ class DependencyAnalyzer {
   constructor() {
     // Based on profiling data from isolate log
     this.heavyStartupDeps = [
-      'source-map-support', // Loaded immediately in bin/pp-dev.js
       'source-map', // Heavy dependency chain
       'esbuild', // TypeScript compilation overhead
       'jsdom', // HTML parsing (lazy loaded)
@@ -129,7 +128,7 @@ class DependencyAnalyzer {
     console.log('1. ✅ Lazy load esbuild (implemented)');
     console.log('2. ✅ Cache configuration files (implemented)');
     console.log('3. ✅ API response caching (implemented)');
-    console.log('4. 🔄 Optimize source-map-support loading');
+    console.log('4. ✅ Built-in source maps instead of source-map-support (implemented)');
     console.log('5. 🔄 Reduce Vite dependency scanning');
     console.log('6. 🔄 Minimize file system operations');
   }

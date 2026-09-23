@@ -32,7 +32,7 @@ const PP_DEV_JS = path.join(TEST_APP_DIR, 'node_modules/@metricinsights/pp-dev/b
 
 if (!REAL_MI_URL) {
   console.error('Set REAL_MI_URL env var to the target MI instance, e.g.:');
-  console.error('  REAL_MI_URL=https://stg7x.metricinsights.com npm run record:mi');
+  console.error('  REAL_MI_URL=https://<your-mi-instance> npm run record:mi');
   process.exit(1);
 }
 

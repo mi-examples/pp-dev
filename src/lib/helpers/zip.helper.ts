@@ -27,25 +27,47 @@ export async function zipDirectoryToBuffer(dir: string): Promise<Buffer> {
   return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
+const S_IFMT = 0o170000;
+const S_IFLNK = 0o120000;
+
 /**
- * Recursively throws if `dir` contains a symlink.
+ * Extract a zip archive into `dir`, validating every entry before anything is written.
  *
- * extract-zip does not validate symlink targets (GHSA-jmr9-qjv8-65gv, unpatched as of writing),
- * so a malicious archive can plant a symlink that points outside the extraction directory. Call
- * this right after extraction and before any code reads/writes through the extracted paths.
+ * Replaces extract-zip, whose symlink handling is unpatched (GHSA-jmr9-qjv8-65gv,
+ * GHSA-7pqw-9j4j-h8q3): a symlink entry could point outside the destination, and a later entry
+ * with the same name would be written through it. Here symlink entries are rejected outright and
+ * every entry path must resolve inside `dir`, so nothing is ever written outside it.
  */
-export async function rejectSymlinks(dir: string): Promise<void> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
+export async function extractZipSafe(zipPath: string, dir: string): Promise<void> {
+  const zip = await JSZip.loadAsync(await fs.readFile(zipPath), { createFolders: false });
+  const root = path.resolve(dir);
+  const entries = Object.values(zip.files).filter((entry) => !entry.name.startsWith('__MACOSX/'));
+
+  // Validate the whole archive first, so a bad entry never leaves a partial extraction behind.
+  for (const entry of entries) {
+    const rawName = entry.unsafeOriginalName ?? entry.name;
+    const dest = path.resolve(root, rawName);
+
+    if (dest !== root && !dest.startsWith(root + path.sep)) {
+      throw new Error(`Zip entry "${rawName}" resolves outside the extraction directory`);
+    }
+
+    if (typeof entry.unixPermissions === 'number' && (entry.unixPermissions & S_IFMT) === S_IFLNK) {
+      throw new Error(`Zip archive contains a symlink ("${rawName}"), which is not allowed`);
+    }
+  }
+
+  await fs.mkdir(root, { recursive: true });
 
   for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
+    const dest = path.resolve(root, entry.unsafeOriginalName ?? entry.name);
 
-    if (entry.isSymbolicLink()) {
-      throw new Error(`Zip archive contains a symlink ("${entry.name}"), which is not allowed`);
+    if (entry.dir) {
+      await fs.mkdir(dest, { recursive: true });
+      continue;
     }
 
-    if (entry.isDirectory()) {
-      await rejectSymlinks(fullPath);
-    }
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.writeFile(dest, await entry.async('nodebuffer'));
   }
 }

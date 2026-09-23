@@ -3,9 +3,6 @@ import { Headers } from './constants.js';
 import { BaseAPI } from './base.js';
 
 export class AssetsAPI extends BaseAPI {
-  // Import for CJS and ESM
-  private formdataModulePromise = import('formdata-node');
-
   constructor(axios: Axios) {
     super(axios);
   }
@@ -43,10 +40,9 @@ export class AssetsAPI extends BaseAPI {
    * @param headers
    */
   async uploadPageAssets(appId: number | string, file: Buffer, headers?: Headers) {
-    const formData = new (await this.formdataModulePromise).FormData();
-    const { File } = await this.formdataModulePromise;
+    const formData = new FormData();
 
-    const assetFile = new File([file], 'file.zip', { type: 'application/zip' });
+    const assetFile = new File([new Uint8Array(file)], 'file.zip', { type: 'application/zip' });
 
     formData.append('file', assetFile);
 
@@ -81,10 +77,9 @@ export class AssetsAPI extends BaseAPI {
    * @param headers
    */
   async uploadTemplateAssets(templateId: number | string, file: Buffer, headers?: Headers) {
-    const formData = new (await this.formdataModulePromise).FormData();
-    const { File } = await this.formdataModulePromise;
+    const formData = new FormData();
 
-    const assetFile = new File([file], 'file.zip', { type: 'application/zip' });
+    const assetFile = new File([new Uint8Array(file)], 'file.zip', { type: 'application/zip' });
 
     formData.append('file', assetFile, 'file.zip');
 

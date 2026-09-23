@@ -6,12 +6,11 @@ import * as process from 'process';
 import * as child_process from 'child_process';
 import * as console from 'console';
 import * as os from 'os';
-import extractZip from 'extract-zip';
 import { createLogger } from './logger.js';
 import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
-import { zipDirectoryToBuffer, rejectSymlinks } from './helpers/zip.helper.js';
+import { zipDirectoryToBuffer, extractZipSafe } from './helpers/zip.helper.js';
 import { runNextBuildProcess } from './next-build-runner.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
 
@@ -356,8 +355,7 @@ export class DistService {
     try {
       await fs.mkdir(extractedDir, { recursive: true });
       await fs.writeFile(zipPath, backupFile);
-      await extractZip(zipPath, { dir: extractedDir });
-      await rejectSymlinks(extractedDir);
+      await extractZipSafe(zipPath, extractedDir);
 
       const contentRootDir = await this.normalizeExtractedRootDir(extractedDir);
       const allFiles = await this.listFilesRecursive(contentRootDir);

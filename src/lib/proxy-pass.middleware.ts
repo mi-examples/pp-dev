@@ -8,7 +8,9 @@ import { ServerResponse, IncomingMessage } from 'http';
 import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { MiAPI } from './pp.middleware';
-import type { NextHandleFunction } from 'connect';
+import type { Connect } from 'vite';
+
+type NextHandleFunction = Connect.NextHandleFunction;
 
 export interface ProxyOpts {
   rewritePath?: string | string[] | RegExp;

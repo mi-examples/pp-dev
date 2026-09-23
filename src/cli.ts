@@ -48,7 +48,7 @@ import {
 } from './lib/build-cli-overrides.js';
 import { writeBuildVersionManifest } from './lib/version-manifest.js';
 import { zipDirectoryToBuffer } from './lib/helpers/zip.helper.js';
-import { runNextBuildProcess } from './lib/next-build-runner.js';
+import { runNextBuildProcess, removeStaleDevTypes } from './lib/next-build-runner.js';
 import { createDefaultZipFileName, resolveOutputFilePath } from './lib/output-path.js';
 import { loadPPDevEnv } from './lib/env.js';
 
@@ -1610,6 +1610,14 @@ cli
         const normalized = normalizePPDevConfig(ppDevConfig, templateName);
         const distZip = applyDistZipOverride(normalized.distZip, cliOverrides, createDefaultZipFileName(templateName));
         const versionPlugin = applyVersionManifestOverride(normalized.versionPlugin, cliOverrides);
+
+        const removedDevTypes = removeStaleDevTypes(projectRoot, nextConfig);
+
+        if (removedDevTypes) {
+          logger.info(
+            colors.dim(`[pp-dev] Removed stale dev route types: ${path.relative(projectRoot, removedDevTypes)}`),
+          );
+        }
 
         logger.info(colors.cyan('[pp-dev] Running `next build`...'));
 
