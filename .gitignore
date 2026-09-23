@@ -38,3 +38,8 @@ npm-debug.log*
 Thumbs.db
 
 coverage/
+
+# Secrets — never commit (SEC-8587)
+.env.*
+*.pem
+!.env.example
