@@ -1,7 +1,7 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "1.4.1-beta.4",
+  "version": "1.4.2-beta.1",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"

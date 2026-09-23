@@ -1,3 +1,12 @@
+## [1.4.2-beta.1](https://github.com/mi-examples/pp-dev/compare/v1.4.1...v1.4.2-beta.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **next-build:** remove stale dev route types before `next build` ([6d74218](https://github.com/mi-examples/pp-dev/commit/6d7421844896ccfdaa834faca5cfbe6f85d8df57))
+* **security:** replace extract-zip with validated jszip extraction (SEC-8587) ([40f19d1](https://github.com/mi-examples/pp-dev/commit/40f19d131da3f3a290415993e74fe49ca91a9907))
+* **test:** sanitize internal MI hosts and page list in mock-mi cassettes (SEC-8587) ([73bf222](https://github.com/mi-examples/pp-dev/commit/73bf222f277a5a2e82732b58b0c2d5f1ffd4d1c6))
+
 ## [1.4.1-beta.4](https://github.com/mi-examples/pp-dev/compare/v1.4.1-beta.3...v1.4.1-beta.4) (2026-09-02)
 
 
