@@ -1,9 +1,11 @@
-import type { NextHandleFunction } from 'connect';
+import type { Connect } from 'vite';
 import { redirect } from './helpers/url.helper.js';
 import { URL } from 'url';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from '../constants.js';
+
+type NextHandleFunction = Connect.NextHandleFunction;
 
 export function initPPRedirect(base: string, templateName?: string): NextHandleFunction {
   base = base.startsWith('/') ? base : `/${base}`;

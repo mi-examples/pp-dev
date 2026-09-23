@@ -2,12 +2,8 @@
 import { performance } from 'node:perf_hooks';
 
 if (!import.meta.url.includes('node_modules')) {
-  try {
-    // only available as dev dependency
-    await import('source-map-support').then((r) => r.install?.() || r.default.install());
-  } catch (e) {
-    /* empty */
-  }
+  // Local checkout: map stack traces back to src/ via Node's built-in source-map support.
+  process.setSourceMapsEnabled(true);
 }
 
 global.__pp_dev_start_time = performance.now();

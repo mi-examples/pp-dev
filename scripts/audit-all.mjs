@@ -14,14 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const ALLOWLIST = new Map([
-  [
-    'GHSA-jmr9-qjv8-65gv',
-    'extract-zip unvalidated symlink path traversal — no patched release exists (2.0.1 is latest ' +
-      'and still vulnerable). Mitigated via rejectSymlinks() in src/lib/helpers/zip.helper.ts, called ' +
-      'after every extractZip() call and before the extracted tree is read from.',
-  ],
-]);
+const ALLOWLIST = new Map([]);
 
 const FAILING_SEVERITIES = new Set(['high', 'critical']);
 
