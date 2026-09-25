@@ -1,109 +1,61 @@
-name: Production Release
+# Managed by mi-examples-workflows. Do not edit by hand: change
+# .github/mi-examples-workflows.json and re-run `npx github:mi-examples/mi-examples-workflows`,
+# or merge the sync pull request.
+
+name: Release
+
+# Shared release flow: https://github.com/mi-examples/mi-examples-workflows/blob/main/docs/workflows.md#release-workflows
+# The npm trusted publisher is registered for this filename, so don't rename it.
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main, develop]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing v* tag to (re)publish (e.g. v1.0.0-beta.2). Required when dispatching from a branch — the workflow file runs from the dispatch ref, but the published code comes from this tag.'
-        required: false
-        type: string
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Prepare release
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    uses: mi-examples/mi-examples-workflows/.github/workflows/prepare-release.yml@e9dbb3ff76c930e744437d1c52e2654f864c404f # v0.6.0
+    with:
+      app-id: ${{ vars.WORKFLOWS_BOT_APP_ID }}
+    secrets:
+      app-key: ${{ secrets.WORKFLOWS_BOT_APP_KEY }}
+      openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+  beta:
+    name: Beta
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    permissions:
+      contents: write # tags and GitHub releases
+      id-token: write # npm Trusted Publishing (OIDC)
+    uses: mi-examples/mi-examples-workflows/.github/workflows/release-beta.yml@e9dbb3ff76c930e744437d1c52e2654f864c404f # v0.6.0
+
   release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Resolve version
-        id: version
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+    name: Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write # tags and GitHub releases
+      id-token: write # npm Trusted Publishing (OIDC)
+    uses: mi-examples/mi-examples-workflows/.github/workflows/release.yml@e9dbb3ff76c930e744437d1c52e2654f864c404f # v0.6.0
 
-          # Prerelease identifiers follow SemVer: a purely-numeric identifier must not have a
-          # leading zero (e.g. "01" is invalid), but an identifier containing a letter/hyphen may.
-          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            echo "Tag must be a valid SemVer value prefixed with v (for example, v1.0.0 or v1.0.0-beta.2)."
-            exit 1
-          fi
-
-          VERSION=${TAG#v}
-          echo "git_tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-          # Prerelease versions (e.g. 1.0.0-beta.1) publish under the "beta" dist-tag so they
-          # never become "latest" and require an explicit `npm install pkg@beta` to pick up.
-          if [[ "$VERSION" == *-* ]]; then
-            echo "tag=beta" >> $GITHUB_OUTPUT
-          else
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          fi
-
-          echo "Releasing version: $VERSION (git tag: $TAG)"
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: refs/tags/${{ steps.version.outputs.git_tag }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Verify release tag
-        env:
-          GIT_TAG: ${{ steps.version.outputs.git_tag }}
-        run: git show-ref --verify --quiet "refs/tags/$GIT_TAG"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org/
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci --no-audit
-
-      - name: Build
-        run: npm run build
-
-      - name: Verify build output
-        run: |
-          if [[ ! -d "dist" ]]; then
-            echo "Build failed: dist directory not found"
-            exit 1
-          fi
-          echo "Build verification passed"
-
-      # --allow-same-version: tags created by semantic-release point at the
-      # chore(release) commit where package.json already carries the tag's version;
-      # plain `npm version` fails with "Version not changed" there.
-      - name: Update package version
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
-
-      # Pinned (not @latest) so the OIDC trusted-publishing toolchain is reproducible and
-      # reviewed — bump this deliberately via a dependency update, not implicitly on each run.
-      - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@11.17.0 --no-audit
-
-      - name: Publish to npm
-        env:
-          NPM_DIST_TAG: ${{ steps.version.outputs.tag }}
-        run: npm publish --access public --tag "$NPM_DIST_TAG"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          tag_name: ${{ steps.version.outputs.git_tag }}
-          name: Release ${{ steps.version.outputs.git_tag }}
-          generate_release_notes: true
-          prerelease: ${{ steps.version.outputs.tag == 'beta' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  back-merge:
+    name: Back-merge
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read
+    uses: mi-examples/mi-examples-workflows/.github/workflows/back-merge.yml@e9dbb3ff76c930e744437d1c52e2654f864c404f # v0.6.0
+    with:
+      app-id: ${{ vars.WORKFLOWS_BOT_APP_ID }}
+      version: ${{ needs.release.outputs.version }}
+    secrets:
+      app-key: ${{ secrets.WORKFLOWS_BOT_APP_KEY }}

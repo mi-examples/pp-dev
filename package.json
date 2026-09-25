@@ -22,8 +22,6 @@
     "postbuild": "npm pack && node scripts/rename-pack.js",
     "startup:optimize": "tsx scripts/startup-optimizer.js",
     "startup:profile": "node --prof bin/pp-dev.js",
-    "release": "npx --yes --package=semantic-release@25.0.9 --package=@semantic-release/changelog@6.0.3 --package=@semantic-release/git@10.0.1 semantic-release",
-    "version": "npm version --commit-hooks false --git-tag-version false",
     "test": "npm run test:all",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:unit:watch": "vitest --config vitest.config.ts",
