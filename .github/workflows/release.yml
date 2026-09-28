@@ -24,7 +24,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
-    uses: mi-examples/mi-examples-workflows/.github/workflows/prepare-release.yml@9ce544b1c338f2946c68fe22017a118e2b5f3a8f # v0.7.0
+    uses: mi-examples/mi-examples-workflows/.github/workflows/prepare-release.yml@abfcba1c04c439650b04679302ad3d9d5f5f4cf1 # v0.7.1
     with:
       app-id: ${{ vars.WORKFLOWS_BOT_APP_ID }}
     secrets:
@@ -38,7 +38,7 @@ jobs:
     permissions:
       contents: write # tags and GitHub releases
       id-token: write # npm Trusted Publishing (OIDC)
-    uses: mi-examples/mi-examples-workflows/.github/workflows/release-beta.yml@9ce544b1c338f2946c68fe22017a118e2b5f3a8f # v0.7.0
+    uses: mi-examples/mi-examples-workflows/.github/workflows/release-beta.yml@abfcba1c04c439650b04679302ad3d9d5f5f4cf1 # v0.7.1
 
   release:
     name: Release
@@ -46,7 +46,7 @@ jobs:
     permissions:
       contents: write # tags and GitHub releases
       id-token: write # npm Trusted Publishing (OIDC)
-    uses: mi-examples/mi-examples-workflows/.github/workflows/release.yml@9ce544b1c338f2946c68fe22017a118e2b5f3a8f # v0.7.0
+    uses: mi-examples/mi-examples-workflows/.github/workflows/release.yml@abfcba1c04c439650b04679302ad3d9d5f5f4cf1 # v0.7.1
 
   back-merge:
     name: Back-merge
@@ -54,7 +54,7 @@ jobs:
     if: needs.release.outputs.released == 'true'
     permissions:
       contents: read
-    uses: mi-examples/mi-examples-workflows/.github/workflows/back-merge.yml@9ce544b1c338f2946c68fe22017a118e2b5f3a8f # v0.7.0
+    uses: mi-examples/mi-examples-workflows/.github/workflows/back-merge.yml@abfcba1c04c439650b04679302ad3d9d5f5f4cf1 # v0.7.1
     with:
       app-id: ${{ vars.WORKFLOWS_BOT_APP_ID }}
       version: ${{ needs.release.outputs.version }}
