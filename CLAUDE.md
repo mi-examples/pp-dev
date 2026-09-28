@@ -87,21 +87,9 @@ Test fixtures (real apps installed with the local .tgz):
 
 See `.cursor/rules/pr-message-format.mdc`. Use emojis: 🚀 features, 🔧 fixes, 🔐 security, 🧪 tests, 🧹 chore.
 
-## Before opening a PR into `develop`
+## Releases
 
-`develop` drives semantic-release's beta channel (`.releaserc.json` + the `release-beta` job in
-`ci.yml`). `main` is sometimes tagged for a release directly (bypassing semantic-release) and never
-merged back into `develop` — when that happens, `develop`'s history has no idea the newer release
-exists, and semantic-release keeps computing the next beta version against the old, stale baseline
-(e.g. still proposing `1.3.0-beta.x` after `v1.4.0` already shipped from `main`).
+Releases use the shared release flow from [mi-examples-workflows](https://github.com/mi-examples/mi-examples-workflows) (see "Release Process" in `CONTRIBUTING.md`): betas from `develop`, and production through a release PR `release/vX.Y.Z → main`. There is no semantic-release and no `.releaserc.json`; versions come from the commit messages.
 
-So before creating a PR into `develop`, check whether `main` has moved ahead of it:
-```bash
-git fetch origin
-git log origin/develop..origin/main --oneline
-```
-If it has, merge `origin/main` into the PR branch first (`git merge origin/main --no-ff`) so
-`develop` stays a superset of `main`'s history. This is normally a no-op content-wise — it only
-fixes the ancestry graph so semantic-release resolves the real last release. Sanity-check with a
-local `semantic-release --dry-run` (on a branch literally named `develop`, since branch matching is
-by exact name) if you want to confirm the computed next version before pushing.
+- **`main` ahead of `develop`.** After each production release the back-merge PR `main → develop` opens automatically. Until it is merged, the "Main ahead check" fails PRs into `develop`; it re-runs them once `develop` contains `main` again. Nothing needs to be checked by hand.
+- **Callers.** `.github/workflows/{ci,release,secret-scan,dependency-audit,main-ahead-check}.yml` are generated. Change CI settings in `.github/mi-examples-workflows.json` and re-run `npx github:mi-examples/mi-examples-workflows`.

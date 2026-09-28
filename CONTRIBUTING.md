@@ -45,34 +45,19 @@ docs(readme): update installation instructions
 
 ## Release Process
 
-The release process is automated using GitHub Actions and semantic-release. When you push to the main branch:
+Releases use the shared workflows from [mi-examples-workflows](https://github.com/mi-examples/mi-examples-workflows) ([release flow](https://github.com/mi-examples/mi-examples-workflows/blob/main/docs/workflows.md#release-workflows)). The caller is [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
-1. GitHub Actions workflow is triggered
-2. The workflow:
-   - Checks out the code
-   - Sets up Node.js
-   - Installs dependencies
-   - Builds the package
-   - Runs semantic-release
-
-semantic-release will then:
-
-1. Analyze your commits
-2. Determine the next version number
-3. Generate a changelog
-4. Create a git tag
-5. Publish to npm
-6. Create a GitHub release
-
-You don't need to manually update the version number or changelog - it's all handled automatically based on your commit messages.
-
-### Required Secrets
-
-The following secrets need to be configured in your GitHub repository:
-
-- `NPM_TOKEN`: An npm access token with publish permissions
-- `GITHUB_TOKEN`: Automatically provided by GitHub Actions
-
-### Skipping CI
-
-If you need to make changes to the release commit (like updating the changelog), you can skip the CI by including `[skip ci]` in your commit message.
+- **Betas.** Every push to `develop` with releasable commits publishes `X.Y.Z-beta.N` to npm under the `beta` dist-tag, with a GitHub prerelease. Install one with `npm install @metricinsights/pp-dev@beta`.
+- **Production releases.**
+  1. Run **Actions → Release → Run workflow**. It opens a release pull request `release/vX.Y.Z → main` with the version bump and the new `CHANGELOG.md` entry.
+  2. Review and edit the entry in the pull request, then merge it.
+  3. Merging publishes to npm under `latest` and creates the tag and the GitHub release. It also opens the back-merge pull request into `develop`.
+- **Versions** come from the commit messages (see above):
+  - `feat` → minor;
+  - `fix`, `perf` and `revert` → patch;
+  - `!` or a `BREAKING CHANGE:` footer → major;
+  - other types don't release.
+- **Publishing** uses npm Trusted Publishing (OIDC) from `release.yml` in the `npm-publish` environment. No npm token is needed or stored.
+  - Don't rename `release.yml`: the trusted publisher is registered for that filename.
+  - Setup and troubleshooting are in [npm-publishing.md](https://github.com/mi-examples/mi-examples-workflows/blob/main/docs/npm-publishing.md).
+- **CI and release callers** are generated from `.github/mi-examples-workflows.json`. To change a CI setting, edit that file and run `npx github:mi-examples/mi-examples-workflows`; don't edit the callers by hand.

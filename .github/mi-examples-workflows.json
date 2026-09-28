@@ -1,0 +1,23 @@
+{
+  "callers": [
+    "ci",
+    "secret-scan",
+    "dependency-audit",
+    "release",
+    "main-ahead-check"
+  ],
+  "inputs": {
+    "ci": {
+      "dist-dir": "dist",
+      "free-disk-space": true,
+      "pre-test-commands": "npm install --prefix tests/test-nextjs --no-audit --package-lock=false\nnpm install --prefix tests/test-commonjs --no-audit --package-lock=false\nnpm install --prefix tests/test-nextjs-cjs --no-audit --package-lock=false",
+      "extra-scripts": "test:e2e\ntest:e2e:browser",
+      "env-vars": "PLAYWRIGHT_USE_SYSTEM_CHROME=1",
+      "audit-command": "npm run audit:all",
+      "timeout-minutes": 30
+    },
+    "dependency-audit": {
+      "audit-command": "npm run audit:all"
+    }
+  }
+}
