@@ -5,6 +5,11 @@ updates:
     target-branch: 'develop'
     schedule:
       interval: 'daily'
+    groups:
+      # The @vitest/* packages require the exact same vitest version, so they
+      # have to be updated together with vitest in one pull request.
+      vitest:
+        patterns: ['vitest', '@vitest/*']
   - package-ecosystem: 'docker'
     directory: '/'
     target-branch: 'develop'
