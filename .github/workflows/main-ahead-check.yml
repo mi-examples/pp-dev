@@ -23,4 +23,4 @@ jobs:
       contents: read
       pull-requests: read # lists open pull requests for the re-run
       actions: write # re-runs failed checks once develop is up to date
-    uses: mi-examples/mi-examples-workflows/.github/workflows/main-ahead-check.yml@e9dbb3ff76c930e744437d1c52e2654f864c404f # v0.6.0
+    uses: mi-examples/mi-examples-workflows/.github/workflows/main-ahead-check.yml@9ce544b1c338f2946c68fe22017a118e2b5f3a8f # v0.7.0
