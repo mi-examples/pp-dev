@@ -32,6 +32,7 @@ describe('Proxy Cache Middleware', () => {
       write: vi.fn(),
       end: vi.fn(),
       on: vi.fn(),
+      once: vi.fn(),
     };
 
     nextFn = vi.fn();

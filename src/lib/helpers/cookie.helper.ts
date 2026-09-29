@@ -53,6 +53,40 @@ export function rewriteSetCookie(cookie: string, secureRequest: boolean): string
   return [pair.trim(), ...rewritten].join('; ');
 }
 
+/** Name of the cookie that holds the MI session id. */
+export const MI_SESSION_COOKIE = 'metric_insights_session';
+
+function findCookieValue(pairs: string[], name: string): string | undefined {
+  for (const pair of pairs) {
+    const separator = pair.indexOf('=');
+
+    if (separator !== -1 && pair.slice(0, separator).trim() === name) {
+      return pair.slice(separator + 1).trim();
+    }
+  }
+
+  return undefined;
+}
+
+/** Reads cookie `name` from a request `Cookie` header. */
+export function getRequestCookie(cookieHeader: string | undefined, name: string): string | undefined {
+  return cookieHeader ? findCookieValue(cookieHeader.split(';'), name) : undefined;
+}
+
+/** Reads the value a response sets for cookie `name`, from its `Set-Cookie` header(s). */
+export function getSetCookieValue(value: string | number | string[] | undefined, name: string): string | undefined {
+  if (value === undefined || typeof value === 'number') {
+    return undefined;
+  }
+
+  const cookies = Array.isArray(value) ? value : [value];
+
+  return findCookieValue(
+    cookies.map((cookie) => cookie.split(';', 1)[0]),
+    name,
+  );
+}
+
 /**
  * Applies {@link rewriteSetCookie} to a `Set-Cookie` header value as Node exposes it.
  */

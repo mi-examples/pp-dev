@@ -5,6 +5,8 @@ import { Express } from 'express';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
+import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
+import { cutUrlParams } from './helpers/url.helper.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -132,6 +134,43 @@ export class ProxyCache<V extends { size: number } = CacheItem> {
 // Shared cache instance
 const cache = new ProxyCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
 
+const invalidateListeners = new Set<() => void>();
+
+/**
+ * Runs `listener` whenever the proxy cache is dropped because the MI session changed, so other
+ * per-session caches can be dropped with it. Returns an unsubscribe function.
+ */
+export function onProxyCacheInvalidate(listener: () => void): () => void {
+  invalidateListeners.add(listener);
+
+  return () => {
+    invalidateListeners.delete(listener);
+  };
+}
+
+/**
+ * Drops everything cached for the previous MI session (login, logout, token login). Responses
+ * cached while logged out, such as the login redirects MI sends for portal page assets, must not
+ * be served once the user is logged in, and the other way round.
+ */
+export function invalidateProxyCache(reason: string): void {
+  cache.clear();
+  invalidateListeners.forEach((listener) => listener());
+
+  createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
+}
+
+/**
+ * Whether a proxied response moved the browser to another MI session. MI keeps the session id
+ * stable while a session lasts and issues a new one on login and logout, so a `Set-Cookie` with an
+ * id other than the one the request carried marks exactly those moments.
+ */
+function isSessionChange(req: Connect.IncomingMessage, res: ServerResponse): boolean {
+  const newSession = getSetCookieValue(res.getHeader('set-cookie'), MI_SESSION_COOKIE);
+
+  return newSession !== undefined && newSession !== getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE);
+}
+
 /**
  * Generates an optimized cache key from URL and query parameters
  */
@@ -200,8 +239,14 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
   devServer.cache = cache;
 
   return (req, res, next) => {
+    res.once('finish', () => {
+      if (res.hasHeader(PROXY_HEADER) && isSessionChange(req, res)) {
+        invalidateProxyCache(`MI session changed (${req.method} ${cutUrlParams(req.url ?? '')})`);
+      }
+    });
+
     const url = req.originalUrl || req.url || '';
-    const cacheKey = generateCacheKey(url);
+    const cacheKey = req.method === 'GET' ? generateCacheKey(url) : '';
 
     // Skip caching if no valid cache key
     if (!cacheKey) {
@@ -283,11 +328,16 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
         const responseSize = Buffer.byteLength(finalBuffer);
 
-        // Only cache if response is not empty and reasonable size
-        if (responseSize > 0 && responseSize < 10 * 1024 * 1024) {
-          // Max 10MB per item
+        // Only cache successful, non-empty responses of reasonable size (max 10MB per item). A
+        // redirect or error (e.g. MI's login redirect for an asset while logged out) must not
+        // outlive the state that produced it.
+        if (res.statusCode === 200 && responseSize > 0 && responseSize < 10 * 1024 * 1024) {
+          // Replaying a cached `Set-Cookie` would put the browser back on the session that was
+          // current when the item was cached.
+          const { 'set-cookie': _setCookie, ...headers } = res.getHeaders();
+
           const cacheItem: CacheItem = {
-            headers: res.getHeaders(),
+            headers,
             content: finalBuffer,
             timestamp: Date.now(),
             size: responseSize,
