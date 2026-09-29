@@ -160,12 +160,24 @@ export function initLoadPPData(
             );
           }
 
+          // The load already answered the request (e.g. redirected after an auth failure). Redirecting
+          // again would throw ERR_HTTP_HEADERS_SENT and crash the dev server, and marking the session
+          // as redirected would make every later `/home` skip this block, trapping the user in a
+          // login loop.
+          if (res.headersSent || res.writableEnded) {
+            return;
+          }
+
           authProvider.setRedirected(true);
 
           logger.info(colors.blue('Successfully authenticated. Redirecting to base'));
 
           return redirect(res, base ?? '/', 302);
         } catch (error) {
+          if (res.headersSent || res.writableEnded) {
+            return;
+          }
+
           // If load throws an error, run next()
           return next();
         }

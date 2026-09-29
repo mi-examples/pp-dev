@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
 import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
+import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
 import type { Connect } from 'vite';
 
@@ -285,6 +286,15 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         return proxyReq;
       },
       proxyRes: (serverRes, req, res) => {
+        // `selfHandleResponse` skips http-proxy's own cookie rewriting, and both response paths below
+        // copy headers from `serverRes`, so the cookies are fixed here once.
+        if (serverRes.headers['set-cookie']) {
+          serverRes.headers['set-cookie'] = rewriteSetCookieHeader(
+            serverRes.headers['set-cookie'],
+            isSecureRequest(req),
+          );
+        }
+
         if (
           serverRes.headers['content-type']?.includes('text/event-stream') ||
           (serverRes.headers['transfer-encoding']?.includes('chunked') &&
