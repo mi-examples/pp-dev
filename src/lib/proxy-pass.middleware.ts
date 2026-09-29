@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
 import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
+import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
 import type { Connect } from 'vite';
 
@@ -244,6 +245,11 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
         }
 
+        // A `304` would make the browser reuse the copy it cached before (possibly for another
+        // session, or by a pp-dev version that still let it cache), so always fetch the full body.
+        proxyReq.removeHeader('if-none-match');
+        proxyReq.removeHeader('if-modified-since');
+
         const originalUrl = req.url ?? '/';
         const rewritten = rewriteDataPagePathForV7Proxy(
           originalUrl,
@@ -285,6 +291,23 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         return proxyReq;
       },
       proxyRes: (serverRes, req, res) => {
+        // `selfHandleResponse` skips http-proxy's own cookie rewriting, and both response paths below
+        // copy headers from `serverRes`, so the cookies are fixed here once.
+        if (serverRes.headers['set-cookie']) {
+          serverRes.headers['set-cookie'] = rewriteSetCookieHeader(
+            serverRes.headers['set-cookie'],
+            isSecureRequest(req),
+          );
+        }
+
+        // MI responses depend on the session, so the browser must not reuse one after a login or
+        // logout: Safari kept serving portal page images from its own cache after logging in again
+        // and drew them as black boxes. Repeat loads are still fast, since the proxy cache serves
+        // them and is dropped on every session change.
+        serverRes.headers['cache-control'] = 'no-store';
+        delete serverRes.headers['expires'];
+        delete serverRes.headers['pragma'];
+
         if (
           serverRes.headers['content-type']?.includes('text/event-stream') ||
           (serverRes.headers['transfer-encoding']?.includes('chunked') &&

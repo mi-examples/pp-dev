@@ -1,7 +1,7 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "1.4.2-beta.1",
+  "version": "1.4.3",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"
@@ -112,7 +112,7 @@
     "file-type": "^22.0.1",
     "http-proxy-middleware": "^4.2.0",
     "isbinaryfile": "^6.0.0",
-    "jsdom": "29.1.1",
+    "jsdom": "30.1.1",
     "jszip": "^3.10.1",
     "picocolors": "^1.1.1",
     "rollup": "^4.62.2",
@@ -135,10 +135,10 @@
     "@types/diff-match-patch": "^1.0.36",
     "@types/ejs": "^3.1.5",
     "@types/express": "^5.0.6",
-    "@types/jsdom": "^28.0.3",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^26.1.0",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.2",
     "eslint": "^10.6.0",
     "next": "^16.2.10",
     "prettier": "^3.9.4",
@@ -149,7 +149,7 @@
     "tslib": "^2.8.1",
     "tsx": "^4.23.0",
     "typescript-eslint": "^8.63.0",
-    "vitest": "^4.1.10",
+    "vitest": "^5.0.2",
     "yargs": "^18.0.0"
   },
   "files": [

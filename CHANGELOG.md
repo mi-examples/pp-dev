@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.3](https://github.com/mi-examples/pp-dev/compare/v1.4.2...v1.4.3) (2026-09-29)
+
+### Bug fixes
+
+- The regular login form now works in Safari on an HTTP dev server, because proxied MI session cookies no longer carry `Secure`, `SameSite=None` becomes `Lax`, and the `Domain` attribute is fully removed.
+- The dev server no longer crashes with `ERR_HTTP_HEADERS_SENT` when page data can't be loaded on `/home` after a login, and a failed login no longer sends every later login attempt back to the login page.
+- Portal page assets no longer stay broken after logging out and back in, because the proxy cache now stores only successful `GET` responses and never replays `Set-Cookie`. The cache is also cleared whenever the MI session changes, including after a token login through `/@api/login`.
+- Browsers such as Safari no longer show portal page images as black boxes after a new login, because proxied MI responses are now sent with `Cache-Control: no-store`. Repeat loads stay fast through the proxy cache.
+
 ## [1.4.2](https://github.com/mi-examples/pp-dev/compare/v1.4.1...v1.4.2) (2026-09-23)
 
 ### Bug Fixes

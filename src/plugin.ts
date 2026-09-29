@@ -3,14 +3,14 @@ import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
 import { redirect, urlReplacer } from './lib/helpers/url.helper.js';
 import { ClientService } from './lib/client.service.js';
-import { initProxyCache } from './lib/proxy-cache.middleware.js';
+import { initProxyCache, invalidateProxyCache } from './lib/proxy-cache.middleware.js';
 import { DistService } from './lib/dist.service.js';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import { initPPRedirect } from './lib/pp-redirect.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createInternalServer } from './lib/internal.middleware.js';
-import { colors, getTokenErrorInfo } from './lib/helpers/index.js';
+import { colors, getTokenErrorInfo, isSecureRequest, rewriteSetCookieHeader } from './lib/helpers/index.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
@@ -565,6 +565,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
               return;
             }
 
+            invalidateProxyCache('logged in with a personal access token');
+
             redirect(res, '/', 302);
           } else if (tokenType === 'regular') {
             const testRequest = await mi
@@ -585,7 +587,10 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
                     `Regular token validated successfully for ${response.data.users.length} user(s)`,
                   );
 
-                  res.setHeader('set-cookie', response.headers['set-cookie'] ?? '');
+                  res.setHeader(
+                    'set-cookie',
+                    rewriteSetCookieHeader(response.headers['set-cookie'], isSecureRequest(req)) ?? '',
+                  );
 
                   return response;
                 }
@@ -599,6 +604,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             if (!testRequest) {
               return;
             }
+
+            invalidateProxyCache('logged in with a token');
 
             redirect(res, '/', 302);
           } else {

@@ -5,7 +5,7 @@ import { Headers, MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
-import { cache } from './proxy-cache.middleware.js';
+import { cache, onProxyCacheInvalidate } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -45,6 +45,9 @@ function getCachedResponse(key: string): any | null {
 function setCachedResponse(key: string, data: any): void {
   apiResponseCache.set(key, { timestamp: Date.now(), data });
 }
+
+// A cached "page data loaded" belongs to the MI session that loaded it.
+onProxyCacheInvalidate(() => apiResponseCache.clear());
 
 // Constants
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
@@ -160,12 +163,24 @@ export function initLoadPPData(
             );
           }
 
+          // The load already answered the request (e.g. redirected after an auth failure). Redirecting
+          // again would throw ERR_HTTP_HEADERS_SENT and crash the dev server, and marking the session
+          // as redirected would make every later `/home` skip this block, trapping the user in a
+          // login loop.
+          if (res.headersSent || res.writableEnded) {
+            return;
+          }
+
           authProvider.setRedirected(true);
 
           logger.info(colors.blue('Successfully authenticated. Redirecting to base'));
 
           return redirect(res, base ?? '/', 302);
         } catch (error) {
+          if (res.headersSent || res.writableEnded) {
+            return;
+          }
+
           // If load throws an error, run next()
           return next();
         }
