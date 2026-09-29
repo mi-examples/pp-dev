@@ -5,7 +5,7 @@ import { Headers, MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
-import { cache } from './proxy-cache.middleware.js';
+import { cache, onProxyCacheInvalidate } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -45,6 +45,9 @@ function getCachedResponse(key: string): any | null {
 function setCachedResponse(key: string, data: any): void {
   apiResponseCache.set(key, { timestamp: Date.now(), data });
 }
+
+// A cached "page data loaded" belongs to the MI session that loaded it.
+onProxyCacheInvalidate(() => apiResponseCache.clear());
 
 // Constants
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
