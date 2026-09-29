@@ -245,6 +245,11 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
         }
 
+        // A `304` would make the browser reuse the copy it cached before (possibly for another
+        // session, or by a pp-dev version that still let it cache), so always fetch the full body.
+        proxyReq.removeHeader('if-none-match');
+        proxyReq.removeHeader('if-modified-since');
+
         const originalUrl = req.url ?? '/';
         const rewritten = rewriteDataPagePathForV7Proxy(
           originalUrl,
@@ -294,6 +299,14 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
             isSecureRequest(req),
           );
         }
+
+        // MI responses depend on the session, so the browser must not reuse one after a login or
+        // logout: Safari kept serving portal page images from its own cache after logging in again
+        // and drew them as black boxes. Repeat loads are still fast, since the proxy cache serves
+        // them and is dropped on every session change.
+        serverRes.headers['cache-control'] = 'no-store';
+        delete serverRes.headers['expires'];
+        delete serverRes.headers['pragma'];
 
         if (
           serverRes.headers['content-type']?.includes('text/event-stream') ||
