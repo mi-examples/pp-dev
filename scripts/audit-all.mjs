@@ -1,28 +1,77 @@
 /**
  * Runs `npm audit --json` in the repository root and every tests/* package that has a package.json.
- * Fails (exit 1) if any package reports a high/critical vulnerability that isn't in ALLOWLIST below.
+ * Fails (exit 1) if any package reports a high/critical vulnerability that isn't allowlisted.
  *
- * ALLOWLIST exists for advisories with no upstream fix that are mitigated outside of npm (e.g. an
- * application-level code change). Every entry must document why it's safe to allow, so this can't
- * silently swallow an unrelated future advisory against the same package. Remove an entry as soon as
- * a real fix ships upstream.
+ * The allowlist is the shared one in mi-examples-workflows (audit-allowlist.json), read on every run: from
+ * AUDIT_ALLOWLIST_URL, which the shared CI audit sets, else from its main branch. It holds advisories with no
+ * upstream fix that can't be reached, each with a reason and an `until` date after which it stops applying.
+ * Add or remove entries there, not here. If the list can't be loaded, nothing is allowlisted.
+ * AUDIT_ALLOWLIST_URL=none audits without it.
  */
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const ALLOWLIST = new Map([
-  [
-    'GHSA-vfj7-8cjw-p6xm',
-    // braces <= 3.0.3 has no fix (3.0.3 is the latest); it comes in through http-proxy-middleware -> micromatch.
-    'braces stack exhaustion on deeply nested patterns. Not reachable: http-proxy-middleware only calls ' +
-      'micromatch for string/glob pathFilters, and pp-dev passes a function (src/lib/proxy-pass.middleware.ts), ' +
-      'so no pattern, and nothing from a request, ever reaches braces. Remove once braces or micromatch ships a fix.',
-  ],
-]);
+const DEFAULT_ALLOWLIST_URL =
+  'https://raw.githubusercontent.com/mi-examples/mi-examples-workflows/main/audit-allowlist.json';
+
+/** Loads the shared allowlist: GHSA id -> reason, for the entries that haven't expired. */
+async function loadAllowlist() {
+  const source = process.env.AUDIT_ALLOWLIST_URL || DEFAULT_ALLOWLIST_URL;
+
+  if (source === 'none') {
+    return new Map();
+  }
+
+  try {
+    let text;
+
+    if (/^https?:\/\//.test(source)) {
+      const response = await fetch(source, { signal: AbortSignal.timeout(15_000) });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      text = await response.text();
+    } else {
+      text = readFileSync(source, 'utf-8');
+    }
+
+    // An entry applies through its `until` day, in UTC.
+    const today = new Date().toISOString().slice(0, 10);
+    const allowlist = new Map();
+
+    for (const entry of JSON.parse(text).entries ?? []) {
+      const valid =
+        /^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/.test(entry?.id ?? '') &&
+        typeof entry.reason === 'string' &&
+        entry.reason.trim() !== '' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(entry.until ?? '');
+
+      if (!valid) {
+        console.warn(`⚠ Ignoring an invalid audit allowlist entry: ${JSON.stringify(entry)}`);
+      } else if (entry.until < today) {
+        console.warn(`✗ The audit allowlist entry for ${entry.id} expired on ${entry.until}, so it applies no more.`);
+      } else {
+        allowlist.set(entry.id, `${entry.reason.trim()} (until ${entry.until})`);
+      }
+    }
+
+    console.log(`Audit allowlist: ${source} (${allowlist.size} active)`);
+
+    return allowlist;
+  } catch (error) {
+    console.warn(`⚠ Could not load the audit allowlist from ${source} (${error.message}); nothing is allowlisted.`);
+
+    return new Map();
+  }
+}
+
+const ALLOWLIST = await loadAllowlist();
 
 const FAILING_SEVERITIES = new Set(['high', 'critical']);
 
