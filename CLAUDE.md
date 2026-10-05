@@ -29,7 +29,8 @@ If test-fixture lockfiles need patching, add/update `overrides` in their `packag
 
 If an advisory has no upstream fix at all (`fixAvailable: false` and no newer version exists), don't
 try to force an override that doesn't exist. Mitigate it in application code instead, then add the
-GHSA id to the `ALLOWLIST` map in `scripts/audit-all.mjs` with a comment explaining the mitigation —
+GHSA id, the reason and an `until` date to the shared `audit-allowlist.json` in mi-examples-workflows
+(`scripts/audit-all.mjs` and the CI audit of every package read it from its main branch) —
 that's the only thing that lets `audit:all` pass without silently hiding real, fixable vulnerabilities.
 Remove the entry as soon as a real fix ships upstream.
 
