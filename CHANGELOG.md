@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.4](https://github.com/mi-examples/pp-dev/compare/v1.4.3...v1.4.4) (2026-10-05)
+
+### Other changes
+
+- Updated dependency versions, including `undici` (used by `cheerio`), `brace-expansion` and `http-cache-semantics`, to address newly reported high-severity security advisories.
+
 ## [1.4.3](https://github.com/mi-examples/pp-dev/compare/v1.4.2...v1.4.3) (2026-09-29)
 
 ### Bug fixes
