@@ -188,6 +188,8 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
      **/
     selfHandleResponse: true, // res.end() will be called internally by responseInterceptor()
 
+    // Keep this a function: with a string or glob filter, http-proxy-middleware runs micromatch -> braces, whose
+    // GHSA-vfj7-8cjw-p6xm has no fix and is allowlisted in scripts/audit-all.mjs only because it is unreachable here.
     pathFilter: (pathname, req) => {
       if (
         (opts.proxyIgnore || []).some((value) => {

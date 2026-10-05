@@ -14,7 +14,15 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const ALLOWLIST = new Map([]);
+const ALLOWLIST = new Map([
+  [
+    'GHSA-vfj7-8cjw-p6xm',
+    // braces <= 3.0.3 has no fix (3.0.3 is the latest); it comes in through http-proxy-middleware -> micromatch.
+    'braces stack exhaustion on deeply nested patterns. Not reachable: http-proxy-middleware only calls ' +
+      'micromatch for string/glob pathFilters, and pp-dev passes a function (src/lib/proxy-pass.middleware.ts), ' +
+      'so no pattern, and nothing from a request, ever reaches braces. Remove once braces or micromatch ships a fix.',
+  ],
+]);
 
 const FAILING_SEVERITIES = new Set(['high', 'critical']);
 
