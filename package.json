@@ -116,7 +116,7 @@
     "file-type": "^22.1.1",
     "http-proxy-middleware": "^4.2.0",
     "isbinaryfile": "^6.0.0",
-    "jsdom": "30.1.1",
+    "jsdom": "30.1.2",
     "jszip": "^3.10.2",
     "picocolors": "^1.1.1",
     "rollup": "^4.64.0",
