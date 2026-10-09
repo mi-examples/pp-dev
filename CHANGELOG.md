@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.5](https://github.com/mi-examples/pp-dev/compare/v1.4.4...v1.4.5) (2026-10-09)
+
+### Other changes
+
+- Updated dependencies to fix security advisories in `proxy-addr` (critical), `sharp` and `source-map-js` (high), `ip-address` (moderate) and `serialize-javascript` (low).
+
 ## [1.4.4](https://github.com/mi-examples/pp-dev/compare/v1.4.3...v1.4.4) (2026-10-05)
 
 ### Other changes
