@@ -57,10 +57,13 @@ describe('proxy cache — MI session', () => {
   let port: number;
   let handler: Handler;
   let upstreamHits: string[];
+  let upstreamAuth: (string | undefined)[];
+  const miAPI = { v7Features: false, personalAccessToken: undefined as string | undefined };
 
   beforeAll(async () => {
     upstream = http.createServer((req, res) => {
       upstreamHits.push(`${req.method} ${req.url}`);
+      upstreamAuth.push(req.headers.authorization);
       handler(req, res);
     });
 
@@ -70,7 +73,7 @@ describe('proxy cache — MI session', () => {
     const proxyMiddleware = initProxy({
       baseURL: `http://127.0.0.1:${upstreamPort}`,
       devServer: {} as never,
-      miAPI: { v7Features: false } as unknown as MiAPI,
+      miAPI: miAPI as unknown as MiAPI,
     });
 
     proxy = http.createServer((req, res) => {
@@ -93,6 +96,8 @@ describe('proxy cache — MI session', () => {
   beforeEach(() => {
     cache.clear();
     upstreamHits = [];
+    upstreamAuth = [];
+    miAPI.personalAccessToken = undefined;
   });
 
   const image: Handler = (req, res) => {
@@ -160,6 +165,81 @@ describe('proxy cache — MI session', () => {
     await tick();
 
     expect(cache.keys()).toEqual(['/assets/logo.png']);
+  });
+
+  describe('with a personal access token', () => {
+    let sessionCounter: number;
+
+    /** MI answers every bearer request with a new session id, whatever cookie it received. */
+    const tokenImage: Handler = (req, res) => {
+      res.setHeader('content-type', 'text/plain');
+      res.setHeader('set-cookie', `metric_insights_session=S${++sessionCounter}; path=/; httponly`);
+      res.end('image-bytes');
+    };
+
+    beforeEach(() => {
+      sessionCounter = 0;
+      invalidateProxyCache('test setup');
+      miAPI.personalAccessToken = 'token-1';
+    });
+
+    it('keeps the cache although MI hands every token request a new session id', async () => {
+      handler = tokenImage;
+      await request(port, '/assets/logo.png', { cookie: 'metric_insights_session=A' });
+      await Promise.all([
+        request(port, '/api/data_source_external_rollup', { cookie: 'metric_insights_session=A' }),
+        request(port, '/data/document/global', { cookie: 'metric_insights_session=A' }),
+        request(port, '/auth/get-license-info'),
+      ]);
+      await tick();
+
+      expect(cache.keys()).toEqual(['/assets/logo.png']);
+
+      const again = await request(port, '/assets/logo.png', { cookie: 'metric_insights_session=S1' });
+
+      expect(again.headers['x-pp-cache']).toBe('hit');
+      expect(upstreamHits.filter((hit) => hit === 'GET /assets/logo.png')).toHaveLength(1);
+      expect(upstreamAuth.every((auth) => auth === 'Bearer token-1')).toBe(true);
+    });
+
+    it('does not notify listeners on ordinary token responses', async () => {
+      let calls = 0;
+      const unsubscribe = onProxyCacheInvalidate(() => calls++);
+
+      handler = tokenImage;
+      await request(port, '/api/user', { cookie: 'metric_insights_session=A' });
+      await request(port, '/api/user', { cookie: 'metric_insights_session=A' });
+      await tick();
+      unsubscribe();
+
+      expect(calls).toBe(0);
+    });
+
+    it('clears the cache when the personal access token changes', async () => {
+      handler = tokenImage;
+      await request(port, '/assets/logo.png');
+      await tick();
+
+      expect(cache.keys()).toEqual(['/assets/logo.png']);
+
+      miAPI.personalAccessToken = 'token-2';
+      await request(port, '/api/user');
+      await tick();
+
+      expect(cache.keys()).toEqual([]);
+    });
+
+    it('goes back to session tracking once the token is dropped', async () => {
+      handler = tokenImage;
+      await request(port, '/assets/logo.png', { cookie: 'metric_insights_session=A' });
+      await tick();
+
+      miAPI.personalAccessToken = undefined;
+      await request(port, '/api/user', { cookie: 'metric_insights_session=A' });
+      await tick();
+
+      expect(cache.keys()).toEqual([]);
+    });
   });
 
   it('does not cache non-GET requests', async () => {

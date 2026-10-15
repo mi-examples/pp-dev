@@ -1,5 +1,5 @@
 import { ViteDevServer } from 'vite';
-import { PROXY_HEADER } from './proxy-pass.middleware.js';
+import { PROXY_HEADER, getRequestBearerToken } from './proxy-pass.middleware.js';
 import type { Connect } from 'vite';
 import { Express } from 'express';
 import { createLogger } from './logger.js';
@@ -136,6 +136,9 @@ const cache = new ProxyCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
 
 const invalidateListeners = new Set<() => void>();
 
+/** The personal access token of the last proxied request that carried one. */
+let lastBearerToken: string | undefined;
+
 /**
  * Runs `listener` whenever the proxy cache is dropped because the MI session changed, so other
  * per-session caches can be dropped with it. Returns an unsubscribe function.
@@ -155,20 +158,39 @@ export function onProxyCacheInvalidate(listener: () => void): () => void {
  */
 export function invalidateProxyCache(reason: string): void {
   cache.clear();
+  lastBearerToken = undefined;
   invalidateListeners.forEach((listener) => listener());
 
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
 }
 
 /**
- * Whether a proxied response moved the browser to another MI session. MI keeps the session id
- * stable while a session lasts and issues a new one on login and logout, so a `Set-Cookie` with an
- * id other than the one the request carried marks exactly those moments.
+ * Why a proxied response belongs to another MI identity than the cache was filled for, or
+ * `undefined` if it does not.
+ *
+ * - With a personal access token the token is the identity. MI answers every bearer request with a
+ *   new session id, whatever cookie it got, so the cookies say nothing there; only another token
+ *   does. Token logins through `/@api/login` clear the cache themselves.
+ * - Otherwise MI keeps the session id stable while a session lasts and issues a new one on login
+ *   and logout, so a `Set-Cookie` with an id other than the one the request carried marks exactly
+ *   those moments.
  */
-function isSessionChange(req: Connect.IncomingMessage, res: ServerResponse): boolean {
+function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse): string | undefined {
+  const token = getRequestBearerToken(req);
+
+  if (token !== undefined) {
+    const changed = lastBearerToken !== undefined && token !== lastBearerToken;
+
+    lastBearerToken = token;
+
+    return changed ? 'personal access token changed' : undefined;
+  }
+
   const newSession = getSetCookieValue(res.getHeader('set-cookie'), MI_SESSION_COOKIE);
 
-  return newSession !== undefined && newSession !== getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE);
+  return newSession !== undefined && newSession !== getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE)
+    ? 'MI session changed'
+    : undefined;
 }
 
 /**
@@ -240,8 +262,10 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
   return (req, res, next) => {
     res.once('finish', () => {
-      if (res.hasHeader(PROXY_HEADER) && isSessionChange(req, res)) {
-        invalidateProxyCache(`MI session changed (${req.method} ${cutUrlParams(req.url ?? '')})`);
+      const change = res.hasHeader(PROXY_HEADER) ? getIdentityChange(req, res) : undefined;
+
+      if (change) {
+        invalidateProxyCache(`${change} (${req.method} ${cutUrlParams(req.url ?? '')})`);
       }
     });
 

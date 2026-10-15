@@ -34,6 +34,14 @@ const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 
 export const PROXY_HEADER = 'X-PP-Proxy';
 
+/** The personal access token each proxied request was sent to MI with. */
+const requestBearerTokens = new WeakMap<IncomingMessage, string>();
+
+/** The personal access token the proxy sent `req` to MI with, if it added one. */
+export function getRequestBearerToken(req: IncomingMessage): string | undefined {
+  return requestBearerTokens.get(req);
+}
+
 /** Media types whose streamed payload is safe to run the text interceptor over. */
 const TEXTUAL_MEDIA_TYPE_REGEXPS = [
   /^text\//,
@@ -245,6 +253,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
         if (miAPI.personalAccessToken) {
           proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
+          requestBearerTokens.set(req, miAPI.personalAccessToken);
         }
 
         // A `304` would make the browser reuse the copy it cached before (possibly for another
