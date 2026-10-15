@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.6](https://github.com/mi-examples/pp-dev/compare/v1.4.5...v1.4.6) (2026-10-15)
+
+### Bug fixes
+
+- The proxy cache now works when you use a personal access token (`mi.token` or `MI_ACCESS_TOKEN`); previously it was cleared on almost every API response, so nothing was served from the cache. With a token, the cache is now cleared only when the token itself changes, and cookie-based sessions still clear it on login and logout as before.
+
 ## [1.4.5](https://github.com/mi-examples/pp-dev/compare/v1.4.4...v1.4.5) (2026-10-09)
 
 ### Other changes
