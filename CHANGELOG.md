@@ -4,7 +4,7 @@
 
 ### Other changes
 
-- Raised the bundled `vite` to `^8.3.4` to fix six security advisories (one high, four moderate, one low) in earlier 8.3 versions, three of which come from its bundled `launch-editor`.
+- Raised the `vite` dependency to `^8.3.4` to fix six security advisories (one high, four moderate, one low) in vite 8.3.0–8.3.2, three of which come from its bundled `launch-editor`.
 
 ## [1.4.6](https://github.com/mi-examples/pp-dev/compare/v1.4.5...v1.4.6) (2026-10-15)
 
