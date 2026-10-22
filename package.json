@@ -125,7 +125,7 @@
     "svgo": "^4.1.0",
     "svgtofont": "^6.5.3",
     "typescript": "^6.0.3",
-    "vite": "^8.3.2",
+    "vite": "^8.3.4",
     "vite-plugin-image-optimizer": "^2.0.3",
     "vite-plugin-zip-pack": "^1.2.4",
     "winston": "^3.19.0",
