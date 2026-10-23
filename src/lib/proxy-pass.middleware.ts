@@ -303,6 +303,12 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           proxyReq.removeHeader('Authorization');
         }
 
+        // MI's regular `Token` header authenticates too: a saved user goes only as its own token or
+        // session.
+        if (requestUser?.user) {
+          proxyReq.removeHeader('Token');
+        }
+
         // A session user as the main host's default user: the main host's cookies hold another
         // session, so send the one the user logged in with on its own host.
         const sessionUser = requestUser?.user?.kind === 'session' ? requestUser.user : undefined;

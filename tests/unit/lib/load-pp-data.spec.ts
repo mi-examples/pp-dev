@@ -102,16 +102,25 @@ describe("load-pp-data middleware — a saved user's host (PP-4594)", () => {
   const pageRequest = (host: string) =>
     ({
       url: '/',
-      headers: { host, accept: 'text/html', 'sec-fetch-dest': 'document', cookie: 'metric_insights_session=X' },
+      headers: {
+        host,
+        accept: 'text/html',
+        'sec-fetch-dest': 'document',
+        cookie: 'metric_insights_session=X',
+        authorization: 'Bearer page-token',
+        token: 'regular-token',
+      },
     }) as never;
 
-  it("loads page data without the user host's MI session cookie", async () => {
+  it("loads page data without the user host's MI session cookie or tokens", async () => {
     const mi = makeMi(() => Promise.resolve({}));
     const middleware = initLoadPPData(/^\/$/, mi, { templateLess: true });
 
     await middleware(pageRequest('viewer.localhost:3000'), makeRes() as unknown as ServerResponse, vi.fn());
 
-    expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.not.objectContaining({ cookie: expect.anything() }));
+    for (const header of ['cookie', 'authorization', 'token']) {
+      expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.not.objectContaining({ [header]: expect.anything() }));
+    }
     expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.objectContaining({ host: 'viewer.localhost:3000' }));
   });
 

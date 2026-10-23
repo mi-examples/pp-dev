@@ -58,7 +58,7 @@ describe('proxy — saved users', () => {
   let upstream: http.Server;
   let proxy: http.Server;
   let port: number;
-  let upstreamRequests: { url?: string; authorization?: string; cookie?: string }[];
+  let upstreamRequests: { url?: string; authorization?: string; cookie?: string; token?: string }[];
   let sessionCounter: number;
   let releaseSlowAsset: (() => void) | undefined;
   const users = new UserRegistry();
@@ -68,7 +68,12 @@ describe('proxy — saved users', () => {
 
   beforeAll(async () => {
     upstream = http.createServer((req, res) => {
-      upstreamRequests.push({ url: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie });
+      upstreamRequests.push({
+        url: req.url,
+        authorization: req.headers.authorization,
+        cookie: req.headers.cookie,
+        token: req.headers.token as string | undefined,
+      });
 
       if (req.url?.startsWith('/auth/index/logout')) {
         const answer = () => {
@@ -175,6 +180,14 @@ describe('proxy — saved users', () => {
 
     expect(res.body).toBe('as Bearer viewer-token');
     expect(upstreamRequests[0].authorization).toBe('Bearer viewer-token');
+  });
+
+  it("drops MI's regular Token header on a token user's host", async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+
+    await request(port, '/api/user', 'viewer.localhost:3000', undefined, { token: 'someone-elses-regular-token' });
+
+    expect(upstreamRequests[0]).toMatchObject({ authorization: 'Bearer viewer-token', token: undefined });
   });
 
   it("sends a session user's host with its own cookies and no token", async () => {
@@ -316,14 +329,19 @@ describe('proxy — saved users', () => {
   });
 
   describe('session users (PP-4596)', () => {
-    it('drops a bearer token the page sends, so MI answers as the session user', async () => {
+    it('drops a token the page sends, so MI answers as the session user', async () => {
       users.add({ name: 'qa', kind: 'session' });
 
       await request(port, '/api/user', 'qa.localhost:3000', 'metric_insights_session=QA', {
         authorization: 'Bearer someone-elses-token',
+        token: 'someone-elses-regular-token',
       });
 
-      expect(upstreamRequests.at(-1)).toMatchObject({ authorization: undefined, cookie: 'metric_insights_session=QA' });
+      expect(upstreamRequests.at(-1)).toMatchObject({
+        authorization: undefined,
+        token: undefined,
+        cookie: 'metric_insights_session=QA',
+      });
     });
 
     it('notices a session user logging in on its own host', async () => {

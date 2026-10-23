@@ -13,8 +13,8 @@ const SESSION_COOKIE_IN_COOKIE = new RegExp(`(^|;\\s*)(${MI_SESSION_COOKIE}=)[^;
 const SESSION_COOKIE_IN_SET_COOKIE = new RegExp(`^(\\s*${MI_SESSION_COOKIE}=)[^;]*`, 'i');
 
 /**
- * Copies of the captured headers without credentials: an `Authorization` value and the MI session
- * cookie. With several users (PP-4592) the inspector shows requests of all of them, and their
+ * Copies of the captured headers without credentials: an `Authorization` value, MI's regular
+ * `Token` header and the MI session cookie. With several users (PP-4592) the inspector shows requests of all of them, and their
  * sessions and tokens have no business on the page.
  */
 export function redactRequestHeaders(
@@ -26,6 +26,10 @@ export function redactRequestHeaders(
     const [scheme, credentials] = redacted.authorization.split(/\s+/, 2);
 
     redacted.authorization = credentials === undefined ? REDACTED : `${scheme} ${REDACTED}`;
+  }
+
+  if (redacted.token !== undefined) {
+    redacted.token = REDACTED;
   }
 
   if (typeof redacted.cookie === 'string') {

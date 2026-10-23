@@ -238,6 +238,36 @@ describe('SessionUserTracker', () => {
     expect(qa).toMatchObject({ state: 'active', session: 'S2' });
   });
 
+  describe('a guest session MI handed out for the active one, whose check failed', () => {
+    beforeEach(async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+      users.setDefaultUser('qa');
+      check.mockRejectedValueOnce(new Error('timeout of 30000ms exceeded'));
+      await tracker.observe(qa, req('localhost:3000'), setsSession('GUEST'), 'S1');
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('ends the session once a later check finds it a guest', async () => {
+      expect(qa.state).toBe('active');
+
+      vi.advanceTimersByTime(5000);
+      await tracker.observe(qa, req('localhost:3000'), ok, 'S1');
+
+      expect(qa).toMatchObject({ state: 'expired', session: undefined });
+      expect(users.defaultUser).toBeUndefined();
+    });
+
+    it('ends the session when its host sends the guest session back', async () => {
+      await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=GUEST'), ok);
+
+      expect(qa).toMatchObject({ state: 'expired', session: undefined });
+    });
+  });
+
   describe('a session MI rotated to on the main host whose check failed', () => {
     beforeEach(async () => {
       vi.useFakeTimers({ toFake: ['Date'] });

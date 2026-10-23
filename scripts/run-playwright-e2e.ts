@@ -56,11 +56,11 @@ const mockMode = (process.env.PP_DEV_E2E_MOCK_MODE ?? 'replay') as MockMode;
 const cassetteName = process.env.PP_DEV_E2E_CASSETTE ?? 'startup';
 const realMiUrl = process.env.REAL_MI_URL;
 
-// Working as other users needs your own API token. The replay mock accepts any, so CI (no fixture
-// .env, or an empty MI_ACCESS_TOKEN from an unset secret) gets a placeholder and the multi-user
-// tests run there too.
+// Working as other users needs your own API token. The replay mock accepts any, so replay always
+// runs with a placeholder: the multi-user tests run in CI too (no fixture .env, or an empty secret),
+// and a real token exported in the shell never reaches the mock or its request log.
 if (mockMode === 'replay') {
-  process.env.MI_ACCESS_TOKEN ||= 'e2e-original-token';
+  process.env.MI_ACCESS_TOKEN = 'e2e-original-token';
 }
 
 if (mockMode !== 'record' && mockMode !== 'replay') {

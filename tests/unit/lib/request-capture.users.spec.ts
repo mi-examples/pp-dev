@@ -138,6 +138,10 @@ describe('redactRequestHeaders / redactResponseHeaders', () => {
     expect(redactRequestHeaders({ authorization: 'opaque' }).authorization).toBe('<redacted>');
   });
 
+  it("redacts MI's regular Token header", () => {
+    expect(redactRequestHeaders({ token: 'regular-token' }).token).toBe('<redacted>');
+  });
+
   it('leaves headers without credentials as they are, and the originals untouched', () => {
     const headers = { host: 'localhost:3000', cookie: 'theme=dark' };
 

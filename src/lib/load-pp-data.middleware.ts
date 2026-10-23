@@ -74,7 +74,8 @@ function isHtmlDocumentRequest(req: IncomingMessage): boolean {
 /**
  * The headers page data is loaded with. MiAPI keeps them for the dev panel's own MI calls (sync,
  * page variables), which always go as the original user, so a saved user's host doesn't pass its
- * MI session cookie on.
+ * credentials on: its MI session cookie, or a token the page sends (`Authorization`, or MI's
+ * `Token`), which MiAPI would use instead of the original user's.
  */
 function getPageDataHeaders(req: IncomingMessage): Headers {
   const headers = (req.headers ?? {}) as Headers;
@@ -83,7 +84,7 @@ function getPageDataHeaders(req: IncomingMessage): Headers {
     return headers;
   }
 
-  const { cookie: _cookie, ...rest } = headers;
+  const { cookie: _cookie, authorization: _authorization, token: _token, ...rest } = headers;
 
   return rest;
 }

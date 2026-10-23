@@ -119,9 +119,10 @@ export class SessionUserTracker {
   /**
    * A session MI handed out whose check couldn't be answered, per registration, checked again on
    * later responses. Without it a session MI rotated to on the main host (whose cookie never
-   * reaches a browser) would be lost. It isn't used for requests until a check accepts it.
+   * reaches a browser) would be lost. It isn't used for requests until a check accepts it. Keeps
+   * the session MI replaced with it, so a guest verdict that comes later still ends that one.
    */
-  readonly #unverified = new WeakMap<SavedUser, { session: string; retryAt: number }>();
+  readonly #unverified = new WeakMap<SavedUser, { session: string; replaced?: string; retryAt: number }>();
 
   constructor(users: UserRegistry, check: SessionCheck) {
     this.#users = users;
@@ -165,6 +166,11 @@ export class SessionUserTracker {
       candidate = unverified.session;
     }
 
+    // Checked again (on a retry, or when its host sends it back): it still replaces what it did.
+    if (candidate && candidate === unverified?.session && replaced === undefined) {
+      replaced = unverified.replaced;
+    }
+
     if (
       candidate &&
       candidate !== user.session &&
@@ -194,7 +200,7 @@ export class SessionUserTracker {
       // MI couldn't tell: neither a login nor a guest. A later response checks the session again.
       if (this.#checking.get(user) === session) {
         this.#checking.delete(user);
-        this.#unverified.set(user, { session, retryAt: Date.now() + RETRY_DELAY });
+        this.#unverified.set(user, { session, replaced, retryAt: Date.now() + RETRY_DELAY });
       }
 
       this.#logger.warn(colors.yellow(`Could not check the MI session of user ${user.name}: ${String(error)}`));

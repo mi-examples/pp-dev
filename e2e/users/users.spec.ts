@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { createHash } from 'node:crypto';
 
 /**
  * Working as other MI users (PP-4592): every saved user has its own host, `<name>.localhost`, and
@@ -9,6 +10,12 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 const mockUrl = process.env.MOCK_MI_URL;
 
 const VIEWER = { name: 'e2e-viewer', token: 'e2e-viewer-token' };
+
+/**
+ * The viewer's `Authorization` header as the mock's request log keeps it, see
+ * `fingerprintAuthorization` in tests/mock-mi/server.ts.
+ */
+const VIEWER_AUTHORIZATION = `Bearer sha256:${createHash('sha256').update(VIEWER.token).digest('hex').slice(0, 16)}`;
 
 function userOrigin(baseURL: string, name: string): string {
   const url = new URL(baseURL);
@@ -53,7 +60,7 @@ test.describe('Users', () => {
 
     const asViewer = await mockRequests(request);
 
-    expect(asViewer.some((r) => r.authorization === `Bearer ${VIEWER.token}`)).toBe(true);
+    expect(asViewer.some((r) => r.authorization === VIEWER_AUTHORIZATION)).toBe(true);
 
     await request.delete(`${mockUrl}/__mock-mi/requests`);
     await page.goto(baseURL!);
@@ -63,11 +70,11 @@ test.describe('Users', () => {
 
     const asYou = await mockRequests(request);
 
-    // Your token: whatever the dev server was started with (a real one from a local .env, or the
-    // runner's placeholder), so the test only checks it isn't the viewer's.
+    // Your token: the runner's placeholder, unless the server was started some other way, so the
+    // test only checks it isn't the viewer's.
     expect(asYou.length).toBeGreaterThan(0);
     expect(asYou.some((r) => r.authorization?.startsWith('Bearer '))).toBe(true);
-    expect(asYou.some((r) => r.authorization === `Bearer ${VIEWER.token}`)).toBe(false);
+    expect(asYou.some((r) => r.authorization === VIEWER_AUTHORIZATION)).toBe(false);
   });
 
   test('a user host with no saved user is turned away', async ({ page, baseURL }) => {
