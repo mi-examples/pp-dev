@@ -104,6 +104,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
   let refreshTimer: number | undefined;
   let addKind: PublicUser['kind'] = 'token';
   let data: UsersResponse | null = null;
+  // What the list shows now, so a refresh with the same data leaves it (and the focus) alone.
+  let renderedData = '';
 
   const onDocClick = (ev: MouseEvent) => {
     const target = ev.target as Node;
@@ -172,6 +174,20 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       return;
     }
 
+    const snapshot = JSON.stringify(data);
+
+    if (snapshot === renderedData) {
+      return;
+    }
+
+    renderedData = snapshot;
+
+    // The control that has the keyboard focus, to focus its counterpart in the new list.
+    const focusKey =
+      document.activeElement instanceof HTMLElement && $list.contains(document.activeElement)
+        ? document.activeElement.dataset.focusKey
+        : undefined;
+
     const defaultUser = data.defaultUser;
     // The main host works as the default user, a user's host as that user.
     const currentUser = tabUser ?? defaultUser ?? undefined;
@@ -183,13 +199,13 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
 
     const rows = [
       `<div class="pp-dev-info__users-row${currentUser ? '' : ' is-current'}">
-        <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value=""
+        <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value="" data-focus-key=":default"
           title="Make the main host (localhost) work as you" ${defaultUser ? '' : 'checked'} />
         <div class="pp-dev-info__users-who">
           <span class="pp-dev-info__users-name">You</span>
           <span class="pp-dev-info__users-meta">original user · the dev panel always works as you</span>
         </div>
-        ${tabUser ? `<button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(mainOrigin())}" title="Open this page on the main host">Open</button>` : ''}
+        ${tabUser ? `<button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(mainOrigin())}" data-focus-key=":open" title="Open this page on the main host">Open</button>` : ''}
       </div>`,
       ...data.users.map((user) => {
         const canBeDefault = user.kind === 'token' ? user.state !== 'expired' : user.state === 'active';
@@ -206,7 +222,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         return `<div class="pp-dev-info__users-row${user.name === currentUser ? ' is-current' : ''}${
           needsAttention ? ' needs-login' : ''
         }" data-user="${name}">
-          <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value="${name}"
+          <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value="${name}" data-focus-key="${name}:default"
             title="${defaultTitle}"
             ${user.name === defaultUser ? 'checked' : ''} ${canBeDefault ? '' : 'disabled'} />
           <div class="pp-dev-info__users-who">
@@ -215,16 +231,25 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
           </div>
           ${
             needsLogin && user.loginUrl
-              ? `<button type="button" class="pp-dev-info__users-action pp-dev-info__users-action--accent" data-open="${escapeHtml(user.loginUrl)}" data-raw="true">Log in</button>`
+              ? `<button type="button" class="pp-dev-info__users-action pp-dev-info__users-action--accent" data-open="${escapeHtml(user.loginUrl)}" data-raw="true" data-focus-key="${name}:login">Log in</button>`
               : ''
           }
-          <button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(user.origin)}" title="Open this page as ${name}">Open</button>
-          <button type="button" class="pp-dev-info__users-remove" data-remove="${name}" title="Remove ${name}" aria-label="Remove ${name}">×</button>
+          <button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(user.origin)}" data-focus-key="${name}:open" title="Open this page as ${name}">Open</button>
+          <button type="button" class="pp-dev-info__users-remove" data-remove="${name}" data-focus-key="${name}:remove" title="Remove ${name}" aria-label="Remove ${name}">×</button>
         </div>`;
       }),
     ];
 
     $list.innerHTML = rows.join('');
+
+    if (focusKey !== undefined) {
+      // The same control of the same user, or the list's first control if it is gone.
+      const $same = [...$list.querySelectorAll<HTMLElement>('[data-focus-key]')].find(
+        ($el) => $el.dataset.focusKey === focusKey,
+      );
+
+      ($same ?? $list.querySelector<HTMLElement>('[data-focus-key]'))?.focus();
+    }
 
     $list.querySelectorAll<HTMLButtonElement>('[data-open]').forEach(($open) => {
       $open.addEventListener('click', (ev) => {
@@ -249,6 +274,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $list.querySelectorAll<HTMLInputElement>('.pp-dev-info__users-default').forEach(($radio) => {
       $radio.addEventListener('change', async () => {
         await request('PUT', `${USERS_API}/default`, { name: $radio.value || null });
+        // Redrawn even if refused: the radio the click checked must go back.
+        renderedData = '';
         await refresh();
       });
     });
@@ -363,6 +390,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
   };
 
   const open = () => {
+    renderedData = '';
     $popover = document.createElement('div');
     $popover.classList.add('pp-dev-info__settings', 'pp-dev-info__users');
     $popover.innerHTML = `

@@ -183,6 +183,41 @@ describe('initUsersPanel', () => {
     );
   });
 
+  describe('refreshing while open', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('leaves the list, and the keyboard focus, alone when nothing changed', async () => {
+      const $panel = await openPopover();
+      const $open = $panel.querySelector<HTMLButtonElement>('[data-focus-key="viewer:open"]')!;
+
+      $open.focus();
+      vi.advanceTimersByTime(3000);
+      await flush();
+
+      expect($panel.querySelector('[data-focus-key="viewer:open"]')).toBe($open);
+      expect(document.activeElement).toBe($open);
+    });
+
+    it("puts the focus back on the same user's control when the list changes", async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-focus-key="qa:remove"]')!.focus();
+      fetchMock.mockImplementation(async () =>
+        json(200, { ...usersResponse, users: [...usersResponse.users].reverse() }),
+      );
+      vi.advanceTimersByTime(3000);
+      await flush();
+
+      expect((document.activeElement as HTMLElement).dataset.focusKey).toBe('qa:remove');
+    });
+  });
+
   it('removes a user', async () => {
     const $panel = await openPopover();
 

@@ -602,6 +602,15 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
             invalidateProxyCache('logged in with a personal access token');
 
+            // Users need your own token: with users.persist on but no token at start, keeping them
+            // starts now.
+            startKeepingUsers({
+              persist: persistUsers,
+              miAPI: mi,
+              projectRoot: server.config.root || process.cwd(),
+              miUrl: backendBaseURL,
+            });
+
             redirect(res, '/', 302);
           } else if (tokenType === 'regular') {
             const testRequest = await mi

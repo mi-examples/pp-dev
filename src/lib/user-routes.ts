@@ -194,7 +194,16 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
       return;
     }
 
+    const contextAtStart = users.context;
     const check = await checkUserToken(miAPI, token);
+
+    // The dev server restarted with another project or MI instance while the token was being
+    // checked: the token belongs to the old one and must not be sent to the new one.
+    if (users.context !== contextAtStart || current.deps.miAPI !== miAPI || getUsers() !== users) {
+      sendError(res, 409, 'CONTEXT_CHANGED', 'The dev server switched to another MI instance; add the user again');
+
+      return;
+    }
 
     if (!check.ok) {
       if (check.rejected) {

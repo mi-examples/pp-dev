@@ -126,6 +126,26 @@ describe('user routes', () => {
     expect(users.get('viewer')?.token).toBe('old-token');
   });
 
+  it('does not add a user when the project or MI instance changed while its token was checked', async () => {
+    users.useContext('/work/app\nhttps://mi-a.example.com');
+
+    let release!: () => void;
+
+    authInfo.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => (release = () => resolve({ data: { user: { user_id: 42, username: 'viewer' } } }))),
+    );
+
+    const adding = call(port, 'POST', USERS_API_PATH, { name: 'viewer', token: 'viewer-token' });
+
+    await vi.waitFor(() => expect(release).toBeDefined());
+    users.useContext('/work/app\nhttps://mi-b.example.com');
+    release();
+
+    expect(await adding).toMatchObject({ status: 409, body: { code: 'CONTEXT_CHANGED' } });
+    expect(users.list()).toEqual([]);
+  });
+
   it('rejects a token MI turns down', async () => {
     authInfo.mockRejectedValue(Object.assign(new Error('Unauthorized'), { response: { status: 401, data: {} } }));
 

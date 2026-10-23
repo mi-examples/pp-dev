@@ -201,6 +201,29 @@ describe('SessionUserTracker', () => {
     expect(qa).toMatchObject({ state: 'active', session: 'S1' });
   });
 
+  it('picks up a rotated session whose check failed once the host sends it again', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+
+    // MI rotates S1 to S2, and the check of S2 can't be answered.
+    loggedIn.S2 = { id: 7, username: 'qa@example.com' };
+    check.mockRejectedValueOnce(new Error('timeout of 30000ms exceeded'));
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S2'));
+
+    expect(qa.session).toBe('S1');
+
+    // The browser keeps S2 and sends it; MI sets no cookie this time.
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S2'), ok);
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S2' });
+  });
+
+  it('does not check the session it already knows for a logged-in user', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
   it('lets the latest session win when checks overlap', async () => {
     let releaseFirst!: () => void;
 
@@ -225,6 +248,26 @@ describe('SessionUserTracker', () => {
     await observing;
 
     expect(qa.state).toBe('pending');
+  });
+
+  it("checks a replacement registration's session although the old one's check was still running", async () => {
+    let release!: () => void;
+
+    check.mockImplementationOnce((session) => new Promise((resolve) => (release = () => resolve(loggedIn[session]))));
+
+    const oldCheck = tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+
+    users.remove('qa');
+
+    const replacement = users.add({ name: 'qa', kind: 'session' });
+
+    release();
+    await oldCheck;
+
+    await tracker.observe(replacement, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(replacement).toMatchObject({ state: 'active', session: 'S1' });
   });
 });
 
