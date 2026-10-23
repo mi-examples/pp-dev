@@ -273,6 +273,16 @@ describe('normalizePPDevConfig', () => {
     });
   });
 
+  describe('users normalization', () => {
+    it('does not keep users between runs by default', () => {
+      expect(normalizePPDevConfig({}, 'app').persistUsers).toBe(false);
+    });
+
+    it('maps users.persist', () => {
+      expect(normalizePPDevConfig({ users: { persist: true } }, 'app').persistUsers).toBe(true);
+    });
+  });
+
   describe('Complete configuration', () => {
     it('normalizes a full config correctly', () => {
       const config: PPDevConfig = {

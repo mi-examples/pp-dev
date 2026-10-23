@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ServerResponse } from 'node:http';
 import { initLoadPPData, clearAPICache } from '../../../src/lib/load-pp-data.middleware.js';
 import { authProvider } from '../../../src/lib/auth.provider.js';
+import { userRegistry } from '../../../src/lib/user-registry.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /**
@@ -90,5 +91,66 @@ describe('load-pp-data middleware — /home after login', () => {
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/');
     expect(authProvider.getState().isRedirected).toBe(true);
+  });
+});
+
+describe("load-pp-data middleware — a saved user's host (PP-4594)", () => {
+  beforeEach(() => {
+    authProvider.reset();
+    clearAPICache();
+  });
+
+  const pageRequest = (host: string) =>
+    ({
+      url: '/',
+      headers: {
+        host,
+        accept: 'text/html',
+        'sec-fetch-dest': 'document',
+        cookie: 'metric_insights_session=X',
+        authorization: 'Bearer page-token',
+        token: 'regular-token',
+      },
+    }) as never;
+
+  it("loads page data without the user host's MI session cookie or tokens", async () => {
+    const mi = makeMi(() => Promise.resolve({}));
+    const middleware = initLoadPPData(/^\/$/, mi, { templateLess: true });
+
+    await middleware(pageRequest('viewer.localhost:3000'), makeRes() as unknown as ServerResponse, vi.fn());
+
+    for (const header of ['cookie', 'authorization', 'token']) {
+      expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.not.objectContaining({ [header]: expect.anything() }));
+    }
+    expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.objectContaining({ host: 'viewer.localhost:3000' }));
+  });
+
+  it('keeps the cookie on the main host', async () => {
+    const mi = makeMi(() => Promise.resolve({}));
+    const middleware = initLoadPPData(/^\/$/, mi, { templateLess: true });
+
+    await middleware(pageRequest('localhost:3000'), makeRes() as unknown as ServerResponse, vi.fn());
+
+    expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.objectContaining({ cookie: 'metric_insights_session=X' }));
+  });
+
+  it("drops the page's tokens on the main host while a saved user is the default, keeping your cookie", async () => {
+    userRegistry.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    userRegistry.setDefaultUser('viewer');
+
+    try {
+      const mi = makeMi(() => Promise.resolve({}));
+      const middleware = initLoadPPData(/^\/$/, mi, { templateLess: true });
+
+      await middleware(pageRequest('localhost:3000'), makeRes() as unknown as ServerResponse, vi.fn());
+
+      expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.objectContaining({ cookie: 'metric_insights_session=X' }));
+
+      for (const header of ['authorization', 'token']) {
+        expect(mi.getPageTemplate).toHaveBeenCalledWith(expect.not.objectContaining({ [header]: expect.anything() }));
+      }
+    } finally {
+      userRegistry.clear();
+    }
   });
 });

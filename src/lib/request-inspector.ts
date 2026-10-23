@@ -81,6 +81,7 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
       statusCode: entry.statusCode,
       duration: entry.duration,
       source: entry.source,
+      user: entry.user,
       requestHeaders: entry.requestHeaders,
       requestBody: entry.requestBody ? entry.requestBody.toString('base64') : null,
       requestBodySize: entry.requestBody?.byteLength ?? 0,
@@ -245,6 +246,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .s-5xx{color:var(--red)}
 .s-pending{color:var(--text3)}
 
+.user-chip{font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;flex-shrink:0;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:color-mix(in srgb, var(--purple) 20%, var(--bg));color:var(--purple)}
 .source-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:2px 7px;border-radius:10px}
 .src-local{background:color-mix(in srgb, var(--green) 20%, var(--bg));color:var(--green)}
 .src-proxy{background:color-mix(in srgb, var(--accent2) 20%, var(--bg));color:var(--accent2)}
@@ -351,6 +353,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
             <option value="proxy">Proxy</option>
             <option value="proxy-cache">Cached</option>
           </select>
+          <select class="filter-select" id="user-select" onchange="applyFilter()" title="The user whose tab made the request" style="display:none">
+            <option value="">All users</option>
+          </select>
         </div>
       </div>
       <div class="req-list" id="req-list">
@@ -439,6 +444,7 @@ async function fetchList() {
 
     allRequests = data.requests || [];
     updateStats(data);
+    updateUserOptions();
     applyFilter();
 
     if (selectedId && !allRequests.find(r => r.id === selectedId)) {
@@ -457,13 +463,34 @@ function updateStats(data) {
 }
 
 // ── Filter ────────────────────────────────────────────────────────────────────
+// Value of the user filter for requests sent as the original user (a saved user's name can't
+// start with "@").
+const ORIGINAL_USER = '@original';
+
+// The user filter only shows up once a request was sent as a saved user.
+function updateUserOptions() {
+  const select = document.getElementById('user-select');
+  const names = Array.from(new Set(allRequests.map(r => r.user).filter(Boolean))).sort();
+  const current = select.value;
+
+  select.style.display = names.length ? '' : 'none';
+  select.innerHTML = '<option value="">All users</option><option value="' + ORIGINAL_USER + '">Original</option>' +
+    names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+  select.value = current === ORIGINAL_USER || names.includes(current) ? current : '';
+}
+
 function applyFilter() {
   const search = document.getElementById('search-input').value.toLowerCase();
   const method = document.getElementById('method-select').value;
   const status = document.getElementById('status-select').value;
   const source = document.getElementById('source-select').value;
+  const user = document.getElementById('user-select').value;
 
   filteredRequests = allRequests.filter(r => {
+    if (user && (r.user || ORIGINAL_USER) !== user) {
+      return false;
+    }
+
     if (method && r.method !== method) {
       return false;
     }
@@ -485,6 +512,8 @@ function applyFilter() {
 
   renderList();
 }
+// The filter inputs call it from their inline handlers.
+window.applyFilter = applyFilter;
 
 // ── Render list ───────────────────────────────────────────────────────────────
 function isAtBottom() {
@@ -512,6 +541,7 @@ function renderList() {
 
     return \`<div class="req-item \${srcCls}\${sel}" data-id="\${esc(r.id)}" onclick="selectRequest('\${esc(r.id)}')">
       <span class="method-badge \${mClass}">\${esc(r.method)}</span>
+      \${r.user ? \`<span class="user-chip" title="From the tab of user \${esc(r.user)}">\${esc(r.user)}</span>\` : ''}
       <span class="req-url" title="\${esc(r.url)}">\${esc(r.url)}</span>
       <span class="req-meta">
         <span class="req-status-row">
@@ -576,6 +606,7 @@ function renderDetail(e) {
     <div class="info-item"><div class="info-label">Method</div><div class="info-value"><span class="method-badge \${methodClass(e.method)}">\${esc(e.method)}</span></div></div>
     <div class="info-item"><div class="info-label">Status</div><div class="info-value"><span class="status-badge \${sClass}">\${e.statusCode || '—'}</span></div></div>
     <div class="info-item"><div class="info-label">Source</div><div class="info-value"><span class="source-chip \${src.cls}">\${src.title}</span></div></div>
+    <div class="info-item"><div class="info-label">User</div><div class="info-value">\${e.user ? \`<span class="user-chip">\${esc(e.user)}</span>\` : 'Original'}</div></div>
     <div class="info-item"><div class="info-label">Duration</div><div class="info-value">\${e.duration != null ? formatDur(e.duration) : '—'}</div></div>
     <div class="info-item"><div class="info-label">Request</div><div class="info-value">\${formatBytes(e.requestBodySize||0)}</div></div>
     <div class="info-item"><div class="info-label">Response</div><div class="info-value">\${formatBytes(e.responseBodySize||0)}</div></div>

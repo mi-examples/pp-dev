@@ -209,6 +209,14 @@ hidden panel or taking clean screenshots. Note that `localStorage` is origin-sco
 apply to every pp-dev app served on the same host and port. See the [Dev Panel](#dev-panel)
 section for the full feature description.
 
+### `users` — Working as other users
+
+| Field     | Type      | Default | Description                                                                                                  |
+|-----------|-----------|---------|--------------------------------------------------------------------------------------------------------------|
+| `persist` | `boolean` | `false` | Keep the users added with an API token between dev server runs, in `~/.pp-dev/users/` (readable by you only) |
+
+See [Working as other users](#working-as-other-users).
+
 ### Validation
 
 pp-dev validates your config at startup and reports problems clearly:
@@ -472,7 +480,7 @@ For custom build configuration, create a `vite.config` file. See [Vite Configura
 
 ## Dev Panel
 
-pp-dev injects a floating dev panel into every served page. It shows the package name and version, the backend URL, the template mode and the App ID, and hosts the template **Sync** button. Since 1.0 the panel is fully repositionable and can be hidden.
+pp-dev injects a floating dev panel into every served page. It shows the pp-dev version (linked to npm), the backend URL, the template mode and the App ID, and hosts the template **Sync** button and the [Users](#working-as-other-users) button. Since 1.0 the panel is fully repositionable and can be hidden.
 
 ![Dev panel settings popover](./docs/screenshots/03-panel-settings.png)
 
@@ -544,6 +552,62 @@ See the [feature tour](./docs/features.md#variables-editor) for more screenshots
 
 See [`TEMPLATE_VARIABLES.md`](./TEMPLATE_VARIABLES.md) — also shipped inside the published package — for the `__template_variables.json` schema this feature reads.
 
+## Working as other users
+
+Check how a Portal Page looks and behaves for users with other permissions, groups or data access, without restarting pp-dev or logging out. Add users in the dev panel's **Users** popover (the people icon) and open the page as any of them — side by side with your own tab.
+
+![Users popover](./docs/screenshots/13-users-popover.png)
+
+### How it works
+
+Every saved user gets its own host: `<name>.localhost:<port>`. The browser sends that host with every request of the tab (fetches, images, links, reloads, tabs opened from it, WebSockets) and keeps cookies and storage per host, so pp-dev knows whom each request is for, and the users' MI sessions never mix. Browsers resolve `*.localhost` to your machine on their own.
+
+- **`localhost:<port>`** works as the **default user**: you, unless you check another user in the popover.
+- **`<name>.localhost:<port>`** works as that user. Its dev panel's Users button is purple, so the tab is never taken for your own.
+- **The dev panel itself** (sync, page variables, Variables Editor, Request Inspector) always works as you, on every host.
+
+### Requirements
+
+- **Your own API token** (`mi.token` or `MI_ACCESS_TOKEN`): the dev panel works as you through it. Without it the popover explains why users can't be added.
+- **The dev server opened on `localhost`**: hosts like `<name>.localhost` don't exist on an IP address or a custom domain; there pp-dev works as before, without users.
+
+### Adding users
+
+- **API token**: the token is checked with MI before the user is added. SSO users can only be added this way.
+- **Username + password** (local MI users): pp-dev adds the user and opens MI's usual login page on the user's own host. You log in there as in MI — 2FA included — and pp-dev never sees the password. Until then the user is *not logged in yet*; once MI ends the session it is *session expired* and **Log in** opens the login page again.
+
+The name becomes the user's host, so it may contain only lowercase latin letters, digits and `-`, must start with a letter and be at most 32 characters long. Users can't be renamed: remove and add them again.
+
+### Logging out and removing
+
+Logging out on a user's host ends that user's MI session (or token) as it would in MI, removes the user, and sends the tab back to `localhost`. **×** in the popover removes a user without logging it out of MI. Either way pp-dev drops what it cached for that user.
+
+### Keeping users between runs
+
+Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, readable by you only, outside the project so it never ends up in git or a build. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as *API token turned down by MI*.
+
+```typescript
+// pp-dev.config.ts
+export default defineConfig({
+  users: {
+    persist: true,
+  },
+});
+```
+
+### REST API
+
+The popover uses a small JSON API:
+
+| Method   | Path                    | Description                                                                                       |
+|----------|-------------------------|---------------------------------------------------------------------------------------------------|
+| `GET`    | `/@api/users`           | The users (name, kind, state, MI user, `origin`, `loginUrl`), the default user, and whether users are available |
+| `POST`   | `/@api/users`           | Add a user: `{ "name", "token" }`, or `{ "name", "kind": "session" }` to log in with a password    |
+| `PUT`    | `/@api/users/default`   | Make a user the default: `{ "name" }`, or `{ "name": null }` for you                              |
+| `DELETE` | `/@api/users/:name`     | Remove a user                                                                                     |
+
+Tokens and MI sessions are never sent back.
+
 ## Request Inspector
 
 pp-dev includes a built-in request inspector that captures every proxied and locally-served HTTP request made during development. It is enabled by default.
@@ -553,7 +617,8 @@ pp-dev includes a built-in request inspector that captures every proxied and loc
 Open `http://localhost:3000/@pp-dev/inspector` (replace port as needed) in any browser tab while the dev server is running. The UI shows:
 
 - A scrollable list of captured requests with method, status, source badge, and timing
-- Full request and response headers, with a **Copy** button per section
+- A tag with the user whose tab made the request, and a user filter, once you [work as other users](#working-as-other-users)
+- Full request and response headers, with a **Copy** button per section. Credentials are kept out: an `Authorization` value and the MI session cookie show as `<redacted>`
 - Request and response bodies rendered as text for JSON/HTML/CSS/plain-text content types, with **Copy** and **Save** buttons
 - Binary bodies (images, fonts, archives) show metadata only and offer a **Save** button
 

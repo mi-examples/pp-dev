@@ -1,13 +1,138 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { RequestStore, type RequestSource } from './request-store.js';
+import { UserRegistry, userRegistry } from './user-registry.js';
+import { MI_SESSION_COOKIE } from './helpers/cookie.helper.js';
 
 const DEFAULT_CAPTURE_LIMIT = 10 * 1024 * 1024;
+
+const REDACTED = '<redacted>';
+
+// The MI session cookie's value, in a `Cookie` header (`a=1; metric_insights_session=…`) or at the
+// start of a `Set-Cookie` header.
+const SESSION_COOKIE_IN_COOKIE = new RegExp(`(^|;\\s*)(${MI_SESSION_COOKIE}=)[^;]*`, 'gi');
+const SESSION_COOKIE_IN_SET_COOKIE = new RegExp(`^(\\s*${MI_SESSION_COOKIE}=)[^;]*`, 'i');
+
+/**
+ * Copies of the captured headers without credentials: an `Authorization` value, MI's regular
+ * `Token` header and the MI session cookie. With several users (PP-4592) the inspector shows requests of all of them, and their
+ * sessions and tokens have no business on the page.
+ */
+export function redactRequestHeaders(
+  headers: IncomingMessage['headers'],
+): Record<string, string | string[] | undefined> {
+  const redacted: Record<string, string | string[] | undefined> = { ...headers };
+
+  if (typeof redacted.authorization === 'string') {
+    const [scheme, credentials] = redacted.authorization.split(/\s+/, 2);
+
+    redacted.authorization = credentials === undefined ? REDACTED : `${scheme} ${REDACTED}`;
+  }
+
+  if (redacted.token !== undefined) {
+    redacted.token = REDACTED;
+  }
+
+  if (typeof redacted.cookie === 'string') {
+    redacted.cookie = redacted.cookie.replace(SESSION_COOKIE_IN_COOKIE, `$1$2${REDACTED}`);
+  }
+
+  return redacted;
+}
+
+export function redactResponseHeaders(
+  headers: ReturnType<ServerResponse['getHeaders']>,
+): Record<string, number | string | string[] | undefined> {
+  const redacted = { ...headers } as Record<string, number | string | string[] | undefined>;
+  const setCookie = redacted['set-cookie'];
+  const redactCookie = (cookie: string) => cookie.replace(SESSION_COOKIE_IN_SET_COOKIE, `$1${REDACTED}`);
+
+  if (Array.isArray(setCookie)) {
+    redacted['set-cookie'] = setCookie.map(redactCookie);
+  } else if (typeof setCookie === 'string') {
+    redacted['set-cookie'] = redactCookie(setCookie);
+  }
+
+  return redacted;
+}
+
+/** MI's login and other authentication endpoints: their bodies carry passwords and one-time codes. */
+const AUTH_PATH_REGEXP = /^\/(?:login|auth)(?:[/?#]|$)/i;
+
+/** Body fields that hold credentials, wherever they are posted. */
+const CREDENTIAL_FIELD_REGEXP = /pass(?:word|wd|code)?|pwd|secret|token|otp|mfa|2fa/i;
+
+/** `value` with credential fields redacted; `found` says whether there were any. */
+function redactJsonValue(value: unknown, found: { any: boolean }): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactJsonValue(item, found));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => {
+        if (CREDENTIAL_FIELD_REGEXP.test(key)) {
+          found.any = true;
+
+          return [key, REDACTED];
+        }
+
+        return [key, redactJsonValue(inner, found)];
+      }),
+    );
+  }
+
+  return value;
+}
+
+/**
+ * The captured request body without credentials: nothing of an authentication request (the
+ * username/password login of a saved user goes through the proxy), and credential-like fields of
+ * form and JSON bodies elsewhere.
+ */
+export function redactRequestBody(url: string, contentType: string | undefined, body: Buffer | null): Buffer | null {
+  if (!body) {
+    return body;
+  }
+
+  if (AUTH_PATH_REGEXP.test(url)) {
+    return Buffer.from(REDACTED);
+  }
+
+  const type = (contentType ?? '').split(';', 1)[0].trim().toLowerCase();
+
+  try {
+    // A body without credentials is kept byte for byte.
+    if (type === 'application/x-www-form-urlencoded') {
+      const params = new URLSearchParams(body.toString('utf8'));
+      const credentialKeys = [...new Set(params.keys())].filter((key) => CREDENTIAL_FIELD_REGEXP.test(key));
+
+      credentialKeys.forEach((key) => params.set(key, REDACTED));
+
+      return credentialKeys.length ? Buffer.from(params.toString()) : body;
+    }
+
+    if (type === 'application/json' || type.endsWith('+json')) {
+      const found = { any: false };
+      const redacted = redactJsonValue(JSON.parse(body.toString('utf8')), found);
+
+      return found.any ? Buffer.from(JSON.stringify(redacted)) : body;
+    }
+  } catch {
+    // Not parseable: keep the body as it is.
+  }
+
+  return body;
+}
 
 const SKIP_PREFIXES = ['/@pp-dev/', '/@api/', '/_next/', '/__nextjs_', '/@vite', '/@metricinsights', '/@'];
 
 const SKIP_EXACT = new Set(['/favicon.ico', '/installHook.js.map']);
 
-export function createRequestCaptureMiddleware(store: RequestStore, captureLimit = DEFAULT_CAPTURE_LIMIT) {
+export function createRequestCaptureMiddleware(
+  store: RequestStore,
+  captureLimit = DEFAULT_CAPTURE_LIMIT,
+  users: UserRegistry = userRegistry,
+) {
   return (req: IncomingMessage, res: ServerResponse, next: () => void): void => {
     const url = req.url || '/';
     const pathname = url.split('?')[0];
@@ -19,6 +144,8 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
     }
 
     const id = store.allocateId();
+    // Resolved up front: a logout removes the user before the response ends.
+    const user = users.resolve(req)?.user?.name;
     const startTime = Date.now();
 
     // Capture the request body by patching req.emit rather than attaching a 'data'
@@ -110,7 +237,11 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
 
       finalized = true;
 
-      const requestBody = !reqTruncated && reqChunks.length > 0 ? Buffer.concat(reqChunks) : null;
+      const requestBody = redactRequestBody(
+        url,
+        typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : undefined,
+        !reqTruncated && reqChunks.length > 0 ? Buffer.concat(reqChunks) : null,
+      );
       const responseBody = !resTruncated && resChunks.length > 0 ? Buffer.concat(resChunks) : null;
 
       store.add({
@@ -121,10 +252,11 @@ export function createRequestCaptureMiddleware(store: RequestStore, captureLimit
         statusCode: res.statusCode ?? null,
         duration: Date.now() - startTime,
         source: detectSource(),
-        requestHeaders: req.headers as Record<string, string | string[] | undefined>,
+        user,
+        requestHeaders: redactRequestHeaders(req.headers),
         requestBody,
         requestBodyTruncated: reqTruncated,
-        responseHeaders: res.getHeaders() as Record<string, number | string | string[] | undefined>,
+        responseHeaders: redactResponseHeaders(res.getHeaders()),
         responseBody,
         responseBodyTruncated: resTruncated,
       });

@@ -17,6 +17,8 @@ export interface RequestEntry {
   statusCode: number | null;
   duration: number | null;
   source: RequestSource;
+  /** The saved user the request was sent as; `undefined` for the original user. */
+  user?: string;
   requestHeaders: Record<string, string | string[] | undefined>;
   requestBody: Buffer | null;
   requestBodyTruncated: boolean;
@@ -33,6 +35,7 @@ export interface RequestMeta {
   statusCode: number | null;
   duration: number | null;
   source: RequestSource;
+  user?: string;
   requestSize: number;
   responseSize: number;
   requestBodyTruncated: boolean;
@@ -102,6 +105,7 @@ export class RequestStore {
         statusCode: e.statusCode,
         duration: e.duration,
         source: e.source,
+        user: e.user,
         requestSize: e.requestBody?.byteLength ?? 0,
         responseSize: e.responseBody?.byteLength ?? 0,
         requestBodyTruncated: e.requestBodyTruncated,

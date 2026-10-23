@@ -16,6 +16,9 @@ import { createRequestCaptureMiddleware } from './lib/request-capture.middleware
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './lib/output-path.js';
+import { createUserHostGuard, getUserNameFromHost } from './lib/user-registry.js';
+import { registerUserRoutes, USERS_API_PATH } from './lib/user-routes.js';
+import { startKeepingUsers } from './lib/user-store.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -108,6 +111,15 @@ export interface DevPanelConfig {
   autoHide?: boolean;
 }
 
+export interface UsersConfig {
+  /**
+   * Keep the users added with an API token between dev server runs, in a file in your home
+   * directory (`~/.pp-dev/users/`) that only you can read. Passwords and MI sessions are never kept.
+   * @default false
+   */
+  persist?: boolean;
+}
+
 export interface PPDevConfig {
   mi?: MiConfig;
   app?: AppConfig;
@@ -116,6 +128,8 @@ export interface PPDevConfig {
   sync?: SyncConfig;
   inspector?: InspectorConfig;
   devPanel?: DevPanelConfig;
+  /** Working as other MI users (the dev panel's Users section). */
+  users?: UsersConfig;
 }
 
 // ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
@@ -155,6 +169,7 @@ export interface NormalizedVitePPDevOptions {
   devPanelPosition: DevPanelPosition;
   devPanelHidden: boolean;
   devPanelAutoHide: boolean;
+  persistUsers: boolean;
 }
 
 const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -204,7 +219,7 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
 export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
-  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {} } = config;
+  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {}, users = {} } = config;
 
   const miMode = mi.mode ?? 'standalone';
   const appType = app.type ?? 'template';
@@ -294,6 +309,7 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
     devPanelPosition: devPanel.position ?? 'bottom-right',
     devPanelHidden: devPanel.hidden ?? false,
     devPanelAutoHide: devPanel.autoHide ?? false,
+    persistUsers: users.persist ?? false,
   };
 }
 
@@ -336,6 +352,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     devPanelPosition,
     devPanelHidden,
     devPanelAutoHide,
+    persistUsers,
   } = options || {};
 
   let isFirstRequest = true;
@@ -378,6 +395,11 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
       }
 
       const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
+
+      if (backendBaseURL) {
+        // Before Vite's own middlewares: a user host with no saved user behind it gets nothing.
+        server.middlewares.use(createUserHostGuard());
+      }
 
       server.middlewares.use(initPPRedirect(base, templateName));
 
@@ -525,6 +547,19 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         internalServer.post('/@api/login', async (req, res, next) => {
           const { token, tokenType } = req.body;
 
+          // This login sets the original user's token, which a saved user's tab must not change.
+          if (getUserNameFromHost(req.headers.host)) {
+            sendErrorResponse(
+              res,
+              409,
+              'Token login is only available on the main host',
+              'This tab belongs to a saved pp-dev user. Log in with a token on the main host (localhost).',
+              'USER_HOST',
+            );
+
+            return;
+          }
+
           if (!token) {
             sendErrorResponse(res, 400, 'Token is required');
 
@@ -566,6 +601,15 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             }
 
             invalidateProxyCache('logged in with a personal access token');
+
+            // Users need your own token: with users.persist on but no token at start, keeping them
+            // starts now.
+            startKeepingUsers({
+              persist: persistUsers,
+              miAPI: mi,
+              projectRoot: server.config.root || process.cwd(),
+              miUrl: backendBaseURL,
+            });
 
             redirect(res, '/', 302);
           } else if (tokenType === 'regular') {
@@ -643,6 +687,13 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         new ClientService(server, { distService, miAPI: mi });
         registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
+        registerUserRoutes(internalServer, { miAPI: mi });
+        startKeepingUsers({
+          persist: persistUsers,
+          miAPI: mi,
+          projectRoot: server.config.root || process.cwd(),
+          miUrl: backendBaseURL,
+        });
 
         // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
         // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a
@@ -659,6 +710,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           if (
             req.url?.startsWith('/@api/login') ||
             req.url?.startsWith('/@api/variables/') ||
+            req.url?.startsWith(USERS_API_PATH) ||
             req.url?.startsWith(VARIABLES_EDITOR_PATH)
           ) {
             internalServer(req as never, res as never, next);
