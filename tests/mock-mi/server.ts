@@ -46,6 +46,8 @@ export interface Cassette {
 
 export const CASSETTES_DIR = path.resolve(__dirname, 'cassettes');
 export const DEFAULT_PORT = 7331;
+/** Replay mode only: `GET` lists the requests the mock received (method, path, Authorization), `DELETE` clears them. */
+export const MOCK_REQUESTS_PATH = '/__mock-mi/requests';
 const FILESYSTEM_PATH_RE = /\/(?:opt|var|srv|usr|home)\/[^\s"'<>),\]}]+/g;
 // Internal MI instance hosts must not land in a public repo.
 // The first label is swapped for "mi" and the domain for example.com, so distinct hosts stay
@@ -322,7 +324,23 @@ export async function startMockMiServer(opts: {
       map.set(cassetteKey(interaction.request.method, interaction.request.pathname), interaction);
     }
 
+    // What reached the mock, so browser tests can check whom a request went to MI as (PP-4601).
+    const received: { method: string; path: string; authorization?: string }[] = [];
+
+    app.get(MOCK_REQUESTS_PATH, (_req: Request, res: Response) => {
+      res.json(received);
+    });
+
+    app.delete(MOCK_REQUESTS_PATH, (_req: Request, res: Response) => {
+      received.length = 0;
+      res.status(204).end();
+    });
+
     app.use((req: Request, res: Response) => {
+      if (received.length < 5000) {
+        received.push({ method: req.method, path: req.url, authorization: req.headers.authorization });
+      }
+
       const url = new URL(req.url, `http://localhost:${port}`);
       const key = cassetteKey(req.method, requestPath(url));
       const interaction = map.get(key);

@@ -56,6 +56,12 @@ const mockMode = (process.env.PP_DEV_E2E_MOCK_MODE ?? 'replay') as MockMode;
 const cassetteName = process.env.PP_DEV_E2E_CASSETTE ?? 'startup';
 const realMiUrl = process.env.REAL_MI_URL;
 
+// Working as other users needs your own API token. The replay mock accepts any, so CI (no fixture
+// .env) gets a placeholder and the multi-user tests run there too.
+if (mockMode === 'replay') {
+  process.env.MI_ACCESS_TOKEN ??= 'e2e-original-token';
+}
+
 if (mockMode !== 'record' && mockMode !== 'replay') {
   throw new Error(`Unsupported PP_DEV_E2E_MOCK_MODE "${mockMode}". Expected "record" or "replay".`);
 }
@@ -260,6 +266,7 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
       env: {
         ...process.env,
         BASE_URL: baseURL,
+        MOCK_MI_URL: mockMi.url,
         TEST_TYPE: fixture.testType,
         FORCE_COLOR: undefined,
       },
