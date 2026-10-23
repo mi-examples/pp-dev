@@ -443,14 +443,18 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           // Removed, or removed and added again, while the request was in flight: its session belongs
           // to the old registration and must not replace the one its host holds now.
           passSession = false;
-        } else if (savedUser?.kind === 'session') {
-          // Decided before the tracker looks at the response, which may change the user's session.
-          const leftBehind = sessionUsers.isLeftBehindRequest(savedUser, req, identity?.sentSession);
+        } else if (savedUser) {
+          let leftBehind = false;
 
-          sessionUsers.observe(savedUser, req, serverRes, identity?.sentSession);
+          if (savedUser.kind === 'session') {
+            // Decided before the tracker looks at the response, which may change the user's session.
+            leftBehind = sessionUsers.isLeftBehindRequest(savedUser, req, identity?.sentSession);
+            sessionUsers.observe(savedUser, req, serverRes, identity?.sentSession);
+          }
 
-          // As the main host's default user, the browser keeps the main host's own session; on the
-          // user's host, the newer one it logged in with since this request left.
+          // As the main host's default user (token or session), the browser keeps the main host's
+          // own session, which is yours again once you are the default; on the user's host, the
+          // newer one it logged in with since this request left.
           passSession = getUserNameFromHost(req.headers.host) === savedUser.name && !leftBehind;
         }
 

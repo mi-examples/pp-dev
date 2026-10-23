@@ -219,6 +219,20 @@ describe('proxy — saved users', () => {
     expect(upstreamRequests[0].authorization).toBe('Bearer viewer-token');
   });
 
+  it("keeps a default token user's MI session off the main host, but not off its own host", async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    users.setDefaultUser('viewer');
+
+    const onMain = await request(port, '/api/user', 'localhost:3000');
+    const onOwnHost = await request(port, '/api/user', 'viewer.localhost:3000');
+
+    expect(onMain.headers['set-cookie']).toEqual([expect.stringMatching(/^theme=dark;/)]);
+    expect(onOwnHost.headers['set-cookie']).toEqual([
+      expect.stringMatching(/^metric_insights_session=S2;/),
+      expect.stringMatching(/^theme=dark;/),
+    ]);
+  });
+
   it('never serves one user what MI answered another', async () => {
     users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
 
