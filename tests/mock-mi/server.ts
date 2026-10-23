@@ -59,7 +59,7 @@ export function fingerprintAuthorization(authorization: string | undefined): str
     return undefined;
   }
 
-  const [scheme, credentials = ''] = authorization.split(/s+/, 2);
+  const [scheme, credentials = ''] = authorization.split(/\s+/, 2);
 
   return `${scheme} sha256:${createHash('sha256').update(credentials).digest('hex').slice(0, 16)}`;
 }
