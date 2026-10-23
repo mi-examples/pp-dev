@@ -297,6 +297,10 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         if (token) {
           proxyReq.setHeader('Authorization', `Bearer ${token}`);
           requestBearerTokens.set(req, token);
+        } else if (requestUser?.user?.kind === 'session') {
+          // A session user goes as its MI session only: a bearer token the page sends would make MI
+          // answer as that token's owner while pp-dev attributes the request to the session user.
+          proxyReq.removeHeader('Authorization');
         }
 
         // A session user as the main host's default user: the main host's cookies hold another
@@ -373,18 +377,26 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         // Logging out as a saved user ends its session (or token) at MI, as it would anywhere else.
         // The user is then gone: drop it, and send the tab back to the default user on the main host.
         const loggedOutUser = getLoggedOutUser(req, users);
+        const identity = requestIdentities.get(req);
 
         if (loggedOutUser) {
           serverRes.resume();
-          users.remove(loggedOutUser.name);
-
-          logger.info(`${colors.blue('Logged out user')} ${colors.yellow(loggedOutUser.name)}, back to the main host`);
 
           const headers: Record<string, string | string[]> = { 'cache-control': 'no-store' };
 
-          // MI's own Set-Cookie clears the session cookie the user's host still holds.
-          if (serverRes.headers['set-cookie']) {
-            headers['set-cookie'] = serverRes.headers['set-cookie'];
+          // Only the user the logout was sent as is logged out. One removed and added again while
+          // the logout was in flight keeps its registration, cache and host cookie.
+          if (identity?.user === loggedOutUser) {
+            users.remove(loggedOutUser.name);
+
+            logger.info(
+              `${colors.blue('Logged out user')} ${colors.yellow(loggedOutUser.name)}, back to the main host`,
+            );
+
+            // MI's own Set-Cookie clears the session cookie the user's host still holds.
+            if (serverRes.headers['set-cookie']) {
+              headers['set-cookie'] = serverRes.headers['set-cookie'];
+            }
           }
 
           const fetchMode = req.headers['sec-fetch-mode'];
@@ -400,7 +412,6 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           return;
         }
 
-        const identity = requestIdentities.get(req);
         const savedUser = identity?.user;
 
         if (savedUser?.kind === 'session') {

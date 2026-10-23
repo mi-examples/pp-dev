@@ -7,13 +7,17 @@ import type { IncomingMessage } from 'node:http';
 import { MiAPI } from './pp.middleware.js';
 import { SavedUser, UserRegistry, getUserNameFromHost } from './user-registry.js';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
+import { getTokenErrorInfo } from './helpers/token.helper.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
 /** Where MI sends a request whose session is gone. */
 const LOGIN_LOCATION_REGEXP = /(?:^|\/\/[^/]+)\/(?:login|auth\/saml\/login)(?:[/?#]|$)/i;
 
-/** The MI user an MI session belongs to, or `undefined` for a guest (not logged in) session. */
+/**
+ * The MI user an MI session belongs to, or `undefined` for a guest (not logged in) session. Throws
+ * when MI can't tell (down, timing out, a server error): that says nothing about the session.
+ */
 export type SessionCheck = (session: string) => Promise<{ id: number; username: string } | undefined>;
 
 /** Asks MI who a session belongs to, the way the API token check does for tokens. */
@@ -34,8 +38,15 @@ export function createSessionCheck(miAPI: MiAPI): SessionCheck {
       return typeof user?.user_id === 'number'
         ? { id: user.user_id, username: typeof user.username === 'string' ? user.username : '' }
         : undefined;
-    } catch {
-      return undefined;
+    } catch (error) {
+      const { status } = getTokenErrorInfo(error);
+
+      // MI turned the session down; anything else is MI not answering.
+      if (status === 401 || status === 403 || status === 412) {
+        return undefined;
+      }
+
+      throw error;
     }
   };
 }
@@ -153,7 +164,20 @@ export class SessionUserTracker {
   async #verify(user: SavedUser, session: string): Promise<void> {
     this.#checking.set(user.name, session);
 
-    const miUser = await this.#check(session);
+    let miUser: Awaited<ReturnType<SessionCheck>>;
+
+    try {
+      miUser = await this.#check(session);
+    } catch (error) {
+      // MI couldn't tell: neither a login nor a guest. A later response checks the session again.
+      if (this.#checking.get(user.name) === session) {
+        this.#checking.delete(user.name);
+      }
+
+      this.#logger.warn(colors.yellow(`Could not check the MI session of user ${user.name}: ${String(error)}`));
+
+      return;
+    }
 
     // A newer session came in meanwhile, the user expired, or it is gone.
     if (this.#checking.get(user.name) !== session || this.#users.get(user.name) !== user) {

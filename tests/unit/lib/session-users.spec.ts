@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { IncomingMessage } from 'node:http';
 import {
   SessionUserTracker,
+  createSessionCheck,
   withSessionCookie,
   withoutSessionSetCookie,
   type SessionCheck,
 } from '../../../src/lib/session-users.js';
 import { UserRegistry, type SavedUser } from '../../../src/lib/user-registry.js';
+import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /**
  * PP-4596: a session user logs in through MI's login page on its own host. pp-dev learns about the
@@ -177,6 +179,28 @@ describe('SessionUserTracker', () => {
     expect(qa).toMatchObject({ state: 'expired', session: undefined });
   });
 
+  it('checks a session again after MI could not tell, instead of taking it for a guest', async () => {
+    check.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(qa.state).toBe('pending');
+
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(qa).toMatchObject({ state: 'active', session: 'S1' });
+  });
+
+  it('keeps a logged-in user active when MI could not tell about a new session', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    check.mockRejectedValueOnce(new Error('timeout of 30000ms exceeded'));
+
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S9'));
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S1' });
+  });
+
   it('lets the latest session win when checks overlap', async () => {
     let releaseFirst!: () => void;
 
@@ -201,6 +225,29 @@ describe('SessionUserTracker', () => {
     await observing;
 
     expect(qa.state).toBe('pending');
+  });
+});
+
+describe('createSessionCheck', () => {
+  const miAPI = (get: () => Promise<unknown>) => ({ get }) as unknown as MiAPI;
+  const rejectWith = (status?: number) => () =>
+    Promise.reject(Object.assign(new Error('failed'), status ? { response: { status, data: {} } } : {}));
+
+  it('returns the MI user of a logged-in session', async () => {
+    const check = createSessionCheck(miAPI(async () => ({ data: { user: { user_id: 7, username: 'qa' } } })));
+
+    expect(await check('S1')).toEqual({ id: 7, username: 'qa' });
+  });
+
+  it.each([401, 403, 412])('takes a %s for a guest session', async (status) => {
+    expect(await createSessionCheck(miAPI(rejectWith(status)))('S1')).toBeUndefined();
+  });
+
+  it.each([
+    ['MI is down', undefined],
+    ['a server error', 500],
+  ])('throws when %s', async (_, status) => {
+    await expect(createSessionCheck(miAPI(rejectWith(status)))('S1')).rejects.toThrow();
   });
 });
 

@@ -71,10 +71,19 @@ describe('proxy — saved users', () => {
       upstreamRequests.push({ url: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie });
 
       if (req.url?.startsWith('/auth/index/logout')) {
-        res.statusCode = 302;
-        res.setHeader('location', '/login');
-        res.setHeader('set-cookie', 'metric_insights_session=deleted; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT');
-        res.end();
+        const answer = () => {
+          res.statusCode = 302;
+          res.setHeader('location', '/login');
+          res.setHeader('set-cookie', 'metric_insights_session=deleted; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT');
+          res.end();
+        };
+
+        // A logout MI answers only once the test lets it.
+        if (req.url.includes('slow')) {
+          releaseSlowAsset = answer;
+        } else {
+          answer();
+        }
 
         return;
       }
@@ -277,6 +286,26 @@ describe('proxy — saved users', () => {
       expect(users.get('qa')).toBeUndefined();
     });
 
+    it('does not log out a user removed and added again while the logout was in flight', async () => {
+      const logout = request(port, '/auth/index/logout?slow=1', 'viewer.localhost:3000', undefined, {
+        'sec-fetch-mode': 'navigate',
+      });
+
+      await vi.waitFor(() => expect(releaseSlowAsset).toBeDefined());
+
+      users.remove('viewer');
+
+      const replacement = users.add({ name: 'viewer', kind: 'token', token: 'new-viewer-token' });
+
+      releaseSlowAsset!();
+
+      const res = await logout;
+
+      expect(res.status).toBe(302);
+      expect(res.headers['set-cookie']).toBeUndefined();
+      expect(users.get('viewer')).toBe(replacement);
+    });
+
     it('keeps the logout on the main host as it was', async () => {
       const res = await request(port, '/auth/index/logout?proxyRedirect=%2F', 'localhost:3000');
 
@@ -287,6 +316,16 @@ describe('proxy — saved users', () => {
   });
 
   describe('session users (PP-4596)', () => {
+    it('drops a bearer token the page sends, so MI answers as the session user', async () => {
+      users.add({ name: 'qa', kind: 'session' });
+
+      await request(port, '/api/user', 'qa.localhost:3000', 'metric_insights_session=QA', {
+        authorization: 'Bearer someone-elses-token',
+      });
+
+      expect(upstreamRequests.at(-1)).toMatchObject({ authorization: undefined, cookie: 'metric_insights_session=QA' });
+    });
+
     it('notices a session user logging in on its own host', async () => {
       const qa = users.add({ name: 'qa', kind: 'session' });
 
