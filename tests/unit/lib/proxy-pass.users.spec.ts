@@ -60,8 +60,9 @@ describe('proxy — saved users', () => {
     upstream = http.createServer((req, res) => {
       upstreamRequests.push({ url: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie });
 
-      // MI answers every bearer request with a new session id, whatever cookie it received.
-      if (req.headers.authorization) {
+      // MI answers every bearer request with a new session id, whatever cookie it received, and a
+      // login with a new session too.
+      if (req.headers.authorization || req.url === '/auth/login') {
         res.setHeader('set-cookie', `metric_insights_session=S${++sessionCounter}; path=/; httponly`);
       }
 
@@ -171,6 +172,23 @@ describe('proxy — saved users', () => {
     await tick();
 
     expect(cache.keys()).toHaveLength(2);
+  });
+
+  it("drops only that user's cache when a user's MI session changes", async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    users.add({ name: 'qa', kind: 'session' });
+
+    await request(port, '/assets/logo.png', 'localhost:3000');
+    await request(port, '/assets/logo.png', 'viewer.localhost:3000');
+    await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=QA');
+    await tick();
+
+    expect(cache.keys()).toHaveLength(3);
+
+    await request(port, '/auth/login', 'qa.localhost:3000', 'metric_insights_session=QA');
+    await tick();
+
+    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer:/assets/logo.png']);
   });
 
   it('does not cache a user host with no saved user', async () => {

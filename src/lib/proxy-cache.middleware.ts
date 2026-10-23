@@ -167,6 +167,34 @@ export function invalidateProxyCache(reason: string): void {
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
 }
 
+/** Whether `cacheKey` holds a response for `userKey` (`''` is the original user). */
+function isCacheKeyOf(cacheKey: string, userKey: string): boolean {
+  return userKey ? cacheKey.startsWith(`@${userKey}:`) : !cacheKey.startsWith('@');
+}
+
+/**
+ * Drops what is cached for one saved user (its MI session changed, or it was removed), leaving the
+ * other users' entries warm. For the original user (`''`) it drops everything, like
+ * {@link invalidateProxyCache}, since per-session caches such as the page data belong to it.
+ */
+export function invalidateUserProxyCache(userKey: string, reason: string): void {
+  if (!userKey) {
+    invalidateProxyCache(reason);
+
+    return;
+  }
+
+  for (const key of cache.keys()) {
+    if (isCacheKeyOf(key, userKey)) {
+      cache.del(key);
+    }
+  }
+
+  lastBearerTokens.delete(userKey);
+
+  createLogger().info(colors.blue(`Proxy cache cleared for ${userKey}: ${reason}`));
+}
+
 /**
  * Why a proxied response belongs to another MI identity than the cache was filled for, or
  * `undefined` if it does not.
@@ -284,7 +312,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       const change = res.hasHeader(PROXY_HEADER) ? getIdentityChange(req, res, requestUser.key) : undefined;
 
       if (change) {
-        invalidateProxyCache(`${change} (${req.method} ${cutUrlParams(req.url ?? '')})`);
+        invalidateUserProxyCache(requestUser.key, `${change} (${req.method} ${cutUrlParams(req.url ?? '')})`);
       }
     });
 
