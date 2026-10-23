@@ -16,6 +16,7 @@ import { createRequestCaptureMiddleware } from './lib/request-capture.middleware
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './lib/output-path.js';
+import { createUserHostGuard, getUserNameFromHost } from './lib/user-registry.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -379,6 +380,11 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
       const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
 
+      if (backendBaseURL) {
+        // Before Vite's own middlewares: a user host with no saved user behind it gets nothing.
+        server.middlewares.use(createUserHostGuard());
+      }
+
       server.middlewares.use(initPPRedirect(base, templateName));
 
       if (inspectorEnabled !== false) {
@@ -524,6 +530,19 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         internalServer.post('/@api/login', async (req, res, next) => {
           const { token, tokenType } = req.body;
+
+          // This login sets the original user's token, which a saved user's tab must not change.
+          if (getUserNameFromHost(req.headers.host)) {
+            sendErrorResponse(
+              res,
+              409,
+              'Token login is only available on the main host',
+              'This tab belongs to a saved pp-dev user. Log in with a token on the main host (localhost).',
+              'USER_HOST',
+            );
+
+            return;
+          }
 
           if (!token) {
             sendErrorResponse(res, 400, 'Token is required');

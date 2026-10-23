@@ -9,6 +9,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
+import { UserRegistry, userRegistry } from './user-registry.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -28,6 +29,9 @@ export interface ProxyOpts {
 
   /** Local template name (e.g. package name); used with {@link MiAPI.internalPageName} for v7 `/data/page/` proxy rewrites. */
   templateName?: string;
+
+  /** Saved users, picked by the request's host. @default the shared {@link userRegistry} */
+  users?: UserRegistry;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
@@ -177,6 +181,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
     disableSSLValidation = false,
     miAPI,
     templateName,
+    users = userRegistry,
   } = opts;
 
   if (!baseURL) {
@@ -251,9 +256,21 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           proxyReq.setHeader('referer', referer.replace(new RegExp(`https?://${host}`), baseURL));
         }
 
-        if (miAPI.personalAccessToken) {
-          proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
-          requestBearerTokens.set(req, miAPI.personalAccessToken);
+        // A saved user goes as its own token, or (a session user) as the MI session its host's
+        // cookies carry; everything else as the original user. A user host with no saved user
+        // behind it gets no identity at all.
+        const requestUser = users.resolve(req);
+        let token: string | undefined;
+
+        if (requestUser?.user) {
+          token = requestUser.user.token;
+        } else if (requestUser) {
+          token = miAPI.personalAccessToken;
+        }
+
+        if (token) {
+          proxyReq.setHeader('Authorization', `Bearer ${token}`);
+          requestBearerTokens.set(req, token);
         }
 
         // A `304` would make the browser reuse the copy it cached before (possibly for another
@@ -282,7 +299,9 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         logger.info(
           `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${req.url} -> ${colors.green(
             proxyReq.method,
-          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
+          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}${
+            requestUser?.user ? ` ${colors.blue('as')} ${colors.yellow(requestUser.user.name)}` : ''
+          }`,
         );
 
         // Keep-alive reuses `req.socket`; each proxied request adds one listener until the

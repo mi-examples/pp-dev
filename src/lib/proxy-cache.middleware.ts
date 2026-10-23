@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
 import { cutUrlParams } from './helpers/url.helper.js';
+import { UserRegistry, userRegistry } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -22,6 +23,8 @@ export interface ProxyCacheOpts {
   ttl?: number;
   maxSize?: number; // Maximum cache size in bytes
   maxItems?: number; // Maximum number of cache items
+  /** Saved users; each one gets its own cache entries. @default the shared {@link userRegistry} */
+  users?: UserRegistry;
 }
 
 declare module 'vite' {
@@ -136,8 +139,8 @@ const cache = new ProxyCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
 
 const invalidateListeners = new Set<() => void>();
 
-/** The personal access token of the last proxied request that carried one. */
-let lastBearerToken: string | undefined;
+/** The personal access token of the last proxied request that carried one, per user key. */
+const lastBearerTokens = new Map<string, string>();
 
 /**
  * Runs `listener` whenever the proxy cache is dropped because the MI session changed, so other
@@ -158,7 +161,7 @@ export function onProxyCacheInvalidate(listener: () => void): () => void {
  */
 export function invalidateProxyCache(reason: string): void {
   cache.clear();
-  lastBearerToken = undefined;
+  lastBearerTokens.clear();
   invalidateListeners.forEach((listener) => listener());
 
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
@@ -170,18 +173,20 @@ export function invalidateProxyCache(reason: string): void {
  *
  * - With a personal access token the token is the identity. MI answers every bearer request with a
  *   new session id, whatever cookie it got, so the cookies say nothing there; only another token
- *   does. Token logins through `/@api/login` clear the cache themselves.
+ *   does. Token logins through `/@api/login` clear the cache themselves. Each saved user (`userKey`)
+ *   has a token of its own, so tokens are compared per user.
  * - Otherwise MI keeps the session id stable while a session lasts and issues a new one on login
  *   and logout, so a `Set-Cookie` with an id other than the one the request carried marks exactly
  *   those moments.
  */
-function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse): string | undefined {
+function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse, userKey: string): string | undefined {
   const token = getRequestBearerToken(req);
 
   if (token !== undefined) {
+    const lastBearerToken = lastBearerTokens.get(userKey);
     const changed = lastBearerToken !== undefined && token !== lastBearerToken;
 
-    lastBearerToken = token;
+    lastBearerTokens.set(userKey, token);
 
     return changed ? 'personal access token changed' : undefined;
   }
@@ -194,9 +199,10 @@ function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse): s
 }
 
 /**
- * Generates an optimized cache key from URL and query parameters
+ * Generates an optimized cache key from URL and query parameters. A saved user's entries are
+ * prefixed with its `userKey`, so one user is never served what MI answered another.
  */
-function generateCacheKey(url: string): string {
+function generateCacheKey(url: string, userKey: string): string {
   // Remove query parameters for better cache hit rates
   const cleanUrl = url.split('?')[0];
 
@@ -209,7 +215,7 @@ function generateCacheKey(url: string): string {
     return '';
   }
 
-  return url;
+  return userKey ? `@${userKey}:${url}` : url;
 }
 
 /**
@@ -248,7 +254,13 @@ function setResponseHeaders(res: ServerResponse, headers: Record<string, any>): 
 }
 
 export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
-  const { devServer, ttl = DEFAULT_TTL, maxSize = DEFAULT_MAX_SIZE, maxItems = DEFAULT_MAX_ITEMS } = opts;
+  const {
+    devServer,
+    ttl = DEFAULT_TTL,
+    maxSize = DEFAULT_MAX_SIZE,
+    maxItems = DEFAULT_MAX_ITEMS,
+    users = userRegistry,
+  } = opts;
 
   const logger = createLogger();
 
@@ -261,8 +273,15 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
   devServer.cache = cache;
 
   return (req, res, next) => {
+    const requestUser = users.resolve(req);
+
+    // A user host with no saved user behind it is never cached.
+    if (!requestUser) {
+      return next();
+    }
+
     res.once('finish', () => {
-      const change = res.hasHeader(PROXY_HEADER) ? getIdentityChange(req, res) : undefined;
+      const change = res.hasHeader(PROXY_HEADER) ? getIdentityChange(req, res, requestUser.key) : undefined;
 
       if (change) {
         invalidateProxyCache(`${change} (${req.method} ${cutUrlParams(req.url ?? '')})`);
@@ -270,7 +289,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     });
 
     const url = req.originalUrl || req.url || '';
-    const cacheKey = req.method === 'GET' ? generateCacheKey(url) : '';
+    const cacheKey = req.method === 'GET' ? generateCacheKey(url, requestUser.key) : '';
 
     // Skip caching if no valid cache key
     if (!cacheKey) {

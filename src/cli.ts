@@ -16,6 +16,7 @@ import { MiAPI, MiAPIOptions } from './lib/pp.middleware.js';
 import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
+import { createUserHostGuard } from './lib/user-registry.js';
 import { urlReplacer } from './lib/helpers/url.helper.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
@@ -955,6 +956,12 @@ cli
 
         if (backendBaseURL) {
           const baseUrlHost = new URL(backendBaseURL).host;
+
+          // 0. A user host with no saved user behind it gets nothing, not even Next.js assets.
+          const userHostGuard = createUserHostGuard();
+
+          essentialMiddlewareChain.unshift(userHostGuard);
+          fullMiddlewareChain.unshift(userHostGuard);
 
           if (backendBaseURL.startsWith('https://')) {
             EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 20);

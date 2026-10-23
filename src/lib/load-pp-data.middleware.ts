@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { cache, onProxyCacheInvalidate } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
+import { getUserNameFromHost } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 type IncomingMessage = Connect.IncomingMessage;
@@ -68,6 +69,23 @@ function isHtmlDocumentRequest(req: IncomingMessage): boolean {
   const accept = req.headers['accept'];
 
   return typeof accept === 'string' && accept.includes('text/html');
+}
+
+/**
+ * The headers page data is loaded with. MiAPI keeps them for the dev panel's own MI calls (sync,
+ * page variables), which always go as the original user, so a saved user's host doesn't pass its
+ * MI session cookie on.
+ */
+function getPageDataHeaders(req: IncomingMessage): Headers {
+  const headers = (req.headers ?? {}) as Headers;
+
+  if (!getUserNameFromHost(req.headers?.host)) {
+    return headers;
+  }
+
+  const { cookie: _cookie, ...rest } = headers;
+
+  return rest;
 }
 
 /**
@@ -259,7 +277,7 @@ async function handlePageInfoOnly(
     return next(error);
   }
 
-  const headers = (req.headers ?? {}) as Headers;
+  const headers = getPageDataHeaders(req);
 
   logger.info(colors.green('Start loading page info'));
 
@@ -314,7 +332,7 @@ async function handleTemplateLoad(
   logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
   const { templateLess, appId, redirectOnAuthFailure, redirectUrl } = options;
-  const headers = (req.headers ?? {}) as Headers;
+  const headers = getPageDataHeaders(req);
 
   logger.info(colors.green('Start loading page data'));
 

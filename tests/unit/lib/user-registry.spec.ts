@@ -1,0 +1,167 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import {
+  UserRegistry,
+  createUserHostGuard,
+  getUserNameError,
+  getUserNameFromHost,
+  MAX_USER_NAME_LENGTH,
+} from '../../../src/lib/user-registry.js';
+
+const req = (host?: string) => ({ headers: host === undefined ? {} : { host } }) as IncomingMessage;
+
+describe('getUserNameError', () => {
+  it.each(['u2', 'qa', 'viewer-1', 'a', 'a'.repeat(MAX_USER_NAME_LENGTH)])('accepts "%s"', (name) => {
+    expect(getUserNameError(name)).toBeUndefined();
+  });
+
+  it.each([
+    ['', 'empty'],
+    ['2users', 'starts with a digit'],
+    ['-qa', 'starts with "-"'],
+    ['qa-', 'ends with "-"'],
+    ['QA', 'uppercase'],
+    ['john.doe', 'a dot'],
+    ['john@example.com', 'an email'],
+    ['ivan_b', 'an underscore'],
+    ['юзер', 'non-latin letters'],
+    ['a'.repeat(MAX_USER_NAME_LENGTH + 1), 'too long'],
+  ])('rejects "%s" (%s)', (name) => {
+    expect(getUserNameError(name)).toEqual(expect.any(String));
+  });
+});
+
+describe('getUserNameFromHost', () => {
+  it.each([
+    ['u2.localhost:3000', 'u2'],
+    ['u2.localhost', 'u2'],
+    ['QA.LOCALHOST:5173', 'qa'],
+  ])('reads the user of %s', (host, name) => {
+    expect(getUserNameFromHost(host)).toBe(name);
+  });
+
+  it.each([
+    undefined,
+    '',
+    'localhost',
+    'localhost:3000',
+    '127.0.0.1:3000',
+    '[::1]:3000',
+    'a.b.localhost:3000',
+    'mi.example.com',
+    'localhost.example.com',
+  ])('finds no user in %s', (host) => {
+    expect(getUserNameFromHost(host)).toBeUndefined();
+  });
+});
+
+describe('UserRegistry', () => {
+  let users: UserRegistry;
+
+  beforeEach(() => {
+    users = new UserRegistry();
+  });
+
+  it('adds, lists and removes users', () => {
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.add({ name: 'qa', kind: 'session' });
+
+    expect(users.list().map((user) => user.name)).toEqual(['viewer', 'qa']);
+    expect(users.get('viewer')?.token).toBe('t-viewer');
+
+    expect(users.remove('viewer')).toBe(true);
+    expect(users.remove('viewer')).toBe(false);
+    expect(users.list().map((user) => user.name)).toEqual(['qa']);
+  });
+
+  it('rejects an invalid name, a taken name and a token user without a token', () => {
+    expect(() => users.add({ name: 'John Doe', kind: 'session' })).toThrow();
+
+    users.add({ name: 'qa', kind: 'session' });
+
+    expect(() => users.add({ name: 'qa', kind: 'token', token: 't' })).toThrow(/already exists/);
+    expect(() => users.add({ name: 'viewer', kind: 'token' })).toThrow(/API token/);
+  });
+
+  it('resolves the main host to the original user', () => {
+    expect(users.resolve(req('localhost:3000'))).toEqual({ key: '', user: undefined });
+    expect(users.resolve(req('127.0.0.1:3000'))).toEqual({ key: '', user: undefined });
+    expect(users.resolve(req())).toEqual({ key: '', user: undefined });
+  });
+
+  it("resolves a user's host to that user", () => {
+    const viewer = users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+
+    expect(users.resolve(req('viewer.localhost:3000'))).toEqual({ key: 'viewer', user: viewer });
+  });
+
+  it('resolves a user host with no saved user to nobody', () => {
+    expect(users.resolve(req('ghost.localhost:3000'))).toBeUndefined();
+  });
+
+  it('resolves the main host to the default user, and back to the original user', () => {
+    const viewer = users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+
+    users.setDefaultUser('viewer');
+
+    expect(users.defaultUser).toBe(viewer);
+    expect(users.resolve(req('localhost:3000'))).toEqual({ key: 'viewer', user: viewer });
+
+    users.setDefaultUser(undefined);
+
+    expect(users.resolve(req('localhost:3000'))?.user).toBeUndefined();
+  });
+
+  it('only makes a known token user the default', () => {
+    users.add({ name: 'qa', kind: 'session' });
+
+    expect(() => users.setDefaultUser('ghost')).toThrow(/no user/);
+    expect(() => users.setDefaultUser('qa')).toThrow(/API token/);
+  });
+
+  it('drops the default user when it is removed', () => {
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.setDefaultUser('viewer');
+    users.remove('viewer');
+
+    expect(users.defaultUser).toBeUndefined();
+  });
+});
+
+describe('createUserHostGuard', () => {
+  function run(users: UserRegistry, host: string) {
+    const res = {
+      statusCode: 200,
+      headers: {} as Record<string, unknown>,
+      body: undefined as string | undefined,
+      setHeader(name: string, value: unknown) {
+        res.headers[name.toLowerCase()] = value;
+      },
+      end(body?: string) {
+        res.body = body;
+      },
+    };
+    const next = vi.fn();
+
+    createUserHostGuard(users)(req(host), res as unknown as ServerResponse, next);
+
+    return { res, next };
+  }
+
+  it('lets the main host and saved users through', () => {
+    const users = new UserRegistry();
+
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+
+    expect(run(users, 'localhost:3000').next).toHaveBeenCalledOnce();
+    expect(run(users, 'viewer.localhost:3000').next).toHaveBeenCalledOnce();
+  });
+
+  it('answers 404 for a user host with no saved user', () => {
+    const { res, next } = run(new UserRegistry(), 'ghost.localhost:3000');
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toContain('"ghost"');
+  });
+});
