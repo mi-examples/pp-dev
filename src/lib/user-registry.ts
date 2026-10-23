@@ -11,6 +11,7 @@
  * user, whatever host it runs on.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { isSecureRequest } from './helpers/cookie.helper.js';
 
 export type SavedUserKind = 'token' | 'session';
 
@@ -79,8 +80,20 @@ export function getUserNameFromHost(host: string | undefined): string | undefine
   return name && !name.includes('.') ? name : undefined;
 }
 
+/**
+ * The origin of `name`'s host (`http://<name>.localhost:<port>`), or of the main host
+ * (`http://localhost:<port>`) without a name, on the scheme and port `req` came in on.
+ */
+export function getUserOrigin(req: IncomingMessage, name?: string): string {
+  const port = /:(\d+)$/.exec(req.headers.host ?? '')?.[1];
+
+  return `${isSecureRequest(req) ? 'https' : 'http'}://${name ? `${name}.` : ''}localhost${port ? `:${port}` : ''}`;
+}
+
 export class UserRegistry {
   readonly #users = new Map<string, SavedUser>();
+
+  readonly #removeListeners = new Set<(user: SavedUser) => void>();
 
   #defaultUserName: string | undefined;
 
@@ -115,16 +128,35 @@ export class UserRegistry {
   }
 
   remove(name: string): boolean {
+    const user = this.#users.get(name);
+
+    if (!user) {
+      return false;
+    }
+
     if (this.#defaultUserName === name) {
       this.#defaultUserName = undefined;
     }
 
-    return this.#users.delete(name);
+    this.#users.delete(name);
+    this.#removeListeners.forEach((listener) => listener(user));
+
+    return true;
   }
 
   clear(): void {
-    this.#users.clear();
-    this.#defaultUserName = undefined;
+    for (const name of [...this.#users.keys()]) {
+      this.remove(name);
+    }
+  }
+
+  /** Runs `listener` for every user removed, e.g. to drop what is cached for it. Returns an unsubscribe function. */
+  onRemove(listener: (user: SavedUser) => void): () => void {
+    this.#removeListeners.add(listener);
+
+    return () => {
+      this.#removeListeners.delete(listener);
+    };
   }
 
   /** The user of the main host, or `undefined` while it is the original user. */

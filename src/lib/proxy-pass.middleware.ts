@@ -9,7 +9,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
-import { UserRegistry, userRegistry } from './user-registry.js';
+import { SavedUser, UserRegistry, getUserNameFromHost, getUserOrigin, userRegistry } from './user-registry.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -37,6 +37,20 @@ export interface ProxyOpts {
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 
 export const PROXY_HEADER = 'X-PP-Proxy';
+
+/** MI's logout, e.g. `/auth/index/logout?proxyRedirect=%2F`. */
+const LOGOUT_PATH_REGEXP = /^\/auth\/(?:index\/)?logout(?:[/?#]|$)/i;
+
+/** The saved user `req` logs out: a logout made on that user's own host. */
+function getLoggedOutUser(req: IncomingMessage, users: UserRegistry): SavedUser | undefined {
+  if (!LOGOUT_PATH_REGEXP.test(req.url ?? '')) {
+    return undefined;
+  }
+
+  const name = getUserNameFromHost(req.headers.host);
+
+  return name === undefined ? undefined : users.get(name);
+}
 
 /** The personal access token each proxied request was sent to MI with. */
 const requestBearerTokens = new WeakMap<IncomingMessage, string>();
@@ -328,6 +342,36 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
             serverRes.headers['set-cookie'],
             isSecureRequest(req),
           );
+        }
+
+        // Logging out as a saved user ends its session (or token) at MI, as it would anywhere else.
+        // The user is then gone: drop it, and send the tab back to the default user on the main host.
+        const loggedOutUser = getLoggedOutUser(req, users);
+
+        if (loggedOutUser) {
+          serverRes.resume();
+          users.remove(loggedOutUser.name);
+
+          logger.info(`${colors.blue('Logged out user')} ${colors.yellow(loggedOutUser.name)}, back to the main host`);
+
+          const headers: Record<string, string | string[]> = { 'cache-control': 'no-store' };
+
+          // MI's own Set-Cookie clears the session cookie the user's host still holds.
+          if (serverRes.headers['set-cookie']) {
+            headers['set-cookie'] = serverRes.headers['set-cookie'];
+          }
+
+          const fetchMode = req.headers['sec-fetch-mode'];
+
+          if (!fetchMode || fetchMode === 'navigate') {
+            res.writeHead(302, { ...headers, location: `${getUserOrigin(req)}/` });
+          } else {
+            res.writeHead(204, headers);
+          }
+
+          res.end();
+
+          return;
         }
 
         // MI responses depend on the session, so the browser must not reuse one after a login or

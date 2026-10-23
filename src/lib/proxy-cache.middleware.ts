@@ -167,6 +167,9 @@ export function invalidateProxyCache(reason: string): void {
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
 }
 
+/** Registries whose removed users already have their cache dropped. */
+const watchedRegistries = new WeakSet<UserRegistry>();
+
 /** Whether `cacheKey` holds a response for `userKey` (`''` is the original user). */
 function isCacheKeyOf(cacheKey: string, userKey: string): boolean {
   return userKey ? cacheKey.startsWith(`@${userKey}:`) : !cacheKey.startsWith('@');
@@ -299,6 +302,11 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
   }
 
   devServer.cache = cache;
+
+  if (!watchedRegistries.has(users)) {
+    watchedRegistries.add(users);
+    users.onRemove((user) => invalidateUserProxyCache(user.name, 'user removed'));
+  }
 
   return (req, res, next) => {
     const requestUser = users.resolve(req);

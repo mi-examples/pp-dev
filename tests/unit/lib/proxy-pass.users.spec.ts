@@ -22,9 +22,15 @@ function close(server: http.Server) {
   return new Promise<void>((resolve) => server.close(() => resolve()));
 }
 
-function request(port: number, path: string, host: string, cookie?: string) {
+function request(
+  port: number,
+  path: string,
+  host: string,
+  cookie?: string,
+  extraHeaders: http.OutgoingHttpHeaders = {},
+) {
   return new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
-    const headers: http.OutgoingHttpHeaders = { host };
+    const headers: http.OutgoingHttpHeaders = { host, ...extraHeaders };
 
     if (cookie) {
       headers.cookie = cookie;
@@ -59,6 +65,15 @@ describe('proxy — saved users', () => {
   beforeAll(async () => {
     upstream = http.createServer((req, res) => {
       upstreamRequests.push({ url: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie });
+
+      if (req.url?.startsWith('/auth/index/logout')) {
+        res.statusCode = 302;
+        res.setHeader('location', '/login');
+        res.setHeader('set-cookie', 'metric_insights_session=deleted; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT');
+        res.end();
+
+        return;
+      }
 
       // MI answers every bearer request with a new session id, whatever cookie it received, and a
       // login with a new session too.
@@ -189,6 +204,65 @@ describe('proxy — saved users', () => {
     await tick();
 
     expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer:/assets/logo.png']);
+  });
+
+  describe('logout (PP-4599)', () => {
+    beforeEach(() => {
+      users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+      users.add({ name: 'qa', kind: 'session' });
+    });
+
+    it('logs out at MI, drops the user and its cache, and sends the tab back to the main host', async () => {
+      await request(port, '/assets/logo.png', 'localhost:3000');
+      await request(port, '/assets/logo.png', 'viewer.localhost:3000');
+      await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=QA');
+      await tick();
+
+      const res = await request(port, '/auth/index/logout', 'viewer.localhost:3000', undefined, {
+        'sec-fetch-mode': 'navigate',
+      });
+      await tick();
+
+      expect(upstreamRequests.at(-1)).toMatchObject({
+        url: '/auth/index/logout',
+        authorization: 'Bearer viewer-token',
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('http://localhost:3000/');
+      expect(res.headers['set-cookie']).toEqual([expect.stringMatching(/^metric_insights_session=deleted;/)]);
+      expect(users.get('viewer')).toBeUndefined();
+      expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@qa:/assets/logo.png']);
+    });
+
+    it('answers a logout made by a script with no content', async () => {
+      const res = await request(port, '/auth/index/logout', 'qa.localhost:3000', 'metric_insights_session=QA', {
+        'sec-fetch-mode': 'cors',
+      });
+
+      expect(upstreamRequests.at(-1)).toMatchObject({ authorization: undefined, cookie: 'metric_insights_session=QA' });
+      expect(res.status).toBe(204);
+      expect(users.get('qa')).toBeUndefined();
+    });
+
+    it('keeps the logout on the main host as it was', async () => {
+      const res = await request(port, '/auth/index/logout?proxyRedirect=%2F', 'localhost:3000');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/login');
+      expect(users.list().map((user) => user.name)).toEqual(['viewer', 'qa']);
+    });
+  });
+
+  it("drops a removed user's cache", async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+
+    await request(port, '/assets/logo.png', 'localhost:3000');
+    await request(port, '/assets/logo.png', 'viewer.localhost:3000');
+    await tick();
+
+    users.remove('viewer');
+
+    expect(cache.keys()).toEqual(['/assets/logo.png']);
   });
 
   it('does not cache a user host with no saved user', async () => {

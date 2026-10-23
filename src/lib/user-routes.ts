@@ -1,7 +1,7 @@
 import type { Application, Request, Response } from 'express';
 import { MiAPI } from './pp.middleware.js';
-import { SavedUser, UserRegistry, getUserNameError, userRegistry } from './user-registry.js';
-import { getTokenErrorInfo, isSecureRequest } from './helpers/index.js';
+import { SavedUser, UserRegistry, getUserNameError, getUserOrigin, userRegistry } from './user-registry.js';
+import { getTokenErrorInfo } from './helpers/index.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
@@ -24,15 +24,8 @@ export interface PublicUser {
   origin: string;
 }
 
-/** The origin of `name`'s host, on the scheme and port `req` came in on. */
-export function getUserOrigin(name: string, req: Request): string {
-  const port = /:(\d+)$/.exec(req.headers.host ?? '')?.[1];
-
-  return `${isSecureRequest(req) ? 'https' : 'http'}://${name}.localhost${port ? `:${port}` : ''}`;
-}
-
 function toPublicUser(user: SavedUser, req: Request): PublicUser {
-  return { name: user.name, kind: user.kind, miUser: user.miUser, origin: getUserOrigin(user.name, req) };
+  return { name: user.name, kind: user.kind, miUser: user.miUser, origin: getUserOrigin(req, user.name) };
 }
 
 function sendError(res: Response, status: number, code: string, error: string) {
@@ -146,7 +139,7 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
     logger.info(
       `${colors.blue('Added user')} ${colors.yellow(saved.name)} (MI user ${miUser.id}${
         miUser.username ? `, ${miUser.username}` : ''
-      }) at ${getUserOrigin(saved.name, req)}`,
+      }) at ${getUserOrigin(req, saved.name)}`,
     );
 
     res.status(201).json({ user: toPublicUser(saved, req) });

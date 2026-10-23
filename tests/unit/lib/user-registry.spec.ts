@@ -119,6 +119,24 @@ describe('UserRegistry', () => {
     expect(() => users.setDefaultUser('qa')).toThrow(/API token/);
   });
 
+  it('tells listeners about every removed user', () => {
+    const removed: string[] = [];
+    const unsubscribe = users.onRemove((user) => removed.push(user.name));
+
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.add({ name: 'qa', kind: 'session' });
+    users.add({ name: 'admin', kind: 'session' });
+
+    users.remove('viewer');
+    users.remove('ghost');
+    users.clear();
+    unsubscribe();
+    users.add({ name: 'late', kind: 'session' });
+    users.remove('late');
+
+    expect(removed).toEqual(['viewer', 'qa', 'admin']);
+  });
+
   it('drops the default user when it is removed', () => {
     users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
     users.setDefaultUser('viewer');

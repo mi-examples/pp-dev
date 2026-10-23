@@ -71,6 +71,8 @@ export function createRequestCaptureMiddleware(
     }
 
     const id = store.allocateId();
+    // Resolved up front: a logout removes the user before the response ends.
+    const user = users.resolve(req)?.user?.name;
     const startTime = Date.now();
 
     // Capture the request body by patching req.emit rather than attaching a 'data'
@@ -173,7 +175,7 @@ export function createRequestCaptureMiddleware(
         statusCode: res.statusCode ?? null,
         duration: Date.now() - startTime,
         source: detectSource(),
-        user: users.resolve(req)?.user?.name,
+        user,
         requestHeaders: redactRequestHeaders(req.headers),
         requestBody,
         requestBodyTruncated: reqTruncated,
