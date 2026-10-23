@@ -90,7 +90,7 @@ describe('user routes', () => {
 
     const listed = await call(port, 'GET', USERS_API_PATH);
 
-    expect(listed.body).toEqual({ users: [added.body.user], defaultUser: null });
+    expect(listed.body).toEqual({ available: true, users: [added.body.user], defaultUser: null });
     expect(JSON.stringify(listed.body)).not.toContain('viewer-token');
   });
 
@@ -187,6 +187,47 @@ describe('user routes', () => {
     const res = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
 
     expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_TOKEN_REQUIRED' } });
+  });
+
+  it('says users are unavailable without the original token', async () => {
+    miAPI.personalAccessToken = undefined;
+
+    expect((await call(port, 'GET', USERS_API_PATH)).body.available).toBe(false);
+  });
+
+  describe('default user (PP-4597)', () => {
+    it('makes a user the default, and the original user again', async () => {
+      users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+
+      expect(await call(port, 'PUT', `${USERS_API_PATH}/default`, { name: 'viewer' })).toMatchObject({
+        status: 200,
+        body: { defaultUser: 'viewer' },
+      });
+      expect(users.defaultUser?.name).toBe('viewer');
+      expect((await call(port, 'GET', USERS_API_PATH)).body.defaultUser).toBe('viewer');
+
+      await call(port, 'PUT', `${USERS_API_PATH}/default`, { name: null });
+
+      expect(users.defaultUser).toBeUndefined();
+    });
+
+    it('refuses an unknown user, a session user that has not logged in, and a bad name', async () => {
+      users.add({ name: 'qa', kind: 'session' });
+
+      expect(await call(port, 'PUT', `${USERS_API_PATH}/default`, { name: 'ghost' })).toMatchObject({
+        status: 404,
+        body: { code: 'NOT_FOUND' },
+      });
+      expect(await call(port, 'PUT', `${USERS_API_PATH}/default`, { name: 'qa' })).toMatchObject({
+        status: 409,
+        body: { code: 'NOT_LOGGED_IN' },
+      });
+      expect(await call(port, 'PUT', `${USERS_API_PATH}/default`, { name: 42 })).toMatchObject({
+        status: 400,
+        body: { code: 'INVALID_NAME' },
+      });
+      expect(users.defaultUser).toBeUndefined();
+    });
   });
 
   it('removes a user', async () => {

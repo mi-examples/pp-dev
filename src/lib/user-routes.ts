@@ -67,9 +67,41 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
     const users = getUsers();
 
     res.json({
+      // Users can only be added with the original user's own token (the dev panel's user).
+      available: Boolean(current.deps.miAPI.personalAccessToken),
       users: users.list().map((user) => toPublicUser(user, req)),
       defaultUser: users.defaultUser?.name ?? null,
     });
+  });
+
+  // `{ name }` makes a saved user the main host's default user; `{ name: null }` the original user again.
+  app.put(`${USERS_API_PATH}/default`, (req, res) => {
+    const users = getUsers();
+    const name = (req.body ?? {}).name as unknown;
+
+    if (name !== null && typeof name !== 'string') {
+      sendError(res, 400, 'INVALID_NAME', 'name must be a user name or null');
+
+      return;
+    }
+
+    if (name !== null && !users.get(name)) {
+      sendError(res, 404, 'NOT_FOUND', `There is no user named "${name}"`);
+
+      return;
+    }
+
+    try {
+      users.setDefaultUser(name ?? undefined);
+    } catch (error) {
+      sendError(res, 409, 'NOT_LOGGED_IN', error instanceof Error ? error.message : String(error));
+
+      return;
+    }
+
+    logger.info(`${colors.blue('Default user:')} ${colors.yellow(name ?? 'the original user')}`);
+
+    res.json({ defaultUser: name });
   });
 
   app.post(USERS_API_PATH, async (req, res) => {

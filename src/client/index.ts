@@ -6,6 +6,7 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from './storage.js';
 import { createPanelStateController, type PanelStateController } from './panel-state.js';
 import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
+import { initUsersPanel } from './users-panel.js';
 import { initTheme } from './theme.js';
 import { createPopupElement, type InfoPopupOptions } from './popup.js';
 
@@ -298,6 +299,8 @@ if ($infoPanel) {
     onOpenInspectorClick: () => window.open(window.location.origin + '/@pp-dev/inspector', '_blank'),
     onReloadVariablesClick: () => startReloadVariablesFlow?.(),
   });
+
+  initUsersPanel($infoPanel, { onOpenChange: (open) => autoHide.keepPeeked(open) });
 
   panelController.onChange((state) => {
     if (!state.autoHide) {
