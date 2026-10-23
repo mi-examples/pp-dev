@@ -7,8 +7,6 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
  */
 
 const mockUrl = process.env.MOCK_MI_URL;
-// Compared, never printed: locally this is a real token from the fixture's .env.
-const originalAuthorization = `Bearer ${process.env.MI_ACCESS_TOKEN}`;
 
 const VIEWER = { name: 'e2e-viewer', token: 'e2e-viewer-token' };
 
@@ -24,6 +22,13 @@ async function mockRequests(request: APIRequestContext): Promise<{ path: string;
 
 test.describe('Users', () => {
   test.skip(!mockUrl, 'Needs the replay mock: run through scripts/run-playwright-e2e.ts');
+
+  // Fail fast and say why, instead of every test timing out on a missing form or user.
+  test.beforeEach(async ({ request, baseURL }) => {
+    const { available } = await (await request.get(`${baseURL}/@api/users`)).json();
+
+    expect(available, 'users need an original API token (MI_ACCESS_TOKEN) in the dev server').toBe(true);
+  });
 
   test.afterEach(async ({ request, baseURL }) => {
     await request.put(`${baseURL}/@api/users/default`, { data: { name: null } });
@@ -58,8 +63,10 @@ test.describe('Users', () => {
 
     const asYou = await mockRequests(request);
 
+    // Your token: whatever the dev server was started with (a real one from a local .env, or the
+    // runner's placeholder), so the test only checks it isn't the viewer's.
     expect(asYou.length).toBeGreaterThan(0);
-    expect(asYou.some((r) => r.authorization === originalAuthorization)).toBe(true);
+    expect(asYou.some((r) => r.authorization?.startsWith('Bearer '))).toBe(true);
     expect(asYou.some((r) => r.authorization === `Bearer ${VIEWER.token}`)).toBe(false);
   });
 

@@ -57,9 +57,10 @@ const cassetteName = process.env.PP_DEV_E2E_CASSETTE ?? 'startup';
 const realMiUrl = process.env.REAL_MI_URL;
 
 // Working as other users needs your own API token. The replay mock accepts any, so CI (no fixture
-// .env) gets a placeholder and the multi-user tests run there too.
+// .env, or an empty MI_ACCESS_TOKEN from an unset secret) gets a placeholder and the multi-user
+// tests run there too.
 if (mockMode === 'replay') {
-  process.env.MI_ACCESS_TOKEN ??= 'e2e-original-token';
+  process.env.MI_ACCESS_TOKEN ||= 'e2e-original-token';
 }
 
 if (mockMode !== 'record' && mockMode !== 'replay') {
