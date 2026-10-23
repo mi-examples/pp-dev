@@ -256,6 +256,32 @@ describe('SessionUserTracker', () => {
     expect(qa).toMatchObject({ state: 'active', session: 'S2', miUser: { id: 8 } });
   });
 
+  it('does not go back to an older session its host sent before a newer login', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    loggedIn.S2 = { id: 8, username: 'admin@example.com' };
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S2'));
+
+    // A request sent with S1 before the login comes back late, without a new cookie.
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(qa).toMatchObject({ state: 'active', session: 'S2', miUser: { id: 8 } });
+  });
+
+  it('ends the session MI turned away even when the new session it hands out cannot be checked', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    users.setDefaultUser('qa');
+    check.mockRejectedValueOnce(new Error('timeout of 30000ms exceeded'));
+
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), {
+      statusCode: 401,
+      headers: { 'set-cookie': ['metric_insights_session=GUEST; path=/'] },
+    });
+
+    expect(qa).toMatchObject({ state: 'expired', session: undefined });
+    expect(users.defaultUser).toBeUndefined();
+  });
+
   it('takes a login from a browser still holding the session that ended', async () => {
     await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
     tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), { statusCode: 401, headers: {} });

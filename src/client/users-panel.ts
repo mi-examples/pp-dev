@@ -189,8 +189,9 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         : undefined;
 
     const defaultUser = data.defaultUser;
-    // The main host works as the default user, a user's host as that user.
-    const currentUser = tabUser ?? defaultUser ?? undefined;
+    // The main host (localhost) works as the default user, a user's host as that user, and an IP
+    // address or a custom domain as you.
+    const currentUser = tabUser ?? (window.location.hostname === 'localhost' ? defaultUser : null) ?? undefined;
     const $tab = $popover.querySelector<HTMLElement>('.pp-dev-info__users-tab strong');
 
     if ($tab) {

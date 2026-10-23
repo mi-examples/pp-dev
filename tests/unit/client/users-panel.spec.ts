@@ -90,6 +90,21 @@ describe('initUsersPanel', () => {
     expect($panel.querySelector('.pp-dev-info__users-row.is-current')!.getAttribute('data-user')).toBe('viewer');
   });
 
+  it('says an IP address works as you, whatever the default user', async () => {
+    const { jsdom } = globalThis as unknown as { jsdom: { reconfigure(opts: { url: string }): void } };
+
+    jsdom.reconfigure({ url: 'http://127.0.0.1:3000/' });
+
+    try {
+      const $panel = await openPopover();
+
+      expect($panel.querySelector('.pp-dev-info__users-tab strong')!.textContent).toBe('you');
+      expect($panel.querySelector('.pp-dev-info__users-row.is-current')!.getAttribute('data-user')).toBeNull();
+    } finally {
+      jsdom.reconfigure({ url: 'http://localhost:3000/' });
+    }
+  });
+
   it('offers to log in again only to a session user that needs it, and not as the default', async () => {
     const $panel = await openPopover();
     const $qa = $panel.querySelector('[data-user="qa"]')!;

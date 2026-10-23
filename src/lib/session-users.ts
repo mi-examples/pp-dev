@@ -191,19 +191,21 @@ export class SessionUserTracker {
       replaced = unverified.replaced;
     }
 
+    // Only a request with the session pp-dev holds says it ended: one sent with an older session
+    // and answered late says nothing about the current one. Ended first, even if MI also hands out
+    // a new session here: that one may not be checked for a while.
+    if (user.state === 'active' && isLoggedOutResponse(res) && requestSession === user.session) {
+      this.#expire(user, `MI turned away ${req.method} ${req.url}`);
+    }
+
     if (
       candidate &&
       candidate !== user.session &&
       candidate !== this.#checking.get(user) &&
-      candidate !== this.#guestSessions.get(user)
+      candidate !== this.#guestSessions.get(user) &&
+      !this.#isLeftBehind(user, candidate)
     ) {
       return this.#verify(user, candidate, replaced);
-    }
-
-    // Only a request with the session pp-dev holds says it ended: one sent with an older session
-    // and answered late says nothing about the current one.
-    if (user.state === 'active' && isLoggedOutResponse(res) && requestSession === user.session) {
-      this.#expire(user, `MI turned away ${req.method} ${req.url}`);
     }
 
     return undefined;
@@ -240,9 +242,9 @@ export class SessionUserTracker {
     }
 
     if (miUser) {
-      // MI rotated a session the logged-in user had already left behind. (Logged out, any login is
-      // a new one, even from the browser still holding the session that ended.)
-      if (user.state === 'active' && replaced !== undefined && this.#superseded.get(user)?.has(replaced)) {
+      // A session the logged-in user already left behind, or MI's rotation of one. (Logged out, any
+      // login is a new one, even from the browser still holding the session that ended.)
+      if (this.#isLeftBehind(user, session) || (replaced !== undefined && this.#isLeftBehind(user, replaced))) {
         return;
       }
 
@@ -274,6 +276,14 @@ export class SessionUserTracker {
         this.#expire(user, 'MI started a guest session');
       }
     }
+  }
+
+  /**
+   * Whether `session` is one the logged-in `user` already left behind: a late request or answer
+   * with it must not bring it back. Logged out, any session may be a new login.
+   */
+  #isLeftBehind(user: SavedUser, session: string): boolean {
+    return user.state === 'active' && Boolean(this.#superseded.get(user)?.has(session));
   }
 
   /** Remembers the session `user` holds now as one it left behind. */
