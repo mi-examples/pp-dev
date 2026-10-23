@@ -21,6 +21,8 @@ export interface SavedUser {
   kind: SavedUserKind;
   /** API token of a `token` user. Never logged or sent back to the browser. */
   token?: string;
+  /** The MI user behind it, for display. */
+  miUser?: { id: number; username: string };
 }
 
 /** The identity a request goes to MI as. */

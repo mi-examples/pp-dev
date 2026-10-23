@@ -17,6 +17,7 @@ import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './lib/output-path.js';
 import { createUserHostGuard, getUserNameFromHost } from './lib/user-registry.js';
+import { registerUserRoutes, USERS_API_PATH } from './lib/user-routes.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -662,6 +663,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         new ClientService(server, { distService, miAPI: mi });
         registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
+        registerUserRoutes(internalServer, { miAPI: mi });
 
         // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
         // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a
@@ -678,6 +680,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           if (
             req.url?.startsWith('/@api/login') ||
             req.url?.startsWith('/@api/variables/') ||
+            req.url?.startsWith(USERS_API_PATH) ||
             req.url?.startsWith(VARIABLES_EDITOR_PATH)
           ) {
             internalServer(req as never, res as never, next);

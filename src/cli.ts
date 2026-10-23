@@ -17,6 +17,7 @@ import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import { createUserHostGuard } from './lib/user-registry.js';
+import { registerUserRoutes } from './lib/user-routes.js';
 import { urlReplacer } from './lib/helpers/url.helper.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
@@ -1196,6 +1197,7 @@ cli
 
           new ClientService(clientServiceServer, { distService, miAPI: mi });
           registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
+          registerUserRoutes(internalServer, { miAPI: mi });
 
           // Route HTTP upgrades: pp-dev WS to our server, everything else (Next.js HMR)
           // to Next's own upgrade handler when available.
