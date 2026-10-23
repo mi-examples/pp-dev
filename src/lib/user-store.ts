@@ -42,7 +42,7 @@ export function getUserStorePath(projectRoot: string, miUrl: string, homeDir = o
 
 /** The users kept in `file`; none when it is missing or unreadable. */
 export function readStoredUsers(file: string): StoredUser[] {
-  let parsed: Partial<StoreFile>;
+  let parsed: Partial<StoreFile> | null;
 
   try {
     parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -54,7 +54,10 @@ export function readStoredUsers(file: string): StoredUser[] {
     return [];
   }
 
-  return (Array.isArray(parsed.users) ? parsed.users : []).filter(
+  // Anything but an object (`null`, a number, an array) is an empty store, like any other bad content.
+  const users = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed.users : undefined;
+
+  return (Array.isArray(users) ? users : []).filter(
     (user): user is StoredUser =>
       typeof user?.name === 'string' && typeof user.token === 'string' && Boolean(user.token),
   );

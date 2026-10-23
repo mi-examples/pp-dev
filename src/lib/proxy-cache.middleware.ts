@@ -7,7 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
 import { cutUrlParams } from './helpers/url.helper.js';
-import { RequestUser, UserRegistry, userRegistry } from './user-registry.js';
+import { RequestUser, UserRegistry, getUserNameFromHost, userRegistry } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -247,6 +247,29 @@ function isStillSameIdentity(
 }
 
 /**
+ * Whether the request goes to MI with the verified session of its session user. The cache of a
+ * session user is only for that session: on its own host the browser sends whatever session it
+ * holds (another tab's login, a guest session, a stale cookie), and that answer must neither be
+ * cached for the user nor be answered from its cache. On the main host the proxy sends the kept one.
+ */
+function hasVerifiedSession(req: Connect.IncomingMessage, requestUser: RequestUser): boolean {
+  const { user } = requestUser;
+
+  if (user?.kind !== 'session') {
+    return true;
+  }
+
+  if (!user.session) {
+    return false;
+  }
+
+  return (
+    getUserNameFromHost(req.headers.host) !== user.name ||
+    getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE) === user.session
+  );
+}
+
+/**
  * Generates an optimized cache key from URL and query parameters. A saved user's entries are
  * prefixed with its `userKey`, so one user is never served what MI answered another, and with the
  * host they were requested on: the proxy rewrites absolute URLs in a body to that host, and a
@@ -350,7 +373,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     const cacheKey = req.method === 'GET' ? generateCacheKey(url, requestUser.key, req.headers.host ?? '') : '';
 
     // Skip caching if no valid cache key
-    if (!cacheKey) {
+    if (!cacheKey || !hasVerifiedSession(req, requestUser)) {
       return next();
     }
 

@@ -233,7 +233,7 @@ describe('proxy — saved users', () => {
 
   it("drops only that user's cache when a user's MI session changes", async () => {
     users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
-    users.add({ name: 'qa', kind: 'session' });
+    users.add({ name: 'qa', kind: 'session', state: 'active', session: 'QA' });
 
     await request(port, '/assets/logo.png', 'localhost:3000');
     await request(port, '/assets/logo.png', 'viewer.localhost:3000');
@@ -251,7 +251,7 @@ describe('proxy — saved users', () => {
   describe('logout (PP-4599)', () => {
     beforeEach(() => {
       users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
-      users.add({ name: 'qa', kind: 'session' });
+      users.add({ name: 'qa', kind: 'session', state: 'active', session: 'QA' });
     });
 
     it('logs out at MI, drops the user and its cache, and sends the tab back to the main host', async () => {
@@ -354,6 +354,51 @@ describe('proxy — saved users', () => {
         cookie: 'lang=en; metric_insights_session=QA-SESSION',
       });
       expect(res.headers['set-cookie']).toEqual([expect.stringMatching(/^theme=dark;/)]);
+    });
+
+    describe('cache', () => {
+      beforeEach(() => {
+        users.add({ name: 'qa', kind: 'session', state: 'active', session: 'QA' });
+      });
+
+      it('is only for the verified session, not for another one its host carries', async () => {
+        // Another tab on the same host logged in as someone else, or holds a guest session.
+        await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=OTHER');
+        await tick();
+
+        expect(cache.keys()).toEqual([]);
+
+        await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=QA');
+        await tick();
+
+        const other = await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=OTHER');
+        const own = await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=QA');
+
+        expect(other.headers['x-pp-cache']).toBeUndefined();
+        expect(other.body).toBe('as metric_insights_session=OTHER');
+        expect(own.headers['x-pp-cache']).toBe('hit');
+      });
+
+      it('is not used while the user has no verified session', async () => {
+        users.remove('qa');
+        users.add({ name: 'qa', kind: 'session' });
+
+        await request(port, '/assets/logo.png', 'qa.localhost:3000', 'metric_insights_session=GUEST');
+        await tick();
+
+        expect(cache.keys()).toEqual([]);
+      });
+
+      it('is used on the main host, which sends the verified session', async () => {
+        users.setDefaultUser('qa');
+
+        await request(port, '/assets/logo.png', 'localhost:3000', 'metric_insights_session=MAIN');
+        await tick();
+
+        const again = await request(port, '/assets/logo.png', 'localhost:3000', 'metric_insights_session=MAIN');
+
+        expect(again.headers['x-pp-cache']).toBe('hit');
+      });
     });
 
     it('leaves the token login form out of MI pages on a user host', async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { IncomingMessage } from 'node:http';
 import {
   SessionUserTracker,
@@ -147,9 +147,30 @@ describe('SessionUserTracker', () => {
 
     it('sends the main host back to the original user when the default user expires', () => {
       users.setDefaultUser('qa');
-      tracker.observe(qa, req('localhost:3000'), { statusCode: 401, headers: {} });
+      tracker.observe(qa, req('localhost:3000'), { statusCode: 401, headers: {} }, 'S1');
 
       expect(users.defaultUser).toBeUndefined();
+    });
+
+    it('stays active when a request sent with an older session is turned away late', () => {
+      tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S0'), { statusCode: 401, headers: {} });
+      tracker.observe(qa, req('localhost:3000'), { statusCode: 412, headers: {} }, 'S0');
+
+      expect(qa).toMatchObject({ state: 'active', session: 'S1' });
+    });
+
+    it('stays active when MI answers a request sent with an older session with a guest session', async () => {
+      await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S0'), setsSession('GUEST'));
+
+      expect(check).toHaveBeenCalledWith('GUEST');
+      expect(qa).toMatchObject({ state: 'active', session: 'S1' });
+    });
+
+    it('stays active when its host carries a stale guest session', async () => {
+      await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=OLDGUEST'), ok);
+
+      expect(check).toHaveBeenCalledWith('OLDGUEST');
+      expect(qa).toMatchObject({ state: 'active', session: 'S1' });
     });
 
     it('becomes active again after logging in again', async () => {
@@ -215,6 +236,49 @@ describe('SessionUserTracker', () => {
     await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S2'), ok);
 
     expect(qa).toMatchObject({ state: 'active', session: 'S2' });
+  });
+
+  describe('a session MI rotated to on the main host whose check failed', () => {
+    beforeEach(async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+      users.setDefaultUser('qa');
+      loggedIn.S2 = { id: 7, username: 'qa@example.com' };
+      check.mockRejectedValueOnce(new Error('timeout of 30000ms exceeded'));
+      // The cookie never reaches a browser: the proxy keeps it from the main host.
+      await tracker.observe(qa, req('localhost:3000'), setsSession('S2'), 'S1');
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('is checked again on a later response, once a short while has passed', async () => {
+      await tracker.observe(qa, req('localhost:3000'), ok, 'S1');
+
+      expect(check).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(5000);
+      await tracker.observe(qa, req('localhost:3000'), ok, 'S1');
+
+      expect(check).toHaveBeenCalledTimes(3);
+      expect(check).toHaveBeenLastCalledWith('S2');
+      expect(qa).toMatchObject({ state: 'active', session: 'S2' });
+    });
+
+    it('is not used before a check accepts it', () => {
+      expect(qa.session).toBe('S1');
+    });
+
+    it('is dropped when the user logs in with another session', async () => {
+      loggedIn.S3 = { id: 7, username: 'qa@example.com' };
+      await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S3'));
+      vi.advanceTimersByTime(5000);
+      await tracker.observe(qa, req('localhost:3000'), ok, 'S3');
+
+      expect(check.mock.calls.map(([session]) => session)).toEqual(['S1', 'S2', 'S3']);
+      expect(qa.session).toBe('S3');
+    });
   });
 
   it('does not check the session it already knows for a logged-in user', async () => {

@@ -127,6 +127,13 @@ describe('keepTokenUsers', () => {
     expect(users.list()).toEqual([]);
   });
 
+  it.each(['null', '42', '[]', '{ "users": null }'])('reads %s as an empty store', (content) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+
+    expect(readStoredUsers(file)).toEqual([]);
+  });
+
   it('saves a user added while the saved tokens were being checked', async () => {
     writeStoredUsers(file, [{ name: 'viewer', token: 'viewer' }], { project: '/work/app', miUrl: MI_URL });
 

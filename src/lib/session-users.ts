@@ -11,6 +11,9 @@ import { getTokenErrorInfo } from './helpers/token.helper.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
+/** How long a session check MI couldn't answer waits before it is tried again. */
+const RETRY_DELAY = 5000;
+
 /** Where MI sends a request whose session is gone. */
 const LOGIN_LOCATION_REGEXP = /(?:^|\/\/[^/]+)\/(?:login|auth\/saml\/login)(?:[/?#]|$)/i;
 
@@ -113,6 +116,13 @@ export class SessionUserTracker {
   /** The last session id per registration that MI said is a guest one, so it isn't checked over and over. */
   readonly #guestSessions = new WeakMap<SavedUser, string>();
 
+  /**
+   * A session MI handed out whose check couldn't be answered, per registration, checked again on
+   * later responses. Without it a session MI rotated to on the main host (whose cookie never
+   * reaches a browser) would be lost. It isn't used for requests until a check accepts it.
+   */
+  readonly #unverified = new WeakMap<SavedUser, { session: string; retryAt: number }>();
+
   constructor(users: UserRegistry, check: SessionCheck) {
     this.#users = users;
     this.#check = check;
@@ -139,14 +149,20 @@ export class SessionUserTracker {
     const onOwnHost = getUserNameFromHost(req.headers.host) === user.name;
     const requestSession = onOwnHost ? getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE) : sentSession;
     const newSession = getSetCookieValue(res.headers['set-cookie'], MI_SESSION_COOKIE);
+    const unverified = this.#unverified.get(user);
     let candidate: string | undefined;
+    // The session MI replaced with `candidate`, when it handed one out in this response.
+    let replaced: string | undefined;
 
     if (newSession && newSession !== requestSession) {
       candidate = newSession;
+      replaced = requestSession;
     } else if (onOwnHost && requestSession !== user.session && !isLoggedOutResponse(res)) {
       // The host carries a session pp-dev hasn't recognized: one that outlived a restart or a
       // removal, or one MI rotated to while its check couldn't be answered.
       candidate = requestSession;
+    } else if (unverified && Date.now() >= unverified.retryAt) {
+      candidate = unverified.session;
     }
 
     if (
@@ -155,17 +171,19 @@ export class SessionUserTracker {
       candidate !== this.#checking.get(user) &&
       candidate !== this.#guestSessions.get(user)
     ) {
-      return this.#verify(user, candidate);
+      return this.#verify(user, candidate, replaced);
     }
 
-    if (user.state === 'active' && isLoggedOutResponse(res)) {
+    // Only a request with the session pp-dev holds says it ended: one sent with an older session
+    // and answered late says nothing about the current one.
+    if (user.state === 'active' && isLoggedOutResponse(res) && requestSession === user.session) {
       this.#expire(user, `MI turned away ${req.method} ${req.url}`);
     }
 
     return undefined;
   }
 
-  async #verify(user: SavedUser, session: string): Promise<void> {
+  async #verify(user: SavedUser, session: string, replaced?: string): Promise<void> {
     this.#checking.set(user, session);
 
     let miUser: Awaited<ReturnType<SessionCheck>>;
@@ -176,6 +194,7 @@ export class SessionUserTracker {
       // MI couldn't tell: neither a login nor a guest. A later response checks the session again.
       if (this.#checking.get(user) === session) {
         this.#checking.delete(user);
+        this.#unverified.set(user, { session, retryAt: Date.now() + RETRY_DELAY });
       }
 
       this.#logger.warn(colors.yellow(`Could not check the MI session of user ${user.name}: ${String(error)}`));
@@ -190,8 +209,15 @@ export class SessionUserTracker {
 
     this.#checking.delete(user);
 
+    if (this.#unverified.get(user)?.session === session) {
+      this.#unverified.delete(user);
+    }
+
     if (miUser) {
       const wasActive = user.state === 'active';
+
+      // A newer login replaces whatever session was still waiting for its check.
+      this.#unverified.delete(user);
 
       Object.assign(user, { state: 'active', session, miUser });
       this.#guestSessions.delete(user);
@@ -208,7 +234,9 @@ export class SessionUserTracker {
     } else {
       this.#guestSessions.set(user, session);
 
-      if (user.state === 'active') {
+      // Ended only when MI handed the guest session out for the session pp-dev holds: a guest
+      // verdict on another session (a late one, a stale cookie) says nothing about it.
+      if (user.state === 'active' && replaced === user.session) {
         this.#expire(user, 'MI started a guest session');
       }
     }
@@ -217,8 +245,9 @@ export class SessionUserTracker {
   #expire(user: SavedUser, reason: string): void {
     user.state = 'expired';
     user.session = undefined;
-    // A check still running for an earlier session must not bring the user back.
+    // A check still running, or waiting, for an earlier session must not bring the user back.
     this.#checking.delete(user);
+    this.#unverified.delete(user);
     this.#users.sessionChanged(user);
 
     // The main host can't go on as a user without a session.
