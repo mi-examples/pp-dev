@@ -28,7 +28,10 @@ export interface SavedUser {
   kind: SavedUserKind;
   /** API token of a `token` user. Never logged or sent back to the browser. */
   token?: string;
-  /** State of a `session` user. */
+  /**
+   * State of a `session` user. A `token` user has none, or `expired` when MI turned down its kept
+   * token on a dev server restart.
+   */
   state?: SessionState;
   /**
    * MI session id of an `active` session user, seen when it logged in on its host. Kept in memory
@@ -109,6 +112,8 @@ export class UserRegistry {
 
   readonly #removeListeners = new Set<(user: SavedUser) => void>();
 
+  readonly #changeListeners = new Set<() => void>();
+
   #defaultUserName: string | undefined;
 
   list(): SavedUser[] {
@@ -137,6 +142,7 @@ export class UserRegistry {
     const saved: SavedUser = user.kind === 'session' ? { state: 'pending', ...user } : { ...user };
 
     this.#users.set(saved.name, saved);
+    this.#changeListeners.forEach((listener) => listener());
 
     return saved;
   }
@@ -154,6 +160,7 @@ export class UserRegistry {
 
     this.#users.delete(name);
     this.#removeListeners.forEach((listener) => listener(user));
+    this.#changeListeners.forEach((listener) => listener());
 
     return true;
   }
@@ -170,6 +177,15 @@ export class UserRegistry {
 
     return () => {
       this.#removeListeners.delete(listener);
+    };
+  }
+
+  /** Runs `listener` whenever a user is added or removed. Returns an unsubscribe function. */
+  onChange(listener: () => void): () => void {
+    this.#changeListeners.add(listener);
+
+    return () => {
+      this.#changeListeners.delete(listener);
     };
   }
 
@@ -197,6 +213,10 @@ export class UserRegistry {
 
     if (user.kind === 'session' && (user.state !== 'active' || !user.session)) {
       throw new Error(`"${name}" has to log in on its own host before it can be the default user`);
+    }
+
+    if (user.kind === 'token' && user.state === 'expired') {
+      throw new Error(`MI turned down the API token of "${name}"`);
     }
 
     this.#defaultUserName = name;

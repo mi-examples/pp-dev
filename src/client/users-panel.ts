@@ -59,7 +59,12 @@ function escapeHtml(value: string): string {
 
 function describeUser(user: PublicUser): string {
   const who = user.miUser?.username || (user.miUser ? `MI user ${user.miUser.id}` : '');
-  const how = user.kind === 'token' ? 'API token' : STATE_LABELS[user.state ?? 'pending'];
+  const how =
+    user.kind === 'token'
+      ? user.state === 'expired'
+        ? 'API token turned down by MI'
+        : 'API token'
+      : STATE_LABELS[user.state ?? 'pending'];
 
   return [who, how].filter(Boolean).join(' · ');
 }
@@ -187,15 +192,22 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         ${tabUser ? `<button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(mainOrigin())}" title="Open this page on the main host">Open</button>` : ''}
       </div>`,
       ...data.users.map((user) => {
-        const canBeDefault = user.kind === 'token' || user.state === 'active';
+        const canBeDefault = user.kind === 'token' ? user.state !== 'expired' : user.state === 'active';
         const needsLogin = user.kind === 'session' && user.state !== 'active';
+        const needsAttention = needsLogin || user.state === 'expired';
         const name = escapeHtml(user.name);
+        let defaultTitle = `Make the main host (localhost) work as ${name}`;
+
+        if (!canBeDefault) {
+          defaultTitle =
+            user.kind === 'token' ? `MI turned down the API token of ${name}` : `${name} has to log in first`;
+        }
 
         return `<div class="pp-dev-info__users-row${user.name === currentUser ? ' is-current' : ''}${
-          needsLogin ? ' needs-login' : ''
+          needsAttention ? ' needs-login' : ''
         }" data-user="${name}">
           <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value="${name}"
-            title="${canBeDefault ? `Make the main host (localhost) work as ${name}` : `${name} has to log in first`}"
+            title="${defaultTitle}"
             ${user.name === defaultUser ? 'checked' : ''} ${canBeDefault ? '' : 'disabled'} />
           <div class="pp-dev-info__users-who">
             <span class="pp-dev-info__users-name">${name}</span>

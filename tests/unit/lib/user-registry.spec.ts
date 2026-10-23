@@ -143,6 +143,23 @@ describe('UserRegistry', () => {
     expect(removed).toEqual(['viewer', 'qa', 'admin']);
   });
 
+  it('tells change listeners about every user added and removed', () => {
+    const onChange = vi.fn();
+
+    users.onChange(onChange);
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.remove('viewer');
+    users.remove('ghost');
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not make a token user MI turned down the default', () => {
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer', state: 'expired' });
+
+    expect(() => users.setDefaultUser('viewer')).toThrow(/turned down/);
+  });
+
   it('drops the default user when it is removed', () => {
     users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
     users.setDefaultUser('viewer');

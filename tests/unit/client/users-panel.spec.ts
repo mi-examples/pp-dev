@@ -100,6 +100,24 @@ describe('initUsersPanel', () => {
     expect($viewer.querySelector('.pp-dev-info__users-action--accent')).toBeNull();
   });
 
+  it('marks a token user MI turned down, and keeps it from being the default', async () => {
+    fetchMock.mockImplementation(async () =>
+      json(200, {
+        ...usersResponse,
+        defaultUser: null,
+        users: [{ name: 'old', kind: 'token', state: 'expired', origin: 'http://old.localhost:3000' }],
+      }),
+    );
+
+    const $panel = await openPopover();
+    const $old = $panel.querySelector('[data-user="old"]')!;
+
+    expect($old.textContent).toContain('API token turned down by MI');
+    expect($old.classList.contains('needs-login')).toBe(true);
+    expect($old.querySelector<HTMLInputElement>('.pp-dev-info__users-default')!.disabled).toBe(true);
+    expect($old.querySelector('.pp-dev-info__users-action--accent')).toBeNull();
+  });
+
   it('adds a token user', async () => {
     const $panel = await openPopover();
 

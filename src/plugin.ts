@@ -18,6 +18,7 @@ import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/vari
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './lib/output-path.js';
 import { createUserHostGuard, getUserNameFromHost } from './lib/user-registry.js';
 import { registerUserRoutes, USERS_API_PATH } from './lib/user-routes.js';
+import { startKeepingUsers } from './lib/user-store.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -110,6 +111,15 @@ export interface DevPanelConfig {
   autoHide?: boolean;
 }
 
+export interface UsersConfig {
+  /**
+   * Keep the users added with an API token between dev server runs, in a file in your home
+   * directory (`~/.pp-dev/users/`) that only you can read. Passwords and MI sessions are never kept.
+   * @default false
+   */
+  persist?: boolean;
+}
+
 export interface PPDevConfig {
   mi?: MiConfig;
   app?: AppConfig;
@@ -118,6 +128,8 @@ export interface PPDevConfig {
   sync?: SyncConfig;
   inspector?: InspectorConfig;
   devPanel?: DevPanelConfig;
+  /** Working as other MI users (the dev panel's Users section). */
+  users?: UsersConfig;
 }
 
 // ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
@@ -157,6 +169,7 @@ export interface NormalizedVitePPDevOptions {
   devPanelPosition: DevPanelPosition;
   devPanelHidden: boolean;
   devPanelAutoHide: boolean;
+  persistUsers: boolean;
 }
 
 const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -206,7 +219,7 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
 export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
-  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {} } = config;
+  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {}, users = {} } = config;
 
   const miMode = mi.mode ?? 'standalone';
   const appType = app.type ?? 'template';
@@ -296,6 +309,7 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
     devPanelPosition: devPanel.position ?? 'bottom-right',
     devPanelHidden: devPanel.hidden ?? false,
     devPanelAutoHide: devPanel.autoHide ?? false,
+    persistUsers: users.persist ?? false,
   };
 }
 
@@ -338,6 +352,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     devPanelPosition,
     devPanelHidden,
     devPanelAutoHide,
+    persistUsers,
   } = options || {};
 
   let isFirstRequest = true;
@@ -664,6 +679,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         new ClientService(server, { distService, miAPI: mi });
         registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
         registerUserRoutes(internalServer, { miAPI: mi });
+        startKeepingUsers({ persist: persistUsers, miAPI: mi, projectRoot: server.config.root, miUrl: backendBaseURL });
 
         // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
         // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a
