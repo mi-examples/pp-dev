@@ -133,14 +133,20 @@ export class SessionUserTracker {
    * A session MI handed out whose check couldn't be answered, per registration, checked again on
    * later responses. Without it a session MI rotated to on the main host (whose cookie never
    * reaches a browser) would be lost. It isn't used for requests until a check accepts it. Keeps
-   * the session MI replaced with it, so a guest verdict that comes later still ends that one.
+   * the session MI replaced with it, so a guest verdict that comes later still ends that one, and
+   * whether it reached the user's host.
    */
-  readonly #unverified = new WeakMap<SavedUser, { session: string; replaced?: string; retryAt: number }>();
+  readonly #unverified = new WeakMap<
+    SavedUser,
+    { session: string; replaced?: string; ownHost: boolean; retryAt: number }
+  >();
 
   /**
-   * Sessions each registration held before its current one. A session MI hands out in place of one
-   * of them is a late answer to a request sent before the user logged in again: it must not take
-   * the newer login's place.
+   * Sessions each registration's host held before a newer one reached it. A session MI hands out in
+   * place of one of them is a late answer to a request sent before the user logged in again: it
+   * must not take the newer login's place. A session MI rotated to on the main host isn't one: its
+   * cookie never reaches the user's host, whose browser goes on with the older session, logs in
+   * from it, and is taken at its word.
    */
   readonly #superseded = new WeakMap<SavedUser, Set<string>>();
 
@@ -188,6 +194,8 @@ export class SessionUserTracker {
     let candidate: string | undefined;
     // The session MI replaced with `candidate`, when it handed one out in this response.
     let replaced: string | undefined;
+    // Whether `candidate` is (or will be) in the browser of the user's host.
+    let ownHost = onOwnHost;
 
     if (newSession && newSession !== requestSession) {
       candidate = newSession;
@@ -198,6 +206,7 @@ export class SessionUserTracker {
       candidate = requestSession;
     } else if (unverified && Date.now() >= unverified.retryAt) {
       candidate = unverified.session;
+      ownHost = unverified.ownHost;
     }
 
     // Checked again (on a retry, or when its host sends it back): it still replaces what it did.
@@ -219,13 +228,13 @@ export class SessionUserTracker {
       candidate !== this.#guestSessions.get(user) &&
       !this.#isLeftBehind(user, candidate)
     ) {
-      return this.#verify(user, candidate, replaced);
+      return this.#verify(user, candidate, replaced, ownHost);
     }
 
     return undefined;
   }
 
-  async #verify(user: SavedUser, session: string, replaced?: string): Promise<void> {
+  async #verify(user: SavedUser, session: string, replaced: string | undefined, ownHost: boolean): Promise<void> {
     this.#checking.set(user, session);
 
     let miUser: Awaited<ReturnType<SessionCheck>>;
@@ -236,7 +245,7 @@ export class SessionUserTracker {
       // MI couldn't tell: neither a login nor a guest. A later response checks the session again.
       if (this.#checking.get(user) === session) {
         this.#checking.delete(user);
-        this.#unverified.set(user, { session, replaced, retryAt: Date.now() + RETRY_DELAY });
+        this.#unverified.set(user, { session, replaced, ownHost, retryAt: Date.now() + RETRY_DELAY });
       }
 
       this.#logger.warn(colors.yellow(`Could not check the MI session of user ${user.name}: ${String(error)}`));
@@ -264,7 +273,9 @@ export class SessionUserTracker {
 
       const wasActive = user.state === 'active';
 
-      this.#supersede(user);
+      if (ownHost) {
+        this.#supersede(user);
+      }
 
       // A newer login replaces whatever session was still waiting for its check.
       this.#unverified.delete(user);

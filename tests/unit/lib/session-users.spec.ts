@@ -282,6 +282,27 @@ describe('SessionUserTracker', () => {
     expect(users.defaultUser).toBeUndefined();
   });
 
+  it('takes a login on its host after MI rotated the session on the main host', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    users.setDefaultUser('qa');
+
+    // The main host's request rotates S1 to S2; the cookie never reaches the user's host.
+    loggedIn.S2 = { id: 7, username: 'qa@example.com' };
+    await tracker.observe(qa, req('localhost:3000'), setsSession('S2'), 'S1');
+
+    expect(qa.session).toBe('S2');
+
+    // The user's host still holds S1, and logs in from it.
+    const ownHost = req('qa.localhost:3000', 'metric_insights_session=S1');
+
+    expect(tracker.isLeftBehindRequest(qa, ownHost)).toBe(false);
+
+    loggedIn.S3 = { id: 8, username: 'admin@example.com' };
+    await tracker.observe(qa, ownHost, setsSession('S3'));
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S3', miUser: { id: 8 } });
+  });
+
   it('takes a login from a browser still holding the session that ended', async () => {
     await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
     tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), { statusCode: 401, headers: {} });
