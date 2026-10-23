@@ -301,6 +301,16 @@ describe('SessionUserTracker', () => {
     await tracker.observe(qa, ownHost, setsSession('S3'));
 
     expect(qa).toMatchObject({ state: 'active', session: 'S3', miUser: { id: 8 } });
+
+    // A request its host sent with S1 before that login comes back late with S4 (a rotation of S1).
+    const late = req('qa.localhost:3000', 'metric_insights_session=S1');
+
+    expect(tracker.isLeftBehindRequest(qa, late)).toBe(true);
+
+    loggedIn.S4 = { id: 7, username: 'qa@example.com' };
+    await tracker.observe(qa, late, setsSession('S4'));
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S3', miUser: { id: 8 } });
   });
 
   it('takes a login from a browser still holding the session that ended', async () => {

@@ -7,7 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { cache, onProxyCacheInvalidate } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
-import { getUserNameFromHost } from './user-registry.js';
+import { getUserNameFromHost, userRegistry } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 type IncomingMessage = Connect.IncomingMessage;
@@ -75,18 +75,20 @@ function isHtmlDocumentRequest(req: IncomingMessage): boolean {
  * The headers page data is loaded with. MiAPI keeps them for the dev panel's own MI calls (sync,
  * page variables), which always go as the original user, so a saved user's host doesn't pass its
  * credentials on: its MI session cookie, or a token the page sends (`Authorization`, or MI's
- * `Token`), which MiAPI would use instead of the original user's.
+ * `Token`), which MiAPI would use instead of the original user's. Neither does localhost while a
+ * saved user is the default: its page sends that user's tokens, though its cookies are still yours.
  */
 function getPageDataHeaders(req: IncomingMessage): Headers {
   const headers = (req.headers ?? {}) as Headers;
+  const onUserHost = Boolean(getUserNameFromHost(req.headers?.host));
 
-  if (!getUserNameFromHost(req.headers?.host)) {
+  if (!onUserHost && !userRegistry.resolve(req)?.user) {
     return headers;
   }
 
-  const { cookie: _cookie, authorization: _authorization, token: _token, ...rest } = headers;
+  const { cookie, authorization: _authorization, token: _token, ...rest } = headers;
 
-  return rest;
+  return onUserHost || cookie === undefined ? rest : { ...rest, cookie };
 }
 
 /**

@@ -436,8 +436,14 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         }
 
         const savedUser = identity?.user;
+        // Whether the MI session MI hands out here may reach the browser.
+        let passSession = true;
 
-        if (savedUser?.kind === 'session') {
+        if (savedUser && users.get(savedUser.name) !== savedUser) {
+          // Removed, or removed and added again, while the request was in flight: its session belongs
+          // to the old registration and must not replace the one its host holds now.
+          passSession = false;
+        } else if (savedUser?.kind === 'session') {
           // Decided before the tracker looks at the response, which may change the user's session.
           const leftBehind = sessionUsers.isLeftBehindRequest(savedUser, req, identity?.sentSession);
 
@@ -445,15 +451,17 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
           // As the main host's default user, the browser keeps the main host's own session; on the
           // user's host, the newer one it logged in with since this request left.
-          if (getUserNameFromHost(req.headers.host) !== savedUser.name || leftBehind) {
-            const otherCookies = withoutSessionSetCookie(serverRes.headers['set-cookie']);
+          passSession = getUserNameFromHost(req.headers.host) === savedUser.name && !leftBehind;
+        }
 
-            // Deleted rather than left `undefined`: the interceptors copy every header key.
-            if (otherCookies) {
-              serverRes.headers['set-cookie'] = otherCookies;
-            } else {
-              delete serverRes.headers['set-cookie'];
-            }
+        if (!passSession) {
+          const otherCookies = withoutSessionSetCookie(serverRes.headers['set-cookie']);
+
+          // Deleted rather than left `undefined`: the interceptors copy every header key.
+          if (otherCookies) {
+            serverRes.headers['set-cookie'] = otherCookies;
+          } else {
+            delete serverRes.headers['set-cookie'];
           }
         }
 

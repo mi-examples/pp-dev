@@ -522,6 +522,20 @@ describe('proxy — saved users', () => {
     expect((await again).body).toBe('slow as Bearer new-token');
   });
 
+  it('keeps the MI session of a request whose user was replaced in flight from the browser', async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'old-token' });
+
+    const slow = request(port, '/assets/slow.png', 'viewer.localhost:3000');
+
+    await vi.waitFor(() => expect(releaseSlowAsset).toBeDefined());
+
+    users.remove('viewer');
+    users.add({ name: 'viewer', kind: 'token', token: 'new-token' });
+    releaseSlowAsset!();
+
+    expect((await slow).headers['set-cookie']).toEqual([expect.stringMatching(/^theme=dark;/)]);
+  });
+
   it("drops a removed user's cache", async () => {
     users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
 

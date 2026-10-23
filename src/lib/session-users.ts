@@ -275,6 +275,12 @@ export class SessionUserTracker {
 
       if (ownHost) {
         this.#supersede(user);
+
+        // The session the host's browser held until now, which may not be the one kept (MI rotated
+        // that one on the main host).
+        if (replaced !== undefined && replaced !== session) {
+          this.#supersede(user, replaced);
+        }
       }
 
       // A newer login replaces whatever session was still waiting for its check.
@@ -311,15 +317,15 @@ export class SessionUserTracker {
     return user.state === 'active' && Boolean(this.#superseded.get(user)?.has(session));
   }
 
-  /** Remembers the session `user` holds now as one it left behind. */
-  #supersede(user: SavedUser): void {
-    if (!user.session) {
+  /** Remembers `session` (by default the one `user` holds now) as one it left behind. */
+  #supersede(user: SavedUser, session = user.session): void {
+    if (!session) {
       return;
     }
 
     const superseded = this.#superseded.get(user) ?? new Set<string>();
 
-    superseded.add(user.session);
+    superseded.add(session);
 
     // A handful is plenty: only requests still in flight can bring one back.
     if (superseded.size > MAX_SUPERSEDED) {
