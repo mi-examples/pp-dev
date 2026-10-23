@@ -127,6 +127,48 @@ describe('keepTokenUsers', () => {
     expect(users.list()).toEqual([]);
   });
 
+  it('saves a user added while the saved tokens were being checked', async () => {
+    writeStoredUsers(file, [{ name: 'viewer', token: 'viewer' }], { project: '/work/app', miUrl: MI_URL });
+
+    let release!: () => void;
+
+    checkToken.mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve({ ok: true, miUser: { id: 1, username: 'v' } }))),
+    );
+
+    const restoring = keep();
+
+    await vi.waitFor(() => expect(release).toBeDefined());
+    users.add({ name: 'admin', kind: 'token', token: 'admin-token' });
+    release();
+    await restoring;
+
+    expect(readStoredUsers(file)).toEqual([
+      { name: 'admin', token: 'admin-token' },
+      { name: 'viewer', token: 'viewer' },
+    ]);
+  });
+
+  it('does not restore into a registry that moved to another project or MI meanwhile', async () => {
+    writeStoredUsers(file, [{ name: 'viewer', token: 'viewer' }], { project: '/work/app', miUrl: MI_URL });
+
+    let release!: () => void;
+
+    checkToken.mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve({ ok: true, miUser: { id: 1, username: 'v' } }))),
+    );
+
+    const restoring = keep();
+
+    await vi.waitFor(() => expect(release).toBeDefined());
+    // Another project's store takes the registry over.
+    await keepTokenUsers(users, { projectRoot: '/work/other', miUrl: MI_URL, checkToken, homeDir: home });
+    release();
+    await restoring;
+
+    expect(users.get('viewer')).toBeUndefined();
+  });
+
   it('keeps a registry in one file only once', async () => {
     await keep();
     await keep();

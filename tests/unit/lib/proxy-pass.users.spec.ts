@@ -60,6 +60,7 @@ describe('proxy — saved users', () => {
   let port: number;
   let upstreamRequests: { url?: string; authorization?: string; cookie?: string }[];
   let sessionCounter: number;
+  let releaseSlowAsset: (() => void) | undefined;
   const users = new UserRegistry();
   /** MI sessions that belong to an MI user; any other is a guest session. */
   const sessionOwners = new Map<string, { id: number; username: string }>();
@@ -90,6 +91,22 @@ describe('proxy — saved users', () => {
       if (req.url === '/login') {
         res.setHeader('content-type', 'text/html');
         res.end('<html><body>MI login</body></html>');
+
+        return;
+      }
+
+      // An asset whose absolute URLs the proxy rewrites to the requesting host.
+      if (req.url === '/assets/app.js') {
+        res.setHeader('content-type', 'application/javascript');
+        res.end(`fetch("http://${req.headers.host}/api/user")`);
+
+        return;
+      }
+
+      // An asset MI answers only once the test lets it.
+      if (req.url === '/assets/slow.png') {
+        res.setHeader('content-type', 'text/plain');
+        releaseSlowAsset = () => res.end(`slow as ${req.headers.authorization}`);
 
         return;
       }
@@ -132,6 +149,7 @@ describe('proxy — saved users', () => {
     sessionOwners.clear();
     upstreamRequests = [];
     sessionCounter = 0;
+    releaseSlowAsset = undefined;
     miAPI.personalAccessToken = 'original-token';
   });
 
@@ -183,7 +201,7 @@ describe('proxy — saved users', () => {
     expect(original.body).toBe('as Bearer original-token');
     expect(viewer.body).toBe('as Bearer viewer-token');
     expect(viewer.headers['x-pp-cache']).toBeUndefined();
-    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer:/assets/logo.png']);
+    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer@viewer.localhost:3000:/assets/logo.png']);
 
     const viewerAgain = await request(port, '/assets/logo.png', 'viewer.localhost:3000');
     const originalAgain = await request(port, '/assets/logo.png', 'localhost:3000');
@@ -218,7 +236,7 @@ describe('proxy — saved users', () => {
     await request(port, '/auth/login', 'qa.localhost:3000', 'metric_insights_session=QA');
     await tick();
 
-    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer:/assets/logo.png']);
+    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer@viewer.localhost:3000:/assets/logo.png']);
   });
 
   describe('logout (PP-4599)', () => {
@@ -246,7 +264,7 @@ describe('proxy — saved users', () => {
       expect(res.headers.location).toBe('http://localhost:3000/');
       expect(res.headers['set-cookie']).toEqual([expect.stringMatching(/^metric_insights_session=deleted;/)]);
       expect(users.get('viewer')).toBeUndefined();
-      expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@qa:/assets/logo.png']);
+      expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@qa@qa.localhost:3000:/assets/logo.png']);
     });
 
     it('answers a logout made by a script with no content', async () => {
@@ -308,6 +326,43 @@ describe('proxy — saved users', () => {
       expect(userHost.body).not.toContain('helper-login-wrapper');
       expect(mainHost.body).toContain('helper-login-wrapper');
     });
+  });
+
+  it("keeps a default user's entries for localhost apart from its own host's", async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    users.setDefaultUser('viewer');
+
+    const onMain = await request(port, '/assets/app.js', 'localhost:3000');
+    const onOwnHost = await request(port, '/assets/app.js', 'viewer.localhost:3000');
+
+    expect(onMain.body).toContain('http://localhost:3000/api/user');
+    expect(onOwnHost.headers['x-pp-cache']).toBeUndefined();
+    expect(onOwnHost.body).toContain('http://viewer.localhost:3000/api/user');
+  });
+
+  it('does not let a response of a removed user refill the cache of the user added again', async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'old-token' });
+
+    const slow = request(port, '/assets/slow.png', 'viewer.localhost:3000');
+
+    await vi.waitFor(() => expect(releaseSlowAsset).toBeDefined());
+
+    users.remove('viewer');
+    users.add({ name: 'viewer', kind: 'token', token: 'new-token' });
+    releaseSlowAsset!();
+    await slow;
+    await tick();
+
+    expect(cache.keys()).toEqual([]);
+
+    releaseSlowAsset = undefined;
+
+    const again = request(port, '/assets/slow.png', 'viewer.localhost:3000');
+
+    await vi.waitFor(() => expect(releaseSlowAsset).toBeDefined());
+    releaseSlowAsset!();
+
+    expect((await again).body).toBe('slow as Bearer new-token');
   });
 
   it("drops a removed user's cache", async () => {

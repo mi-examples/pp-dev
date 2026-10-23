@@ -21,7 +21,7 @@ async function mockRequests(request: APIRequestContext): Promise<{ path: string;
 }
 
 test.describe('Users', () => {
-  test.skip(!mockUrl, 'Needs the replay mock: run through scripts/run-playwright-e2e.ts');
+  test.skip(!mockUrl, 'Needs the replay mock: run through scripts/run-playwright-e2e.ts in replay mode');
 
   // Fail fast and say why, instead of every test timing out on a missing form or user.
   test.beforeEach(async ({ request, baseURL }) => {

@@ -7,7 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
 import { cutUrlParams } from './helpers/url.helper.js';
-import { UserRegistry, userRegistry } from './user-registry.js';
+import { RequestUser, UserRegistry, userRegistry } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -172,7 +172,7 @@ const watchedRegistries = new WeakSet<UserRegistry>();
 
 /** Whether `cacheKey` holds a response for `userKey` (`''` is the original user). */
 function isCacheKeyOf(cacheKey: string, userKey: string): boolean {
-  return userKey ? cacheKey.startsWith(`@${userKey}:`) : !cacheKey.startsWith('@');
+  return userKey ? cacheKey.startsWith(`@${userKey}@`) : !cacheKey.startsWith('@');
 }
 
 /**
@@ -230,10 +230,29 @@ function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse, us
 }
 
 /**
- * Generates an optimized cache key from URL and query parameters. A saved user's entries are
- * prefixed with its `userKey`, so one user is never served what MI answered another.
+ * Whether a response may still be cached for the user it was requested as: not when that user was
+ * removed, replaced (removed and added again) or got another MI session while the request was in
+ * flight, or the old identity's answer would refill the new one's cache.
  */
-function generateCacheKey(url: string, userKey: string): string {
+function isStillSameIdentity(
+  requestUser: RequestUser,
+  sessionAtStart: string | undefined,
+  users: UserRegistry,
+): boolean {
+  if (!requestUser.user) {
+    return true;
+  }
+
+  return users.get(requestUser.key) === requestUser.user && requestUser.user.session === sessionAtStart;
+}
+
+/**
+ * Generates an optimized cache key from URL and query parameters. A saved user's entries are
+ * prefixed with its `userKey`, so one user is never served what MI answered another, and with the
+ * host they were requested on: the proxy rewrites absolute URLs in a body to that host, and a
+ * default user is served on both `localhost` and its own host.
+ */
+function generateCacheKey(url: string, userKey: string, host: string): string {
   // Remove query parameters for better cache hit rates
   const cleanUrl = url.split('?')[0];
 
@@ -246,7 +265,7 @@ function generateCacheKey(url: string, userKey: string): string {
     return '';
   }
 
-  return userKey ? `@${userKey}:${url}` : url;
+  return userKey ? `@${userKey}@${host}:${url}` : url;
 }
 
 /**
@@ -306,6 +325,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
   if (!watchedRegistries.has(users)) {
     watchedRegistries.add(users);
     users.onRemove((user) => invalidateUserProxyCache(user.name, 'user removed'));
+    users.onSessionChange((user) => invalidateUserProxyCache(user.name, 'MI session changed or ended'));
   }
 
   return (req, res, next) => {
@@ -324,8 +344,10 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       }
     });
 
+    // The MI session a session user had when the request started, to tell whether it changed by the end.
+    const sessionAtStart = requestUser.user?.session;
     const url = req.originalUrl || req.url || '';
-    const cacheKey = req.method === 'GET' ? generateCacheKey(url, requestUser.key) : '';
+    const cacheKey = req.method === 'GET' ? generateCacheKey(url, requestUser.key, req.headers.host ?? '') : '';
 
     // Skip caching if no valid cache key
     if (!cacheKey) {
@@ -410,7 +432,12 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
         // Only cache successful, non-empty responses of reasonable size (max 10MB per item). A
         // redirect or error (e.g. MI's login redirect for an asset while logged out) must not
         // outlive the state that produced it.
-        if (res.statusCode === 200 && responseSize > 0 && responseSize < 10 * 1024 * 1024) {
+        if (
+          res.statusCode === 200 &&
+          responseSize > 0 &&
+          responseSize < 10 * 1024 * 1024 &&
+          isStillSameIdentity(requestUser, sessionAtStart, users)
+        ) {
           // Replaying a cached `Set-Cookie` would put the browser back on the session that was
           // current when the item was cached.
           const { 'set-cookie': _setCookie, ...headers } = res.getHeaders();

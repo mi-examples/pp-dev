@@ -96,14 +96,13 @@ export async function keepTokenUsers(
   keptRegistries.set(users, file);
 
   const stored = readStoredUsers(file);
-  // Writing starts once the stored users are back, or the first write would drop them.
+  // Writing starts once the stored users are back, or the first write would drop them. Users added
+  // or removed meanwhile (the API stays open) are written right after.
   let restoring = true;
+  let addingStored = false;
+  let changedWhileRestoring = false;
 
-  users.onChange(() => {
-    if (restoring || keptRegistries.get(users) !== file) {
-      return;
-    }
-
+  const save = () => {
     const tokenUsers = users
       .list()
       .filter((user) => user.kind === 'token' && user.token)
@@ -114,10 +113,29 @@ export async function keepTokenUsers(
     } catch (error) {
       logger.warn(colors.yellow(`Could not save the users to ${file}: ${String(error)}`));
     }
+  };
+
+  users.onChange(() => {
+    if (keptRegistries.get(users) !== file) {
+      return;
+    }
+
+    if (restoring) {
+      changedWhileRestoring ||= !addingStored;
+
+      return;
+    }
+
+    save();
   });
 
   try {
     const checks = await Promise.all(stored.map((user) => opts.checkToken(user.token)));
+
+    // The project or MI instance changed while the tokens were being checked.
+    if (keptRegistries.get(users) !== file) {
+      return;
+    }
 
     stored.forEach((user, index) => {
       if (getUserNameError(user.name) || users.get(user.name)) {
@@ -126,13 +144,19 @@ export async function keepTokenUsers(
 
       const check = checks[index];
 
-      users.add({
-        name: user.name,
-        kind: 'token',
-        token: user.token,
-        ...(check.ok ? { miUser: check.miUser } : {}),
-        ...(!check.ok && check.rejected ? { state: 'expired' } : {}),
-      });
+      addingStored = true;
+
+      try {
+        users.add({
+          name: user.name,
+          kind: 'token',
+          token: user.token,
+          ...(check.ok ? { miUser: check.miUser } : {}),
+          ...(!check.ok && check.rejected ? { state: 'expired' } : {}),
+        });
+      } finally {
+        addingStored = false;
+      }
 
       if (!check.ok) {
         logger.warn(colors.yellow(`Restored user ${user.name}: ${check.message}`));
@@ -142,14 +166,32 @@ export async function keepTokenUsers(
     restoring = false;
   }
 
+  if (changedWhileRestoring && keptRegistries.get(users) === file) {
+    save();
+  }
+
   if (stored.length) {
     logger.info(`${colors.blue('Restored')} ${stored.length} ${colors.blue('saved user(s) from')} ${file}`);
   }
 }
 
-/** Starts keeping the shared registry's token users when `users.persist` is on (Vite and Next.js). */
+/**
+ * Sets the shared registry up for a dev server start (Vite and Next.js): ties it to this project and
+ * MI instance, which drops the users of another one (a restart with another `mi.url`), and keeps its
+ * token users when `users.persist` is on.
+ */
 export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projectRoot: string; miUrl: string }): void {
+  const context = `${path.resolve(opts.projectRoot)}\n${opts.miUrl.replace(/\/+$/, '')}`;
+
+  if (userRegistry.context !== context) {
+    // Detach the old file first: dropping the old instance's users must not empty its store.
+    keptRegistries.delete(userRegistry);
+    userRegistry.useContext(context);
+  }
+
   if (!opts.persist) {
+    keptRegistries.delete(userRegistry);
+
     return;
   }
 

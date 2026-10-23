@@ -53,8 +53,50 @@ describe('SessionUserTracker', () => {
     expect(qa).toMatchObject({ state: 'active', session: 'S1', miUser: { id: 7, username: 'qa@example.com' } });
   });
 
-  it('does not check a session again that the request already carried', async () => {
-    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S1'));
+  it('checks the session its host already carries while it is not logged in, once', async () => {
+    // Cookies outlive a dev server restart or removing the user: MI may keep the session and set none.
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(check).toHaveBeenCalledWith('S1');
+    expect(qa).toMatchObject({ state: 'active', session: 'S1' });
+
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), ok);
+
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks a guest session its host carries only once', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=GUEST'), ok);
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=GUEST'), ok);
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=GUEST'), setsSession('GUEST'));
+
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(qa.state).toBe('pending');
+  });
+
+  it('leaves alone a user removed, or removed and added again, while the request was in flight', () => {
+    users.remove('qa');
+    users.add({ name: 'qa', kind: 'session' });
+
+    expect(tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'))).toBeUndefined();
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it('tells the registry when the session starts and ends, so the cache can go', async () => {
+    const changed = vi.fn();
+
+    users.onSessionChange(changed);
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), { statusCode: 401, headers: {} });
+
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('compares with the session the proxy sent from the main host, not the one kept now', async () => {
+    Object.assign(qa, { state: 'active', session: 'S1' });
+
+    // The request went with S1; MI answers it with S1 again: nothing new, nothing to check.
+    await tracker.observe(qa, req('localhost:3000'), setsSession('S1'), 'S1');
 
     expect(check).not.toHaveBeenCalled();
   });
@@ -78,6 +120,7 @@ describe('SessionUserTracker', () => {
         { statusCode: 302, headers: { location: 'https://mi.example.com/auth/saml/login' } },
       ],
       ['a 401', { statusCode: 401, headers: {} }],
+      ['a 412 (an expired MI session)', { statusCode: 412, headers: {} }],
     ])('marks it expired on %s', (_, response) => {
       tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), response);
 
@@ -115,6 +158,23 @@ describe('SessionUserTracker', () => {
 
       expect(qa).toMatchObject({ state: 'active', session: 'S2' });
     });
+  });
+
+  it('does not bring a user back with a check that was running when its session ended', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+
+    let release!: () => void;
+
+    loggedIn.S3 = { id: 7, username: 'qa@example.com' };
+    check.mockImplementationOnce((session) => new Promise((resolve) => (release = () => resolve(loggedIn[session]))));
+
+    const pending = tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S3'));
+
+    tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), { statusCode: 401, headers: {} });
+    release();
+    await pending;
+
+    expect(qa).toMatchObject({ state: 'expired', session: undefined });
   });
 
   it('lets the latest session win when checks overlap', async () => {

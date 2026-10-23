@@ -59,6 +59,12 @@ function getLoggedOutUser(req: IncomingMessage, users: UserRegistry): SavedUser 
 /** The personal access token each proxied request was sent to MI with. */
 const requestBearerTokens = new WeakMap<IncomingMessage, string>();
 
+/**
+ * Who each proxied request went to MI as: the saved user (none for the original user) and, for a
+ * session user sent from the main host, the MI session the proxy put in its cookies.
+ */
+const requestIdentities = new WeakMap<IncomingMessage, { user?: SavedUser; sentSession?: string }>();
+
 /** The personal access token the proxy sent `req` to MI with, if it added one. */
 export function getRequestBearerToken(req: IncomingMessage): string | undefined {
   return requestBearerTokens.get(req);
@@ -296,10 +302,16 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         // A session user as the main host's default user: the main host's cookies hold another
         // session, so send the one the user logged in with on its own host.
         const sessionUser = requestUser?.user?.kind === 'session' ? requestUser.user : undefined;
+        let sentSession: string | undefined;
 
         if (sessionUser?.session && getUserNameFromHost(req.headers.host) !== sessionUser.name) {
-          proxyReq.setHeader('cookie', withSessionCookie(req.headers.cookie, sessionUser.session));
+          sentSession = sessionUser.session;
+          proxyReq.setHeader('cookie', withSessionCookie(req.headers.cookie, sentSession));
         }
+
+        // The response is handled as whoever the request went as, even if the default user
+        // changes before MI answers.
+        requestIdentities.set(req, { user: requestUser?.user, sentSession });
 
         // A `304` would make the browser reuse the copy it cached before (possibly for another
         // session, or by a pp-dev version that still let it cache), so always fetch the full body.
@@ -388,10 +400,11 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           return;
         }
 
-        const savedUser = users.resolve(req)?.user;
+        const identity = requestIdentities.get(req);
+        const savedUser = identity?.user;
 
         if (savedUser?.kind === 'session') {
-          sessionUsers.observe(savedUser, req, serverRes);
+          sessionUsers.observe(savedUser, req, serverRes, identity?.sentSession);
 
           // As the main host's default user: the browser keeps the main host's own session.
           if (getUserNameFromHost(req.headers.host) !== savedUser.name) {

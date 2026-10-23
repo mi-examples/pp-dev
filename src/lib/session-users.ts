@@ -62,9 +62,12 @@ interface ObservedResponse {
   headers: IncomingMessage['headers'];
 }
 
-/** Whether MI turned a request away for not being logged in. */
+/**
+ * Whether MI turned a request away for not being logged in: a 401, a 412 (how MI answers an expired
+ * session, see helpers/token.helper.ts), or a redirect to the login page.
+ */
 function isLoggedOutResponse({ statusCode = 200, headers }: ObservedResponse): boolean {
-  if (statusCode === 401) {
+  if (statusCode === 401 || statusCode === 412) {
     return true;
   }
 
@@ -74,10 +77,14 @@ function isLoggedOutResponse({ statusCode = 200, headers }: ObservedResponse): b
 /**
  * Follows the session users through the responses MI sends them:
  *
- * - a new MI session id on a session user's host is checked with MI; one that belongs to an MI
- *   user means the user logged in (`active`), and the session is kept for it;
- * - once logged in, MI turning a request away (a redirect to the login page, a 401, or a new
+ * - an MI session not yet known for a session user is checked with MI: a new one MI hands its host,
+ *   or, while the user isn't logged in, the one its host's cookies already carry (they outlive a
+ *   dev server restart or removing the user). One that belongs to an MI user means the user logged
+ *   in (`active`), and the session is kept for it;
+ * - once logged in, MI turning a request away (a redirect to the login page, a 401 or 412, or a new
  *   guest session) means the session ended (`expired`), until the user logs in again on its host.
+ *
+ * Every new or ended session is reported to the registry, so the user's cached responses go too.
  */
 export class SessionUserTracker {
   readonly #users: UserRegistry;
@@ -89,28 +96,51 @@ export class SessionUserTracker {
   /** The session id each user's latest check is about, so an older answer can't win. */
   readonly #checking = new Map<string, string>();
 
+  /** The last session id per user that MI said is a guest one, so it isn't checked over and over. */
+  readonly #guestSessions = new Map<string, string>();
+
   constructor(users: UserRegistry, check: SessionCheck) {
     this.#users = users;
     this.#check = check;
   }
 
   /**
-   * Looks at a proxied response of `user`. Returns the pending session check, if this response
-   * started one (tests wait for it; the proxy doesn't).
+   * Looks at a proxied response of `user`. `sentSession` is the MI session the proxy put in the
+   * request for a session user sent from the main host. Returns the pending session check, if this
+   * response started one (tests wait for it; the proxy doesn't).
    */
-  observe(user: SavedUser, req: IncomingMessage, res: ObservedResponse): Promise<void> | undefined {
-    if (user.kind !== 'session') {
+  observe(
+    user: SavedUser,
+    req: IncomingMessage,
+    res: ObservedResponse,
+    sentSession?: string,
+  ): Promise<void> | undefined {
+    // Removed, or removed and added again, while the request was in flight.
+    if (user.kind !== 'session' || this.#users.get(user.name) !== user) {
       return undefined;
     }
 
     // On its own host the browser holds the user's session; on the main host (as the default user)
     // the proxy sent the kept one.
     const onOwnHost = getUserNameFromHost(req.headers.host) === user.name;
-    const sentSession = onOwnHost ? getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE) : user.session;
+    const requestSession = onOwnHost ? getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE) : sentSession;
     const newSession = getSetCookieValue(res.headers['set-cookie'], MI_SESSION_COOKIE);
+    let candidate: string | undefined;
 
-    if (newSession && newSession !== sentSession && newSession !== user.session) {
-      return this.#verify(user, newSession);
+    if (newSession && newSession !== requestSession) {
+      candidate = newSession;
+    } else if (onOwnHost && user.state !== 'active' && !isLoggedOutResponse(res)) {
+      // MI kept (or didn't set) the session the host already carries: it may be logged in already.
+      candidate = requestSession;
+    }
+
+    if (
+      candidate &&
+      candidate !== user.session &&
+      candidate !== this.#checking.get(user.name) &&
+      candidate !== this.#guestSessions.get(user.name)
+    ) {
+      return this.#verify(user, candidate);
     }
 
     if (user.state === 'active' && isLoggedOutResponse(res)) {
@@ -125,7 +155,7 @@ export class SessionUserTracker {
 
     const miUser = await this.#check(session);
 
-    // A newer session came in meanwhile, or the user is gone.
+    // A newer session came in meanwhile, the user expired, or it is gone.
     if (this.#checking.get(user.name) !== session || this.#users.get(user.name) !== user) {
       return;
     }
@@ -136,6 +166,9 @@ export class SessionUserTracker {
       const wasActive = user.state === 'active';
 
       Object.assign(user, { state: 'active', session, miUser });
+      this.#guestSessions.delete(user.name);
+      // What was cached before belongs to another session (a guest, or another MI user).
+      this.#users.sessionChanged(user);
 
       if (!wasActive) {
         this.#logger.info(
@@ -144,14 +177,21 @@ export class SessionUserTracker {
           })`,
         );
       }
-    } else if (user.state === 'active') {
-      this.#expire(user, 'MI started a guest session');
+    } else {
+      this.#guestSessions.set(user.name, session);
+
+      if (user.state === 'active') {
+        this.#expire(user, 'MI started a guest session');
+      }
     }
   }
 
   #expire(user: SavedUser, reason: string): void {
     user.state = 'expired';
     user.session = undefined;
+    // A check still running for an earlier session must not bring the user back.
+    this.#checking.delete(user.name);
+    this.#users.sessionChanged(user);
 
     // The main host can't go on as a user without a session.
     if (this.#users.defaultUser === user) {

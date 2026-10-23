@@ -3,6 +3,7 @@ import { PassThrough } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   createRequestCaptureMiddleware,
+  redactRequestBody,
   redactRequestHeaders,
   redactResponseHeaders,
 } from '../../../src/lib/request-capture.middleware.js';
@@ -79,6 +80,56 @@ describe('request capture — users', () => {
       'theme=dark; path=/',
     ]);
     expect(JSON.stringify(entry)).not.toMatch(/SECRET|NEW|app-token/);
+  });
+});
+
+describe('redactRequestBody', () => {
+  const body = (text: string) => Buffer.from(text);
+
+  it.each(['/login', '/auth/index/login', '/auth/login?next=%2Fhome', '/LOGIN'])(
+    'keeps nothing of an authentication request to %s',
+    (url) => {
+      const redacted = redactRequestBody(url, 'application/x-www-form-urlencoded', body('username=qa&password=secret'));
+
+      expect(redacted?.toString()).toBe('<redacted>');
+    },
+  );
+
+  it('redacts credential fields of a form body elsewhere', () => {
+    const redacted = redactRequestBody(
+      '/api/settings',
+      'application/x-www-form-urlencoded; charset=UTF-8',
+      body('name=qa&password=secret&otp=123456&theme=dark'),
+    );
+
+    expect(new URLSearchParams(redacted!.toString()).get('password')).toBe('<redacted>');
+    expect(new URLSearchParams(redacted!.toString()).get('otp')).toBe('<redacted>');
+    expect(new URLSearchParams(redacted!.toString()).get('theme')).toBe('dark');
+  });
+
+  it('redacts credential fields of a JSON body, nested ones too', () => {
+    const redacted = redactRequestBody(
+      '/api/user',
+      'application/json',
+      body(JSON.stringify({ name: 'qa', auth: { apiToken: 't', newPassword: 'p' }, items: [{ secret: 's' }] })),
+    );
+
+    expect(JSON.parse(redacted!.toString())).toEqual({
+      name: 'qa',
+      auth: { apiToken: '<redacted>', newPassword: '<redacted>' },
+      items: [{ secret: '<redacted>' }],
+    });
+  });
+
+  it('keeps other bodies as they are', () => {
+    const json = body('{"name":"qa"}');
+    const broken = body('{not json');
+    const text = body('password=in plain text');
+
+    expect(redactRequestBody('/api/user', 'application/json', json)).toBe(json);
+    expect(redactRequestBody('/api/user', 'application/json', broken)).toBe(broken);
+    expect(redactRequestBody('/api/user', 'text/plain', text)).toBe(text);
+    expect(redactRequestBody('/api/user', 'application/json', null)).toBeNull();
   });
 });
 

@@ -160,6 +160,31 @@ describe('UserRegistry', () => {
     expect(() => users.setDefaultUser('viewer')).toThrow(/turned down/);
   });
 
+  it('drops every user when the project or MI instance changes, and keeps them otherwise', () => {
+    users.useContext('/work/app\nhttps://mi-a.example.com');
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.setDefaultUser('viewer');
+
+    users.useContext('/work/app\nhttps://mi-a.example.com');
+    expect(users.list()).toHaveLength(1);
+
+    users.useContext('/work/app\nhttps://mi-b.example.com');
+    expect(users.list()).toEqual([]);
+    expect(users.defaultUser).toBeUndefined();
+  });
+
+  it('reports session changes only for users it still has', () => {
+    const listener = vi.fn();
+    const qa = users.add({ name: 'qa', kind: 'session' });
+
+    users.onSessionChange(listener);
+    users.sessionChanged(qa);
+    users.remove('qa');
+    users.sessionChanged(qa);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it('drops the default user when it is removed', () => {
     users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
     users.setDefaultUser('viewer');

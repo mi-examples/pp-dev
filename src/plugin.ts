@@ -679,7 +679,12 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         new ClientService(server, { distService, miAPI: mi });
         registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
         registerUserRoutes(internalServer, { miAPI: mi });
-        startKeepingUsers({ persist: persistUsers, miAPI: mi, projectRoot: server.config.root, miUrl: backendBaseURL });
+        startKeepingUsers({
+          persist: persistUsers,
+          miAPI: mi,
+          projectRoot: server.config.root || process.cwd(),
+          miUrl: backendBaseURL,
+        });
 
         // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
         // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a

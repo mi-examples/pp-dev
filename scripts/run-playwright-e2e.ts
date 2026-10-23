@@ -267,7 +267,8 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
       env: {
         ...process.env,
         BASE_URL: baseURL,
-        MOCK_MI_URL: mockMi.url,
+        // Replay only: the users tests send made-up tokens and read the replay mock's request log.
+        ...(mockMode === 'replay' ? { MOCK_MI_URL: mockMi.url } : {}),
         TEST_TYPE: fixture.testType,
         FORCE_COLOR: undefined,
       },

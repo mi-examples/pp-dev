@@ -51,6 +51,75 @@ export function redactResponseHeaders(
   return redacted;
 }
 
+/** MI's login and other authentication endpoints: their bodies carry passwords and one-time codes. */
+const AUTH_PATH_REGEXP = /^\/(?:login|auth)(?:[/?#]|$)/i;
+
+/** Body fields that hold credentials, wherever they are posted. */
+const CREDENTIAL_FIELD_REGEXP = /pass(?:word|wd|code)?|pwd|secret|token|otp|mfa|2fa/i;
+
+/** `value` with credential fields redacted; `found` says whether there were any. */
+function redactJsonValue(value: unknown, found: { any: boolean }): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactJsonValue(item, found));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => {
+        if (CREDENTIAL_FIELD_REGEXP.test(key)) {
+          found.any = true;
+
+          return [key, REDACTED];
+        }
+
+        return [key, redactJsonValue(inner, found)];
+      }),
+    );
+  }
+
+  return value;
+}
+
+/**
+ * The captured request body without credentials: nothing of an authentication request (the
+ * username/password login of a saved user goes through the proxy), and credential-like fields of
+ * form and JSON bodies elsewhere.
+ */
+export function redactRequestBody(url: string, contentType: string | undefined, body: Buffer | null): Buffer | null {
+  if (!body) {
+    return body;
+  }
+
+  if (AUTH_PATH_REGEXP.test(url)) {
+    return Buffer.from(REDACTED);
+  }
+
+  const type = (contentType ?? '').split(';', 1)[0].trim().toLowerCase();
+
+  try {
+    // A body without credentials is kept byte for byte.
+    if (type === 'application/x-www-form-urlencoded') {
+      const params = new URLSearchParams(body.toString('utf8'));
+      const credentialKeys = [...new Set(params.keys())].filter((key) => CREDENTIAL_FIELD_REGEXP.test(key));
+
+      credentialKeys.forEach((key) => params.set(key, REDACTED));
+
+      return credentialKeys.length ? Buffer.from(params.toString()) : body;
+    }
+
+    if (type === 'application/json' || type.endsWith('+json')) {
+      const found = { any: false };
+      const redacted = redactJsonValue(JSON.parse(body.toString('utf8')), found);
+
+      return found.any ? Buffer.from(JSON.stringify(redacted)) : body;
+    }
+  } catch {
+    // Not parseable: keep the body as it is.
+  }
+
+  return body;
+}
+
 const SKIP_PREFIXES = ['/@pp-dev/', '/@api/', '/_next/', '/__nextjs_', '/@vite', '/@metricinsights', '/@'];
 
 const SKIP_EXACT = new Set(['/favicon.ico', '/installHook.js.map']);
@@ -164,7 +233,11 @@ export function createRequestCaptureMiddleware(
 
       finalized = true;
 
-      const requestBody = !reqTruncated && reqChunks.length > 0 ? Buffer.concat(reqChunks) : null;
+      const requestBody = redactRequestBody(
+        url,
+        typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : undefined,
+        !reqTruncated && reqChunks.length > 0 ? Buffer.concat(reqChunks) : null,
+      );
       const responseBody = !resTruncated && resChunks.length > 0 ? Buffer.concat(resChunks) : null;
 
       store.add({

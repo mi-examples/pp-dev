@@ -114,7 +114,29 @@ export class UserRegistry {
 
   readonly #changeListeners = new Set<() => void>();
 
+  readonly #sessionChangeListeners = new Set<(user: SavedUser) => void>();
+
   #defaultUserName: string | undefined;
+
+  #context: string | undefined;
+
+  /**
+   * Ties the users to a project and MI instance. Switching to another one (a dev server restart with
+   * another `mi.url`, in the same process) drops every user: their tokens and sessions belong to
+   * the old instance and must not be sent to the new one.
+   */
+  useContext(context: string): void {
+    if (this.#context !== undefined && this.#context !== context) {
+      this.clear();
+    }
+
+    this.#context = context;
+  }
+
+  /** The context set by {@link useContext}. */
+  get context(): string | undefined {
+    return this.#context;
+  }
 
   list(): SavedUser[] {
     return [...this.#users.values()];
@@ -178,6 +200,25 @@ export class UserRegistry {
     return () => {
       this.#removeListeners.delete(listener);
     };
+  }
+
+  /**
+   * Runs `listener` when a saved user's MI session changes or ends, so what is cached for it can be
+   * dropped. Returns an unsubscribe function.
+   */
+  onSessionChange(listener: (user: SavedUser) => void): () => void {
+    this.#sessionChangeListeners.add(listener);
+
+    return () => {
+      this.#sessionChangeListeners.delete(listener);
+    };
+  }
+
+  /** Tells the {@link onSessionChange} listeners that `user`'s MI session changed or ended. */
+  sessionChanged(user: SavedUser): void {
+    if (this.#users.get(user.name) === user) {
+      this.#sessionChangeListeners.forEach((listener) => listener(user));
+    }
   }
 
   /** Runs `listener` whenever a user is added or removed. Returns an unsubscribe function. */
