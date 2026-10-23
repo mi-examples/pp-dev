@@ -15,6 +15,12 @@ import { isSecureRequest } from './helpers/cookie.helper.js';
 
 export type SavedUserKind = 'token' | 'session';
 
+/**
+ * Where a session user is: `pending` until it logs in on its host, `active` while its MI session
+ * lasts, `expired` once MI ends it (log in again on the same host).
+ */
+export type SessionState = 'pending' | 'active' | 'expired';
+
 export interface SavedUser {
   /** The name given in the dev panel; also the first label of the user's host. */
   name: string;
@@ -22,6 +28,14 @@ export interface SavedUser {
   kind: SavedUserKind;
   /** API token of a `token` user. Never logged or sent back to the browser. */
   token?: string;
+  /** State of a `session` user. */
+  state?: SessionState;
+  /**
+   * MI session id of an `active` session user, seen when it logged in on its host. Kept in memory
+   * only, to check the session and to send the main host as this user when it is the default.
+   * Never logged or sent back to the browser.
+   */
+  session?: string;
   /** The MI user behind it, for display. */
   miUser?: { id: number; username: string };
 }
@@ -120,7 +134,7 @@ export class UserRegistry {
       throw new Error('A token user needs an API token');
     }
 
-    const saved = { ...user };
+    const saved: SavedUser = user.kind === 'session' ? { state: 'pending', ...user } : { ...user };
 
     this.#users.set(saved.name, saved);
 
@@ -165,9 +179,8 @@ export class UserRegistry {
   }
 
   /**
-   * Makes `name` the user of the main host, or the original user again with `undefined`. Only a token
-   * user can be the default for now: a session user's MI session lives in its own host's cookies,
-   * which the main host doesn't get.
+   * Makes `name` the user of the main host, or the original user again with `undefined`. A session
+   * user needs to be logged in: the main host is sent with the MI session it logged in with.
    */
   setDefaultUser(name: string | undefined): void {
     if (name === undefined) {
@@ -182,8 +195,8 @@ export class UserRegistry {
       throw new Error(`There is no user named "${name}"`);
     }
 
-    if (user.kind !== 'token') {
-      throw new Error('Only a user added with an API token can be the default user');
+    if (user.kind === 'session' && (user.state !== 'active' || !user.session)) {
+      throw new Error(`"${name}" has to log in on its own host before it can be the default user`);
     }
 
     this.#defaultUserName = name;

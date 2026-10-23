@@ -112,11 +112,17 @@ describe('UserRegistry', () => {
     expect(users.resolve(req('localhost:3000'))?.user).toBeUndefined();
   });
 
-  it('only makes a known token user the default', () => {
-    users.add({ name: 'qa', kind: 'session' });
+  it('only makes a known user the default, a session user once it has logged in', () => {
+    const qa = users.add({ name: 'qa', kind: 'session' });
 
+    expect(qa.state).toBe('pending');
     expect(() => users.setDefaultUser('ghost')).toThrow(/no user/);
-    expect(() => users.setDefaultUser('qa')).toThrow(/API token/);
+    expect(() => users.setDefaultUser('qa')).toThrow(/log in/);
+
+    Object.assign(qa, { state: 'active', session: 'S1' });
+    users.setDefaultUser('qa');
+
+    expect(users.defaultUser).toBe(qa);
   });
 
   it('tells listeners about every removed user', () => {

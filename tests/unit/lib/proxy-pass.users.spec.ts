@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { initProxyCache, invalidateProxyCache, cache } from '../../../src/lib/proxy-cache.middleware.js';
 import { initProxy } from '../../../src/lib/proxy-pass.middleware.js';
 import { UserRegistry } from '../../../src/lib/user-registry.js';
+import { SessionUserTracker } from '../../../src/lib/session-users.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /**
@@ -60,6 +61,8 @@ describe('proxy — saved users', () => {
   let upstreamRequests: { url?: string; authorization?: string; cookie?: string }[];
   let sessionCounter: number;
   const users = new UserRegistry();
+  /** MI sessions that belong to an MI user; any other is a guest session. */
+  const sessionOwners = new Map<string, { id: number; username: string }>();
   const miAPI = { v7Features: false, personalAccessToken: 'original-token' as string | undefined };
 
   beforeAll(async () => {
@@ -77,8 +80,18 @@ describe('proxy — saved users', () => {
 
       // MI answers every bearer request with a new session id, whatever cookie it received, and a
       // login with a new session too.
-      if (req.headers.authorization || req.url === '/auth/login') {
-        res.setHeader('set-cookie', `metric_insights_session=S${++sessionCounter}; path=/; httponly`);
+      if (req.headers.authorization || req.url === '/auth/login' || req.url === '/api/new-session') {
+        res.setHeader('set-cookie', [
+          `metric_insights_session=S${++sessionCounter}; path=/; httponly`,
+          'theme=dark; path=/',
+        ]);
+      }
+
+      if (req.url === '/login') {
+        res.setHeader('content-type', 'text/html');
+        res.end('<html><body>MI login</body></html>');
+
+        return;
       }
 
       res.setHeader('content-type', 'text/plain');
@@ -93,6 +106,7 @@ describe('proxy — saved users', () => {
       devServer: {} as never,
       miAPI: miAPI as unknown as MiAPI,
       users,
+      sessionUsers: new SessionUserTracker(users, async (session) => sessionOwners.get(session)),
     });
 
     proxy = http.createServer((req, res) => {
@@ -115,6 +129,7 @@ describe('proxy — saved users', () => {
   beforeEach(() => {
     invalidateProxyCache('test setup');
     users.clear();
+    sessionOwners.clear();
     upstreamRequests = [];
     sessionCounter = 0;
     miAPI.personalAccessToken = 'original-token';
@@ -250,6 +265,48 @@ describe('proxy — saved users', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/login');
       expect(users.list().map((user) => user.name)).toEqual(['viewer', 'qa']);
+    });
+  });
+
+  describe('session users (PP-4596)', () => {
+    it('notices a session user logging in on its own host', async () => {
+      const qa = users.add({ name: 'qa', kind: 'session' });
+
+      sessionOwners.set('S1', { id: 7, username: 'qa@example.com' });
+
+      const res = await request(port, '/auth/login', 'qa.localhost:3000', 'metric_insights_session=GUEST');
+
+      // The browser of the user's host keeps the session it logged in with.
+      expect(res.headers['set-cookie']).toEqual([
+        expect.stringMatching(/^metric_insights_session=S1;/),
+        expect.stringMatching(/^theme=dark;/),
+      ]);
+      await vi.waitFor(() => expect(qa).toMatchObject({ state: 'active', session: 'S1', miUser: { id: 7 } }));
+    });
+
+    it('sends the main host as a default session user, and keeps the main host its own session', async () => {
+      const qa = users.add({ name: 'qa', kind: 'session' });
+
+      Object.assign(qa, { state: 'active', session: 'QA-SESSION' });
+      users.setDefaultUser('qa');
+
+      const res = await request(port, '/api/new-session', 'localhost:3000', 'metric_insights_session=MAIN; lang=en');
+
+      expect(upstreamRequests.at(-1)).toMatchObject({
+        authorization: undefined,
+        cookie: 'lang=en; metric_insights_session=QA-SESSION',
+      });
+      expect(res.headers['set-cookie']).toEqual([expect.stringMatching(/^theme=dark;/)]);
+    });
+
+    it('leaves the token login form out of MI pages on a user host', async () => {
+      users.add({ name: 'qa', kind: 'session' });
+
+      const userHost = await request(port, '/login', 'qa.localhost:3000');
+      const mainHost = await request(port, '/login', 'localhost:3000');
+
+      expect(userHost.body).not.toContain('helper-login-wrapper');
+      expect(mainHost.body).toContain('helper-login-wrapper');
     });
   });
 

@@ -10,6 +10,7 @@ import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
 import { SavedUser, UserRegistry, getUserNameFromHost, getUserOrigin, userRegistry } from './user-registry.js';
+import { SessionUserTracker, createSessionCheck, withSessionCookie, withoutSessionSetCookie } from './session-users.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -32,6 +33,9 @@ export interface ProxyOpts {
 
   /** Saved users, picked by the request's host. @default the shared {@link userRegistry} */
   users?: UserRegistry;
+
+  /** Follows session users' logins and expiries. @default one that checks sessions with {@link miAPI} */
+  sessionUsers?: SessionUserTracker;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
@@ -209,6 +213,8 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
   const logger = createLogger();
 
+  const sessionUsers = opts.sessionUsers ?? new SessionUserTracker(users, createSessionCheck(miAPI));
+
   return createProxyMiddleware({
     /**
      * IMPORTANT: avoid res.end being called automatically
@@ -285,6 +291,14 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         if (token) {
           proxyReq.setHeader('Authorization', `Bearer ${token}`);
           requestBearerTokens.set(req, token);
+        }
+
+        // A session user as the main host's default user: the main host's cookies hold another
+        // session, so send the one the user logged in with on its own host.
+        const sessionUser = requestUser?.user?.kind === 'session' ? requestUser.user : undefined;
+
+        if (sessionUser?.session && getUserNameFromHost(req.headers.host) !== sessionUser.name) {
+          proxyReq.setHeader('cookie', withSessionCookie(req.headers.cookie, sessionUser.session));
         }
 
         // A `304` would make the browser reuse the copy it cached before (possibly for another
@@ -374,6 +388,24 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           return;
         }
 
+        const savedUser = users.resolve(req)?.user;
+
+        if (savedUser?.kind === 'session') {
+          sessionUsers.observe(savedUser, req, serverRes);
+
+          // As the main host's default user: the browser keeps the main host's own session.
+          if (getUserNameFromHost(req.headers.host) !== savedUser.name) {
+            const otherCookies = withoutSessionSetCookie(serverRes.headers['set-cookie']);
+
+            // Deleted rather than left `undefined`: the interceptors copy every header key.
+            if (otherCookies) {
+              serverRes.headers['set-cookie'] = otherCookies;
+            } else {
+              delete serverRes.headers['set-cookie'];
+            }
+          }
+        }
+
         // MI responses depend on the session, so the browser must not reuse one after a login or
         // logout: Safari kept serving portal page images from its own cache after logging in again
         // and drew them as black boxes. Repeat loads are still fast, since the proxy cache serves
@@ -460,11 +492,13 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
               const slice = response.slice(0, 100);
 
+              // The token login sets the original user's token, so a saved user's host goes without it.
               if (
-                slice.includes('<html') ||
-                slice.includes('<body') ||
-                slice.includes('<head') ||
-                slice.includes('html>')
+                (slice.includes('<html') ||
+                  slice.includes('<body') ||
+                  slice.includes('<head') ||
+                  slice.includes('html>')) &&
+                !getUserNameFromHost(req.headers.host)
               ) {
                 response += '<script>' + `const host = "${host}";\n(${tokenLoginFunction.toString()})()` + '</script>';
               }

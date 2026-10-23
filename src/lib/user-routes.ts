@@ -5,7 +5,10 @@ import { getTokenErrorInfo } from './helpers/index.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
-/** Saved users (PP-4592): `GET` lists them, `POST` adds one by API token, `DELETE /:name` removes one. */
+/**
+ * Saved users (PP-4592): `GET` lists them, `POST` adds one (by API token, or a session user that
+ * logs in on its own host), `DELETE /:name` removes one.
+ */
 export const USERS_API_PATH = '/@api/users';
 
 interface UserRoutesDeps {
@@ -15,17 +18,29 @@ interface UserRoutesDeps {
 
 const routeStates = new WeakMap<Application, { deps: UserRoutesDeps }>();
 
-/** What the browser gets to see of a saved user: never its token. */
+/** What the browser gets to see of a saved user: never its token or MI session. */
 export interface PublicUser {
   name: string;
   kind: SavedUser['kind'];
+  /** A session user's state: `pending` until it logs in, `active`, or `expired`. */
+  state?: SavedUser['state'];
   miUser?: SavedUser['miUser'];
   /** Where the user's pages open: `http://<name>.localhost:<port>`. */
   origin: string;
+  /** Where a session user logs in (again): MI's login page on its own host. */
+  loginUrl?: string;
 }
 
 function toPublicUser(user: SavedUser, req: Request): PublicUser {
-  return { name: user.name, kind: user.kind, miUser: user.miUser, origin: getUserOrigin(req, user.name) };
+  const origin = getUserOrigin(req, user.name);
+
+  return {
+    name: user.name,
+    kind: user.kind,
+    ...(user.kind === 'session' ? { state: user.state, loginUrl: `${origin}/login` } : {}),
+    miUser: user.miUser,
+    origin,
+  };
 }
 
 function sendError(res: Response, status: number, code: string, error: string) {
@@ -60,9 +75,16 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
   app.post(USERS_API_PATH, async (req, res) => {
     const { miAPI } = current.deps;
     const users = getUsers();
-    const body = (req.body ?? {}) as { name?: unknown; token?: unknown };
+    const body = (req.body ?? {}) as { name?: unknown; token?: unknown; kind?: unknown };
     const name = typeof body.name === 'string' ? body.name : '';
     const token = typeof body.token === 'string' ? body.token.trim() : '';
+    const kind = body.kind ?? 'token';
+
+    if (kind !== 'token' && kind !== 'session') {
+      sendError(res, 400, 'INVALID_KIND', 'kind must be "token" or "session"');
+
+      return;
+    }
 
     // The dev panel always works as the original user, which multi-user mode needs a token for.
     if (!miAPI.personalAccessToken) {
@@ -86,6 +108,20 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
 
     if (users.get(name)) {
       sendError(res, 409, 'NAME_TAKEN', `A user named "${name}" already exists`);
+
+      return;
+    }
+
+    // A session user logs in through MI's usual login page on its own host (loginUrl); pp-dev never
+    // sees its password.
+    if (kind === 'session') {
+      const saved = users.add({ name, kind: 'session' });
+
+      logger.info(
+        `${colors.blue('Added user')} ${colors.yellow(saved.name)}: log in at ${getUserOrigin(req, saved.name)}/login`,
+      );
+
+      res.status(201).json({ user: toPublicUser(saved, req) });
 
       return;
     }

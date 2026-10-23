@@ -151,6 +151,44 @@ describe('user routes', () => {
     expect(res).toMatchObject({ status: 502, body: { code: 'MI_UNAVAILABLE' } });
   });
 
+  it('adds a session user that logs in on its own host, without asking MI', async () => {
+    const added = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
+
+    expect(added.status).toBe(201);
+    expect(added.body.user).toEqual({
+      name: 'qa',
+      kind: 'session',
+      state: 'pending',
+      origin: 'http://qa.localhost:3000',
+      loginUrl: 'http://qa.localhost:3000/login',
+    });
+    expect(authInfo).not.toHaveBeenCalled();
+    expect(users.get('qa')?.state).toBe('pending');
+  });
+
+  it('never sends a session user its MI session back', async () => {
+    Object.assign(users.add({ name: 'qa', kind: 'session' }), { state: 'active', session: 'SECRET-SESSION' });
+
+    const listed = await call(port, 'GET', USERS_API_PATH);
+
+    expect(listed.body.users[0]).toMatchObject({ name: 'qa', state: 'active' });
+    expect(JSON.stringify(listed.body)).not.toContain('SECRET-SESSION');
+  });
+
+  it('rejects an unknown kind', async () => {
+    const res = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'password' });
+
+    expect(res).toMatchObject({ status: 400, body: { code: 'INVALID_KIND' } });
+  });
+
+  it('needs the original token for a session user too', async () => {
+    miAPI.personalAccessToken = undefined;
+
+    const res = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
+
+    expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_TOKEN_REQUIRED' } });
+  });
+
   it('removes a user', async () => {
     users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
 
