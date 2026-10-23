@@ -4,6 +4,7 @@ import {
   SessionUserTracker,
   createSessionCheck,
   withSessionCookie,
+  withoutSessionCookie,
   withoutSessionSetCookie,
   type SessionCheck,
 } from '../../../src/lib/session-users.js';
@@ -421,6 +422,11 @@ describe('session cookie helpers', () => {
       'theme=dark; lang=en; metric_insights_session=S1',
     );
     expect(withSessionCookie(undefined, 'S1')).toBe('metric_insights_session=S1');
+  });
+
+  it('drops the MI session from a Cookie header', () => {
+    expect(withoutSessionCookie('theme=dark; metric_insights_session=MAIN; lang=en')).toBe('theme=dark; lang=en');
+    expect(withoutSessionCookie('metric_insights_session=MAIN')).toBeUndefined();
   });
 
   it('drops the MI session from Set-Cookie headers', () => {

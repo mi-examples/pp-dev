@@ -10,7 +10,13 @@ import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
 import { SavedUser, UserRegistry, getUserNameFromHost, getUserOrigin, userRegistry } from './user-registry.js';
-import { SessionUserTracker, createSessionCheck, withSessionCookie, withoutSessionSetCookie } from './session-users.js';
+import {
+  SessionUserTracker,
+  createSessionCheck,
+  withSessionCookie,
+  withoutSessionCookie,
+  withoutSessionSetCookie,
+} from './session-users.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -310,13 +316,24 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         }
 
         // A session user as the main host's default user: the main host's cookies hold another
-        // session, so send the one the user logged in with on its own host.
+        // session, so send the one the user logged in with on its own host. If that session ended
+        // after the request was resolved (while page data loaded, say), send none: never the main
+        // host's own, which would make MI answer as you while pp-dev files it under the user.
         const sessionUser = requestUser?.user?.kind === 'session' ? requestUser.user : undefined;
         let sentSession: string | undefined;
 
-        if (sessionUser?.session && getUserNameFromHost(req.headers.host) !== sessionUser.name) {
+        if (sessionUser && getUserNameFromHost(req.headers.host) !== sessionUser.name) {
           sentSession = sessionUser.session;
-          proxyReq.setHeader('cookie', withSessionCookie(req.headers.cookie, sentSession));
+
+          const cookie = sentSession
+            ? withSessionCookie(req.headers.cookie, sentSession)
+            : withoutSessionCookie(req.headers.cookie);
+
+          if (cookie) {
+            proxyReq.setHeader('cookie', cookie);
+          } else {
+            proxyReq.removeHeader('cookie');
+          }
         }
 
         // The response is handled as whoever the request went as, even if the default user

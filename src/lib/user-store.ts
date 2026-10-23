@@ -106,6 +106,8 @@ export async function keepTokenUsers(
   // Token users added before keeping started (`users.persist` turned on in a running dev server)
   // are written once the stored ones are back, like users added while restoring.
   let changedWhileRestoring = users.list().some((user) => user.kind === 'token' && user.token);
+  // Users removed while the stored tokens are checked stay removed: a DELETE wins over the file.
+  const removedWhileRestoring = new Set<string>();
 
   const save = () => {
     const tokenUsers = users
@@ -119,6 +121,12 @@ export async function keepTokenUsers(
       logger.warn(colors.yellow(`Could not save the users to ${file}: ${String(error)}`));
     }
   };
+
+  users.onRemove((user) => {
+    if (restoring && keptRegistries.get(users) === file) {
+      removedWhileRestoring.add(user.name);
+    }
+  });
 
   users.onChange(() => {
     if (keptRegistries.get(users) !== file) {
@@ -143,7 +151,7 @@ export async function keepTokenUsers(
     }
 
     stored.forEach((user, index) => {
-      if (getUserNameError(user.name) || users.get(user.name)) {
+      if (getUserNameError(user.name) || users.get(user.name) || removedWhileRestoring.has(user.name)) {
         return;
       }
 

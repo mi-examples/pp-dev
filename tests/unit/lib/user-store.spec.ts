@@ -143,6 +143,27 @@ describe('keepTokenUsers', () => {
     expect(readStoredUsers(file)).toEqual([]);
   });
 
+  it('keeps a user removed while its saved token was being checked removed', async () => {
+    writeStoredUsers(file, [{ name: 'viewer', token: 'viewer' }], { project: '/work/app', miUrl: MI_URL });
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer' });
+
+    let release!: () => void;
+
+    checkToken.mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve({ ok: true, miUser: { id: 1, username: 'v' } }))),
+    );
+
+    const restoring = keep();
+
+    await vi.waitFor(() => expect(release).toBeDefined());
+    users.remove('viewer');
+    release();
+    await restoring;
+
+    expect(users.get('viewer')).toBeUndefined();
+    expect(storedNames()).toEqual([]);
+  });
+
   it('saves a user added while the saved tokens were being checked', async () => {
     writeStoredUsers(file, [{ name: 'viewer', token: 'viewer' }], { project: '/work/app', miUrl: MI_URL });
 

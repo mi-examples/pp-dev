@@ -112,6 +112,16 @@ describe('UserRegistry', () => {
     expect(users.resolve(req('localhost:3000'))?.user).toBeUndefined();
   });
 
+  it('keeps an IP address or a custom domain as the original user, whatever the default', () => {
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.setDefaultUser('viewer');
+
+    expect(users.resolve(req('127.0.0.1:3000'))).toEqual({ key: '', user: undefined });
+    expect(users.resolve(req('[::1]:3000'))).toEqual({ key: '', user: undefined });
+    expect(users.resolve(req('dev.example.com'))).toEqual({ key: '', user: undefined });
+    expect(users.resolve(req('LOCALHOST:3000'))?.key).toBe('viewer');
+  });
+
   it('keeps a request with the user it was first resolved to, even if the default changes', () => {
     const viewer = users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
     const request = req('localhost:3000');

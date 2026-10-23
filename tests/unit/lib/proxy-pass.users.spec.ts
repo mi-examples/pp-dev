@@ -437,6 +437,18 @@ describe('proxy — saved users', () => {
       });
     });
 
+    it("never sends the main host's own session for a default session user whose session ended", async () => {
+      const qa = users.add({ name: 'qa', kind: 'session', state: 'active', session: 'QA-SESSION' });
+
+      users.setDefaultUser('qa');
+      // The session ends while the request waits (a page-data load) after it was resolved.
+      betweenCacheAndProxy = () => Object.assign(qa, { state: 'expired', session: undefined });
+
+      await request(port, '/api/user', 'localhost:3000', 'metric_insights_session=MAIN; lang=en');
+
+      expect(upstreamRequests.at(-1)).toMatchObject({ authorization: undefined, cookie: 'lang=en' });
+    });
+
     it('leaves the token login form out of MI pages on a user host', async () => {
       users.add({ name: 'qa', kind: 'session' });
 

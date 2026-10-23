@@ -80,6 +80,14 @@ export function getUserNameError(name: string): string | undefined {
  * The user name in a `Host` header of a user's host (`u2.localhost:3000` → `u2`), or `undefined`
  * for any other host, the main `localhost` included.
  */
+/**
+ * Whether `host` is the main host, `localhost`, the one the default user works on. An IP address
+ * or a custom domain has no user hosts next to it and always goes as the original user.
+ */
+export function isMainHost(host: string | undefined): boolean {
+  return (host ?? '').toLowerCase().replace(/:\d+$/, '') === 'localhost';
+}
+
 export function getUserNameFromHost(host: string | undefined): string | undefined {
   if (!host) {
     return undefined;
@@ -284,7 +292,7 @@ export class UserRegistry {
     let requestUser: RequestUser | undefined;
 
     if (name === undefined) {
-      const user = this.defaultUser;
+      const user = isMainHost(req.headers.host) ? this.defaultUser : undefined;
 
       requestUser = { key: user?.name ?? '', user };
     } else {

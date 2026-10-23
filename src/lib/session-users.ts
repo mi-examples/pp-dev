@@ -57,14 +57,24 @@ export function createSessionCheck(miAPI: MiAPI): SessionCheck {
   };
 }
 
-/** A `Cookie` header with the MI session set to `session`, the other cookies kept. */
-export function withSessionCookie(cookieHeader: string | undefined, session: string): string {
-  const others = (cookieHeader ?? '')
+/** The cookies of a `Cookie` header other than the MI session. */
+function getOtherCookies(cookieHeader: string | undefined): string[] {
+  return (cookieHeader ?? '')
     .split(';')
     .map((pair) => pair.trim())
     .filter((pair) => pair && pair.split('=', 1)[0].trim() !== MI_SESSION_COOKIE);
+}
 
-  return [...others, `${MI_SESSION_COOKIE}=${session}`].join('; ');
+/** A `Cookie` header with the MI session set to `session`, the other cookies kept. */
+export function withSessionCookie(cookieHeader: string | undefined, session: string): string {
+  return [...getOtherCookies(cookieHeader), `${MI_SESSION_COOKIE}=${session}`].join('; ');
+}
+
+/** A `Cookie` header without the MI session, or `undefined` if nothing is left. */
+export function withoutSessionCookie(cookieHeader: string | undefined): string | undefined {
+  const others = getOtherCookies(cookieHeader);
+
+  return others.length ? others.join('; ') : undefined;
 }
 
 /** `Set-Cookie` headers without the MI session cookie, or `undefined` if nothing is left. */
