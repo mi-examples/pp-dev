@@ -90,6 +90,28 @@ describe('initUsersPanel', () => {
     expect($panel.querySelector('.pp-dev-info__users-row.is-current')!.getAttribute('data-user')).toBe('viewer');
   });
 
+  it("offers to open the main host as you on a user's tab only while you are the default", async () => {
+    const { jsdom } = globalThis as unknown as { jsdom: { reconfigure(opts: { url: string }): void } };
+
+    jsdom.reconfigure({ url: 'http://qa.localhost:3000/' });
+
+    try {
+      const $withDefault = await openPopover();
+
+      // localhost works as viewer now: viewer's own row opens it as viewer.
+      expect($withDefault.querySelector('[data-focus-key=":open"]')).toBeNull();
+
+      document.body.innerHTML = '';
+      fetchMock.mockImplementation(async () => json(200, { ...usersResponse, defaultUser: null }));
+
+      const $withoutDefault = await openPopover();
+
+      expect($withoutDefault.querySelector('[data-focus-key=":open"]')).not.toBeNull();
+    } finally {
+      jsdom.reconfigure({ url: 'http://localhost:3000/' });
+    }
+  });
+
   it('says an IP address works as you, whatever the default user', async () => {
     const { jsdom } = globalThis as unknown as { jsdom: { reconfigure(opts: { url: string }): void } };
 

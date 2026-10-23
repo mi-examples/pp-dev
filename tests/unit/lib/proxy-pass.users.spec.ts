@@ -437,6 +437,31 @@ describe('proxy — saved users', () => {
       });
     });
 
+    it('keeps a session MI hands out for a request sent before a newer login from the browser', async () => {
+      const qa = users.add({ name: 'qa', kind: 'session' });
+
+      sessionOwners.set('S1', { id: 7, username: 'qa@example.com' });
+      sessionOwners.set('S2', { id: 8, username: 'admin@example.com' });
+      sessionOwners.set('S3', { id: 7, username: 'qa@example.com' });
+
+      await request(port, '/api/new-session', 'qa.localhost:3000', 'metric_insights_session=GUEST');
+      await vi.waitFor(() => expect(qa.session).toBe('S1'));
+      await request(port, '/api/new-session', 'qa.localhost:3000', 'metric_insights_session=S1');
+      await vi.waitFor(() => expect(qa.session).toBe('S2'));
+
+      // A request sent with S1 before the S2 login, answered late with S3 (a rotation of S1).
+      const late = await request(port, '/api/new-session', 'qa.localhost:3000', 'metric_insights_session=S1');
+
+      expect(late.headers['set-cookie']).toEqual([expect.stringMatching(/^theme=dark;/)]);
+
+      // The browser goes on with S2, and pp-dev with it.
+      const next = await request(port, '/api/user', 'qa.localhost:3000', 'metric_insights_session=S2');
+      await tick();
+
+      expect(next.body).toBe('as metric_insights_session=S2');
+      expect(qa).toMatchObject({ state: 'active', session: 'S2', miUser: { id: 8 } });
+    });
+
     it("never sends the main host's own session for a default session user whose session ended", async () => {
       const qa = users.add({ name: 'qa', kind: 'session', state: 'active', session: 'QA-SESSION' });
 

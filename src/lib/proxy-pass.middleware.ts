@@ -438,10 +438,14 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         const savedUser = identity?.user;
 
         if (savedUser?.kind === 'session') {
+          // Decided before the tracker looks at the response, which may change the user's session.
+          const leftBehind = sessionUsers.isLeftBehindRequest(savedUser, req, identity?.sentSession);
+
           sessionUsers.observe(savedUser, req, serverRes, identity?.sentSession);
 
-          // As the main host's default user: the browser keeps the main host's own session.
-          if (getUserNameFromHost(req.headers.host) !== savedUser.name) {
+          // As the main host's default user, the browser keeps the main host's own session; on the
+          // user's host, the newer one it logged in with since this request left.
+          if (getUserNameFromHost(req.headers.host) !== savedUser.name || leftBehind) {
             const otherCookies = withoutSessionSetCookie(serverRes.headers['set-cookie']);
 
             // Deleted rather than left `undefined`: the interceptors copy every header key.

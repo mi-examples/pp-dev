@@ -206,7 +206,13 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
           <span class="pp-dev-info__users-name">You</span>
           <span class="pp-dev-info__users-meta">original user · the dev panel always works as you</span>
         </div>
-        ${tabUser ? `<button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(mainOrigin())}" data-focus-key=":open" title="Open this page on the main host">Open</button>` : ''}
+        ${
+          // The main host works as you only while no other user is the default; then that user's
+          // row is the one to open.
+          tabUser && !defaultUser
+            ? `<button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(mainOrigin())}" data-focus-key=":open" title="Open this page on the main host">Open</button>`
+            : ''
+        }
       </div>`,
       ...data.users.map((user) => {
         const canBeDefault = user.kind === 'token' ? user.state !== 'expired' : user.state === 'active';

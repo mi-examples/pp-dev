@@ -150,6 +150,20 @@ export class SessionUserTracker {
   }
 
   /**
+   * Whether `req` went with a session the logged-in `user` already left behind (a request sent
+   * before a newer login, answered late). A session MI hands out in its response belongs to that
+   * older login: the proxy keeps it from the browser, which holds the newer one.
+   */
+  isLeftBehindRequest(user: SavedUser, req: IncomingMessage, sentSession?: string): boolean {
+    const session =
+      getUserNameFromHost(req.headers.host) === user.name
+        ? getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE)
+        : sentSession;
+
+    return session !== undefined && this.#isLeftBehind(user, session);
+  }
+
+  /**
    * Looks at a proxied response of `user`. `sentSession` is the MI session the proxy put in the
    * request for a session user sent from the main host. Returns the pending session check, if this
    * response started one (tests wait for it; the proxy doesn't).
