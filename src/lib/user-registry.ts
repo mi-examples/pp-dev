@@ -118,6 +118,9 @@ export class UserRegistry {
 
   #defaultUserName: string | undefined;
 
+  /** Who each request goes as, decided once, when it is first asked (see {@link resolve}). */
+  readonly #resolved = new WeakMap<object, RequestUser | undefined>();
+
   #context: string | undefined;
 
   /**
@@ -266,19 +269,33 @@ export class UserRegistry {
   /**
    * Who `req` goes to MI as. `undefined` for a user host with no saved user behind it (a stale or
    * mistyped link), which must not fall back to anyone's identity.
+   *
+   * Decided once per request, when it is first asked, and the same answer after that: the cache,
+   * the proxy and the Request Inspector look at a request at different moments (a page-data load
+   * can come in between), and a default user changed meanwhile must not make one of them file
+   * the request under another user than the one it went to MI as.
    */
   resolve(req: Pick<IncomingMessage, 'headers'>): RequestUser | undefined {
+    if (this.#resolved.has(req)) {
+      return this.#resolved.get(req);
+    }
+
     const name = getUserNameFromHost(req.headers.host);
+    let requestUser: RequestUser | undefined;
 
     if (name === undefined) {
       const user = this.defaultUser;
 
-      return { key: user?.name ?? '', user };
+      requestUser = { key: user?.name ?? '', user };
+    } else {
+      const user = this.#users.get(name);
+
+      requestUser = user ? { key: user.name, user } : undefined;
     }
 
-    const user = this.#users.get(name);
+    this.#resolved.set(req, requestUser);
 
-    return user ? { key: user.name, user } : undefined;
+    return requestUser;
   }
 }
 

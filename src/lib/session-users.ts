@@ -14,6 +14,9 @@ import { colors } from './helpers/color.helper.js';
 /** How long a session check MI couldn't answer waits before it is tried again. */
 const RETRY_DELAY = 5000;
 
+/** How many sessions a user left behind are remembered. */
+const MAX_SUPERSEDED = 20;
+
 /** Where MI sends a request whose session is gone. */
 const LOGIN_LOCATION_REGEXP = /(?:^|\/\/[^/]+)\/(?:login|auth\/saml\/login)(?:[/?#]|$)/i;
 
@@ -124,6 +127,13 @@ export class SessionUserTracker {
    */
   readonly #unverified = new WeakMap<SavedUser, { session: string; replaced?: string; retryAt: number }>();
 
+  /**
+   * Sessions each registration held before its current one. A session MI hands out in place of one
+   * of them is a late answer to a request sent before the user logged in again: it must not take
+   * the newer login's place.
+   */
+  readonly #superseded = new WeakMap<SavedUser, Set<string>>();
+
   constructor(users: UserRegistry, check: SessionCheck) {
     this.#users = users;
     this.#check = check;
@@ -220,7 +230,15 @@ export class SessionUserTracker {
     }
 
     if (miUser) {
+      // MI rotated a session the logged-in user had already left behind. (Logged out, any login is
+      // a new one, even from the browser still holding the session that ended.)
+      if (user.state === 'active' && replaced !== undefined && this.#superseded.get(user)?.has(replaced)) {
+        return;
+      }
+
       const wasActive = user.state === 'active';
+
+      this.#supersede(user);
 
       // A newer login replaces whatever session was still waiting for its check.
       this.#unverified.delete(user);
@@ -248,7 +266,26 @@ export class SessionUserTracker {
     }
   }
 
+  /** Remembers the session `user` holds now as one it left behind. */
+  #supersede(user: SavedUser): void {
+    if (!user.session) {
+      return;
+    }
+
+    const superseded = this.#superseded.get(user) ?? new Set<string>();
+
+    superseded.add(user.session);
+
+    // A handful is plenty: only requests still in flight can bring one back.
+    if (superseded.size > MAX_SUPERSEDED) {
+      superseded.delete(superseded.values().next().value as string);
+    }
+
+    this.#superseded.set(user, superseded);
+  }
+
   #expire(user: SavedUser, reason: string): void {
+    this.#supersede(user);
     user.state = 'expired';
     user.session = undefined;
     // A check still running, or waiting, for an earlier session must not bring the user back.

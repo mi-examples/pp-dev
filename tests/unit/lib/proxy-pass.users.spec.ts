@@ -61,6 +61,8 @@ describe('proxy — saved users', () => {
   let upstreamRequests: { url?: string; authorization?: string; cookie?: string; token?: string }[];
   let sessionCounter: number;
   let releaseSlowAsset: (() => void) | undefined;
+  /** Runs between the cache and the proxy, where a page-data load can wait in the dev server. */
+  let betweenCacheAndProxy: (() => void) | undefined;
   const users = new UserRegistry();
   /** MI sessions that belong to an MI user; any other is a guest session. */
   const sessionOwners = new Map<string, { id: number; username: string }>();
@@ -146,7 +148,10 @@ describe('proxy — saved users', () => {
         res.end();
       };
 
-      cacheMiddleware(req as never, res, () => proxyMiddleware(req as never, res, notFound));
+      cacheMiddleware(req as never, res, () => {
+        betweenCacheAndProxy?.();
+        proxyMiddleware(req as never, res, notFound);
+      });
     });
 
     port = await listen(proxy);
@@ -164,6 +169,7 @@ describe('proxy — saved users', () => {
     upstreamRequests = [];
     sessionCounter = 0;
     releaseSlowAsset = undefined;
+    betweenCacheAndProxy = undefined;
     miAPI.personalAccessToken = 'original-token';
   });
 
@@ -230,6 +236,18 @@ describe('proxy — saved users', () => {
 
     expect(viewerAgain).toMatchObject({ body: 'as Bearer viewer-token', headers: { 'x-pp-cache': 'hit' } });
     expect(originalAgain).toMatchObject({ body: 'as Bearer original-token', headers: { 'x-pp-cache': 'hit' } });
+  });
+
+  it('sends and caches a request as one user when the default changes on its way', async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    betweenCacheAndProxy = () => users.setDefaultUser('viewer');
+
+    const res = await request(port, '/assets/logo.png', 'localhost:3000');
+    await tick();
+
+    expect(res.body).toBe('as Bearer original-token');
+    expect(cache.keys()).toEqual(['/assets/logo.png']);
+    expect(cache.get('/assets/logo.png')!.content.toString()).toBe('as Bearer original-token');
   });
 
   it('keeps the cache while requests of different token users interleave', async () => {

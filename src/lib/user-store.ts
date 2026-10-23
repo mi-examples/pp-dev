@@ -103,7 +103,9 @@ export async function keepTokenUsers(
   // or removed meanwhile (the API stays open) are written right after.
   let restoring = true;
   let addingStored = false;
-  let changedWhileRestoring = false;
+  // Token users added before keeping started (`users.persist` turned on in a running dev server)
+  // are written once the stored ones are back, like users added while restoring.
+  let changedWhileRestoring = users.list().some((user) => user.kind === 'token' && user.token);
 
   const save = () => {
     const tokenUsers = users

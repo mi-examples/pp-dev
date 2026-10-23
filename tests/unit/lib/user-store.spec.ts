@@ -53,6 +53,15 @@ describe('keepTokenUsers', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
+  it('saves the token users already there when keeping starts', async () => {
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    users.add({ name: 'qa', kind: 'session' });
+
+    await keep();
+
+    expect(storedNames()).toEqual(['viewer']);
+  });
+
   it('saves token users as they are added and removed, never session users', async () => {
     await keep();
 

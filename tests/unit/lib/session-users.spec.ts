@@ -238,6 +238,33 @@ describe('SessionUserTracker', () => {
     expect(qa).toMatchObject({ state: 'active', session: 'S2' });
   });
 
+  it('does not let a late rotation of an older session replace a newer login', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    users.setDefaultUser('qa');
+
+    // The user logs in again on its host (S2) while a main-host request sent with S1 is out.
+    loggedIn.S2 = { id: 8, username: 'admin@example.com' };
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S2'));
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S2' });
+
+    // MI answers the old request with S3, a rotation of S1.
+    loggedIn.S3 = { id: 7, username: 'qa@example.com' };
+    await tracker.observe(qa, req('localhost:3000'), setsSession('S3'), 'S1');
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S2', miUser: { id: 8 } });
+  });
+
+  it('takes a login from a browser still holding the session that ended', async () => {
+    await tracker.observe(qa, req('qa.localhost:3000'), setsSession('S1'));
+    tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), { statusCode: 401, headers: {} });
+
+    loggedIn.S2 = { id: 7, username: 'qa@example.com' };
+    await tracker.observe(qa, req('qa.localhost:3000', 'metric_insights_session=S1'), setsSession('S2'));
+
+    expect(qa).toMatchObject({ state: 'active', session: 'S2' });
+  });
+
   describe('a guest session MI handed out for the active one, whose check failed', () => {
     beforeEach(async () => {
       vi.useFakeTimers({ toFake: ['Date'] });

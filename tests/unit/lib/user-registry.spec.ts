@@ -112,6 +112,18 @@ describe('UserRegistry', () => {
     expect(users.resolve(req('localhost:3000'))?.user).toBeUndefined();
   });
 
+  it('keeps a request with the user it was first resolved to, even if the default changes', () => {
+    const viewer = users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    const request = req('localhost:3000');
+
+    expect(users.resolve(request)?.user).toBeUndefined();
+
+    users.setDefaultUser('viewer');
+
+    expect(users.resolve(request)?.user).toBeUndefined();
+    expect(users.resolve(req('localhost:3000'))?.user).toBe(viewer);
+  });
+
   it('only makes a known user the default, a session user once it has logged in', () => {
     const qa = users.add({ name: 'qa', kind: 'session' });
 
