@@ -764,6 +764,22 @@ describe('registerVariablesEditorRoutes', () => {
       return { dom, button, update };
     }
 
+    it("renders a variable's description as markdown", async () => {
+      const { dom } = await openValuesTab([
+        {
+          schema: { tags: [{ name: 'Region', description: '**Pick** one of `EMEA`, <u>US</u>' }] },
+          live: [{ name: 'Region', value: 'EMEA' }],
+          combined: [{ name: 'Region', value: 'EMEA' }],
+          local: [{ name: 'Region', value: 'EMEA' }],
+        },
+      ]);
+      const hint = dom.window.document.querySelector('#content .ve-md');
+
+      expect(hint?.innerHTML).toBe('<p><strong>Pick</strong> one of <code>EMEA</code>, <u>US</u></p>');
+
+      dom.window.close();
+    });
+
     it('tells a missing variable from an empty one', async () => {
       const { dom, button } = await openValuesTab([
         { schema: null, live: [{ name: 'Note', value: '' }], combined: [{ name: 'Note', value: '' }], local: [] },

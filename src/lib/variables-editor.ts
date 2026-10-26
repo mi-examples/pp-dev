@@ -2,6 +2,7 @@ import type { Application } from 'express';
 import { createHash, randomUUID } from 'crypto';
 import { DistService } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
+import { DESCRIPTION_MARKDOWN_SCRIPT } from './variables-editor-markdown.js';
 import {
   buildPageVariablesExport,
   planPageVariablesImport,
@@ -452,6 +453,13 @@ tr.schema-row.is-drop-target td,tr.details-row.is-drop-target td{box-shadow:inse
 .raw-toggle{margin-bottom:10px}
 .raw-editor{width:100%;height:min(60vh,600px);font-family:var(--font-mono);font-size:12px;white-space:pre}
 .hint{color:var(--text3);font-size:11px;}
+.ve-md p{margin:0 0 4px}
+.ve-md p:last-child,.ve-md ul:last-child,.ve-md ol:last-child,.ve-md pre:last-child{margin-bottom:0}
+.ve-md ul,.ve-md ol{margin:0 0 4px;padding-left:18px}
+.ve-md code{font-family:var(--font-mono,monospace);background:var(--bg4);border-radius:3px;padding:0 3px}
+.ve-md pre{margin:0 0 4px;padding:6px 8px;background:var(--bg4);border-radius:4px;overflow-x:auto}
+.ve-md pre code{background:none;padding:0}
+.ve-md strong{color:var(--text2)}
 .details-row td{background:var(--bg2);padding:16px}
 .details-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
 .details-grid-item-wrapper{display:flex;gap:12px;grid-column:1/-1;}
@@ -2355,12 +2363,14 @@ function schemaTagFor(name) {
   return tags.find((t) => t.name === name);
 }
 
-// Not full markdown (MI itself renders this as markdown) — a lightweight, dependency-free
-// line-break-preserving plain-text display is enough context to have here.
+// MI renders descriptions as markdown; the part of it that matters there (see
+// variables-editor-markdown.ts), with everything else escaped.
+${DESCRIPTION_MARKDOWN_SCRIPT}
+
 function descriptionHint(tag) {
   if (!tag || !tag.description) { return ''; }
 
-  return '<div class="hint" style="white-space:pre-wrap;margin-bottom: 8px;">' + escapeHtml(tag.description) + '</div>';
+  return '<div class="hint ve-md" style="margin-bottom: 8px;">' + renderDescriptionMarkdown(tag.description) + '</div>';
 }
 
 // The plain-text default already matches MI's own fallback (a multiline input); on top of
