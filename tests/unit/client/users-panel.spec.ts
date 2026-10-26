@@ -74,7 +74,7 @@ describe('initUsersPanel', () => {
 
   it('lists you and the saved users, with the default checked', async () => {
     const $panel = await openPopover();
-    const names = [...$panel.querySelectorAll('.pp-dev-info__users-name')].map((el) => el.textContent);
+    const names = [...$panel.querySelectorAll('.pp-dev-info__users-name')].map((el) => el.firstChild?.textContent);
     const checked = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default:checked');
 
     expect(names).toEqual(['You', 'viewer', 'qa']);
@@ -88,6 +88,39 @@ describe('initUsersPanel', () => {
 
     expect($panel.querySelector('.pp-dev-info__users-tab strong')!.textContent).toBe('viewer');
     expect($panel.querySelector('.pp-dev-info__users-row.is-current')!.getAttribute('data-user')).toBe('viewer');
+    expect($panel.querySelector('.pp-dev-info__users-badge')!.closest('[data-user]')!.getAttribute('data-user')).toBe(
+      'viewer',
+    );
+  });
+
+  it("opens with the list loaded with the panel, before the popover's own request answers", async () => {
+    const $panel = makePanel();
+
+    initUsersPanel($panel);
+    await flush();
+    // The popover's own request never answers.
+    fetchMock.mockImplementation(() => new Promise<Response>(() => {}));
+    $panel.querySelector<HTMLButtonElement>('.pp-dev-info__users-btn')!.click();
+
+    expect($panel.querySelectorAll('.pp-dev-info__users-row')).toHaveLength(3);
+    expect($panel.querySelector('.pp-dev-info__users-tab strong')!.textContent).toBe('viewer');
+  });
+
+  it("marks this tab's user apart from localhost's default on a user's tab", async () => {
+    const { jsdom } = globalThis as unknown as { jsdom: { reconfigure(opts: { url: string }): void } };
+
+    jsdom.reconfigure({ url: 'http://qa.localhost:3000/' });
+
+    try {
+      const $panel = await openPopover();
+      const $badge = $panel.querySelector('.pp-dev-info__users-badge')!;
+
+      expect($panel.querySelectorAll('.pp-dev-info__users-badge')).toHaveLength(1);
+      expect($badge.closest('[data-user]')!.getAttribute('data-user')).toBe('qa');
+      expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default:checked')!.value).toBe('viewer');
+    } finally {
+      jsdom.reconfigure({ url: 'http://localhost:3000/' });
+    }
   });
 
   it("offers to open the main host as you on a user's tab only while you are the default", async () => {
@@ -241,6 +274,20 @@ describe('initUsersPanel', () => {
       expect(document.activeElement).toBe($open);
     });
 
+    it('leaves the edit form, and what is typed into it, alone', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value = 'read';
+      fetchMock.mockImplementation(async () =>
+        json(200, { ...usersResponse, users: [...usersResponse.users].reverse() }),
+      );
+      vi.advanceTimersByTime(3000);
+      await flush();
+
+      expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value).toBe('read');
+    });
+
     it("puts the focus back on the same user's control when the list changes", async () => {
       const $panel = await openPopover();
 
@@ -252,6 +299,76 @@ describe('initUsersPanel', () => {
       await flush();
 
       expect((document.activeElement as HTMLElement).dataset.focusKey).toBe('qa:remove');
+    });
+  });
+
+  describe('editing a token user', () => {
+    it('offers Edit for token users only', async () => {
+      const $panel = await openPopover();
+
+      expect($panel.querySelector('[data-user="viewer"] [data-edit]')).not.toBeNull();
+      expect($panel.querySelector('[data-user="qa"] [data-edit]')).toBeNull();
+    });
+
+    it('renames the user, leaving its token alone when no new one is typed', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+
+      const $name = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!;
+
+      expect($name.value).toBe('viewer');
+      $name.value = 'reader';
+      fetchMock.mockResolvedValueOnce(json(200, { user: { name: 'reader', kind: 'token', origin: 'o' } }));
+      $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')!.requestSubmit();
+      await flush();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/@api/users/viewer',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'reader' }) }),
+      );
+    });
+
+    it('sends a new token when one is typed', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')!.value = 'new-token';
+      fetchMock.mockResolvedValueOnce(json(200, { user: { name: 'viewer', kind: 'token', origin: 'o' } }));
+      $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')!.requestSubmit();
+      await flush();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/@api/users/viewer',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'viewer', token: 'new-token' }) }),
+      );
+    });
+
+    it('moves the form to another user when Edit is clicked on it', async () => {
+      fetchMock.mockImplementation(async () =>
+        json(200, {
+          ...usersResponse,
+          users: [...usersResponse.users, { name: 'admin', kind: 'token', origin: 'http://admin.localhost:3000' }],
+        }),
+      );
+
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLButtonElement>('[data-edit="admin"]')!.click();
+
+      expect($panel.querySelector<HTMLElement>('.pp-dev-info__users-edit')!.dataset.user).toBe('admin');
+      expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value).toBe('admin');
+    });
+
+    it('cancels back to the row', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLButtonElement>('[data-cancel-edit]')!.click();
+
+      expect($panel.querySelector('.pp-dev-info__users-edit')).toBeNull();
+      expect($panel.querySelector('[data-edit="viewer"]')).not.toBeNull();
     });
   });
 

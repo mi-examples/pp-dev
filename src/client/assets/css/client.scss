@@ -55,6 +55,10 @@ $pp-dev-light-colors: (
   dark: #343a40,
   'white': #ffffff,
   'black': #000000,
+  // Outline of inputs and outlined buttons.
+  line: rgba(34, 34, 34, 0.25),
+  // The "this tab" badge in the Users popover.
+  tab: #7a3fb8,
 );
 $pp-dev-dark-colors: (
   primary: #2a8db5,
@@ -67,6 +71,8 @@ $pp-dev-dark-colors: (
   dark: #f8f9fa,
   'white': #000000,
   'black': #ffffff,
+  line: rgba(220, 220, 220, 0.3),
+  tab: #b48ae6,
 );
 
 @mixin pp-dev-theme-colors($colors) {
@@ -602,7 +608,7 @@ $pp-dev-dark-colors: (
       .pp-dev-info__corner-btn {
         width: 30px;
         height: 22px;
-        border: 1px solid rgba(34, 34, 34, 0.25);
+        border: 1px solid var(--pp-dev-info-color-line);
         border-radius: 3px;
         cursor: pointer;
         position: relative;
@@ -659,7 +665,7 @@ $pp-dev-dark-colors: (
 
       .pp-dev-info__theme-btn {
         padding: 3px 8px;
-        border: 1px solid rgba(34, 34, 34, 0.25);
+        border: 1px solid var(--pp-dev-info-color-line);
         border-radius: 3px;
         cursor: pointer;
         background: transparent;
@@ -809,12 +815,28 @@ $pp-dev-dark-colors: (
         font-size: 12px;
         line-height: 16px;
         color: var(--pp-dev-info-color-dark);
+      }
 
-        span {
-          display: block;
-          font-size: 10px;
-          color: var(--pp-dev-info-color-secondary);
-        }
+      // Over the radios: they pick who localhost works as, not this tab.
+      .pp-dev-info__users-list-head {
+        margin-bottom: -4px;
+        padding-left: 4px;
+        font-size: 9px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--pp-dev-info-color-secondary);
+      }
+
+      .pp-dev-info__users-badge {
+        margin-left: 6px;
+        padding: 0 5px;
+        border: 1px solid currentColor;
+        border-radius: 3px;
+        font-size: 9px;
+        font-weight: 400;
+        line-height: 13px;
+        vertical-align: 1px;
+        color: var(--pp-dev-info-color-tab);
       }
 
       .pp-dev-info__users-list {
@@ -884,7 +906,7 @@ $pp-dev-dark-colors: (
       .pp-dev-info__users-action {
         flex-shrink: 0;
         padding: 2px 7px;
-        border: 1px solid rgba(34, 34, 34, 0.25);
+        border: 1px solid var(--pp-dev-info-color-line);
         border-radius: 3px;
         background: transparent;
         cursor: pointer;
@@ -901,6 +923,20 @@ $pp-dev-dark-colors: (
           background-color: var(--pp-dev-info-color-primary);
           color: var(--pp-dev-info-color-white);
         }
+      }
+
+      // A token user's row while it is being edited: name, new token, Save and Cancel.
+      .pp-dev-info__users-edit {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        margin: 0;
+      }
+
+      .pp-dev-info__users-edit-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
       }
 
       .pp-dev-info__users-remove {
@@ -926,7 +962,7 @@ $pp-dev-dark-colors: (
         width: 100%;
         box-sizing: border-box;
         padding: 5px 8px;
-        border: 1px solid rgba(34, 34, 34, 0.25);
+        border: 1px solid var(--pp-dev-info-color-line);
         border-radius: 3px;
         background: transparent;
         font-size: 12px;

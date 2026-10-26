@@ -576,7 +576,9 @@ Every saved user gets its own host: `<name>.localhost:<port>`. The browser sends
 - **API token**: the token is checked with MI before the user is added. SSO users can only be added this way.
 - **Username + password** (local MI users): pp-dev adds the user and opens MI's usual login page on the user's own host. You log in there as in MI — 2FA included — and pp-dev never sees the password. Until then the user is *not logged in yet*; once MI ends the session it is *session expired* and **Log in** opens the login page again.
 
-The name becomes the user's host, so it may contain only lowercase latin letters, digits and `-`, must start with a letter and be at most 32 characters long. Users can't be renamed: remove and add them again.
+The name becomes the user's host, so it may contain only lowercase latin letters, digits and `-`, must start with a letter and be at most 32 characters long.
+
+**Edit** on a user added with an API token renames it or replaces its token (a new token is checked with MI; left empty, the current one stays). While the dev server runs, a page load on its old host (an open tab, a bookmark) moves to the new one, and requests from tabs still open there keep working as the user. A user that logs in with a password can't be edited, since its MI session lives in its host's cookies: remove it and add it again.
 
 ### Logging out and removing
 
@@ -604,6 +606,7 @@ The popover uses a small JSON API:
 | `GET`    | `/@api/users`           | The users (name, kind, state, MI user, `origin`, `loginUrl`), the default user, and whether users are available |
 | `POST`   | `/@api/users`           | Add a user: `{ "name", "token" }`, or `{ "name", "kind": "session" }` to log in with a password    |
 | `PUT`    | `/@api/users/default`   | Make a user the default: `{ "name" }`, or `{ "name": null }` for you                              |
+| `PATCH`  | `/@api/users/:name`     | Edit a user added with an API token: `{ "name" }` to rename it, `{ "token" }` to replace its token |
 | `DELETE` | `/@api/users/:name`     | Remove a user                                                                                     |
 
 Tokens and MI sessions are never sent back.

@@ -236,6 +236,110 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
     res.status(201).json({ user: toPublicUser(saved, req) });
   });
 
+  // Edits a token user: `{ name }` renames it (its old host sends tabs on to the new one), `{ token }`
+  // replaces its API token; a token left out or empty keeps the current one. A session user can't be
+  // edited: its MI session lives in its host's cookies, which a new host doesn't get.
+  app.patch(`${USERS_API_PATH}/:name`, async (req, res) => {
+    const { miAPI } = current.deps;
+    const users = getUsers();
+    const name = String(req.params.name);
+    const user = users.get(name);
+    const body = (req.body ?? {}) as { name?: unknown; token?: unknown };
+    const newName = typeof body.name === 'string' && body.name ? body.name : name;
+    const token = typeof body.token === 'string' ? body.token.trim() : '';
+
+    if (!user) {
+      sendError(res, 404, 'NOT_FOUND', `There is no user named "${name}"`);
+
+      return;
+    }
+
+    if (user.kind !== 'token') {
+      sendError(
+        res,
+        400,
+        'NOT_EDITABLE',
+        'Only users added with an API token can be edited. Remove this user and add it again.',
+      );
+
+      return;
+    }
+
+    const nameError = getUserNameError(newName);
+
+    if (nameError) {
+      sendError(res, 400, 'INVALID_NAME', nameError);
+
+      return;
+    }
+
+    if (newName !== name && users.get(newName)) {
+      sendError(res, 409, 'NAME_TAKEN', `A user named "${newName}" already exists`);
+
+      return;
+    }
+
+    let edited: SavedUser = { ...user, name: newName };
+
+    if (token && token !== user.token) {
+      const contextAtStart = users.context;
+      const check = await checkUserToken(miAPI, token);
+
+      // As when adding: the token belongs to the MI instance it was checked with.
+      if (users.context !== contextAtStart || current.deps.miAPI !== miAPI || getUsers() !== users) {
+        sendError(res, 409, 'CONTEXT_CHANGED', 'The dev server switched to another MI instance; edit the user again');
+
+        return;
+      }
+
+      if (!check.ok) {
+        if (check.rejected) {
+          sendError(res, 400, 'INVALID_TOKEN', check.message);
+        } else {
+          sendError(res, 502, 'MI_UNAVAILABLE', check.message);
+        }
+
+        return;
+      }
+
+      // A token MI accepts: whatever MI said of the old one doesn't hold any more.
+      const { state: _state, ...rest } = edited;
+
+      edited = { ...rest, token, miUser: check.miUser };
+    }
+
+    // Removed, replaced or edited by another request while the token was being checked.
+    if (users.get(name) !== user) {
+      sendError(res, 409, 'USER_CHANGED', `The user "${name}" changed meanwhile; edit it again`);
+
+      return;
+    }
+
+    if (newName === name && edited.token === user.token) {
+      res.json({ user: toPublicUser(user, req) });
+
+      return;
+    }
+
+    let saved: SavedUser;
+
+    try {
+      saved = users.replace(name, edited);
+    } catch (error) {
+      sendError(res, 409, 'NAME_TAKEN', error instanceof Error ? error.message : String(error));
+
+      return;
+    }
+
+    logger.info(
+      `${colors.blue('Edited user')} ${colors.yellow(name)}${newName !== name ? ` → ${colors.yellow(newName)}` : ''}${
+        saved.token !== user.token ? ' (new API token)' : ''
+      }`,
+    );
+
+    res.json({ user: toPublicUser(saved, req) });
+  });
+
   app.delete(`${USERS_API_PATH}/:name`, (req, res) => {
     const name = String(req.params.name);
 
