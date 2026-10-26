@@ -38,6 +38,22 @@ describe('renderDescriptionMarkdown', () => {
     );
   });
 
+  it('takes three backticks within a line for inline code, not a fence', () => {
+    expect(render('```a``` first\nsecond')).toBe('<p><code>a</code> first<br>second</p>');
+  });
+
+  it('closes a fence only on a line of backticks alone', () => {
+    expect(render('```\n```not-a-close\ncode\n```\nAfter')).toBe(
+      '<pre><code>```not-a-close\ncode</code></pre><p>After</p>',
+    );
+  });
+
+  it('lets code and emphasis span the line breaks of a paragraph', () => {
+    expect(render('`first\nsecond` and **bold\nacross**')).toBe(
+      '<p><code>first second</code> and <strong>bold<br>across</strong></p>',
+    );
+  });
+
   it('keeps line breaks within a paragraph, and separates paragraphs on a blank line', () => {
     expect(render('one\ntwo\n\nthree')).toBe('<p>one<br>two</p><p>three</p>');
   });

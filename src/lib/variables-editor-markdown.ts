@@ -23,7 +23,7 @@ function renderDescriptionMarkdown(text) {
     const codes = [];
     // Code spans first, so nothing inside them is formatted: a run of backticks up to the same run.
     let out = line.replace(/(\x60+)([^\x60]|[^\x60][\s\S]*?[^\x60])\1(?!\x60)/g, (_, ticks, code) => {
-      codes.push('<code>' + escape(code.trim()) + '</code>');
+      codes.push('<code>' + escape(code.replace(/\n/g, ' ').trim()) + '</code>');
 
       return '\u0000' + (codes.length - 1) + '\u0000';
     });
@@ -45,7 +45,8 @@ function renderDescriptionMarkdown(text) {
 
   const flushParagraph = () => {
     if (paragraph.length) {
-      blocks.push('<p>' + paragraph.map(inline).join('<br>') + '</p>');
+      // One paragraph at a time, so code and emphasis can span its line breaks, which stay.
+      blocks.push('<p>' + inline(paragraph.join('\n')).replace(/\n/g, '<br>') + '</p>');
       paragraph = [];
     }
   };
@@ -58,7 +59,9 @@ function renderDescriptionMarkdown(text) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const fence = /^\s*(\x60{3,})/.exec(line);
+    // An opening fence: three or more backticks and an info string without any (a line with three
+    // backticks, "a", three backticks again is inline code instead).
+    const fence = /^\s*(\x60{3,})[^\x60]*$/.exec(line);
 
     if (fence) {
       flushParagraph();
@@ -66,7 +69,10 @@ function renderDescriptionMarkdown(text) {
 
       const code = [];
 
-      for (i++; i < lines.length && !new RegExp('^\\s*' + fence[1]).test(lines[i]); i++) {
+      // Closed by a line of only backticks, at least as many as opened it.
+      const close = new RegExp('^\\s*\\x60{' + fence[1].length + ',}\\s*$');
+
+      for (i++; i < lines.length && !close.test(lines[i]); i++) {
         code.push(lines[i]);
       }
 
