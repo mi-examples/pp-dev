@@ -21,8 +21,9 @@ function renderDescriptionMarkdown(text) {
 
   const inline = (line) => {
     const codes = [];
-    // Code spans first, so nothing inside them is formatted: a run of backticks up to the same run.
-    let out = line.replace(/(\x60+)([^\x60]|[^\x60][\s\S]*?[^\x60])\1(?!\x60)/g, (_, ticks, code) => {
+    // Code spans first, so nothing inside them is formatted: a whole run of backticks up to the
+    // same run. Mismatched runs stay as they are.
+    let out = line.replace(/(?<!\x60)(\x60+)([^\x60]|[^\x60][\s\S]*?[^\x60])\1(?!\x60)/g, (_, ticks, code) => {
       codes.push('<code>' + escape(code.replace(/\n/g, ' ').trim()) + '</code>');
 
       return '\u0000' + (codes.length - 1) + '\u0000';
@@ -52,7 +53,10 @@ function renderDescriptionMarkdown(text) {
   };
   const flushList = () => {
     if (list) {
-      blocks.push('<' + list.tag + '>' + list.items.map((item) => '<li>' + inline(item) + '</li>').join('') + '</' + list.tag + '>');
+      // A numbered list goes on from the number its first item has: "2." after a blank line is 2.
+      const start = list.start && list.start !== 1 ? ' start="' + list.start + '"' : '';
+
+      blocks.push('<' + list.tag + start + '>' + list.items.map((item) => '<li>' + inline(item) + '</li>').join('') + '</' + list.tag + '>');
       list = null;
     }
   };
@@ -80,7 +84,7 @@ function renderDescriptionMarkdown(text) {
       continue;
     }
 
-    const item = /^\s*(?:([-*+])|\d+[.)])\s+(.*)$/.exec(line);
+    const item = /^\s*(?:([-*+])|(\d+)[.)])\s+(.*)$/.exec(line);
 
     if (item) {
       const tag = item[1] ? 'ul' : 'ol';
@@ -89,8 +93,8 @@ function renderDescriptionMarkdown(text) {
 
       if (list && list.tag !== tag) { flushList(); }
 
-      list = list || { tag, items: [] };
-      list.items.push(item[2]);
+      list = list || { tag, items: [], start: item[2] ? Number(item[2]) : undefined };
+      list.items.push(item[3]);
       continue;
     }
 

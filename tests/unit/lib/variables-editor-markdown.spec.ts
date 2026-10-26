@@ -38,6 +38,16 @@ describe('renderDescriptionMarkdown', () => {
     );
   });
 
+  it('leaves mismatched backtick runs as they are', () => {
+    expect(render('Use ``code` here')).toBe('<p>Use ``code` here</p>');
+  });
+
+  it('keeps the numbers of a numbered list split by blank lines', () => {
+    expect(render('1. Select a region\n\n2. Save the value')).toBe(
+      '<ol><li>Select a region</li></ol><ol start="2"><li>Save the value</li></ol>',
+    );
+  });
+
   it('takes three backticks within a line for inline code, not a fence', () => {
     expect(render('```a``` first\nsecond')).toBe('<p><code>a</code> first<br>second</p>');
   });
