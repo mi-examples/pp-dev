@@ -91,7 +91,8 @@ version):
 
 Edit the page's live variable values in place, with a widget per type: a searchable combobox for
 `select`/`multiselect` with static options, a per-item form for `list` (flat or column-defined
-objects), a checkbox for `boolean`, a color picker, and so on. **Save** also updates the values the
+objects), a checkbox for `boolean`, a color picker, and so on. Descriptions are shown as markdown,
+as in MI. **Save** also updates the values the
 local pages substitute for `[VarName]`; when they differ from MI anyway (changed in MI itself), an
 **Update local pages** button in the bottom-right corner lists the differences and updates them:
 
