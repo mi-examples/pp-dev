@@ -734,6 +734,89 @@ describe('registerVariablesEditorRoutes', () => {
       dom.window.close();
     });
 
+    async function openValuesTab(responses: unknown[], mode = '') {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const { JSDOM } = await import('jsdom');
+      const dom = new JSDOM(res.body as string, {
+        runScripts: 'outside-only',
+        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values${mode}`,
+      });
+      const fetch = vi.fn();
+
+      for (const body of responses) {
+        fetch.mockResolvedValueOnce({ ok: true, json: async () => body });
+      }
+
+      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+
+      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+
+      dom.window.eval(scripts.at(-1)!);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
+      const update = () => (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
+
+      return { dom, button, update };
+    }
+
+    it('tells a missing variable from an empty one', async () => {
+      const { dom, button } = await openValuesTab([
+        { schema: null, live: [{ name: 'Note', value: '' }], combined: [{ name: 'Note', value: '' }], local: [] },
+      ]);
+
+      expect(button.hidden).toBe(false);
+      expect(button.title).toContain('Note: (missing) → (empty)');
+
+      dom.window.close();
+    });
+
+    it("takes the reloaded values for MI's latest, so a change in MI meanwhile doesn't keep the button", async () => {
+      const { dom, button, update } = await openValuesTab([
+        {
+          schema: null,
+          live: [{ name: 'Region', value: 'EMEA' }],
+          combined: [{ name: 'Region', value: 'EMEA' }],
+          local: [{ name: 'Region', value: 'US' }],
+        },
+        // MI changed to APAC after the tab loaded.
+        { local: [{ name: 'Region', value: 'APAC' }] },
+      ]);
+
+      await update();
+
+      expect(button.hidden).toBe(true);
+
+      dom.window.close();
+    });
+
+    it('keeps an unsaved raw JSON draft when updating the local pages', async () => {
+      const { dom, update } = await openValuesTab(
+        [
+          {
+            schema: null,
+            live: [{ name: 'Region', value: 'EMEA' }],
+            combined: [{ name: 'Region', value: 'EMEA' }],
+            local: [{ name: 'Region', value: 'US' }],
+          },
+          { local: [{ name: 'Region', value: 'EMEA' }] },
+        ],
+        '&mode=json',
+      );
+      const editor = () => dom.window.document.getElementById('values-raw-editor') as HTMLTextAreaElement;
+
+      editor().value = '[{"name":"Region","value":"draft"}]';
+      await update();
+
+      expect(editor().value).toBe('[{"name":"Region","value":"draft"}]');
+
+      dom.window.close();
+    });
+
     it('does not save malformed additional_options text as a string', async () => {
       const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
       const res = makeRes();

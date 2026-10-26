@@ -3647,6 +3647,16 @@ async function commitValuesSave(tags, afterText) {
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w.message) + '</li>').join('') + '</ul>'
     : 'Values saved.') + localNote;
 
+  // MI holds the saved values now, and the local pages what the save updated them to: compare
+  // those, also when newer edits keep the tab from reloading below.
+  if (valuesState) {
+    valuesState.live = tags.map((t) => ({ name: t.name, value: t.value }));
+
+    if (data.local !== undefined) { valuesState.local = data.local; }
+  }
+
+  renderLocalUpdateButton();
+
   if (hasNewerEdits) {
     showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
 
@@ -3672,16 +3682,20 @@ function save() {
 function localDifferences() {
   if (!valuesState || !Array.isArray(valuesState.local) || !Array.isArray(valuesState.live)) { return []; }
 
+  // A missing variable differs from an empty one: the page keeps a missing one's [VarName] as is,
+  // and drops an empty one's.
   const local = new Map(valuesState.local.map((e) => [e.name, String(e.value ?? '')]));
   const live = new Map(valuesState.live.map((e) => [e.name, String(e.value ?? '')]));
   const names = Array.from(new Set([...local.keys(), ...live.keys()]));
 
   return names
-    .filter((name) => (local.get(name) ?? '') !== (live.get(name) ?? ''))
-    .map((name) => ({ name, local: local.get(name) ?? '', live: live.get(name) ?? '' }));
+    .filter((name) => local.get(name) !== live.get(name))
+    .map((name) => ({ name, local: local.get(name), live: live.get(name) }));
 }
 
 function shortValue(value) {
+  if (value === undefined) { return '(missing)'; }
+
   if (!value) { return '(empty)'; }
 
   return value.length > 40 ? value.slice(0, 40) + '…' : value;
@@ -3715,17 +3729,23 @@ async function updateLocalValues() {
     const r = await fetch('/@api/variables/values/local', { method: 'POST' });
     const data = await r.json().catch(() => ({}));
 
+    // The banners leave the tab as it is (preserveContent): an unsaved draft, raw JSON included,
+    // must survive updating the local pages.
     if (!r.ok) {
-      showBanner('error', escapeHtml(data.error || 'Failed to update the local values.') + (data.details ? ' ' + escapeHtml(data.details) : ''));
+      showBanner('error', escapeHtml(data.error || 'Failed to update the local values.') + (data.details ? ' ' + escapeHtml(data.details) : ''), true);
 
       return;
     }
 
-    if (valuesState) { valuesState.local = data.local; }
+    if (valuesState) {
+      // Just reloaded from MI: they are MI's latest values too, as far as the comparison goes.
+      valuesState.local = data.local;
+      valuesState.live = data.local;
+    }
 
-    showBanner('success', 'Local pages updated: every tab shows the new values once reloaded.');
+    showBanner('success', 'Local pages updated: every tab shows the new values once reloaded.', true);
   } catch (e) {
-    showBanner('error', 'Failed to update the local values: ' + escapeHtml(e.message));
+    showBanner('error', 'Failed to update the local values: ' + escapeHtml(e.message), true);
   } finally {
     btn.disabled = false;
     renderLocalUpdateButton();
