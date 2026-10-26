@@ -544,6 +544,8 @@ A standalone page at `/@pp-dev/variables-editor`, alongside the [Request Inspect
 
 - **Values** — edit the page's live variable values in place, with type-aware widgets (searchable select for `static` options, a per-item form for `list`, …). A JSON mode (`View/edit raw JSON`) shows/accepts the same values as plain JSON — list-type values as native arrays, not double-escaped strings — with **Save to JSON file…** / **Import from JSON file…** buttons, and flags values that don't match a declared option, changed since the last load, or aren't in the schema.
 
+  The pages the dev server serves substitute `[VarName]` from its own copy of the values, loaded from MI with the page data. **Save** updates that copy too, so every tab (any user) shows the saved values on its next load. When the values in MI change some other way (edited in MI itself, or the update after a save failed), the Values tab shows **Update local pages · N** in its bottom-right corner; its tooltip lists the values that differ, and a click updates the copy.
+
 ![Variables Editor — Values tab](./docs/screenshots/09-editor-values.png)
 
 Both the active tab and Values' JSON mode are reflected in the URL (`?tab=values&mode=json`), so a specific view can be bookmarked or shared.

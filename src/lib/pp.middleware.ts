@@ -35,6 +35,9 @@ export class MiAPI {
 
   #pageVars: { name: string; value: string }[];
 
+  /** Whether {@link #pageVars} holds the page's values yet (they are loaded with the page data). */
+  #pageVarsLoaded = false;
+
   #v7Features!: boolean;
 
   #personalAccessToken!: string | undefined;
@@ -362,12 +365,14 @@ export class MiAPI {
           const parsed = JSON.parse(tags) as { name: string; value: string }[];
 
           this.#pageVars = parsed;
+          this.#pageVarsLoaded = true;
           this.#pageTitle = name;
 
           return parsed;
         }
 
         this.#pageVars = [];
+        this.#pageVarsLoaded = true;
         this.#pageTitle = name;
 
         return [];
@@ -464,6 +469,19 @@ export class MiAPI {
    */
   async getPageVariablesFor(pageId: number, headers: Headers = this.#headers): Promise<PageVariableTagEntry[]> {
     return this.pageVariableApi.getById(pageId, this.#clearHeaders(headers));
+  }
+
+  /**
+   * The page variable values the dev server substitutes for `[VarName]` in the page it serves (to
+   * every user), as last loaded from MI; `null` for a templateLess page or before they are loaded.
+   * They can lag behind MI: they are reloaded with the page data, by {@link reloadPageVariables}.
+   */
+  get localPageVariables(): { name: string; value: string }[] | null {
+    if (this.templateLess || !this.#pageVarsLoaded) {
+      return null;
+    }
+
+    return this.#pageVars.map(({ name, value }) => ({ name, value }));
   }
 
   /** Whether this page has no associated template — no `__template_variables.json`, no page variables. */

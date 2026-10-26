@@ -187,7 +187,8 @@ export function registerVariablesEditorRoutes(
       const live = await miAPI.getLivePageVariables();
       const combined = buildPageVariablesExport(schema, live);
 
-      res.json({ schema, live, combined });
+      // What the local pages show, so the editor can offer to bring them up to date with MI.
+      res.json({ schema, live, combined, local: miAPI.localPageVariables ?? null });
     } catch (error) {
       res.status(502).json({
         error: 'Failed to fetch live page variables.',
@@ -232,10 +233,37 @@ export function registerVariablesEditorRoutes(
 
       await miAPI.applyPageVariables(tags as PageVariableEntry[]);
 
-      res.json({ ok: true, warnings });
+      // The local pages show the saved values from their next load on. If MI can't be asked now,
+      // the save still stands, and the editor offers to update them later.
+      let localError: string | undefined;
+
+      try {
+        await miAPI.reloadPageVariables();
+      } catch (error) {
+        localError = error instanceof Error ? error.message : String(error);
+      }
+
+      res.json({ ok: true, warnings, local: miAPI.localPageVariables ?? null, ...(localError ? { localError } : {}) });
     } catch (error) {
       res.status(502).json({
         error: 'Failed to save live page variables.',
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // ── API: bring the values the local pages show up to date with MI (changed in MI itself, or a
+  // save whose update failed). Every user's tab shows them from its next load on. ──────────────
+  app.post('/@api/variables/values/local', async (_req, res) => {
+    const { miAPI } = current.deps;
+
+    try {
+      await miAPI.reloadPageVariables();
+
+      res.json({ local: miAPI.localPageVariables ?? null });
+    } catch (error) {
+      res.status(502).json({
+        error: 'Failed to update the local values.',
         details: error instanceof Error ? error.message : String(error),
       });
     }
@@ -387,6 +415,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .btn-primary{background:var(--accent);border-color:var(--accent);color:var(--btn-primary-fg);font-weight:600}
 .btn-primary:hover{opacity:.9;background:var(--accent)}
 .btn-sm{padding:5px 8px;font-size:11px;min-width:30px;min-height:30px;}
+.local-update-btn{position:fixed;right:16px;bottom:16px;z-index:20;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.local-update-btn[hidden]{display:none}
 .content{flex:1;overflow:auto;padding:14px}
 .banner{margin-bottom:12px;padding:8px 12px;border-radius:4px;font-size:12px}
 .banner-warning{background:color-mix(in srgb, var(--yellow) 15%, var(--bg));color:var(--yellow);border:1px solid color-mix(in srgb, var(--yellow) 40%, var(--bg))}
@@ -597,6 +627,7 @@ tr.schema-row.is-drop-target td,tr.details-row.is-drop-target td{box-shadow:inse
       : ''
   }</div>
 </div>
+${templateLess ? '' : '<button class="btn btn-sm btn-primary local-update-btn" id="local-update-btn" hidden onclick="updateLocalValues()"></button>'}
 <script>
 (function(){
 'use strict';
@@ -3608,9 +3639,13 @@ async function commitValuesSave(tags, afterText) {
 
   const warnings = data.warnings || [];
   const hasNewerEdits = editSeq !== saveEditSeq;
-  const message = warnings.length
+  // The local pages are updated with the save; if that failed, the floating button offers it again.
+  const localNote = data.localError
+    ? '<div>The local pages still show the old values: ' + escapeHtml(data.localError) + '. Use <b>Update local pages</b>.</div>'
+    : '';
+  const message = (warnings.length
     ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w.message) + '</li>').join('') + '</ul>'
-    : 'Values saved.';
+    : 'Values saved.') + localNote;
 
   if (hasNewerEdits) {
     showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
@@ -3630,12 +3665,80 @@ function save() {
   (activeTab === 'schema' ? saveSchema() : saveValues());
 }
 
+// ── Local pages ──────────────────────────────────────────────────────────────
+// The dev server substitutes page variables into the pages it serves (to every user) from its own
+// copy, loaded from MI with the page data. A save updates it; a change made in MI itself doesn't,
+// so the Values tab compares that copy with MI and offers to update it.
+function localDifferences() {
+  if (!valuesState || !Array.isArray(valuesState.local) || !Array.isArray(valuesState.live)) { return []; }
+
+  const local = new Map(valuesState.local.map((e) => [e.name, String(e.value ?? '')]));
+  const live = new Map(valuesState.live.map((e) => [e.name, String(e.value ?? '')]));
+  const names = Array.from(new Set([...local.keys(), ...live.keys()]));
+
+  return names
+    .filter((name) => (local.get(name) ?? '') !== (live.get(name) ?? ''))
+    .map((name) => ({ name, local: local.get(name) ?? '', live: live.get(name) ?? '' }));
+}
+
+function shortValue(value) {
+  if (!value) { return '(empty)'; }
+
+  return value.length > 40 ? value.slice(0, 40) + '…' : value;
+}
+
+function renderLocalUpdateButton() {
+  const btn = document.getElementById('local-update-btn');
+
+  if (!btn) { return; }
+
+  const diffs = activeTab === 'values' ? localDifferences() : [];
+
+  btn.hidden = diffs.length === 0;
+
+  if (!diffs.length) { return; }
+
+  const lineBreak = String.fromCharCode(10);
+
+  btn.textContent = 'Update local pages · ' + diffs.length;
+  btn.title = ['The local dev server still shows older values (local → MI):']
+    .concat(diffs.map((d) => d.name + ': ' + shortValue(d.local) + ' → ' + shortValue(d.live)))
+    .join(lineBreak);
+}
+
+async function updateLocalValues() {
+  const btn = document.getElementById('local-update-btn');
+
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/@api/variables/values/local', { method: 'POST' });
+    const data = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
+      showBanner('error', escapeHtml(data.error || 'Failed to update the local values.') + (data.details ? ' ' + escapeHtml(data.details) : ''));
+
+      return;
+    }
+
+    if (valuesState) { valuesState.local = data.local; }
+
+    showBanner('success', 'Local pages updated: every tab shows the new values once reloaded.');
+  } catch (e) {
+    showBanner('error', 'Failed to update the local values: ' + escapeHtml(e.message));
+  } finally {
+    btn.disabled = false;
+    renderLocalUpdateButton();
+  }
+}
+
 // ── Render ───────────────────────────────────────────────────────────────────
 function render() {
   const bannerHtml = banner ? '<div class="banner banner-' + banner.type + '">' + banner.html + '</div>' : '';
 
   contentEl.innerHTML = bannerHtml + (activeTab === 'schema' ? renderSchemaTab() : renderValuesTab());
   autosizeAllCellTextareas();
+  renderLocalUpdateButton();
 
   if (activeTab === 'values' && !valuesRawMode) {
     bindValuesDetailScroll();
@@ -3722,6 +3825,7 @@ window.toggleImportAll = toggleImportAll;
 window.updateImportCount = updateImportCount;
 window.applyImportPlan = applyImportPlan;
 window.setDirty = setDirty;
+window.updateLocalValues = updateLocalValues;
 
 document.getElementById('tab-schema').classList.toggle('active', activeTab === 'schema');
 document.getElementById('tab-values').classList.toggle('active', activeTab === 'values');
