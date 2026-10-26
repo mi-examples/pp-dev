@@ -91,7 +91,9 @@ version):
 
 Edit the page's live variable values in place, with a widget per type: a searchable combobox for
 `select`/`multiselect` with static options, a per-item form for `list` (flat or column-defined
-objects), a checkbox for `boolean`, a color picker, and so on:
+objects), a checkbox for `boolean`, a color picker, and so on. **Save** also updates the values the
+local pages substitute for `[VarName]`; when they differ from MI anyway (changed in MI itself), an
+**Update local pages** button in the bottom-right corner lists the differences and updates them:
 
 ![Variables Editor — Values tab, table view](./screenshots/09-editor-values.png)
 

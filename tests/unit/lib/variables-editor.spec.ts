@@ -14,6 +14,9 @@ function makeApp() {
     put(path: string, handler: (req: any, res: any) => any) {
       handlers.set(`PUT ${path}`, handler);
     },
+    post(path: string, handler: (req: any, res: any) => any) {
+      handlers.set(`POST ${path}`, handler);
+    },
   };
 
   return app as unknown as import('express').Application & { handlers: typeof handlers };
@@ -255,6 +258,20 @@ describe('registerVariablesEditorRoutes', () => {
       );
     });
 
+    it('sends what the local pages show along, to compare with MI', async () => {
+      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const miAPI = {
+        getLivePageVariables: vi.fn().mockResolvedValue([{ name: 'Region', value: 'EMEA' }]),
+        localPageVariables: [{ name: 'Region', value: 'US' }],
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/values')!({}, res);
+
+      expect(res.body.local).toEqual([{ name: 'Region', value: 'US' }]);
+    });
+
     it('502s when fetching live variables fails', async () => {
       const distService = {
         readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
@@ -302,6 +319,38 @@ describe('registerVariablesEditorRoutes', () => {
       expect(applyPageVariables).toHaveBeenCalledWith([{ name: 'flag', value: 'not-a-bool' }]);
     });
 
+    it('updates what the local pages show after saving', async () => {
+      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const miAPI = {
+        applyPageVariables: vi.fn().mockResolvedValue(undefined),
+        reloadPageVariables: vi.fn().mockResolvedValue([]),
+        localPageVariables: [{ name: 'x', value: 'y' }],
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x', value: 'y' }] } }, res);
+
+      expect(miAPI.reloadPageVariables).toHaveBeenCalledOnce();
+      expect(res.body).toMatchObject({ ok: true, local: [{ name: 'x', value: 'y' }] });
+      expect(res.body.localError).toBeUndefined();
+    });
+
+    it('still saves when the local pages cannot be updated, and says so', async () => {
+      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const miAPI = {
+        applyPageVariables: vi.fn().mockResolvedValue(undefined),
+        reloadPageVariables: vi.fn().mockRejectedValue(new Error('timeout')),
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x', value: 'y' }] } }, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ ok: true, localError: 'timeout' });
+    });
+
     it('502s when applyPageVariables throws', async () => {
       const distService = {
         readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
@@ -313,6 +362,32 @@ describe('registerVariablesEditorRoutes', () => {
       const res = makeRes();
 
       await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x', value: 'y' }] } }, res);
+
+      expect(res.statusCode).toBe(502);
+    });
+  });
+
+  describe('POST /@api/variables/values/local', () => {
+    it('reloads the values the local pages show from MI', async () => {
+      const miAPI = {
+        reloadPageVariables: vi.fn().mockResolvedValue([]),
+        localPageVariables: [{ name: 'Region', value: 'EMEA' }],
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('POST /@api/variables/values/local')!({}, res);
+
+      expect(miAPI.reloadPageVariables).toHaveBeenCalledOnce();
+      expect(res.body).toEqual({ local: [{ name: 'Region', value: 'EMEA' }] });
+    });
+
+    it('502s when MI cannot be asked', async () => {
+      const miAPI = { reloadPageVariables: vi.fn().mockRejectedValue(new Error('boom')) } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('POST /@api/variables/values/local')!({}, res);
 
       expect(res.statusCode).toBe(502);
     });
@@ -590,6 +665,154 @@ describe('registerVariablesEditorRoutes', () => {
       expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
         'Failed to load values: network down',
       );
+
+      dom.window.close();
+    });
+
+    it('offers to update the local pages while they show other values than MI', async () => {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const { JSDOM } = await import('jsdom');
+      const dom = new JSDOM(res.body as string, {
+        runScripts: 'outside-only',
+        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
+      });
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            schema: null,
+            live: [
+              { name: 'Region', value: 'EMEA' },
+              { name: 'Limit', value: '50' },
+            ],
+            combined: [
+              { name: 'Region', value: 'EMEA' },
+              { name: 'Limit', value: '50' },
+            ],
+            local: [
+              { name: 'Region', value: 'US' },
+              { name: 'Limit', value: '50' },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            local: [
+              { name: 'Region', value: 'EMEA' },
+              { name: 'Limit', value: '50' },
+            ],
+          }),
+        });
+
+      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+
+      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+
+      dom.window.eval(scripts.at(-1)!);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
+
+      expect(button.hidden).toBe(false);
+      expect(button.textContent).toBe('Update local pages · 1');
+      expect(button.title).toContain('Region: US → EMEA');
+      expect(button.title).not.toContain('Limit');
+
+      // Inline handlers don't run under runScripts: 'outside-only'; this is what the button's onclick calls.
+      await (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
+
+      expect(fetch).toHaveBeenLastCalledWith('/@api/variables/values/local', { method: 'POST' });
+      expect(button.hidden).toBe(true);
+      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain('Local pages updated');
+
+      dom.window.close();
+    });
+
+    async function openValuesTab(responses: unknown[], mode = '') {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const { JSDOM } = await import('jsdom');
+      const dom = new JSDOM(res.body as string, {
+        runScripts: 'outside-only',
+        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values${mode}`,
+      });
+      const fetch = vi.fn();
+
+      for (const body of responses) {
+        fetch.mockResolvedValueOnce({ ok: true, json: async () => body });
+      }
+
+      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+
+      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+
+      dom.window.eval(scripts.at(-1)!);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
+      const update = () => (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
+
+      return { dom, button, update };
+    }
+
+    it('tells a missing variable from an empty one', async () => {
+      const { dom, button } = await openValuesTab([
+        { schema: null, live: [{ name: 'Note', value: '' }], combined: [{ name: 'Note', value: '' }], local: [] },
+      ]);
+
+      expect(button.hidden).toBe(false);
+      expect(button.title).toContain('Note: (missing) → (empty)');
+
+      dom.window.close();
+    });
+
+    it("takes the reloaded values for MI's latest, so a change in MI meanwhile doesn't keep the button", async () => {
+      const { dom, button, update } = await openValuesTab([
+        {
+          schema: null,
+          live: [{ name: 'Region', value: 'EMEA' }],
+          combined: [{ name: 'Region', value: 'EMEA' }],
+          local: [{ name: 'Region', value: 'US' }],
+        },
+        // MI changed to APAC after the tab loaded.
+        { local: [{ name: 'Region', value: 'APAC' }] },
+      ]);
+
+      await update();
+
+      expect(button.hidden).toBe(true);
+
+      dom.window.close();
+    });
+
+    it('keeps an unsaved raw JSON draft when updating the local pages', async () => {
+      const { dom, update } = await openValuesTab(
+        [
+          {
+            schema: null,
+            live: [{ name: 'Region', value: 'EMEA' }],
+            combined: [{ name: 'Region', value: 'EMEA' }],
+            local: [{ name: 'Region', value: 'US' }],
+          },
+          { local: [{ name: 'Region', value: 'EMEA' }] },
+        ],
+        '&mode=json',
+      );
+      const editor = () => dom.window.document.getElementById('values-raw-editor') as HTMLTextAreaElement;
+
+      editor().value = '[{"name":"Region","value":"draft"}]';
+      await update();
+
+      expect(editor().value).toBe('[{"name":"Region","value":"draft"}]');
 
       dom.window.close();
     });
