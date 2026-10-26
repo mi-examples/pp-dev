@@ -33,10 +33,11 @@ variables" and "Open variables editor…" buttons do.
 
 The people icon on the panel opens the **Users** popover: work as other MI users, each on its own
 host (`<name>.localhost`), side by side with your own tab. The list shows you and the saved users
-with their MI user and state; the checked user is what `localhost` works as. **Open** opens the
-current page as that user in a new tab, **Log in** opens MI's login page for a user added with a
-username and password, and **×** removes a user. Users are added with an API token or a username
-and password:
+with their MI user and state; the checked user is what `localhost` works as, and **this tab** marks
+the user of the current tab. **Open** opens the current page as that user in a new tab, **Log in**
+opens MI's login page for a user added with a username and password, **Edit** renames a user added
+with an API token or replaces its token, and **×** removes a user. Users are added with an API token
+or a username and password:
 
 ![Users popover on localhost](./screenshots/13-users-popover.png)
 

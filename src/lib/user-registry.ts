@@ -126,6 +126,9 @@ export class UserRegistry {
 
   #defaultUserName: string | undefined;
 
+  /** Old names of renamed users, to their current name, so their old hosts send tabs on. */
+  readonly #renamed = new Map<string, string>();
+
   /** Who each request goes as, decided once, when it is first asked (see {@link resolve}). */
   readonly #resolved = new WeakMap<object, RequestUser | undefined>();
 
@@ -174,10 +177,57 @@ export class UserRegistry {
 
     const saved: SavedUser = user.kind === 'session' ? { state: 'pending', ...user } : { ...user };
 
+    // A user of its own now, no longer an old name of another.
+    this.#renamed.delete(saved.name);
     this.#users.set(saved.name, saved);
     this.#changeListeners.forEach((listener) => listener());
 
     return saved;
+  }
+
+  /**
+   * Puts `user` in the place of the user named `name` (another name, another API token), keeping it
+   * the default user if it was. It is a new registration: the old one is removed, with its cache,
+   * and requests still in flight for it are not taken for the new one. A new name keeps the old
+   * one's host working: {@link renamedTo} sends it on.
+   */
+  replace(name: string, user: SavedUser): SavedUser {
+    if (!this.#users.has(name)) {
+      throw new Error(`There is no user named "${name}"`);
+    }
+
+    const error = getUserNameError(user.name);
+
+    if (error) {
+      throw new Error(error);
+    }
+
+    if (user.name !== name && this.#users.has(user.name)) {
+      throw new Error(`A user named "${user.name}" already exists`);
+    }
+
+    const wasDefault = this.#defaultUserName === name;
+    // Older names of this user, which `remove` forgets.
+    const olderNames = [...this.#renamed].filter(([, to]) => to === name).map(([from]) => from);
+
+    this.remove(name);
+
+    const saved = this.add(user);
+
+    for (const from of user.name === name ? olderNames : [...olderNames, name]) {
+      this.#renamed.set(from, saved.name);
+    }
+
+    if (wasDefault) {
+      this.#defaultUserName = saved.name;
+    }
+
+    return saved;
+  }
+
+  /** The name the user once named `name` has now, if it was renamed and is still there. */
+  renamedTo(name: string): string | undefined {
+    return this.#renamed.get(name);
   }
 
   remove(name: string): boolean {
@@ -189,6 +239,12 @@ export class UserRegistry {
 
     if (this.#defaultUserName === name) {
       this.#defaultUserName = undefined;
+    }
+
+    for (const [from, to] of this.#renamed) {
+      if (to === name) {
+        this.#renamed.delete(from);
+      }
     }
 
     this.#users.delete(name);
@@ -296,7 +352,8 @@ export class UserRegistry {
 
       requestUser = { key: user?.name ?? '', user };
     } else {
-      const user = this.#users.get(name);
+      // A renamed user's old host goes on as that user: tabs still open there keep working.
+      const user = this.#users.get(name) ?? this.#users.get(this.#renamed.get(name) ?? '');
 
       requestUser = user ? { key: user.name, user } : undefined;
     }
@@ -309,19 +366,51 @@ export class UserRegistry {
 
 export const userRegistry = new UserRegistry();
 
+/** Whether `req` loads a page in a tab (a navigation), rather than a fetch, an asset or a form post. */
+function isPageNavigation(req: IncomingMessage): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return false;
+  }
+
+  const mode = req.headers['sec-fetch-mode'];
+
+  if (typeof mode === 'string') {
+    return mode === 'navigate';
+  }
+
+  // Clients that don't send Sec-Fetch-* headers.
+  return String(req.headers.accept ?? '').includes('text/html');
+}
+
 /**
  * Answers every request to a user host that has no saved user behind it, instead of serving the
- * page as nobody in particular. Works for both the Vite and the Next.js dev servers.
+ * page as nobody in particular: a page load on the old host of a renamed user moves to the new one, any other
+ * gets a 404. Works for both the Vite and the Next.js dev servers.
  */
 export function createUserHostGuard(registry: UserRegistry = userRegistry) {
   return (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
-    if (registry.resolve(req)) {
-      next();
+    const requestUser = registry.resolve(req);
+    const name = getUserNameFromHost(req.headers.host) ?? '';
+
+    // A renamed user's old host: a page load moves the tab to the new host; anything else (a
+    // fetch, a POST, a WebSocket) is served as the user right there, since a cross-origin redirect
+    // would break it.
+    if (requestUser?.user && name && requestUser.key !== name && isPageNavigation(req)) {
+      const url = (req as IncomingMessage & { originalUrl?: string }).originalUrl ?? req.url ?? '/';
+
+      res.statusCode = 302;
+      res.setHeader('Location', `${getUserOrigin(req, requestUser.key)}${url}`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.end();
 
       return;
     }
 
-    const name = getUserNameFromHost(req.headers.host) ?? '';
+    if (requestUser) {
+      next();
+
+      return;
+    }
 
     res.statusCode = 404;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

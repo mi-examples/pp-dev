@@ -24,6 +24,9 @@ const REFRESH_INTERVAL = 3000;
 
 const USER_HOST_REGEXP = /^([a-z](?:[a-z0-9-]*[a-z0-9])?)\.localhost$/;
 
+/** Marks the user this tab works as, apart from the radio, which picks localhost's user. */
+const THIS_TAB_BADGE = '<span class="pp-dev-info__users-badge">this tab</span>';
+
 const STATE_LABELS: Record<NonNullable<PublicUser['state']>, string> = {
   pending: 'not logged in yet',
   active: 'logged in',
@@ -106,6 +109,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
   let data: UsersResponse | null = null;
   // What the list shows now, so a refresh with the same data leaves it (and the focus) alone.
   let renderedData = '';
+  // The token user being edited, whose row shows the edit form instead.
+  let editing: string | null = null;
 
   const onDocClick = (ev: MouseEvent) => {
     const target = ev.target as Node;
@@ -126,6 +131,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       return;
     }
 
+    editing = null;
     window.clearInterval(refreshTimer);
     $popover.remove();
     $popover = null;
@@ -167,10 +173,26 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     }
   };
 
+  /**
+   * Who this tab works as: on a user's host that user, on localhost the default user, and on an IP
+   * address or a custom domain you (`undefined`). Before the users are loaded, a user's host only.
+   */
+  const getCurrentUser = (): string | undefined =>
+    tabUser ?? (window.location.hostname === 'localhost' ? data?.defaultUser : null) ?? undefined;
+
   const renderList = () => {
     const $list = $popover?.querySelector<HTMLElement>('.pp-dev-info__users-list');
 
     if (!$popover || !$list || !data) {
+      return;
+    }
+
+    // The user being edited is gone (removed, logged out): nothing to edit any more.
+    if (editing && !data.users.some((user) => user.name === editing && user.kind === 'token')) {
+      editing = null;
+    } else if (editing && $list.querySelector<HTMLElement>('.pp-dev-info__users-edit')?.dataset.user === editing) {
+      // A refresh must not wipe what is being typed into the edit form. (Edit on another user
+      // redraws it for that one.)
       return;
     }
 
@@ -189,9 +211,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         : undefined;
 
     const defaultUser = data.defaultUser;
-    // The main host (localhost) works as the default user, a user's host as that user, and an IP
-    // address or a custom domain as you.
-    const currentUser = tabUser ?? (window.location.hostname === 'localhost' ? defaultUser : null) ?? undefined;
+    const currentUser = getCurrentUser();
     const $tab = $popover.querySelector<HTMLElement>('.pp-dev-info__users-tab strong');
 
     if ($tab) {
@@ -203,7 +223,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value="" data-focus-key=":default"
           title="Make the main host (localhost) work as you" ${defaultUser ? '' : 'checked'} />
         <div class="pp-dev-info__users-who">
-          <span class="pp-dev-info__users-name">You</span>
+          <span class="pp-dev-info__users-name">You${currentUser ? '' : THIS_TAB_BADGE}</span>
           <span class="pp-dev-info__users-meta">original user · the dev panel always works as you</span>
         </div>
         ${
@@ -219,6 +239,21 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         const needsLogin = user.kind === 'session' && user.state !== 'active';
         const needsAttention = needsLogin || user.state === 'expired';
         const name = escapeHtml(user.name);
+
+        if (user.kind === 'token' && user.name === editing) {
+          return `<form class="pp-dev-info__users-row pp-dev-info__users-edit" data-user="${name}">
+            <input class="pp-dev-info__users-input pp-dev-info__users-edit-name" value="${name}" maxlength="32"
+              autocomplete="off" spellcheck="false" aria-label="Name" data-focus-key="${name}:edit-name"
+              title="Lowercase latin letters, digits and -, starting with a letter. The user opens on <name>.localhost." />
+            <input class="pp-dev-info__users-input pp-dev-info__users-edit-token" type="password" autocomplete="off"
+              placeholder="New API token (empty keeps the current one)" aria-label="New API token" data-focus-key="${name}:edit-token" />
+            <div class="pp-dev-info__users-edit-actions">
+              <button type="submit" class="pp-dev-info__users-action pp-dev-info__users-action--accent" data-focus-key="${name}:save">Save</button>
+              <button type="button" class="pp-dev-info__users-action" data-cancel-edit data-focus-key="${name}:cancel">Cancel</button>
+            </div>
+          </form>`;
+        }
+
         let defaultTitle = `Make the main host (localhost) work as ${name}`;
 
         if (!canBeDefault) {
@@ -233,12 +268,17 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
             title="${defaultTitle}"
             ${user.name === defaultUser ? 'checked' : ''} ${canBeDefault ? '' : 'disabled'} />
           <div class="pp-dev-info__users-who">
-            <span class="pp-dev-info__users-name">${name}</span>
+            <span class="pp-dev-info__users-name">${name}${user.name === currentUser ? THIS_TAB_BADGE : ''}</span>
             <span class="pp-dev-info__users-meta">${escapeHtml(describeUser(user))}</span>
           </div>
           ${
             needsLogin && user.loginUrl
               ? `<button type="button" class="pp-dev-info__users-action pp-dev-info__users-action--accent" data-open="${escapeHtml(user.loginUrl)}" data-raw="true" data-focus-key="${name}:login">Log in</button>`
+              : ''
+          }
+          ${
+            user.kind === 'token'
+              ? `<button type="button" class="pp-dev-info__users-action" data-edit="${name}" data-focus-key="${name}:edit" title="Rename ${name} or replace its API token">Edit</button>`
               : ''
           }
           <button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(user.origin)}" data-focus-key="${name}:open" title="Open this page as ${name}">Open</button>
@@ -266,6 +306,56 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
 
         window.open($open.dataset.raw ? target : samePageOn(target), '_blank');
       });
+    });
+
+    const startEditing = (name: string | null) => {
+      editing = name;
+      renderedData = '';
+      renderList();
+      $list.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')?.focus();
+    };
+
+    $list.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(($edit) => {
+      $edit.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        startEditing($edit.dataset.edit!);
+      });
+    });
+
+    $list.querySelector<HTMLButtonElement>('[data-cancel-edit]')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      setError('');
+      startEditing(null);
+    });
+
+    $list.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+
+      const name = editing!;
+      const $form = ev.currentTarget as HTMLFormElement;
+      const newName = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value.trim();
+      const token = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')!.value.trim();
+      const response = await request('PATCH', `${USERS_API}/${encodeURIComponent(name)}`, {
+        name: newName,
+        ...(token ? { token } : {}),
+      });
+
+      if (!response) {
+        return;
+      }
+
+      const { user } = (await response.json()) as { user: PublicUser };
+
+      // This tab's own user got a new host: go on there (the old one would only send it on).
+      if (tabUser === name && user.name !== name) {
+        window.location.href = samePageOn(user.origin);
+
+        return;
+      }
+
+      editing = null;
+      renderedData = '';
+      await refresh();
     });
 
     $list.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(($remove) => {
@@ -403,10 +493,13 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $popover.innerHTML = `
       <div class="pp-dev-info__settings-title">Users</div>
       <div class="pp-dev-info__users-tab">
-        This tab works as <strong>${escapeHtml(tabUser ?? 'you')}</strong>.
-        <span>localhost works as the checked user; each user's own host as that user.</span>
+        This tab works as <strong>${escapeHtml(getCurrentUser() ?? 'you')}</strong>.
       </div>
-      <div class="pp-dev-info__users-list" role="radiogroup" aria-label="Default user"></div>
+      <div class="pp-dev-info__users-list-head" aria-hidden="true">localhost</div>
+      <div class="pp-dev-info__users-list" role="radiogroup" aria-label="Who localhost works as">
+        <span class="pp-dev-info__users-meta">Loading users…</span>
+      </div>
+      <div class="pp-dev-info__settings-hint">The radio picks who localhost works as; each user's own host always works as that user.</div>
       <div class="pp-dev-info__users-unavailable" hidden></div>
       <form class="pp-dev-info__settings-group pp-dev-info__users-add" hidden>
         <span class="pp-dev-info__settings-label">Add user</span>
@@ -444,10 +537,16 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     document.addEventListener('keydown', onKeyDown, true);
     hooks?.onOpenChange?.(true);
 
+    // Shown right away from what was loaded with the panel, then brought up to date.
+    renderList();
+    renderAvailability();
     refresh();
     // Picks up logins and expired sessions while the popover is open.
     refreshTimer = window.setInterval(refresh, REFRESH_INTERVAL);
   };
+
+  // Loaded with the panel, so the popover opens with its list.
+  refresh();
 
   $btn.addEventListener('click', (ev) => {
     ev.preventDefault();
