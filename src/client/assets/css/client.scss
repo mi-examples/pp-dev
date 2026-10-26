@@ -57,6 +57,8 @@ $pp-dev-light-colors: (
   'black': #000000,
   // Outline of inputs and outlined buttons.
   line: rgba(34, 34, 34, 0.25),
+  // The "this tab" badge in the Users popover.
+  tab: #7a3fb8,
 );
 $pp-dev-dark-colors: (
   primary: #2a8db5,
@@ -70,6 +72,7 @@ $pp-dev-dark-colors: (
   'white': #000000,
   'black': #ffffff,
   line: rgba(220, 220, 220, 0.3),
+  tab: #b48ae6,
 );
 
 @mixin pp-dev-theme-colors($colors) {
@@ -93,11 +96,6 @@ $pp-dev-dark-colors: (
 
   .pp-dev-info__settings-group {
     border-top-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .pp-dev-info__users-badge {
-    border-color: rgba(180, 138, 230, 0.5);
-    color: #b48ae6;
   }
 }
 
@@ -832,13 +830,13 @@ $pp-dev-dark-colors: (
       .pp-dev-info__users-badge {
         margin-left: 6px;
         padding: 0 5px;
-        border: 1px solid rgba(122, 63, 184, 0.45);
+        border: 1px solid currentColor;
         border-radius: 3px;
         font-size: 9px;
         font-weight: 400;
         line-height: 13px;
         vertical-align: 1px;
-        color: #7a3fb8;
+        color: var(--pp-dev-info-color-tab);
       }
 
       .pp-dev-info__users-list {

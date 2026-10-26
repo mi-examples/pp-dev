@@ -190,8 +190,9 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     // The user being edited is gone (removed, logged out): nothing to edit any more.
     if (editing && !data.users.some((user) => user.name === editing && user.kind === 'token')) {
       editing = null;
-    } else if (editing && $list.querySelector('.pp-dev-info__users-edit')) {
-      // A refresh must not wipe what is being typed into the edit form.
+    } else if (editing && $list.querySelector<HTMLElement>('.pp-dev-info__users-edit')?.dataset.user === editing) {
+      // A refresh must not wipe what is being typed into the edit form. (Edit on another user
+      // redraws it for that one.)
       return;
     }
 

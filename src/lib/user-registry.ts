@@ -352,7 +352,8 @@ export class UserRegistry {
 
       requestUser = { key: user?.name ?? '', user };
     } else {
-      const user = this.#users.get(name);
+      // A renamed user's old host goes on as that user: tabs still open there keep working.
+      const user = this.#users.get(name) ?? this.#users.get(this.#renamed.get(name) ?? '');
 
       requestUser = user ? { key: user.name, user } : undefined;
     }
@@ -365,29 +366,48 @@ export class UserRegistry {
 
 export const userRegistry = new UserRegistry();
 
+/** Whether `req` loads a page in a tab (a navigation), rather than a fetch, an asset or a form post. */
+function isPageNavigation(req: IncomingMessage): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return false;
+  }
+
+  const mode = req.headers['sec-fetch-mode'];
+
+  if (typeof mode === 'string') {
+    return mode === 'navigate';
+  }
+
+  // Clients that don't send Sec-Fetch-* headers.
+  return String(req.headers.accept ?? '').includes('text/html');
+}
+
 /**
  * Answers every request to a user host that has no saved user behind it, instead of serving the
- * page as nobody in particular: the old host of a renamed user sends it to the new one, any other
+ * page as nobody in particular: a page load on the old host of a renamed user moves to the new one, any other
  * gets a 404. Works for both the Vite and the Next.js dev servers.
  */
 export function createUserHostGuard(registry: UserRegistry = userRegistry) {
   return (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
-    if (registry.resolve(req)) {
-      next();
+    const requestUser = registry.resolve(req);
+    const name = getUserNameFromHost(req.headers.host) ?? '';
+
+    // A renamed user's old host: a page load moves the tab to the new host; anything else (a
+    // fetch, a POST, a WebSocket) is served as the user right there, since a cross-origin redirect
+    // would break it.
+    if (requestUser?.user && name && requestUser.key !== name && isPageNavigation(req)) {
+      const url = (req as IncomingMessage & { originalUrl?: string }).originalUrl ?? req.url ?? '/';
+
+      res.statusCode = 302;
+      res.setHeader('Location', `${getUserOrigin(req, requestUser.key)}${url}`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.end();
 
       return;
     }
 
-    const name = getUserNameFromHost(req.headers.host) ?? '';
-    const renamedTo = registry.renamedTo(name);
-
-    if (renamedTo) {
-      const url = (req as IncomingMessage & { originalUrl?: string }).originalUrl ?? req.url ?? '/';
-
-      res.statusCode = 302;
-      res.setHeader('Location', `${getUserOrigin(req, renamedTo)}${url}`);
-      res.setHeader('Cache-Control', 'no-store');
-      res.end();
+    if (requestUser) {
+      next();
 
       return;
     }

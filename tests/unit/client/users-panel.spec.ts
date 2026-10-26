@@ -344,6 +344,23 @@ describe('initUsersPanel', () => {
       );
     });
 
+    it('moves the form to another user when Edit is clicked on it', async () => {
+      fetchMock.mockImplementation(async () =>
+        json(200, {
+          ...usersResponse,
+          users: [...usersResponse.users, { name: 'admin', kind: 'token', origin: 'http://admin.localhost:3000' }],
+        }),
+      );
+
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLButtonElement>('[data-edit="admin"]')!.click();
+
+      expect($panel.querySelector<HTMLElement>('.pp-dev-info__users-edit')!.dataset.user).toBe('admin');
+      expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value).toBe('admin');
+    });
+
     it('cancels back to the row', async () => {
       const $panel = await openPopover();
 

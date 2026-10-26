@@ -217,7 +217,7 @@ describe('UserRegistry', () => {
 });
 
 describe('createUserHostGuard', () => {
-  function run(users: UserRegistry, host: string) {
+  function run(users: UserRegistry, host: string, extra: Partial<IncomingMessage> = {}) {
     const res = {
       statusCode: 200,
       headers: {} as Record<string, unknown>,
@@ -231,7 +231,7 @@ describe('createUserHostGuard', () => {
     };
     const next = vi.fn();
 
-    createUserHostGuard(users)(req(host), res as unknown as ServerResponse, next);
+    createUserHostGuard(users)({ ...req(host), ...extra } as IncomingMessage, res as unknown as ServerResponse, next);
 
     return { res, next };
   }
@@ -253,17 +253,32 @@ describe('createUserHostGuard', () => {
     expect(res.body).toContain('"ghost"');
   });
 
-  it("sends a renamed user's old host on to its new one", () => {
+  describe("a renamed user's old host", () => {
     const users = new UserRegistry();
 
     users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
-    users.replace('viewer', { name: 'reader', kind: 'token', token: 't-viewer' });
 
-    const { res, next } = run(users, 'viewer.localhost:3000');
+    const reader = users.replace('viewer', { name: 'reader', kind: 'token', token: 't-viewer' });
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toBe('http://reader.localhost:3000/');
+    it('moves a page load to the new host', () => {
+      const { res, next } = run(users, 'viewer.localhost:3000', {
+        method: 'GET',
+        url: '/pl/page?x=1',
+        headers: { host: 'viewer.localhost:3000', 'sec-fetch-mode': 'navigate' },
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe('http://reader.localhost:3000/pl/page?x=1');
+    });
+
+    it('serves anything else right there, as the renamed user', () => {
+      const fetch = { host: 'viewer.localhost:3000', 'sec-fetch-mode': 'cors' };
+
+      expect(run(users, 'viewer.localhost:3000', { method: 'GET', headers: fetch }).next).toHaveBeenCalledOnce();
+      expect(run(users, 'viewer.localhost:3000', { method: 'POST', headers: fetch }).next).toHaveBeenCalledOnce();
+      expect(users.resolve(req('viewer.localhost:3000'))).toEqual({ key: 'reader', user: reader });
+    });
   });
 });
 

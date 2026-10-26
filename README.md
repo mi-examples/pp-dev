@@ -578,7 +578,7 @@ Every saved user gets its own host: `<name>.localhost:<port>`. The browser sends
 
 The name becomes the user's host, so it may contain only lowercase latin letters, digits and `-`, must start with a letter and be at most 32 characters long.
 
-**Edit** on a user added with an API token renames it or replaces its token (a new token is checked with MI; left empty, the current one stays). Its old host sends open tabs and bookmarks on to the new one while the dev server runs. A user that logs in with a password can't be edited, since its MI session lives in its host's cookies: remove it and add it again.
+**Edit** on a user added with an API token renames it or replaces its token (a new token is checked with MI; left empty, the current one stays). While the dev server runs, a page load on its old host (an open tab, a bookmark) moves to the new one, and requests from tabs still open there keep working as the user. A user that logs in with a password can't be edited, since its MI session lives in its host's cookies: remove it and add it again.
 
 ### Logging out and removing
 
