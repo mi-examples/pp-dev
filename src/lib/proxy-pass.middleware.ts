@@ -9,6 +9,14 @@ import { StringDecoder } from 'node:string_decoder';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
+import { SavedUser, UserRegistry, getUserNameFromHost, getUserOrigin, userRegistry } from './user-registry.js';
+import {
+  SessionUserTracker,
+  createSessionCheck,
+  withSessionCookie,
+  withoutSessionCookie,
+  withoutSessionSetCookie,
+} from './session-users.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -28,14 +36,40 @@ export interface ProxyOpts {
 
   /** Local template name (e.g. package name); used with {@link MiAPI.internalPageName} for v7 `/data/page/` proxy rewrites. */
   templateName?: string;
+
+  /** Saved users, picked by the request's host. @default the shared {@link userRegistry} */
+  users?: UserRegistry;
+
+  /** Follows session users' logins and expiries. @default one that checks sessions with {@link miAPI} */
+  sessionUsers?: SessionUserTracker;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 
 export const PROXY_HEADER = 'X-PP-Proxy';
 
+/** MI's logout, e.g. `/auth/index/logout?proxyRedirect=%2F`. */
+const LOGOUT_PATH_REGEXP = /^\/auth\/(?:index\/)?logout(?:[/?#]|$)/i;
+
+/** The saved user `req` logs out: a logout made on that user's own host. */
+function getLoggedOutUser(req: IncomingMessage, users: UserRegistry): SavedUser | undefined {
+  if (!LOGOUT_PATH_REGEXP.test(req.url ?? '')) {
+    return undefined;
+  }
+
+  const name = getUserNameFromHost(req.headers.host);
+
+  return name === undefined ? undefined : users.get(name);
+}
+
 /** The personal access token each proxied request was sent to MI with. */
 const requestBearerTokens = new WeakMap<IncomingMessage, string>();
+
+/**
+ * Who each proxied request went to MI as: the saved user (none for the original user) and, for a
+ * session user sent from the main host, the MI session the proxy put in its cookies.
+ */
+const requestIdentities = new WeakMap<IncomingMessage, { user?: SavedUser; sentSession?: string }>();
 
 /** The personal access token the proxy sent `req` to MI with, if it added one. */
 export function getRequestBearerToken(req: IncomingMessage): string | undefined {
@@ -177,6 +211,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
     disableSSLValidation = false,
     miAPI,
     templateName,
+    users = userRegistry,
   } = opts;
 
   if (!baseURL) {
@@ -189,6 +224,8 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
   const fileType = import('file-type');
 
   const logger = createLogger();
+
+  const sessionUsers = opts.sessionUsers ?? new SessionUserTracker(users, createSessionCheck(miAPI));
 
   return createProxyMiddleware({
     /**
@@ -251,10 +288,57 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           proxyReq.setHeader('referer', referer.replace(new RegExp(`https?://${host}`), baseURL));
         }
 
-        if (miAPI.personalAccessToken) {
-          proxyReq.setHeader('Authorization', `Bearer ${miAPI.personalAccessToken}`);
-          requestBearerTokens.set(req, miAPI.personalAccessToken);
+        // A saved user goes as its own token, or (a session user) as the MI session its host's
+        // cookies carry; everything else as the original user. A user host with no saved user
+        // behind it gets no identity at all.
+        const requestUser = users.resolve(req);
+        let token: string | undefined;
+
+        if (requestUser?.user) {
+          token = requestUser.user.token;
+        } else if (requestUser) {
+          token = miAPI.personalAccessToken;
         }
+
+        if (token) {
+          proxyReq.setHeader('Authorization', `Bearer ${token}`);
+          requestBearerTokens.set(req, token);
+        } else if (requestUser?.user?.kind === 'session') {
+          // A session user goes as its MI session only: a bearer token the page sends would make MI
+          // answer as that token's owner while pp-dev attributes the request to the session user.
+          proxyReq.removeHeader('Authorization');
+        }
+
+        // MI's regular `Token` header authenticates too: a saved user goes only as its own token or
+        // session.
+        if (requestUser?.user) {
+          proxyReq.removeHeader('Token');
+        }
+
+        // A session user as the main host's default user: the main host's cookies hold another
+        // session, so send the one the user logged in with on its own host. If that session ended
+        // after the request was resolved (while page data loaded, say), send none: never the main
+        // host's own, which would make MI answer as you while pp-dev files it under the user.
+        const sessionUser = requestUser?.user?.kind === 'session' ? requestUser.user : undefined;
+        let sentSession: string | undefined;
+
+        if (sessionUser && getUserNameFromHost(req.headers.host) !== sessionUser.name) {
+          sentSession = sessionUser.session;
+
+          const cookie = sentSession
+            ? withSessionCookie(req.headers.cookie, sentSession)
+            : withoutSessionCookie(req.headers.cookie);
+
+          if (cookie) {
+            proxyReq.setHeader('cookie', cookie);
+          } else {
+            proxyReq.removeHeader('cookie');
+          }
+        }
+
+        // The response is handled as whoever the request went as, even if the default user
+        // changes before MI answers.
+        requestIdentities.set(req, { user: requestUser?.user, sentSession });
 
         // A `304` would make the browser reuse the copy it cached before (possibly for another
         // session, or by a pp-dev version that still let it cache), so always fetch the full body.
@@ -282,7 +366,9 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         logger.info(
           `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${req.url} -> ${colors.green(
             proxyReq.method,
-          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`,
+          )} ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}${
+            requestUser?.user ? ` ${colors.blue('as')} ${colors.yellow(requestUser.user.name)}` : ''
+          }`,
         );
 
         // Keep-alive reuses `req.socket`; each proxied request adds one listener until the
@@ -309,6 +395,78 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
             serverRes.headers['set-cookie'],
             isSecureRequest(req),
           );
+        }
+
+        // Logging out as a saved user ends its session (or token) at MI, as it would anywhere else.
+        // The user is then gone: drop it, and send the tab back to the default user on the main host.
+        const loggedOutUser = getLoggedOutUser(req, users);
+        const identity = requestIdentities.get(req);
+
+        if (loggedOutUser) {
+          serverRes.resume();
+
+          const headers: Record<string, string | string[]> = { 'cache-control': 'no-store' };
+
+          // Only the user the logout was sent as is logged out. One removed and added again while
+          // the logout was in flight keeps its registration, cache and host cookie.
+          if (identity?.user === loggedOutUser) {
+            users.remove(loggedOutUser.name);
+
+            logger.info(
+              `${colors.blue('Logged out user')} ${colors.yellow(loggedOutUser.name)}, back to the main host`,
+            );
+
+            // MI's own Set-Cookie clears the session cookie the user's host still holds.
+            if (serverRes.headers['set-cookie']) {
+              headers['set-cookie'] = serverRes.headers['set-cookie'];
+            }
+          }
+
+          const fetchMode = req.headers['sec-fetch-mode'];
+
+          if (!fetchMode || fetchMode === 'navigate') {
+            res.writeHead(302, { ...headers, location: `${getUserOrigin(req)}/` });
+          } else {
+            res.writeHead(204, headers);
+          }
+
+          res.end();
+
+          return;
+        }
+
+        const savedUser = identity?.user;
+        // Whether the MI session MI hands out here may reach the browser.
+        let passSession = true;
+
+        if (savedUser && users.get(savedUser.name) !== savedUser) {
+          // Removed, or removed and added again, while the request was in flight: its session belongs
+          // to the old registration and must not replace the one its host holds now.
+          passSession = false;
+        } else if (savedUser) {
+          let leftBehind = false;
+
+          if (savedUser.kind === 'session') {
+            // Decided before the tracker looks at the response, which may change the user's session.
+            leftBehind = sessionUsers.isLeftBehindRequest(savedUser, req, identity?.sentSession);
+            sessionUsers.observe(savedUser, req, serverRes, identity?.sentSession);
+          }
+
+          // As the main host's default user (token or session), the browser keeps the main host's
+          // own session, which is yours again once you are the default; on the user's host, the
+          // newer one it logged in with since this request left.
+          passSession = getUserNameFromHost(req.headers.host) === savedUser.name && !leftBehind;
+        }
+
+        if (!passSession) {
+          const otherCookies = withoutSessionSetCookie(serverRes.headers['set-cookie']);
+
+          // Deleted rather than left `undefined`: the interceptors copy every header key.
+          if (otherCookies) {
+            serverRes.headers['set-cookie'] = otherCookies;
+          } else {
+            delete serverRes.headers['set-cookie'];
+          }
         }
 
         // MI responses depend on the session, so the browser must not reuse one after a login or
@@ -397,11 +555,13 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
               const slice = response.slice(0, 100);
 
+              // The token login sets the original user's token, so a saved user's host goes without it.
               if (
-                slice.includes('<html') ||
-                slice.includes('<body') ||
-                slice.includes('<head') ||
-                slice.includes('html>')
+                (slice.includes('<html') ||
+                  slice.includes('<body') ||
+                  slice.includes('<head') ||
+                  slice.includes('html>')) &&
+                !getUserNameFromHost(req.headers.host)
               ) {
                 response += '<script>' + `const host = "${host}";\n(${tokenLoginFunction.toString()})()` + '</script>';
               }

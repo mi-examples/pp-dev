@@ -4,7 +4,7 @@ A visual walkthrough of everything pp-dev injects into a served Portal Page duri
 the dev panel, the Request Inspector, and the Variables Editor. See the root [README](../README.md)
 for configuration details; this doc is the "what does it actually look like" companion.
 
-All screenshots below were taken against a real Metric Insights instance, with the panel's
+The screenshots below (except the [Users](#users) ones) were taken against a real Metric Insights instance, with the panel's
 **Auto** theme in most shots (it follows your OS/browser preference) unless noted otherwise.
 
 ## Dev Panel
@@ -28,6 +28,25 @@ request inspector…", and hide/reset:
 See the README's [Dev Panel](../README.md#dev-panel) section for the position/auto-hide/hide
 behavior in detail, and [Page variables](../README.md#page-variables) for what the "Reload
 variables" and "Open variables editor…" buttons do.
+
+## Users
+
+The people icon on the panel opens the **Users** popover: work as other MI users, each on its own
+host (`<name>.localhost`), side by side with your own tab. The list shows you and the saved users
+with their MI user and state; the checked user is what `localhost` works as. **Open** opens the
+current page as that user in a new tab, **Log in** opens MI's login page for a user added with a
+username and password, and **×** removes a user. Users are added with an API token or a username
+and password:
+
+![Users popover on localhost](./screenshots/13-users-popover.png)
+
+On a saved user's tab the Users button turns purple, and the popover says whose tab it is:
+
+![Users popover on a saved user's tab, dark theme](./screenshots/14-users-user-tab.png)
+
+These two were taken against the `tests/test-commonjs` fixture and the replay mock, not a real
+Metric Insights instance. See the README's [Working as other users](../README.md#working-as-other-users)
+section for how it works.
 
 ## Request Inspector
 

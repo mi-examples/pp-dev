@@ -58,10 +58,16 @@ export default defineConfig({
       outputDir: `test-results/${process.env.TEST_TYPE || 'all'}`,
     },
 
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
+    // Opt-in (needs `npx playwright install firefox`): PP_DEV_E2E_FIREFOX=1 npm run test:e2e:browser
+    ...(process.env.PP_DEV_E2E_FIREFOX
+      ? [
+          {
+            name: 'firefox',
+            use: { ...devices['Desktop Firefox'] },
+            outputDir: `test-results/${process.env.TEST_TYPE || 'all'}-firefox`,
+          },
+        ]
+      : []),
 
     // {
     //   name: 'webkit',
