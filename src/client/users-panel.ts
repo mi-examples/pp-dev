@@ -24,6 +24,9 @@ const REFRESH_INTERVAL = 3000;
 
 const USER_HOST_REGEXP = /^([a-z](?:[a-z0-9-]*[a-z0-9])?)\.localhost$/;
 
+/** Marks the user this tab works as, apart from the radio, which picks localhost's user. */
+const THIS_TAB_BADGE = '<span class="pp-dev-info__users-badge">this tab</span>';
+
 const STATE_LABELS: Record<NonNullable<PublicUser['state']>, string> = {
   pending: 'not logged in yet',
   active: 'logged in',
@@ -167,6 +170,13 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     }
   };
 
+  /**
+   * Who this tab works as: on a user's host that user, on localhost the default user, and on an IP
+   * address or a custom domain you (`undefined`). Before the users are loaded, a user's host only.
+   */
+  const getCurrentUser = (): string | undefined =>
+    tabUser ?? (window.location.hostname === 'localhost' ? data?.defaultUser : null) ?? undefined;
+
   const renderList = () => {
     const $list = $popover?.querySelector<HTMLElement>('.pp-dev-info__users-list');
 
@@ -189,9 +199,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         : undefined;
 
     const defaultUser = data.defaultUser;
-    // The main host (localhost) works as the default user, a user's host as that user, and an IP
-    // address or a custom domain as you.
-    const currentUser = tabUser ?? (window.location.hostname === 'localhost' ? defaultUser : null) ?? undefined;
+    const currentUser = getCurrentUser();
     const $tab = $popover.querySelector<HTMLElement>('.pp-dev-info__users-tab strong');
 
     if ($tab) {
@@ -203,7 +211,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         <input type="radio" name="pp-dev-default-user" class="pp-dev-info__users-default" value="" data-focus-key=":default"
           title="Make the main host (localhost) work as you" ${defaultUser ? '' : 'checked'} />
         <div class="pp-dev-info__users-who">
-          <span class="pp-dev-info__users-name">You</span>
+          <span class="pp-dev-info__users-name">You${currentUser ? '' : THIS_TAB_BADGE}</span>
           <span class="pp-dev-info__users-meta">original user · the dev panel always works as you</span>
         </div>
         ${
@@ -233,7 +241,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
             title="${defaultTitle}"
             ${user.name === defaultUser ? 'checked' : ''} ${canBeDefault ? '' : 'disabled'} />
           <div class="pp-dev-info__users-who">
-            <span class="pp-dev-info__users-name">${name}</span>
+            <span class="pp-dev-info__users-name">${name}${user.name === currentUser ? THIS_TAB_BADGE : ''}</span>
             <span class="pp-dev-info__users-meta">${escapeHtml(describeUser(user))}</span>
           </div>
           ${
@@ -403,10 +411,13 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $popover.innerHTML = `
       <div class="pp-dev-info__settings-title">Users</div>
       <div class="pp-dev-info__users-tab">
-        This tab works as <strong>${escapeHtml(tabUser ?? 'you')}</strong>.
-        <span>localhost works as the checked user; each user's own host as that user.</span>
+        This tab works as <strong>${escapeHtml(getCurrentUser() ?? 'you')}</strong>.
       </div>
-      <div class="pp-dev-info__users-list" role="radiogroup" aria-label="Default user"></div>
+      <div class="pp-dev-info__users-list-head" aria-hidden="true">localhost</div>
+      <div class="pp-dev-info__users-list" role="radiogroup" aria-label="Who localhost works as">
+        <span class="pp-dev-info__users-meta">Loading users…</span>
+      </div>
+      <div class="pp-dev-info__settings-hint">The radio picks who localhost works as; each user's own host always works as that user.</div>
       <div class="pp-dev-info__users-unavailable" hidden></div>
       <form class="pp-dev-info__settings-group pp-dev-info__users-add" hidden>
         <span class="pp-dev-info__settings-label">Add user</span>
@@ -444,10 +455,16 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     document.addEventListener('keydown', onKeyDown, true);
     hooks?.onOpenChange?.(true);
 
+    // Shown right away from what was loaded with the panel, then brought up to date.
+    renderList();
+    renderAvailability();
     refresh();
     // Picks up logins and expired sessions while the popover is open.
     refreshTimer = window.setInterval(refresh, REFRESH_INTERVAL);
   };
+
+  // Loaded with the panel, so the popover opens with its list.
+  refresh();
 
   $btn.addEventListener('click', (ev) => {
     ev.preventDefault();

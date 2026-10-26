@@ -74,7 +74,7 @@ describe('initUsersPanel', () => {
 
   it('lists you and the saved users, with the default checked', async () => {
     const $panel = await openPopover();
-    const names = [...$panel.querySelectorAll('.pp-dev-info__users-name')].map((el) => el.textContent);
+    const names = [...$panel.querySelectorAll('.pp-dev-info__users-name')].map((el) => el.firstChild?.textContent);
     const checked = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default:checked');
 
     expect(names).toEqual(['You', 'viewer', 'qa']);
@@ -88,6 +88,39 @@ describe('initUsersPanel', () => {
 
     expect($panel.querySelector('.pp-dev-info__users-tab strong')!.textContent).toBe('viewer');
     expect($panel.querySelector('.pp-dev-info__users-row.is-current')!.getAttribute('data-user')).toBe('viewer');
+    expect($panel.querySelector('.pp-dev-info__users-badge')!.closest('[data-user]')!.getAttribute('data-user')).toBe(
+      'viewer',
+    );
+  });
+
+  it("opens with the list loaded with the panel, before the popover's own request answers", async () => {
+    const $panel = makePanel();
+
+    initUsersPanel($panel);
+    await flush();
+    // The popover's own request never answers.
+    fetchMock.mockImplementation(() => new Promise<Response>(() => {}));
+    $panel.querySelector<HTMLButtonElement>('.pp-dev-info__users-btn')!.click();
+
+    expect($panel.querySelectorAll('.pp-dev-info__users-row')).toHaveLength(3);
+    expect($panel.querySelector('.pp-dev-info__users-tab strong')!.textContent).toBe('viewer');
+  });
+
+  it("marks this tab's user apart from localhost's default on a user's tab", async () => {
+    const { jsdom } = globalThis as unknown as { jsdom: { reconfigure(opts: { url: string }): void } };
+
+    jsdom.reconfigure({ url: 'http://qa.localhost:3000/' });
+
+    try {
+      const $panel = await openPopover();
+      const $badge = $panel.querySelector('.pp-dev-info__users-badge')!;
+
+      expect($panel.querySelectorAll('.pp-dev-info__users-badge')).toHaveLength(1);
+      expect($badge.closest('[data-user]')!.getAttribute('data-user')).toBe('qa');
+      expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default:checked')!.value).toBe('viewer');
+    } finally {
+      jsdom.reconfigure({ url: 'http://localhost:3000/' });
+    }
   });
 
   it("offers to open the main host as you on a user's tab only while you are the default", async () => {
