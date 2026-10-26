@@ -927,6 +927,20 @@ $pp-dev-dark-colors: (
         }
       }
 
+      // A token user's row while it is being edited: name, new token, Save and Cancel.
+      .pp-dev-info__users-edit {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        margin: 0;
+      }
+
+      .pp-dev-info__users-edit-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
       .pp-dev-info__users-remove {
         flex-shrink: 0;
         width: 20px;

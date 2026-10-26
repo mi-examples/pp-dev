@@ -109,6 +109,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
   let data: UsersResponse | null = null;
   // What the list shows now, so a refresh with the same data leaves it (and the focus) alone.
   let renderedData = '';
+  // The token user being edited, whose row shows the edit form instead.
+  let editing: string | null = null;
 
   const onDocClick = (ev: MouseEvent) => {
     const target = ev.target as Node;
@@ -129,6 +131,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       return;
     }
 
+    editing = null;
     window.clearInterval(refreshTimer);
     $popover.remove();
     $popover = null;
@@ -184,6 +187,14 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       return;
     }
 
+    // The user being edited is gone (removed, logged out): nothing to edit any more.
+    if (editing && !data.users.some((user) => user.name === editing && user.kind === 'token')) {
+      editing = null;
+    } else if (editing && $list.querySelector('.pp-dev-info__users-edit')) {
+      // A refresh must not wipe what is being typed into the edit form.
+      return;
+    }
+
     const snapshot = JSON.stringify(data);
 
     if (snapshot === renderedData) {
@@ -227,6 +238,21 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         const needsLogin = user.kind === 'session' && user.state !== 'active';
         const needsAttention = needsLogin || user.state === 'expired';
         const name = escapeHtml(user.name);
+
+        if (user.kind === 'token' && user.name === editing) {
+          return `<form class="pp-dev-info__users-row pp-dev-info__users-edit" data-user="${name}">
+            <input class="pp-dev-info__users-input pp-dev-info__users-edit-name" value="${name}" maxlength="32"
+              autocomplete="off" spellcheck="false" aria-label="Name" data-focus-key="${name}:edit-name"
+              title="Lowercase latin letters, digits and -, starting with a letter. The user opens on <name>.localhost." />
+            <input class="pp-dev-info__users-input pp-dev-info__users-edit-token" type="password" autocomplete="off"
+              placeholder="New API token (empty keeps the current one)" aria-label="New API token" data-focus-key="${name}:edit-token" />
+            <div class="pp-dev-info__users-edit-actions">
+              <button type="submit" class="pp-dev-info__users-action pp-dev-info__users-action--accent" data-focus-key="${name}:save">Save</button>
+              <button type="button" class="pp-dev-info__users-action" data-cancel-edit data-focus-key="${name}:cancel">Cancel</button>
+            </div>
+          </form>`;
+        }
+
         let defaultTitle = `Make the main host (localhost) work as ${name}`;
 
         if (!canBeDefault) {
@@ -247,6 +273,11 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
           ${
             needsLogin && user.loginUrl
               ? `<button type="button" class="pp-dev-info__users-action pp-dev-info__users-action--accent" data-open="${escapeHtml(user.loginUrl)}" data-raw="true" data-focus-key="${name}:login">Log in</button>`
+              : ''
+          }
+          ${
+            user.kind === 'token'
+              ? `<button type="button" class="pp-dev-info__users-action" data-edit="${name}" data-focus-key="${name}:edit" title="Rename ${name} or replace its API token">Edit</button>`
               : ''
           }
           <button type="button" class="pp-dev-info__users-action" data-open="${escapeHtml(user.origin)}" data-focus-key="${name}:open" title="Open this page as ${name}">Open</button>
@@ -274,6 +305,56 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
 
         window.open($open.dataset.raw ? target : samePageOn(target), '_blank');
       });
+    });
+
+    const startEditing = (name: string | null) => {
+      editing = name;
+      renderedData = '';
+      renderList();
+      $list.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')?.focus();
+    };
+
+    $list.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(($edit) => {
+      $edit.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        startEditing($edit.dataset.edit!);
+      });
+    });
+
+    $list.querySelector<HTMLButtonElement>('[data-cancel-edit]')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      setError('');
+      startEditing(null);
+    });
+
+    $list.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+
+      const name = editing!;
+      const $form = ev.currentTarget as HTMLFormElement;
+      const newName = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value.trim();
+      const token = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')!.value.trim();
+      const response = await request('PATCH', `${USERS_API}/${encodeURIComponent(name)}`, {
+        name: newName,
+        ...(token ? { token } : {}),
+      });
+
+      if (!response) {
+        return;
+      }
+
+      const { user } = (await response.json()) as { user: PublicUser };
+
+      // This tab's own user got a new host: go on there (the old one would only send it on).
+      if (tabUser === name && user.name !== name) {
+        window.location.href = samePageOn(user.origin);
+
+        return;
+      }
+
+      editing = null;
+      renderedData = '';
+      await refresh();
     });
 
     $list.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(($remove) => {

@@ -250,6 +250,79 @@ describe('user routes', () => {
     });
   });
 
+  describe('editing a token user', () => {
+    beforeEach(() => {
+      users.add({
+        name: 'viewer',
+        kind: 'token',
+        token: 'viewer-token',
+        miUser: { id: 42, username: 'viewer@example.com' },
+      });
+    });
+
+    it('renames it, keeping its token, without asking MI', async () => {
+      const edited = await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { name: 'reader' });
+
+      expect(edited.status).toBe(200);
+      expect(edited.body.user).toMatchObject({ name: 'reader', origin: 'http://reader.localhost:3000' });
+      expect(JSON.stringify(edited.body)).not.toContain('viewer-token');
+      expect(authInfo).not.toHaveBeenCalled();
+      expect(users.get('reader')).toMatchObject({ token: 'viewer-token' });
+      expect(users.renamedTo('viewer')).toBe('reader');
+    });
+
+    it('replaces its token once MI accepts the new one', async () => {
+      authInfo.mockResolvedValue({ data: { user: { user_id: 7, username: 'qa@example.com' } } });
+
+      const edited = await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { name: 'viewer', token: ' new-token ' });
+
+      expect(edited.status).toBe(200);
+      expect(authInfo).toHaveBeenCalledWith(
+        '/data/page/index/auth/info',
+        expect.objectContaining({ Authorization: 'Bearer new-token' }),
+      );
+      expect(users.get('viewer')).toMatchObject({ token: 'new-token', miUser: { id: 7 } });
+    });
+
+    it('keeps the old token and user when MI turns the new one down', async () => {
+      const viewer = users.get('viewer');
+
+      authInfo.mockRejectedValue(Object.assign(new Error('Unauthorized'), { response: { status: 401, data: {} } }));
+
+      const edited = await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { name: 'reader', token: 'bad-token' });
+
+      expect(edited).toMatchObject({ status: 400, body: { code: 'INVALID_TOKEN' } });
+      expect(users.get('viewer')).toBe(viewer);
+      expect(users.get('reader')).toBeUndefined();
+    });
+
+    it('refuses a bad or taken name', async () => {
+      users.add({ name: 'qa', kind: 'session' });
+
+      expect(await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { name: 'qa' })).toMatchObject({
+        status: 409,
+        body: { code: 'NAME_TAKEN' },
+      });
+      expect(await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { name: 'qa_power' })).toMatchObject({
+        status: 400,
+        body: { code: 'INVALID_NAME' },
+      });
+    });
+
+    it('does not edit a session user or an unknown one', async () => {
+      users.add({ name: 'qa', kind: 'session' });
+
+      expect(await call(port, 'PATCH', `${USERS_API_PATH}/qa`, { name: 'qa2' })).toMatchObject({
+        status: 400,
+        body: { code: 'NOT_EDITABLE' },
+      });
+      expect(await call(port, 'PATCH', `${USERS_API_PATH}/ghost`, { name: 'ghost2' })).toMatchObject({
+        status: 404,
+        body: { code: 'NOT_FOUND' },
+      });
+    });
+  });
+
   it('removes a user', async () => {
     users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
 

@@ -252,4 +252,66 @@ describe('createUserHostGuard', () => {
     expect(res.statusCode).toBe(404);
     expect(res.body).toContain('"ghost"');
   });
+
+  it("sends a renamed user's old host on to its new one", () => {
+    const users = new UserRegistry();
+
+    users.add({ name: 'viewer', kind: 'token', token: 't-viewer' });
+    users.replace('viewer', { name: 'reader', kind: 'token', token: 't-viewer' });
+
+    const { res, next } = run(users, 'viewer.localhost:3000');
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('http://reader.localhost:3000/');
+  });
+});
+
+describe('UserRegistry.replace', () => {
+  it('puts a new registration in the place of the old one, keeping it the default', () => {
+    const users = new UserRegistry();
+    const removed = vi.fn();
+    const old = users.add({ name: 'viewer', kind: 'token', token: 't-old' });
+
+    users.setDefaultUser('viewer');
+    users.onRemove(removed);
+
+    const saved = users.replace('viewer', { name: 'viewer', kind: 'token', token: 't-new' });
+
+    expect(saved).not.toBe(old);
+    expect(removed).toHaveBeenCalledWith(old);
+    expect(users.get('viewer')).toBe(saved);
+    expect(users.defaultUser).toBe(saved);
+    expect(users.renamedTo('viewer')).toBeUndefined();
+  });
+
+  it('remembers old names, through several renames, until the name is taken again or the user goes', () => {
+    const users = new UserRegistry();
+
+    users.add({ name: 'a', kind: 'token', token: 't' });
+    users.replace('a', { name: 'b', kind: 'token', token: 't' });
+    users.replace('b', { name: 'c', kind: 'token', token: 't' });
+
+    expect(users.get('a')).toBeUndefined();
+    expect([users.renamedTo('a'), users.renamedTo('b')]).toEqual(['c', 'c']);
+
+    users.add({ name: 'a', kind: 'token', token: 't2' });
+
+    expect(users.renamedTo('a')).toBeUndefined();
+
+    users.remove('c');
+
+    expect(users.renamedTo('b')).toBeUndefined();
+  });
+
+  it('refuses a bad or taken name, leaving the user as it was', () => {
+    const users = new UserRegistry();
+    const viewer = users.add({ name: 'viewer', kind: 'token', token: 't' });
+
+    users.add({ name: 'qa', kind: 'session' });
+
+    expect(() => users.replace('viewer', { name: 'qa', kind: 'token', token: 't' })).toThrow(/already exists/);
+    expect(() => users.replace('viewer', { name: 'Bad_Name', kind: 'token', token: 't' })).toThrow();
+    expect(users.get('viewer')).toBe(viewer);
+  });
 });

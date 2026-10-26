@@ -274,6 +274,20 @@ describe('initUsersPanel', () => {
       expect(document.activeElement).toBe($open);
     });
 
+    it('leaves the edit form, and what is typed into it, alone', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value = 'read';
+      fetchMock.mockImplementation(async () =>
+        json(200, { ...usersResponse, users: [...usersResponse.users].reverse() }),
+      );
+      vi.advanceTimersByTime(3000);
+      await flush();
+
+      expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value).toBe('read');
+    });
+
     it("puts the focus back on the same user's control when the list changes", async () => {
       const $panel = await openPopover();
 
@@ -285,6 +299,59 @@ describe('initUsersPanel', () => {
       await flush();
 
       expect((document.activeElement as HTMLElement).dataset.focusKey).toBe('qa:remove');
+    });
+  });
+
+  describe('editing a token user', () => {
+    it('offers Edit for token users only', async () => {
+      const $panel = await openPopover();
+
+      expect($panel.querySelector('[data-user="viewer"] [data-edit]')).not.toBeNull();
+      expect($panel.querySelector('[data-user="qa"] [data-edit]')).toBeNull();
+    });
+
+    it('renames the user, leaving its token alone when no new one is typed', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+
+      const $name = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!;
+
+      expect($name.value).toBe('viewer');
+      $name.value = 'reader';
+      fetchMock.mockResolvedValueOnce(json(200, { user: { name: 'reader', kind: 'token', origin: 'o' } }));
+      $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')!.requestSubmit();
+      await flush();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/@api/users/viewer',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'reader' }) }),
+      );
+    });
+
+    it('sends a new token when one is typed', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')!.value = 'new-token';
+      fetchMock.mockResolvedValueOnce(json(200, { user: { name: 'viewer', kind: 'token', origin: 'o' } }));
+      $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')!.requestSubmit();
+      await flush();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/@api/users/viewer',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'viewer', token: 'new-token' }) }),
+      );
+    });
+
+    it('cancels back to the row', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLButtonElement>('[data-cancel-edit]')!.click();
+
+      expect($panel.querySelector('.pp-dev-info__users-edit')).toBeNull();
+      expect($panel.querySelector('[data-edit="viewer"]')).not.toBeNull();
     });
   });
 
