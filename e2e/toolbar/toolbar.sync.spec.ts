@@ -59,7 +59,7 @@ test.describe('Toolbar Sync Functionality', () => {
 
     // Whatever the sync's outcome, its response ends the syncing state. Only "sync unavailable on
     // this instance" leaves the button disabled; a failed sync can be retried.
-    await expect(syncButton).not.toHaveClass(/syncing/, { timeout: 15_000 });
+    await expect(syncButton).not.toHaveClass(/\bsyncing\b/, { timeout: 15_000 });
 
     const unavailable = await syncButton.evaluate((el) => el.classList.contains('disabled'));
 
@@ -143,7 +143,7 @@ test.describe('Toolbar Sync Functionality', () => {
       el.click();
     });
 
-    await expect(syncButton).not.toHaveClass(/syncing/, { timeout: 15_000 });
+    await expect(syncButton).not.toHaveClass(/\bsyncing\b/, { timeout: 15_000 });
     expect(syncRequests).toBe(1);
   });
 
