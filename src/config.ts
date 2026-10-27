@@ -61,6 +61,41 @@ async function getEsbuild() {
 }
 
 /**
+ * Bundling puts every file a config imports into one module, which would make `__dirname`,
+ * `__filename` and `import.meta.url` / `.dirname` / `.filename` point at the bundle for all of them.
+ * Each file gets its own values instead (the way Vite loads its config): constants prepended to
+ * the file, on its first line so source-map lines stay, and `define` points the names at them.
+ */
+const MODULE_LOCATION = {
+  dirname: '__pp_dev_injected_dirname',
+  filename: '__pp_dev_injected_filename',
+  url: '__pp_dev_injected_import_meta_url',
+} as const;
+
+const MODULE_LOCATION_DEFINE: Record<string, string> = {
+  __dirname: MODULE_LOCATION.dirname,
+  __filename: MODULE_LOCATION.filename,
+  'import.meta.url': MODULE_LOCATION.url,
+  'import.meta.dirname': MODULE_LOCATION.dirname,
+  'import.meta.filename': MODULE_LOCATION.filename,
+};
+
+const moduleLocationPlugin: import('esbuild').Plugin = {
+  name: 'pp-dev:config-module-location',
+  setup(build) {
+    build.onLoad({ filter: /\.[cm]?[jt]s$/ }, (args) => {
+      const contents = readFileSync(args.path, 'utf-8');
+      const injected =
+        `const ${MODULE_LOCATION.dirname} = ${JSON.stringify(path.dirname(args.path))};` +
+        `const ${MODULE_LOCATION.filename} = ${JSON.stringify(args.path)};` +
+        `const ${MODULE_LOCATION.url} = ${JSON.stringify(pathToFileURL(args.path).href)};`;
+
+      return { contents: injected + contents, loader: /ts$/.test(args.path) ? 'ts' : 'js' };
+    });
+  },
+};
+
+/**
  * Loads a JS or TS config file: bundles it (local imports included, packages left external) into a
  * temporary module with a unique name, and imports that.
  *
@@ -106,15 +141,26 @@ async function loadBundledConfig<T extends object>(filePath: string, projectRoot
     mainFields: ['main'],
     sourcemap: 'inline',
     metafile: true,
+    plugins: [moduleLocationPlugin],
+    define: MODULE_LOCATION_DEFINE,
+    // An ESM bundle has no `require`, which the CommonJS files a config imports call for packages
+    // and Node built-ins (esbuild leaves those requires in place). A config's own top-level
+    // `require` doesn't clash: esbuild renames it.
+    ...(isESM
+      ? {
+          banner: {
+            js: "import { createRequire as __ppDevCreateRequire } from 'node:module';const require = __ppDevCreateRequire(import.meta.url);",
+          },
+        }
+      : {}),
   });
 
   const { text: code } = result.outputFiles[0];
 
-  // A unique name makes Node evaluate the module afresh. The temporary file sits next to the config,
-  // so `__dirname` / `import.meta.url` and relative paths resolve as from the config itself. Its
-  // extension says the format esbuild wrote: a `.js` one would be read by the project's
-  // package.json `type`, which breaks a `.cts` config in an ESM project and an `.mts` one in a
-  // CommonJS project.
+  // A unique name makes Node evaluate the module afresh. The temporary file sits next to the
+  // config, so packages resolve from the project as before. Its extension says the format esbuild
+  // wrote: a `.js` one would be read by the project's package.json `type`, which breaks a `.cts`
+  // config in an ESM project and an `.mts` one in a CommonJS project.
   const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const fileNameTmp = `${fileBase}.${isESM ? 'mjs' : 'cjs'}`;

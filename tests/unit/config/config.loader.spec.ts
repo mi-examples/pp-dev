@@ -313,6 +313,77 @@ describe('Config Loader', () => {
       expect(config.build?.outDir).toBe(join(realpathSync(testDir), 'out'));
     });
 
+    it('resolves module-relative paths in the files a config imports from their own folders', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      mkdirSync(join(testDir, 'settings'));
+      writeFileSync(
+        join(testDir, 'settings', 'paths.mjs'),
+        [
+          `import { fileURLToPath } from 'node:url';`,
+          `export const out = fileURLToPath(new URL('./out', import.meta.url));`,
+          `export const dir = import.meta.dirname;`,
+          `export const file = import.meta.filename;`,
+        ].join('\n'),
+      );
+      writeFileSync(
+        join(testDir, 'settings', 'legacy.cjs'),
+        `module.exports = { dir: __dirname, file: __filename };`,
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.mjs'),
+        [
+          `import { out, dir, file } from './settings/paths.mjs';`,
+          `import legacy from './settings/legacy.cjs';`,
+          `export default { paths: { out, dir, file, legacy, configDir: import.meta.dirname } };`,
+        ].join('\n'),
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const { paths } = (await getConfig()) as { paths: Record<string, unknown> };
+      const root = process.cwd();
+      const settings = join(root, 'settings');
+
+      expect(paths).toEqual({
+        out: join(settings, 'out'),
+        dir: settings,
+        file: join(settings, 'paths.mjs'),
+        legacy: { dir: settings, file: join(settings, 'legacy.cjs') },
+        configDir: root,
+      });
+    });
+
+    it("loads a CommonJS file that requires Node built-ins and packages into an ESM config, next to the config's own require", async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      mkdirSync(join(testDir, 'node_modules', 'local-pkg'), { recursive: true });
+      writeFileSync(join(testDir, 'node_modules', 'local-pkg', 'index.js'), `module.exports = 'from a package';`);
+      writeFileSync(
+        join(testDir, 'node_modules', 'local-pkg', 'package.json'),
+        JSON.stringify({ name: 'local-pkg', main: 'index.js' }),
+      );
+      writeFileSync(
+        join(testDir, 'helper.cjs'),
+        `const fs = require('node:fs');\nmodule.exports = { fs: typeof fs.readFileSync, pkg: require('local-pkg') };`,
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.mjs'),
+        [
+          `import { createRequire } from 'node:module';`,
+          `import helper from './helper.cjs';`,
+          `const require = createRequire(import.meta.url);`,
+          `export default { helper, own: typeof require('node:path').join };`,
+        ].join('\n'),
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      expect(await getConfig()).toEqual({ helper: { fs: 'function', pkg: 'from a package' }, own: 'function' });
+    });
+
     it('leaves no temporary files behind', async () => {
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
       writeFileSync(join(testDir, 'pp-dev.config.mjs'), `export default { mi: { url: 'https://example.com' } };`);
