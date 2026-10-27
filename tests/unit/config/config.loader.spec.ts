@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, realpathSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -190,6 +190,139 @@ describe('Config Loader', () => {
       expect(workspacePkg.name).toBe('workspace-root');
       expect(config.mi?.url).toBe('https://target.example.com');
       expect(pkg.name).toBe('target-app');
+    });
+  });
+
+  /**
+   * Regression tests for "the config watcher restarts the server with the old config". A JS
+   * config was imported from its own path, which Node caches for the life of the process, so
+   * `clearConfigCache()` + restart read the stale module. And a `.cts` config in an ESM project
+   * (or an `.mts` one in a CommonJS project) failed to load: it was compiled into a `.js` file
+   * read by the project's package.json `type`.
+   */
+  describe('reading a changed config again', () => {
+    // esbuild runs a long-lived service process, started in the cwd of its first call. Started
+    // from a test's temporary folder, it would keep Windows from deleting that folder. beforeAll
+    // runs before the outer beforeEach switches to that folder.
+    beforeAll(async () => {
+      const esbuild = await import('esbuild');
+
+      await esbuild.transform('');
+    });
+
+    async function loadAfterEdit(
+      pkg: Record<string, unknown>,
+      fileName: string,
+      source: (url: string) => string,
+      extraFiles: (url: string) => Record<string, string> = () => ({}),
+      editedFile = fileName,
+    ) {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', ...pkg }));
+
+      const write = (url: string) => {
+        const files = { [fileName]: source(url), ...extraFiles(url) };
+
+        for (const [name, content] of Object.entries(files)) {
+          if (name === editedFile || url === 'https://before.example.com') {
+            writeFileSync(join(testDir, name), content);
+          }
+        }
+      };
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      write('https://before.example.com');
+      clearConfigCache();
+
+      const before = await getConfig();
+
+      write('https://after.example.com');
+      clearConfigCache();
+
+      const after = await getConfig();
+
+      return { before: before.mi?.url, after: after.mi?.url };
+    }
+
+    it.each([
+      ['an .mjs config', {}, 'pp-dev.config.mjs', (url: string) => `export default { mi: { url: '${url}' } };`],
+      ['a .cjs config', {}, 'pp-dev.config.cjs', (url: string) => `module.exports = { mi: { url: '${url}' } };`],
+      [
+        'a .js config in an ESM project',
+        { type: 'module' },
+        'pp-dev.config.js',
+        (url: string) => `export default { mi: { url: '${url}' } };`,
+      ],
+      [
+        'a .js config in a CommonJS project',
+        { type: 'commonjs' },
+        'pp-dev.config.js',
+        (url: string) => `module.exports = { mi: { url: '${url}' } };`,
+      ],
+      [
+        'a .ts config',
+        { type: 'module' },
+        'pp-dev.config.ts',
+        (url: string) => `const url: string = '${url}';\nexport default { mi: { url } };`,
+      ],
+    ])('reads %s again after it changed', async (_name, pkg, fileName, source) => {
+      expect(await loadAfterEdit(pkg, fileName, source)).toEqual({
+        before: 'https://before.example.com',
+        after: 'https://after.example.com',
+      });
+    });
+
+    it('reads a changed file that the config imports', async () => {
+      const result = await loadAfterEdit(
+        { type: 'module' },
+        'pp-dev.config.js',
+        () => `import { url } from './mi-url.js';\nexport default { mi: { url } };`,
+        (url) => ({ 'mi-url.js': `export const url = '${url}';` }),
+        'mi-url.js',
+      );
+
+      expect(result).toEqual({ before: 'https://before.example.com', after: 'https://after.example.com' });
+    });
+
+    it.each([
+      ['a .cts config in an ESM project', { type: 'module' }, 'pp-dev.config.cts'],
+      ['an .mts config in a CommonJS project', { type: 'commonjs' }, 'pp-dev.config.mts'],
+    ])('loads %s', async (_name, pkg, fileName) => {
+      const result = await loadAfterEdit(
+        pkg,
+        fileName,
+        (url) => `const url: string = '${url}';\nexport default { mi: { url } };`,
+      );
+
+      expect(result).toEqual({ before: 'https://before.example.com', after: 'https://after.example.com' });
+    });
+
+    it('resolves paths in the config from its own folder', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      writeFileSync(
+        join(testDir, 'pp-dev.config.js'),
+        `import { fileURLToPath } from 'node:url';\nexport default { build: { outDir: fileURLToPath(new URL('./out', import.meta.url)) } };`,
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const config = (await getConfig()) as { build?: { outDir?: string } };
+
+      expect(config.build?.outDir).toBe(join(realpathSync(testDir), 'out'));
+    });
+
+    it('leaves no temporary files behind', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
+      writeFileSync(join(testDir, 'pp-dev.config.mjs'), `export default { mi: { url: 'https://example.com' } };`);
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+      await getConfig();
+
+      expect(readdirSync(testDir).filter((name) => name.startsWith('pp-config.timestamp-'))).toEqual([]);
     });
   });
 

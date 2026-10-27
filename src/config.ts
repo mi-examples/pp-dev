@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, unlink, writeFileSync, existsSync } from 'fs';
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
 import { PP_DEV_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
@@ -60,9 +60,18 @@ async function getEsbuild() {
   return esbuildModule;
 }
 
-async function loadTsConfig<T extends object>(filePath: string, projectRoot: string) {
+/**
+ * Loads a JS or TS config file: bundles it (local imports included, packages left external) into a
+ * temporary module with a unique name, and imports that.
+ *
+ * A config can't be imported from its own path: Node caches a module for the life of the process
+ * (the ESM loader by URL, `require.cache` for CommonJS by file name, also when imported), so after
+ * an edit the watcher restarted the server with the old config. A cache-busting `?t=` query would
+ * miss CommonJS configs and the files a config imports.
+ */
+async function loadBundledConfig<T extends object>(filePath: string, projectRoot: string) {
   // Performance optimization: Check cache first
-  const cacheKey = `ts:${filePath}`;
+  const cacheKey = `bundled:${filePath}`;
   const cached = configCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -101,9 +110,14 @@ async function loadTsConfig<T extends object>(filePath: string, projectRoot: str
 
   const { text: code } = result.outputFiles[0];
 
+  // A unique name makes Node evaluate the module afresh. The temporary file sits next to the config,
+  // so `__dirname` / `import.meta.url` and relative paths resolve as from the config itself. Its
+  // extension says the format esbuild wrote: a `.js` one would be read by the project's
+  // package.json `type`, which breaks a `.cts` config in an ESM project and an `.mts` one in a
+  // CommonJS project.
   const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  const fileNameTmp = `${fileBase}.js`;
+  const fileNameTmp = `${fileBase}.${isESM ? 'mjs' : 'cjs'}`;
   const tempFilePath = path.resolve(projectRoot, fileNameTmp);
   const fileUrl = pathToFileURL(tempFilePath).toString();
 
@@ -124,33 +138,12 @@ async function loadTsConfig<T extends object>(filePath: string, projectRoot: str
     });
   } finally {
     // Clean up temp file
-    if (existsSync(tempFilePath)) {
-      unlink(tempFilePath, () => {
-        // Ignore errors
-      });
+    try {
+      unlinkSync(tempFilePath);
+    } catch {
+      // Ignore errors
     }
   }
-
-  return config;
-}
-
-async function loadJsConfig<T extends object>(filePath: string) {
-  // Performance optimization: Check cache first
-  const cacheKey = `js:${filePath}`;
-  const cached = configCache.get(cacheKey);
-
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data as T;
-  }
-
-  const config = (await import(pathToFileURL(filePath).toString())).default as T;
-
-  // Cache the result
-  configCache.set(cacheKey, {
-    data: config,
-    timestamp: Date.now(),
-    filePath,
-  });
 
   return config;
 }
@@ -203,10 +196,8 @@ async function loadConfig<T extends object>(dirFiles: string[], configNames: str
     if (dirFiles.includes(configName)) {
       const configPath = path.resolve(projectRoot, configName);
 
-      if (/\.[cm]?ts$/i.test(configName)) {
-        return (await loadTsConfig(configPath, projectRoot)) as T;
-      } else if (/\.[cm]?js$/i.test(configName)) {
-        return (await loadJsConfig(configPath)) as T;
+      if (/\.[cm]?[jt]s$/i.test(configName)) {
+        return (await loadBundledConfig(configPath, projectRoot)) as T;
       } else if (configName.endsWith('.json')) {
         return (await loadJSONConfig(configPath)) as T;
       }
