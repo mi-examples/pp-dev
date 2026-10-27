@@ -6,6 +6,7 @@ import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { ServerResponse, IncomingMessage } from 'http';
 import { StringDecoder } from 'node:string_decoder';
+import type { Socket } from 'node:net';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
@@ -47,6 +48,47 @@ export interface ProxyOpts {
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
 
 export const PROXY_HEADER = 'X-PP-Proxy';
+
+/**
+ * Answers a request whose proxying to MI failed (MI unreachable, a reset connection, …).
+ *
+ * The stack only goes to the dev server's log. What can still be sent depends on how far the
+ * response got: nothing yet gets a 502 with a short message; once headers are out, the connection
+ * is cut, so the browser sees a failed load instead of a truncated page that looks complete; an
+ * ended response is left alone (writing to it threw `ERR_STREAM_WRITE_AFTER_END`). A WebSocket
+ * upgrade hands over a socket instead of a response, which is closed.
+ */
+export function respondToProxyError(
+  err: Error,
+  req: IncomingMessage,
+  res: ServerResponse | Socket,
+  log: (message: string) => void,
+): void {
+  const summary = `Proxy error: "${err.message}" when trying to "${req.method} ${req.url}"`;
+
+  log(`${summary}\n\n${err.stack ?? ''}`);
+
+  if (typeof (res as ServerResponse).writeHead !== 'function') {
+    (res as Socket).destroy();
+
+    return;
+  }
+
+  const response = res as ServerResponse;
+
+  if (response.writableEnded || response.destroyed) {
+    return;
+  }
+
+  if (response.headersSent) {
+    response.destroy();
+
+    return;
+  }
+
+  response.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+  response.end(summary);
+}
 
 /** MI's logout, e.g. `/auth/index/logout?proxyRedirect=%2F`. */
 const LOGOUT_PATH_REGEXP = /^\/auth\/(?:index\/)?logout(?:[/?#]|$)/i;
@@ -579,17 +621,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         return rewriteInterceptor(serverRes, req, res);
       },
       error(err, req, res) {
-        const errorMessage = `Proxy error: "${err.message}" when trying to "${req.method} ${req.url}"\n\n${err.stack}`;
-
-        logger.error(errorMessage);
-
-        if (res.writable) {
-          (res as ServerResponse).writeHead(500, {
-            'Content-Type': 'text/plain',
-          });
-        }
-
-        res.end(errorMessage);
+        respondToProxyError(err, req, res as ServerResponse | Socket, (message) => logger.error(message));
       },
     },
   }) as unknown as NextHandleFunction;
