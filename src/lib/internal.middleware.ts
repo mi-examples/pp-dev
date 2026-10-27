@@ -1,5 +1,6 @@
 import express from 'express';
 import type { ErrorRequestHandler } from 'express';
+import { originGuard } from './helpers/origin-guard.js';
 
 /**
  * The largest JSON body the internal API accepts. Express' default (100 kb) is too small for a
@@ -38,6 +39,8 @@ const bodyParserErrorHandler: ErrorRequestHandler = (err, _req, res, next) => {
 export function createInternalServer(): express.Application {
   const app = express();
 
+  // First, before any body is read: other sites' pages must not reach the API (see originGuard).
+  app.use(originGuard);
   app.use(express.json({ limit: INTERNAL_JSON_BODY_LIMIT }));
   app.use(express.urlencoded({ extended: true }));
   app.use(bodyParserErrorHandler);

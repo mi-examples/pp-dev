@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import { PP_DEV_HMR_WS_PATH } from '../constants.js';
 import { createLogger } from './logger.js';
+import { crossOriginReason } from './helpers/origin-guard.js';
 
 /**
  * Raw-WebSocket transport for the dev panel under the `pp-dev next` server, where
@@ -96,6 +97,16 @@ export class PPDevHotServer {
 
     if (pathname !== PP_DEV_HMR_WS_PATH) {
       return false;
+    }
+
+    // A browser always sends Origin with a WebSocket: another site's page must not drive the
+    // panel's actions (a template sync uploads to MI with the developer's token).
+    const crossOrigin = crossOriginReason(req);
+
+    if (crossOrigin) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+
+      return true;
     }
 
     this.wss.handleUpgrade(req, socket, head, (ws) => {
