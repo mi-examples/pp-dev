@@ -83,14 +83,25 @@ const MODULE_LOCATION_DEFINE: Record<string, string> = {
 const moduleLocationPlugin: import('esbuild').Plugin = {
   name: 'pp-dev:config-module-location',
   setup(build) {
-    build.onLoad({ filter: /\.[cm]?[jt]s$/ }, (args) => {
-      const contents = readFileSync(args.path, 'utf-8');
+    // Every file `define` reaches: JSX/TSX ones too, or their `import.meta.url` would name a constant
+    // that was never declared.
+    build.onLoad({ filter: /\.([cm]?[jt]s|[jt]sx)$/ }, (args) => {
+      // A hashbang is only valid at the very start of a file, where the constants go. It means
+      // nothing inside a bundle: dropped, its line kept so source-map lines stay.
+      const contents = readFileSync(args.path, 'utf-8').replace(/^#![^\r\n]*/, '');
       const injected =
         `const ${MODULE_LOCATION.dirname} = ${JSON.stringify(path.dirname(args.path))};` +
         `const ${MODULE_LOCATION.filename} = ${JSON.stringify(args.path)};` +
         `const ${MODULE_LOCATION.url} = ${JSON.stringify(pathToFileURL(args.path).href)};`;
+      const loader = args.path.endsWith('.tsx')
+        ? 'tsx'
+        : args.path.endsWith('.jsx')
+          ? 'jsx'
+          : /ts$/.test(args.path)
+            ? 'ts'
+            : 'js';
 
-      return { contents: injected + contents, loader: /ts$/.test(args.path) ? 'ts' : 'js' };
+      return { contents: injected + contents, loader };
     });
   },
 };

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, realpathSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { pathToFileURL } from 'url';
 
 describe('Config Loader', () => {
   let testDir: string;
@@ -382,6 +383,46 @@ describe('Config Loader', () => {
       clearConfigCache();
 
       expect(await getConfig()).toEqual({ helper: { fs: 'function', pkg: 'from a package' }, own: 'function' });
+    });
+
+    it('loads a config and a helper that start with a hashbang', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      writeFileSync(join(testDir, 'helper.mjs'), `#!/usr/bin/env node\nexport const url = 'https://helper.example.com';`);
+      writeFileSync(
+        join(testDir, 'pp-dev.config.js'),
+        `#!/usr/bin/env node\nimport { url } from './helper.mjs';\nexport default { mi: { url }, dir: import.meta.dirname };`,
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      expect(await getConfig()).toEqual({ mi: { url: 'https://helper.example.com' }, dir: process.cwd() });
+    });
+
+    it('gives JSX and TSX helpers their own module-relative paths', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      mkdirSync(join(testDir, 'ui'));
+      writeFileSync(join(testDir, 'ui', 'a.jsx'), `export const a = { dir: import.meta.dirname, file: __filename };`);
+      writeFileSync(
+        join(testDir, 'ui', 'b.tsx'),
+        `export const b: { url: string } = { url: import.meta.url };`,
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.ts'),
+        `import { a } from './ui/a.jsx';\nimport { b } from './ui/b.tsx';\nexport default { a, b };`,
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const ui = join(process.cwd(), 'ui');
+
+      expect(await getConfig()).toEqual({
+        a: { dir: ui, file: join(ui, 'a.jsx') },
+        b: { url: pathToFileURL(join(ui, 'b.tsx')).href },
+      });
     });
 
     it('leaves no temporary files behind', async () => {
