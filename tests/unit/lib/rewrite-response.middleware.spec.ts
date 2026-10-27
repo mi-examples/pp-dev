@@ -118,6 +118,55 @@ describe('initRewriteResponse', () => {
     expect(served.body.toString('utf8')).toBe(REWRITTEN);
   });
 
+  it('keeps the bytes of a chunk whose producer reuses the buffer once the write is acknowledged', async () => {
+    const served = await serve((res) => {
+      const reused = Buffer.from(ORIGINAL);
+
+      res.write(reused, () => {
+        reused.fill('#');
+        res.end();
+      });
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it('acknowledges write() asynchronously, so a callback-driven producer does not recurse', async () => {
+    const chunks = 20_000;
+    let syncAck = false;
+
+    const served = await serve((res) => {
+      let written = 0;
+
+      const writeNext = () => {
+        if (written === chunks) {
+          res.end('</body></html>');
+
+          return;
+        }
+
+        written += 1;
+
+        let returned = false;
+
+        res.write('a', () => {
+          if (!returned) {
+            syncAck = true;
+          }
+
+          writeNext();
+        });
+        returned = true;
+      };
+
+      res.write('<html><body>');
+      writeNext();
+    });
+
+    expect(syncAck).toBe(false);
+    expect(served.body.toString('utf8')).toBe(`<html><body>${'a'.repeat(chunks)}${PANEL}</body></html>`);
+  });
+
   it('runs the callback passed to end()', async () => {
     const callback = vi.fn();
 

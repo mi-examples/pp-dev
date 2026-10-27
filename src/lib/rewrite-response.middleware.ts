@@ -15,10 +15,8 @@ function toBuffer(chunk: unknown, encoding?: BufferEncoding): Buffer | null {
     return Buffer.from(chunk, encoding);
   }
 
-  if (Buffer.isBuffer(chunk)) {
-    return chunk;
-  }
-
+  // A copy, not a view: once a write is acknowledged, its producer may reuse the buffer, and the
+  // bytes are needed until `end()`.
   if (chunk instanceof Uint8Array) {
     return Buffer.from(chunk);
   }
@@ -55,8 +53,10 @@ export function initRewriteResponse(
 
         const callback = typeof encoding === 'function' ? encoding : cb;
 
+        // Asynchronously, as a real response calls it: a producer that writes its next chunk from
+        // the callback would otherwise recurse on one stack for the whole body.
         if (typeof callback === 'function') {
-          callback();
+          process.nextTick(callback);
         }
 
         return true;
