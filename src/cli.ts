@@ -40,7 +40,7 @@ import {
   PATH_TEMPLATE_LOCAL_PREFIX,
   PP_DEV_NEXT_BUILD_ENV_VAR,
 } from './constants.js';
-import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+import { normalizePPDevConfig, validatePPDevConfig } from './lib/pp-dev-config.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';

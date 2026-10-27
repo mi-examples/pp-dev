@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync } from 'fs';
 import path from 'path';
-import { JSDOM } from 'jsdom';
+import { getJSDOM } from './jsdom.helper.js';
 
 /**
  * MI re-serializes every uploaded SVG server-side on ingest — confirmed empirically (PP-4123)
@@ -19,6 +19,7 @@ import { JSDOM } from 'jsdom';
  * Returns the input unchanged if it doesn't parse as a single root `<svg>` element.
  */
 export function normalizeSvgLikeMi(svgText: string): string {
+  const JSDOM = getJSDOM();
   const dom = new JSDOM(`<!doctype html><html><body>${svgText}</body></html>`);
   const document = dom.window.document;
   const svg = document.querySelector('svg');

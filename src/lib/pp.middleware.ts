@@ -1,7 +1,7 @@
 import axios, { Axios } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
-import { JSDOM } from 'jsdom';
+import { getJSDOM } from './helpers/jsdom.helper.js';
 import { AssetsAPI, Page, PageAPI, AssetsV7API, PageTemplateAPI, PageVariableAPI, PageVariableTagEntry } from '../api/index.js';
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { createLogger } from './logger.js';
@@ -601,6 +601,7 @@ export class MiAPI {
       result = result.replace(pageVarRegex, () => v.value);
     }
 
+    const JSDOM = getJSDOM();
     const dom = new JSDOM(miHudLess ? result : this.#pageTemplate!);
 
     const placeholderText = '%%PLACEHOLDER%%';
