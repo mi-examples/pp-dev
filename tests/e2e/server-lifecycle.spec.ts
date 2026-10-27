@@ -130,7 +130,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     // Start pp-dev against mock-mi so CI never depends on the VPN-only MI instance.
     ppdev = startPPDev();
     // Wait for the very last startup log so all startup lines are in ppdev.lines
-    await ppdev.waitForLine(/Process event handlers registered/i, 60_000);
+    await ppdev.waitForLine(/Config file watcher started/i, 60_000);
   }, 90_000);
 
   afterAll(async () => {
