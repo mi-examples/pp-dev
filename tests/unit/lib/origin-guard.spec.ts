@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import net, { type AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 import { crossOriginReason } from '../../../src/lib/helpers/origin-guard.js';
 import { createInternalServer } from '../../../src/lib/internal.middleware.js';
@@ -211,5 +211,45 @@ describe('pp-dev next dev-panel WebSocket behind the origin guard', () => {
 
   it("accepts the dev server's own page", async () => {
     expect(await connect(`http://localhost:${port}`)).toEqual({ opened: true });
+  });
+
+  it("frees the server's socket for a refused upgrade, even when the peer keeps its side open", async () => {
+    const connections = () =>
+      new Promise<number>((resolve, reject) =>
+        server.getConnections((error, count) => (error ? reject(error) : resolve(count))),
+      );
+    // allowHalfOpen: this peer never ends its own side, so only the server can free the socket.
+    const peer = net.connect({ host: '127.0.0.1', port, allowHalfOpen: true });
+
+    const response = await new Promise<string>((resolve) => {
+      let received = '';
+
+      peer.on('data', (chunk: Buffer) => {
+        received += chunk.toString('latin1');
+      });
+      // The server has sent its 403 and ended its side.
+      peer.on('end', () => resolve(received));
+      peer.write(
+        [
+          `GET ${PP_DEV_HMR_WS_PATH} HTTP/1.1`,
+          `Host: localhost:${port}`,
+          'Origin: https://evil.example',
+          'Upgrade: websocket',
+          'Connection: Upgrade',
+          'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+          'Sec-WebSocket-Version: 13',
+          '',
+          '',
+        ].join(String.fromCharCode(13, 10)),
+      );
+    });
+
+    expect(response.startsWith('HTTP/1.1 403 Forbidden')).toBe(true);
+
+    try {
+      await expect.poll(connections, { timeout: 1000 }).toBe(0);
+    } finally {
+      peer.destroy();
+    }
   });
 });

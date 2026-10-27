@@ -104,7 +104,11 @@ export class PPDevHotServer {
     const crossOrigin = crossOriginReason(req);
 
     if (crossOrigin) {
-      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      // `end()` only closes our side: a peer that keeps its own open would hold the socket, which
+      // the WebSocket server doesn't track, with no timeout. Destroyed once the 403 is out, or on
+      // any error while writing it.
+      socket.once('error', () => socket.destroy());
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
 
       return true;
     }
