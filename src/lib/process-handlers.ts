@@ -51,27 +51,38 @@ export function registerProcessHandlers({
   processRef = process,
 }: ProcessHandlersOptions): () => void {
   let shuttingDown = false;
+  // The code the process exits with. Only ever escalates: a crash during a signal's shutdown, or a
+  // failed shutdown, must not end in 0.
+  let exitCode = 0;
 
-  const shutdownAndExit = async (reason: string, exitCode: number) => {
+  const escalate = (code: number) => {
+    exitCode = Math.max(exitCode, code);
+  };
+
+  const shutdownAndExit = async (reason: string, code: number) => {
+    escalate(code);
+
     if (shuttingDown) {
       if (reason === 'SIGINT' || reason === 'SIGTERM') {
-        logger.warn(colors.yellow(`\n⚠️  Received ${reason} again, exiting without waiting for the shutdown`));
+        logger.warn(colors.yellow(`
+⚠️  Received ${reason} again, exiting without waiting for the shutdown`));
         processRef.exit(exitCode);
       }
 
+      // A crash while shutting down is logged by its handler; the running shutdown exits with 1.
       return;
     }
 
     shuttingDown = true;
-    logger.info(colors.yellow(`\n🛑 Received ${reason}, shutting down gracefully...`));
+    logger.info(colors.yellow(`
+🛑 Received ${reason}, shutting down gracefully...`));
 
+    // Referenced on purpose: should the shutdown close the last handle and then hang, an unref'd
+    // timer would let Node exit on its own, with 0, instead of reporting the failure.
     const timeout = setTimeout(() => {
       logger.error(colors.red(`⏰ Shutdown did not finish within ${shutdownTimeoutMs} ms, forcing exit`));
       processRef.exit(EXIT_FAILURE);
     }, shutdownTimeoutMs);
-
-    // Never keeps the process alive on its own.
-    timeout.unref?.();
 
     try {
       await shutdown();

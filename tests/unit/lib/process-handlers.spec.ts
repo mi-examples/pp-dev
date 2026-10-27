@@ -105,6 +105,59 @@ describe('registerProcessHandlers', () => {
     expect(proc.exit).not.toHaveBeenCalled();
   });
 
+  it('exits with 1 when an uncaught exception happens during a signal shutdown', async () => {
+    let finish!: () => void;
+    const shutdown = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    const { proc } = setup({ shutdown });
+
+    proc.emit('SIGINT');
+    proc.emit('uncaughtException', new Error('crash while closing'));
+    finish();
+    await flush();
+
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(proc.exit).toHaveBeenCalledTimes(1);
+    expect(proc.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('exits with 1 at once on a signal during a crash shutdown', () => {
+    const shutdown = vi.fn(() => new Promise<void>(() => {}));
+    const { proc } = setup({ shutdown });
+
+    proc.emit('uncaughtException', new Error('boom'));
+    proc.emit('SIGINT');
+
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(proc.exit).toHaveBeenCalledTimes(1);
+    expect(proc.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('keeps the shutdown watchdog referenced, so a hanging shutdown cannot end the process with 0', async () => {
+    const timers: NodeJS.Timeout[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((...args: Parameters<typeof setTimeout>) => {
+      const timer = realSetTimeout(...args);
+
+      timers.push(timer);
+
+      return timer;
+    }) as typeof setTimeout);
+
+    let finish!: () => void;
+    const { proc } = setup({ shutdown: vi.fn(() => new Promise<void>((resolve) => (finish = resolve))) });
+
+    proc.emit('SIGTERM');
+
+    expect(timers).toHaveLength(1);
+    expect(timers[0]!.hasRef()).toBe(true);
+
+    finish();
+    await flush();
+
+    expect(proc.exit).toHaveBeenCalledWith(0);
+  });
+
   it('exits with 1 when the shutdown fails', async () => {
     const { proc } = setup({ shutdown: vi.fn().mockRejectedValue(new Error('close failed')) });
 
