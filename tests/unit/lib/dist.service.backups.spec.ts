@@ -155,6 +155,22 @@ describe('DistService — start-up and backups', () => {
     expect(fs.readdirSync(backups)).toHaveLength(DEFAULT_MAX_BACKUPS);
   });
 
+  it('keeps the limit when an old backup is dated after the new one (skewed clock)', async () => {
+    const backups = path.join(root, 'backups');
+
+    fs.mkdirSync(backups);
+    memoryMeta();
+    // An hour in the future: sorted by time, it comes before the backup about to be saved.
+    writeBackup(backups, 'page-2026-10-01T10-00-00.zip', -60);
+    writeBackup(backups, 'page-2026-10-02T10-00-00.zip', 10);
+
+    const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: 1 });
+
+    await service.saveBackup(Buffer.from('new zip'), analysis('new'));
+
+    expect(fs.readdirSync(backups)).toEqual([service.getBackupMeta()!.lastBackupName]);
+  });
+
   it('saves the backup even when old ones cannot be listed', async () => {
     const backups = path.join(root, 'backups');
 
@@ -198,5 +214,31 @@ describe('backupNamePattern', () => {
     expect(backupNamePattern('backup_{date}_{pageName}.zip', 'p', '20261027').test('backup_x_p.zip')).toBe(false);
     expect(backupNamePattern('{pageName}.zip', 'p', defaultDate).test('p.zip')).toBe(true);
     expect(backupNamePattern('{pageName}.zip', 'p', defaultDate).test('p2.zip')).toBe(false);
+  });
+
+  // backupName() replaces only the first of each placeholder; the pattern has to agree with it.
+  it.each([
+    '{pageName}-{date}.zip',
+    '{pageName}-{date}-{date}.zip',
+    '{pageName}-{pageName}-{date}.zip',
+    '{date}/{pageName}-{date}.zip',
+    'backup.zip',
+  ])('matches the names backupName() gives with template %s, and nothing shorter', (template) => {
+    const service = new DistService('p', { root: os.tmpdir(), backupNameTemplate: template });
+    const dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, '');
+    const pattern = backupNamePattern(template, 'p', dateFormat(new Date('2026-10-27T10:00:00Z')));
+    const name = service.backupName('p', new Date('2025-01-02T03:04:05Z'));
+
+    expect(pattern.test(name)).toBe(true);
+    expect(pattern.test(name.slice(0, -4))).toBe(false);
+  });
+
+  it("doesn't take a repeated placeholder for a second one", () => {
+    expect(backupNamePattern('{pageName}-{date}-{date}.zip', 'p', defaultDate).test('p-2026-10-27T10-00-00-.zip')).toBe(
+      false,
+    );
+    expect(
+      backupNamePattern('{pageName}-{pageName}-{date}.zip', 'p', defaultDate).test('p-p-2026-10-27T10-00-00.zip'),
+    ).toBe(false);
   });
 });

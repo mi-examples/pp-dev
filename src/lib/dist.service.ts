@@ -66,19 +66,32 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
  * be any run of digits, everything else is literal. A looser wildcard would also match another
  * page whose name starts with this one (`page` and `page-admin-2026-…zip`) or any `page-notes.zip`,
  * which pruning would then delete. With an unusual format, a backup is rather kept than matched.
+ *
+ * Like {@link DistService.backupName}, only the first `{pageName}` and the first `{date}` are
+ * placeholders; any later one stays in the name as it is.
  */
 export function backupNamePattern(template: string, pageName: string, sampleDate: string): RegExp {
-  const [before, after] = template.split(`{${TEMPLATE_PART_DATE}}`);
-  const part = (text: string) =>
-    escapeRegExp(text)
-      .split(escapeRegExp(`{${TEMPLATE_PART_PAGE_NAME}}`))
-      .join(escapeRegExp(pageName));
   const date = sampleDate
     .split(/(\d+)/)
     .map((piece, index) => (index % 2 === 1 ? '\\d+' : escapeRegExp(piece)))
     .join('');
+  const placeholders = [
+    { token: `{${TEMPLATE_PART_PAGE_NAME}}`, pattern: escapeRegExp(pageName) },
+    { token: `{${TEMPLATE_PART_DATE}}`, pattern: date },
+  ]
+    .map((placeholder) => ({ ...placeholder, at: template.indexOf(placeholder.token) }))
+    .filter((placeholder) => placeholder.at !== -1)
+    .sort((a, b) => a.at - b.at);
 
-  return after === undefined ? new RegExp(`^${part(before)}$`) : new RegExp(`^${part(before)}${date}${part(after)}$`);
+  let source = '^';
+  let position = 0;
+
+  for (const { token, pattern, at } of placeholders) {
+    source += escapeRegExp(template.slice(position, at)) + pattern;
+    position = at + token.length;
+  }
+
+  return new RegExp(`${source}${escapeRegExp(template.slice(position))}$`);
 }
 
 export interface SyncMeta {
@@ -306,10 +319,13 @@ export class DistService {
           })),
       );
 
-      const excess = backups
-        .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name))
-        .slice(this.maxBackups)
-        .filter((backup) => !protectedNames.has(backup.name));
+      // The protected backups take their places first: with a skewed clock, an old backup can be
+      // dated after the one just saved, and must not push the total over the limit.
+      const newestFirst = backups.sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name));
+      const protectedCount = newestFirst.filter((backup) => protectedNames.has(backup.name)).length;
+      const excess = newestFirst
+        .filter((backup) => !protectedNames.has(backup.name))
+        .slice(Math.max(0, this.maxBackups - protectedCount));
 
       for (const backup of excess) {
         await fs.unlink(path.resolve(this.backupFolder, backup.name));
