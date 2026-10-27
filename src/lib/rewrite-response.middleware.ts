@@ -6,6 +6,24 @@ import { createLogger } from './logger.js';
 type NextHandleFunction = Connect.NextHandleFunction;
 type IncomingMessage = Connect.IncomingMessage;
 
+function asEncoding(value: unknown): BufferEncoding | undefined {
+  return typeof value === 'string' ? (value as BufferEncoding) : undefined;
+}
+
+function toBuffer(chunk: unknown, encoding?: BufferEncoding): Buffer | null {
+  if (typeof chunk === 'string') {
+    return Buffer.from(chunk, encoding);
+  }
+
+  // A copy, not a view: once a write is acknowledged, its producer may reuse the buffer, and the
+  // bytes are needed until `end()`.
+  if (chunk instanceof Uint8Array) {
+    return Buffer.from(chunk);
+  }
+
+  return null;
+}
+
 /**
  * Rewrite response middleware
  *
@@ -20,30 +38,81 @@ export function initRewriteResponse(
     if (await predicate(req.url ?? '', req, res)) {
       const logger = createLogger();
 
-      logger.info(`Rewrite response for ${req.url}`);
-
       const end = res.end;
+
+      // A HEAD response has no body to rewrite: the renderer sends the GET page's Content-Length
+      // and ends without one. That length is not the rewritten page's, and rewriting an empty body
+      // would not give it either, so the header is dropped.
+      if (req.method === 'HEAD') {
+        res.end = function (chunk?: any, encoding?: any, cb?: any) {
+          const callback = [chunk, encoding, cb].find((arg) => typeof arg === 'function');
+
+          if (!res.headersSent) {
+            res.removeHeader('content-length');
+          }
+
+          (end as (this: ServerResponse, cb?: () => void) => ServerResponse).call(this, callback);
+
+          return this;
+        };
+
+        next();
+
+        return;
+      }
+
+      logger.info(`Rewrite response for ${req.url}`);
 
       const buffers: Buffer[] = [];
 
-      res.write = function (body) {
-        buffers.push(body);
+      res.write = function (chunk: any, encoding?: any, cb?: any) {
+        const buffer = toBuffer(chunk, asEncoding(encoding));
+
+        if (buffer) {
+          buffers.push(buffer);
+        }
+
+        const callback = typeof encoding === 'function' ? encoding : cb;
+
+        // Asynchronously, as a real response calls it: a producer that writes its next chunk from
+        // the callback would otherwise recurse on one stack for the whole body.
+        if (typeof callback === 'function') {
+          process.nextTick(callback);
+        }
 
         return true;
       };
 
-      res.end = function (chunk?: any, encoding?: BufferEncoding | (() => void), cb?: () => void) {
-        if (typeof chunk === 'string') {
-          buffers.push(Buffer.from(chunk));
+      res.end = function (chunk?: any, encoding?: any, cb?: any) {
+        if (typeof chunk === 'function') {
+          cb = chunk;
+          chunk = undefined;
         }
 
-        const contentEncoding = res.getHeader('content-encoding') as string;
-        const content = decodeContent(Buffer.from(Buffer.concat(buffers)), contentEncoding);
+        const buffer = toBuffer(chunk, asEncoding(encoding));
 
-        const bufferEncoding = typeof encoding !== 'function' && encoding ? encoding : 'utf-8';
+        if (buffer) {
+          buffers.push(buffer);
+        }
+
         const endCallback = typeof encoding === 'function' ? encoding : cb;
 
-        end.call(this, encodeContent(rewrite(content, req, res), contentEncoding), bufferEncoding, endCallback);
+        const contentEncoding = res.getHeader('content-encoding') as string | undefined;
+        const content = decodeContent(Buffer.concat(buffers), contentEncoding);
+        const output = encodeContent(rewrite(content, req, res), contentEncoding);
+
+        // Next.js sets `Content-Length` for the page it rendered before calling `end`
+        // (send-payload.js). The rewritten body is longer, and a stale length makes browsers
+        // cut the page short and Node clients fail with HPE_INVALID_CONSTANT. Vite sets none.
+        if (res.getHeader('content-length') !== undefined) {
+          if (res.headersSent) {
+            logger.warn(`Rewrite response for ${req.url}: headers already sent, Content-Length left as is`);
+          } else {
+            res.setHeader('content-length', output.length);
+          }
+        }
+
+        end.call(this, output, endCallback);
 
         return this;
       };
