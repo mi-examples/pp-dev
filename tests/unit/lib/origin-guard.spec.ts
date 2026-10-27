@@ -31,18 +31,30 @@ describe('crossOriginReason', () => {
     ['no browser headers (curl, a script)', {}],
     ['same-origin fetch metadata without Origin', { 'sec-fetch-site': 'same-origin' }],
     ['a typed URL', { 'sec-fetch-site': 'none' }],
+    // Separate local dev servers whose pages work together.
+    ['another dev server on localhost', { origin: 'http://localhost:5173' }],
+    ['another dev server on 127.0.0.1', { origin: 'http://127.0.0.1:8080' }],
+    ['another dev server on [::1]', { origin: 'http://[::1]:4200' }],
+    ['an https dev server on localhost', { origin: 'https://localhost:5174' }],
+    ['another saved user host', { host: 'localhost:3000', origin: 'http://viewer.localhost:3000' }],
+    [
+      'a page on localhost calling the dev server on a LAN address',
+      { host: '192.168.1.5:3000', origin: 'http://localhost:5173' },
+    ],
+    ['a same-site POST without Origin (another localhost port)', { 'sec-fetch-site': 'same-site' }],
   ])('lets %s through', (_name, headers) => {
     expect(crossOriginReason(req(headers))).toBeNull();
   });
 
   it.each([
     ['another site', { origin: 'https://evil.example' }],
-    ['another dev server on localhost', { origin: 'http://localhost:5173' }],
-    ['another saved user host', { host: 'localhost:3000', origin: 'http://viewer.localhost:3000' }],
+    ['a name that only starts with localhost', { origin: 'http://localhost.evil.example' }],
+    ['a name that only ends like localhost', { origin: 'http://evil-localhost' }],
+    ['another machine on the LAN', { origin: 'http://192.168.1.9:3000' }],
+    ['an address that only starts with 127', { origin: 'http://127.0.0.1.evil.example' }],
     ['a sandboxed or file:// page', { origin: 'null' }],
     ['an unreadable Origin', { origin: '::not a url::' }],
     ['a cross-site form POST without Origin', { 'sec-fetch-site': 'cross-site' }],
-    ['a same-site POST without Origin', { 'sec-fetch-site': 'same-site' }],
   ])('refuses %s', (_name, headers) => {
     expect(crossOriginReason(req(headers))).toEqual(expect.any(String));
   });
@@ -51,8 +63,8 @@ describe('crossOriginReason', () => {
     expect(crossOriginReason(req({ 'sec-fetch-site': 'cross-site' }, 'GET'))).toBeNull();
   });
 
-  it('refuses a cross-origin read (fetch sends Origin on GET too)', () => {
-    expect(crossOriginReason(req({ origin: 'http://localhost:5173' }, 'GET'))).toEqual(expect.any(String));
+  it("refuses another site's cross-origin read (fetch sends Origin on GET too)", () => {
+    expect(crossOriginReason(req({ origin: 'https://evil.example' }, 'GET'))).toEqual(expect.any(String));
   });
 });
 
@@ -132,6 +144,16 @@ describe('internal API behind the origin guard', () => {
     expect(JSON.parse(res.body)).toEqual({ ok: true });
   });
 
+  it('serves a page of another dev server on this machine', async () => {
+    const res = await send(
+      'POST',
+      { origin: 'http://localhost:5173', 'sec-fetch-site': 'same-site', 'content-type': 'application/json' },
+      '{"name":"qa"}',
+    );
+
+    expect(res.status).toBe(200);
+  });
+
   it('serves non-browser clients', async () => {
     expect((await send('GET', {})).status).toBe(200);
   });
@@ -179,8 +201,12 @@ describe('pp-dev next dev-panel WebSocket behind the origin guard', () => {
     expect(await connect('https://evil.example')).toEqual({ opened: false, status: 403 });
   });
 
-  it('refuses a WebSocket opened by another dev server on localhost', async () => {
-    expect(await connect('http://localhost:5173')).toEqual({ opened: false, status: 403 });
+  it('refuses a WebSocket opened by another machine on the LAN', async () => {
+    expect(await connect('http://192.168.1.9:3000')).toEqual({ opened: false, status: 403 });
+  });
+
+  it('accepts a WebSocket opened by another dev server on this machine', async () => {
+    expect(await connect('http://localhost:5173')).toEqual({ opened: true });
   });
 
   it("accepts the dev server's own page", async () => {
