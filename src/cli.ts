@@ -31,6 +31,7 @@ import { ClientService } from './lib/client.service.js';
 import { DistService } from './lib/dist.service.js';
 import { PPDevHotServer } from './lib/pp-ws-server.js';
 import { registerProcessHandlers } from './lib/process-handlers.js';
+import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from './lib/next-process-listeners.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from './lib/dev-panel.js';
 import {
   PP_DEV_CONFIG_NAMES,
@@ -580,6 +581,17 @@ cli
 
     const logger = createLogger();
 
+    // Next.js adds process listeners per app and leaves them attached after close().
+    const nextAppListeners = createNextAppListenerTracker();
+
+    const closeNextApp = async () => {
+      if (nextApp && typeof nextApp.close === 'function') {
+        await nextApp.close();
+      }
+
+      nextApp = null;
+    };
+
     // Keep-alive connections would hold `close()` open, so they are ended first.
     const closeHttpServer = async () => {
       const server = httpServer;
@@ -628,11 +640,7 @@ cli
         }
 
         // Clean up existing Next.js app if any
-        if (nextApp && typeof nextApp.close === 'function') {
-          await nextApp.close();
-
-          nextApp = null;
-        }
+        await closeNextApp();
 
         // Clear config cache
         const { clearConfigCache } = await import('./config.js');
@@ -736,11 +744,7 @@ cli
           // attempt so a failed "auto" run does not leave TURBOPACK=auto and block Webpack.
           delete process.env.TURBOPACK;
 
-          if (nextApp && typeof nextApp.close === 'function') {
-            await nextApp.close();
-
-            nextApp = null;
-          }
+          await closeNextApp();
 
           const nextOptions: Parameters<typeof next>[0] = {
             dev: true,
@@ -761,8 +765,10 @@ cli
             nextOptions.turbopack = true;
           }
 
+          nextAppListeners.beforeCreate();
           nextApp = next(nextOptions);
           await nextApp!.prepare();
+          nextAppListeners.afterCreate();
         };
 
         if (bundlerChoice.webpack) {
@@ -1271,6 +1277,7 @@ cli
 
     registerProcessHandlers({
       logger,
+      knownRejections: [NEXT_WORKER_SCHEDULER_REJECTION],
       shutdown: async () => {
         if (configWatcher) {
           cleanupConfigWatcher(configWatcher);
@@ -1283,11 +1290,7 @@ cli
         }
 
         await closeHttpServer();
-
-        if (nextApp && typeof nextApp.close === 'function') {
-          await nextApp.close();
-          nextApp = null;
-        }
+        await closeNextApp();
       },
     });
 

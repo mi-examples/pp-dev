@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { registerProcessHandlers } from '../../../src/lib/process-handlers.js';
+import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../../src/lib/next-process-listeners.js';
 
 /**
  * Regression tests for the dev server's process handlers.
@@ -79,6 +80,31 @@ describe('registerProcessHandlers', () => {
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('middleware failed'));
   });
 
+  it('logs a known harmless rejection as one short line, without a stack', async () => {
+    const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+    const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
+    const shutdown = vi.fn();
+
+    registerProcessHandlers({
+      logger,
+      shutdown,
+      knownRejections: [NEXT_WORKER_SCHEDULER_REJECTION],
+      processRef: proc as never,
+    });
+
+    proc.emit('unhandledRejection', new Error('Worker creator already registered'), Promise.resolve());
+    proc.emit('unhandledRejection', new Error('Worker creator registered twice?'), Promise.resolve());
+
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('kept its Turbopack worker pool'));
+    expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('    at '));
+    // Anything else is still reported in full.
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Worker creator registered twice?'));
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(proc.exit).not.toHaveBeenCalled();
+  });
+
   it('exits with 1 when the shutdown fails', async () => {
     const { proc } = setup({ shutdown: vi.fn().mockRejectedValue(new Error('close failed')) });
 
@@ -119,5 +145,82 @@ describe('registerProcessHandlers', () => {
     for (const event of ['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']) {
       expect(proc.listenerCount(event)).toBe(0);
     }
+  });
+});
+
+/**
+ * Creating a Next.js dev app adds `uncaughtException` listeners that `close()` leaves attached, so
+ * every `pp-dev next` config restart added more (4 → 9 over five restarts). Some of them are added
+ * once per process, though, and Next.js never adds those again: they must survive.
+ */
+describe('createNextAppListenerTracker', () => {
+  // A stand-in for a Next.js app: a listener per instance, plus one added once per process.
+  function makeNextLike(proc: EventEmitter) {
+    let processLevelAdded = false;
+
+    return () => {
+      const app = { id: Math.random() };
+
+      proc.on('uncaughtException', (error: unknown) => {
+        void app;
+        void error;
+      });
+
+      if (!processLevelAdded) {
+        processLevelAdded = true;
+        proc.on('uncaughtException', function logOnce() {});
+      }
+    };
+  }
+
+  it('keeps one listener per app and the once-per-process ones over repeated restarts', () => {
+    const proc = new EventEmitter();
+    const own = vi.fn();
+    const createApp = makeNextLike(proc);
+    const tracker = createNextAppListenerTracker(['uncaughtException'], proc as never);
+
+    proc.on('uncaughtException', own);
+
+    for (let start = 0; start < 6; start += 1) {
+      tracker.beforeCreate();
+      createApp();
+      tracker.afterCreate();
+    }
+
+    const listeners = proc.listeners('uncaughtException');
+
+    // Ours, Next's once-per-process one, and the current app's.
+    expect(listeners).toHaveLength(3);
+    expect(listeners[0]).toBe(own);
+    expect(listeners.some((listener) => listener.name === 'logOnce')).toBe(true);
+  });
+
+  it("removes nothing on the first app, and only the previous app's repeated listeners later", () => {
+    const proc = new EventEmitter();
+    const createApp = makeNextLike(proc);
+    const tracker = createNextAppListenerTracker(['uncaughtException'], proc as never);
+
+    tracker.beforeCreate();
+    createApp();
+
+    expect(tracker.afterCreate()).toBe(0);
+
+    tracker.beforeCreate();
+    createApp();
+
+    expect(tracker.afterCreate()).toBe(1);
+  });
+
+  it('leaves other events alone', () => {
+    const proc = new EventEmitter();
+    const tracker = createNextAppListenerTracker(['uncaughtException'], proc as never);
+
+    for (let start = 0; start < 3; start += 1) {
+      tracker.beforeCreate();
+      proc.on('SIGINT', () => {});
+      tracker.afterCreate();
+    }
+
+    expect(proc.listenerCount('SIGINT')).toBe(3);
   });
 });

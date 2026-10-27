@@ -8,8 +8,15 @@ interface ProcessHandlersLogger {
   warn: (message: string) => void;
 }
 
+/** An unhandled rejection that is known to be harmless: logged as one short line, without a stack. */
+export interface KnownRejection {
+  matches: (reason: unknown) => boolean;
+  message: string;
+}
+
 export interface ProcessHandlersOptions {
   logger: ProcessHandlersLogger;
+  knownRejections?: KnownRejection[];
   /** Closes what the command opened. Runs at most once; the process exits after it. */
   shutdown: () => Promise<void>;
   /** How long `shutdown` may take before the process exits anyway. @default 5000 */
@@ -38,6 +45,7 @@ function describe(error: unknown): string {
  */
 export function registerProcessHandlers({
   logger,
+  knownRejections = [],
   shutdown,
   shutdownTimeoutMs = 5000,
   processRef = process,
@@ -84,6 +92,14 @@ export function registerProcessHandlers({
     void shutdownAndExit('uncaughtException', EXIT_FAILURE);
   };
   const onUnhandledRejection = (reason: unknown) => {
+    const known = knownRejections.find((rejection) => rejection.matches(reason));
+
+    if (known) {
+      logger.info(colors.dim(known.message));
+
+      return;
+    }
+
     logger.error(colors.red(`❌ Unhandled promise rejection (the server keeps running): ${describe(reason)}`));
   };
 
