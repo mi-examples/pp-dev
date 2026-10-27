@@ -1,6 +1,23 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const testType = process.env.TEST_TYPE;
+
+type ButtonState = { syncing: boolean; disabled: boolean };
+
+async function recordButtonStates(button: Locator) {
+  await button.evaluate((el: HTMLButtonElement) => {
+    const states: ButtonState[] = [];
+
+    (window as unknown as { __syncButtonStates: ButtonState[] }).__syncButtonStates = states;
+    new MutationObserver(() => {
+      states.push({ syncing: el.classList.contains('syncing'), disabled: el.disabled });
+    }).observe(el, { attributes: true, attributeFilter: ['class', 'disabled'] });
+  });
+}
+
+function recordedStates(page: Page) {
+  return page.evaluate(() => (window as unknown as { __syncButtonStates: ButtonState[] }).__syncButtonStates);
+}
 
 test.describe('Toolbar Sync Functionality', () => {
   // Skip toolbar tests for Next.js
@@ -17,7 +34,9 @@ test.describe('Toolbar Sync Functionality', () => {
     await expect(syncButton).toBeAttached();
   });
 
-  test('should add syncing class when sync button is clicked', async ({ page, baseURL }) => {
+  // The mock backend answers a sync within milliseconds, faster than polling the DOM can catch, so
+  // every state the button goes through is recorded instead.
+  test('should show the syncing state while a sync runs, and recover once it ends', async ({ page, baseURL }) => {
     if (!baseURL) {
       throw new Error('baseURL is not set');
     }
@@ -26,36 +45,25 @@ test.describe('Toolbar Sync Functionality', () => {
 
     const syncButton = page.locator('#sync-template');
 
-    // Check if button is not disabled (sync is available)
-    const isDisabled = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
-
-    if (!isDisabled) {
-      await syncButton.click();
-
-      await expect
-        .poll(async () => {
-          const className = await syncButton.getAttribute('class');
-          const disabled = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
-
-          return className?.includes('syncing') ? 'syncing' : disabled ? 'disabled' : 'idle';
-        })
-        .not.toBe('idle');
-
-      const className = await syncButton.getAttribute('class');
-      const disabledAfterClick = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
-
-      if (disabledAfterClick && !className?.includes('syncing')) {
-        expect(disabledAfterClick).toBe(true);
-        expect(className).not.toContain('syncing');
-
-        return;
-      }
-
-      expect(className).toContain('syncing');
-    } else {
-      // Skip test if sync is disabled
+    if (await syncButton.evaluate((el: HTMLButtonElement) => el.disabled)) {
       test.skip();
+
+      return;
     }
+
+    await recordButtonStates(syncButton);
+    await syncButton.click();
+
+    // While the sync runs, the button spins and can't be clicked again.
+    await expect.poll(() => recordedStates(page)).toContainEqual({ syncing: true, disabled: true });
+
+    // Whatever the sync's outcome, its response ends the syncing state. Only "sync unavailable on
+    // this instance" leaves the button disabled; a failed sync can be retried.
+    await expect(syncButton).not.toHaveClass(/syncing/, { timeout: 15_000 });
+
+    const unavailable = await syncButton.evaluate((el) => el.classList.contains('disabled'));
+
+    await expect(syncButton).toBeEnabled({ enabled: !unavailable });
   });
 
   test('should display sync button with correct title when enabled', async ({ page, baseURL }) => {
@@ -108,39 +116,35 @@ test.describe('Toolbar Sync Functionality', () => {
       throw new Error('baseURL is not set');
     }
 
+    // Count the sync requests the panel actually sends over the dev-server WebSocket.
+    let syncRequests = 0;
+
+    page.on('websocket', (ws) => {
+      ws.on('framesent', ({ payload }) => {
+        if (typeof payload === 'string' && /"event":"template:sync"/.test(payload)) {
+          syncRequests += 1;
+        }
+      });
+    });
+
     await page.goto(baseURL);
 
     const syncButton = page.locator('#sync-template');
 
-    const isDisabled = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
-
-    if (!isDisabled) {
-      // Click sync button
-      await syncButton.click();
-
-      // While syncing, button should be in syncing state
-      const hasSyncingClass = await syncButton.evaluate((el) => el.classList.contains('syncing'));
-
-      // If syncing is in progress, a second programmatic click should not leave
-      // the button in an invalid state. The mock backend may complete the sync
-      // before the next DOM read, so both "still syncing" and "settled" states
-      // are acceptable after the second event.
-      if (hasSyncingClass) {
-        const classBeforeSecondClick = await syncButton.getAttribute('class');
-
-        await syncButton.dispatchEvent('click');
-        const classAfterSecondClick = await syncButton.getAttribute('class');
-        const disabledAfterSecondClick = await syncButton.evaluate((el: HTMLButtonElement) => el.disabled);
-
-        expect(classBeforeSecondClick).toContain('syncing');
-        expect(classAfterSecondClick).toMatch(/sync-button/);
-
-        if (classAfterSecondClick?.includes('syncing')) {
-          expect(disabledAfterSecondClick || classAfterSecondClick.includes('disabled')).toBe(true);
-        }
-      }
-    } else {
+    if (await syncButton.evaluate((el: HTMLButtonElement) => el.disabled)) {
       test.skip();
+
+      return;
     }
+
+    // Two clicks in one task: the second lands on the button the first one just disabled.
+    await syncButton.evaluate((el: HTMLButtonElement) => {
+      el.click();
+      el.click();
+    });
+
+    await expect(syncButton).not.toHaveClass(/syncing/, { timeout: 15_000 });
+    expect(syncRequests).toBe(1);
   });
+
 });
