@@ -8,6 +8,12 @@ import { Logger, ViteDevServer, WebSocketClient } from 'vite';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 
+/**
+ * `template:sync:response` code for a sync requested while another one runs. The dev panel
+ * (src/client/sync-button.ts) has its own copy, since it can't import this Node module.
+ */
+export const SYNC_IN_PROGRESS_CODE = 'SYNC_IN_PROGRESS';
+
 interface SyncActionRequestPayload {
   requestId: string;
   title: string;
@@ -38,6 +44,8 @@ export class ClientService {
   private readonly eventMap: Map<string, (this: ClientService, ...attrs: any[]) => void>;
 
   private logger: Logger;
+  /** The running template sync, if any (see `onTemplateSync`). */
+  private syncInFlight: Promise<void> | null = null;
   private readonly syncActionResolvers = new Map<
     string,
     { resolve: (approved: boolean) => void; timeoutId: ReturnType<typeof setTimeout> }
@@ -124,7 +132,36 @@ export class ClientService {
     });
   }
 
-  async onTemplateSync(_data: unknown, client: WebSocketClient) {
+  /**
+   * One sync at a time: a second click, a second tab, or a click the panel replays after a
+   * reconnect would otherwise start a second build into the same `dist`/`.next` and a second
+   * upload to MI while the first is still running.
+   */
+  async onTemplateSync(data: unknown, client: WebSocketClient) {
+    if (this.syncInFlight) {
+      this.logger.warn(colors.yellow('Template sync requested while another one is running; ignored'));
+
+      client.send('template:sync:response', {
+        error:
+          'A template sync is already running. Wait for it to finish, or answer its dialog in the tab that started it.',
+        code: SYNC_IN_PROGRESS_CODE,
+      });
+
+      return;
+    }
+
+    const sync = this.runTemplateSync(data, client);
+
+    this.syncInFlight = sync;
+
+    try {
+      await sync;
+    } finally {
+      this.syncInFlight = null;
+    }
+  }
+
+  private async runTemplateSync(_data: unknown, client: WebSocketClient) {
     if (this.opts.distService && this.opts.miAPI) {
       const { distService, miAPI } = this.opts;
 

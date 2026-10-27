@@ -77,8 +77,12 @@ export function createPPDevHotContext(): ViteHotContext {
       return;
     }
 
+    let opened = false;
+
     socket.addEventListener('open', () => {
+      opened = true;
       reconnectDelay = 1_000;
+      dispatch('vite:ws:connect', {});
       flushOutbox();
     });
 
@@ -98,6 +102,14 @@ export function createPPDevHotContext(): ViteHotContext {
 
     socket.addEventListener('close', () => {
       socket = null;
+
+      // Same events as Vite's own HMR client, so the panel can tell a lost connection apart
+      // (e.g. a sync whose response will never arrive). Only for a socket that was open: a
+      // failed reconnect attempt is not a new disconnect.
+      if (opened) {
+        dispatch('vite:ws:disconnect', {});
+      }
+
       scheduleReconnect();
     });
 
