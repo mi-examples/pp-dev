@@ -1,0 +1,4 @@
+# False positives only. Each line is a gitleaks fingerprint: commit:file:rule:line.
+
+# RFC 6455's sample Sec-WebSocket-Key ("the sample nonce") in a test; the test now generates its key.
+eb9c85d54b4a98bb36fa2df333151baca1a117a6:tests/unit/lib/origin-guard.spec.ts:generic-api-key:239

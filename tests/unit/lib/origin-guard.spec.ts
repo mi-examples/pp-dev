@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
+import { randomBytes } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { crossOriginReason } from '../../../src/lib/helpers/origin-guard.js';
 import { createInternalServer } from '../../../src/lib/internal.middleware.js';
@@ -236,7 +237,8 @@ describe('pp-dev next dev-panel WebSocket behind the origin guard', () => {
           'Origin: https://evil.example',
           'Upgrade: websocket',
           'Connection: Upgrade',
-          'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+          // Generated: a literal key reads like a credential to secret scanners.
+          `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
           'Sec-WebSocket-Version: 13',
           '',
           '',
