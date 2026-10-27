@@ -28,8 +28,11 @@ function injectPanel(body: Buffer) {
 
 type Served = { status: number; headers: http.IncomingHttpHeaders; body: Buffer };
 
-async function serve(respond: (res: http.ServerResponse) => void) {
-  const middleware = initRewriteResponse(() => true, injectPanel);
+async function serve(
+  respond: (res: http.ServerResponse) => void,
+  { method = 'GET', rewrite = injectPanel }: { method?: string; rewrite?: (body: Buffer) => Buffer } = {},
+) {
+  const middleware = initRewriteResponse(() => true, rewrite);
 
   const server = http.createServer((req, res) => {
     void middleware(req as any, res, () => respond(res));
@@ -41,7 +44,7 @@ async function serve(respond: (res: http.ServerResponse) => void) {
 
   const get = () =>
     new Promise<Served>((resolve, reject) => {
-      const req = http.get({ host: '127.0.0.1', port, path: '/', agent: false }, (res) => {
+      const req = http.request({ host: '127.0.0.1', port, path: '/', method, agent: false }, (res) => {
         const chunks: Buffer[] = [];
 
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -52,6 +55,7 @@ async function serve(respond: (res: http.ServerResponse) => void) {
       });
 
       req.on('error', reject);
+      req.end();
     });
 
   const close = () => new Promise<void>((resolve) => server.close(() => resolve()));
@@ -165,6 +169,28 @@ describe('initRewriteResponse', () => {
 
     expect(syncAck).toBe(false);
     expect(served.body.toString('utf8')).toBe(`<html><body>${'a'.repeat(chunks)}${PANEL}</body></html>`);
+  });
+
+  it('drops the GET page length from a HEAD response instead of rewriting its absent body', async () => {
+    const rewrite = vi.fn(injectPanel);
+    const callback = vi.fn();
+
+    const served = await serve(
+      (res) => {
+        // What Next.js (send-payload.js) does for HEAD: the GET page's length, no body.
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+        res.end(null, callback);
+      },
+      { method: 'HEAD', rewrite },
+    );
+
+    expect(served.status).toBe(200);
+    expect(served.headers['content-length']).toBeUndefined();
+    expect(served.headers['content-type']).toBe('text/html');
+    expect(served.body.length).toBe(0);
+    expect(rewrite).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 
   it('runs the callback passed to end()', async () => {

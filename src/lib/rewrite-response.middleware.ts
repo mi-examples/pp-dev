@@ -38,9 +38,30 @@ export function initRewriteResponse(
     if (await predicate(req.url ?? '', req, res)) {
       const logger = createLogger();
 
-      logger.info(`Rewrite response for ${req.url}`);
-
       const end = res.end;
+
+      // A HEAD response has no body to rewrite: the renderer sends the GET page's Content-Length
+      // and ends without one. That length is not the rewritten page's, and rewriting an empty body
+      // would not give it either, so the header is dropped.
+      if (req.method === 'HEAD') {
+        res.end = function (chunk?: any, encoding?: any, cb?: any) {
+          const callback = [chunk, encoding, cb].find((arg) => typeof arg === 'function');
+
+          if (!res.headersSent) {
+            res.removeHeader('content-length');
+          }
+
+          (end as (this: ServerResponse, cb?: () => void) => ServerResponse).call(this, callback);
+
+          return this;
+        };
+
+        next();
+
+        return;
+      }
+
+      logger.info(`Rewrite response for ${req.url}`);
 
       const buffers: Buffer[] = [];
 
