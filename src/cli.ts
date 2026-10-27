@@ -1186,6 +1186,7 @@ cli
           const distService = new DistService(templateName ?? basename(projectRoot), {
             root: projectRoot,
             backupFolder: path.resolve(projectRoot, _normalized.syncBackupsDir),
+            maxBackups: _normalized.syncMaxBackups,
             nextBuild: {
               projectRoot,
               distDir: nextExportDir,

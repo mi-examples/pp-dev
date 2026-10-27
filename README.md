@@ -187,9 +187,10 @@ module.exports = defineConfig({
 
 ### `sync` — Template sync
 
-| Field        | Type     | Default     | Description                             |
-|--------------|----------|-------------|-----------------------------------------|
-| `backupsDir` | `string` | `'backups'` | Directory for backups from the MI server |
+| Field        | Type              | Default     | Description                                                                                         |
+|--------------|-------------------|-------------|-----------------------------------------------------------------------------------------------------|
+| `backupsDir` | `string`          | `'backups'` | Directory for backups from the MI server                                                            |
+| `maxBackups` | `number \| false` | `20`        | How many of this page's backups to keep; each new backup deletes the oldest beyond that. `false` or `0` keeps them all. |
 
 ### `devPanel` — Dev panel appearance
 

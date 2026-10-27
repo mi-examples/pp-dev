@@ -47,6 +47,51 @@ export interface SyncOptions {
   /** Build directory to zip in memory for template sync, independent of persistent ZIP output. */
   buildInputFolder?: string;
   nextBuild?: NextBuildOptions;
+  /**
+   * How many of this page's backups to keep; older ones are deleted after each new backup.
+   * `false` or `0` keeps them all. @default DEFAULT_MAX_BACKUPS
+   */
+  maxBackups?: number | false;
+}
+
+/** Backups kept per page when `maxBackups` is not set. */
+export const DEFAULT_MAX_BACKUPS = 20;
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Matches the file names `backupNameTemplate` gives this page's backups, whatever their date.
+ *
+ * The date part must look like `sampleDate` (a date `dateFormat` formatted): each run of digits may
+ * be any run of digits, everything else is literal. A looser wildcard would also match another
+ * page whose name starts with this one (`page` and `page-admin-2026-…zip`) or any `page-notes.zip`,
+ * which pruning would then delete. With an unusual format, a backup is rather kept than matched.
+ *
+ * Like {@link DistService.backupName}, only the first `{pageName}` and the first `{date}` are
+ * placeholders; any later one stays in the name as it is.
+ */
+export function backupNamePattern(template: string, pageName: string, sampleDate: string): RegExp {
+  const date = sampleDate
+    .split(/(\d+)/)
+    .map((piece, index) => (index % 2 === 1 ? '\\d+' : escapeRegExp(piece)))
+    .join('');
+  const placeholders = [
+    { token: `{${TEMPLATE_PART_PAGE_NAME}}`, pattern: escapeRegExp(pageName) },
+    { token: `{${TEMPLATE_PART_DATE}}`, pattern: date },
+  ]
+    .map((placeholder) => ({ ...placeholder, at: template.indexOf(placeholder.token) }))
+    .filter((placeholder) => placeholder.at !== -1)
+    .sort((a, b) => a.at - b.at);
+
+  let source = '^';
+  let position = 0;
+
+  for (const { token, pattern, at } of placeholders) {
+    source += escapeRegExp(template.slice(position, at)) + pattern;
+    position = at + token.length;
+  }
+
+  return new RegExp(`${source}${escapeRegExp(template.slice(position))}$`);
 }
 
 export interface SyncMeta {
@@ -123,6 +168,9 @@ export class DistService {
   private readonly versionFileTemplate: string;
   private readonly buildInputFolder?: string;
   private readonly nextBuild?: NextBuildOptions;
+  private readonly maxBackups: number;
+  /** Settles once the sync meta file is read; never rejects (see loadMeta). */
+  private readonly metaLoaded: Promise<void>;
 
   private logger: Logger;
 
@@ -139,6 +187,7 @@ export class DistService {
       buildInputFolder,
       dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
       nextBuild,
+      maxBackups = DEFAULT_MAX_BACKUPS,
     } = syncOptions || {};
 
     this.root = root;
@@ -154,24 +203,46 @@ export class DistService {
     this.versionFileTemplate = normalizeRelativeOutputPath(versionFileTemplate, 'VERSION file name template');
     this.buildInputFolder = buildInputFolder;
     this.nextBuild = nextBuild;
-
-    this.syncMeta();
+    this.maxBackups =
+      typeof maxBackups === 'number' && Number.isInteger(maxBackups) && maxBackups > 0 ? maxBackups : Infinity;
 
     this.logger = createLogger();
+
+    // Read in the background, but awaited by everything that uses the meta (see meta()): a
+    // constructor can't await, and the meta must not be used before it is read.
+    this.metaLoaded = this.loadMeta();
   }
 
   async checkMeta() {
+    // Recursive: a backups folder such as `.pp-dev/backups` may not have its parent yet.
+    await fs.mkdir(metaDirPath, { recursive: true });
+    await fs.mkdir(this.backupFolder, { recursive: true });
+  }
+
+  /** Reads the sync meta file. A missing, unreadable or corrupt one starts an empty meta. */
+  private async loadMeta() {
     try {
-      await fs.stat(metaDirPath);
-    } catch {
-      await fs.mkdir(metaDirPath);
+      const parsed = JSON.parse(await this.readMetaFile());
+
+      this.currentMeta = parsed && typeof parsed === 'object' ? parsed : ({} as SyncMeta);
+    } catch (error) {
+      this.logger.warn(
+        colors.yellow(
+          `[DistService] Could not read the sync meta (${error instanceof Error ? error.message : String(error)}); starting a new one`,
+        ),
+      );
+      this.currentMeta = {} as SyncMeta;
+    }
+  }
+
+  private async meta(): Promise<SyncMeta> {
+    await this.metaLoaded;
+
+    if (!this.currentMeta) {
+      this.currentMeta = {} as SyncMeta;
     }
 
-    try {
-      await fs.stat(this.backupFolder);
-    } catch {
-      await fs.mkdir(this.backupFolder);
-    }
+    return this.currentMeta;
   }
 
   async readMetaFile() {
@@ -192,16 +263,13 @@ export class DistService {
     });
   }
 
+  /** Writes the sync meta to its file. */
   async syncMeta() {
-    if (!this.currentMeta) {
-      this.currentMeta = JSON.parse(await this.readMetaFile());
-    } else {
-      await this.writeMetaFile(this.currentMeta);
-    }
+    await this.writeMetaFile(await this.meta());
   }
 
   async getLatestSavedBackup() {
-    const { lastBackupName } = this.currentMeta!;
+    const { lastBackupName } = await this.meta();
 
     if (!lastBackupName) {
       return null;
@@ -226,6 +294,55 @@ export class DistService {
 
   getBackupMeta() {
     return this.currentMeta;
+  }
+
+  /**
+   * Deletes this page's oldest backups beyond `maxBackups`. Only files named after the backup
+   * template for this page count; the backup just saved and the one the meta points at are never
+   * deleted. Failing to prune never fails the sync.
+   */
+  private async pruneBackups(justSaved: string) {
+    if (!Number.isFinite(this.maxBackups)) {
+      return;
+    }
+
+    try {
+      const pattern = backupNamePattern(this.backupNameTemplate, this.pageName, this.dateFormat(new Date()));
+      const protectedNames = new Set([justSaved, this.currentMeta?.lastBackupName].filter(Boolean));
+      const entries = await fs.readdir(this.backupFolder, { withFileTypes: true });
+      const backups = await Promise.all(
+        entries
+          .filter((entry) => entry.isFile() && pattern.test(entry.name))
+          .map(async (entry) => ({
+            name: entry.name,
+            mtimeMs: (await fs.stat(path.resolve(this.backupFolder, entry.name))).mtimeMs,
+          })),
+      );
+
+      // The protected backups take their places first: with a skewed clock, an old backup can be
+      // dated after the one just saved, and must not push the total over the limit.
+      const newestFirst = backups.sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name));
+      const protectedCount = newestFirst.filter((backup) => protectedNames.has(backup.name)).length;
+      const excess = newestFirst
+        .filter((backup) => !protectedNames.has(backup.name))
+        .slice(Math.max(0, this.maxBackups - protectedCount));
+
+      for (const backup of excess) {
+        await fs.unlink(path.resolve(this.backupFolder, backup.name));
+      }
+
+      if (excess.length > 0) {
+        this.logger.info(
+          colors.gray(`[DistService] Deleted ${excess.length} old backup(s), keeping the latest ${this.maxBackups}`),
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        colors.yellow(
+          `[DistService] Could not delete old backups: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
   }
 
   private pathToPosix(filePath: string): string {
@@ -620,9 +737,10 @@ export class DistService {
     const resolvedAnalysis = precomputedAnalysis ?? (await this.analyzeBackup(backupFile));
     const resolvedBackupFileHash = resolvedAnalysis.backupFingerprint;
     const lastSavedBackup = await this.getLatestSavedBackup();
+    const meta = await this.meta();
 
     if (lastSavedBackup) {
-      const { lastBackupHash, lastMainHash } = this.currentMeta!;
+      const { lastBackupHash, lastMainHash } = meta;
 
       if (lastBackupHash === resolvedBackupFileHash) {
         this.logger.info(
@@ -649,21 +767,22 @@ export class DistService {
 
     const filename = this.backupName(this.pageName, backupDate);
 
-    this.currentMeta!.lastBackupName = filename;
-    this.currentMeta!.lastBackupHash = resolvedBackupFileHash;
-    this.currentMeta!.lastBackupDate = backupDate.toISOString();
+    meta.lastBackupName = filename;
+    meta.lastBackupHash = resolvedBackupFileHash;
+    meta.lastBackupDate = backupDate.toISOString();
 
     if (resolvedAnalysis.mainHash) {
-      this.currentMeta!.lastMainHash = resolvedAnalysis.mainHash;
+      meta.lastMainHash = resolvedAnalysis.mainHash;
     } else {
-      delete this.currentMeta!.lastMainHash;
+      delete meta.lastMainHash;
     }
 
     await this.syncMeta();
 
-    return await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile).finally(() => {
-      this.logger.info(`Backup saved to ${filename}`);
-    });
+    await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile);
+    this.logger.info(`Backup saved to ${filename}`);
+
+    await this.pruneBackups(filename);
   }
 
   async buildNewAssets(): Promise<Buffer> {
