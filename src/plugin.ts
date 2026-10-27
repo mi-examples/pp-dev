@@ -89,6 +89,11 @@ export interface BuildConfig {
 export interface SyncConfig {
   /** Directory for sync backups. @default 'backups' */
   backupsDir?: string;
+  /**
+   * How many backups of this page to keep; each new backup deletes the oldest beyond that.
+   * `false` or `0` keeps them all. @default 20
+   */
+  maxBackups?: number | false;
 }
 
 export interface InspectorConfig {
@@ -161,6 +166,8 @@ export interface NormalizedVitePPDevOptions {
   distZip: false | { outFileName: string; outDir: string; inDir?: string };
   versionPlugin: false | VersionPluginOptions;
   syncBackupsDir: string;
+  /** `undefined` leaves DistService's default. */
+  syncMaxBackups?: number | false;
   v7Features: boolean;
   personalAccessToken?: string;
   inspectorEnabled: boolean;
@@ -301,6 +308,7 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
     distZip,
     versionPlugin,
     syncBackupsDir: sync.backupsDir ?? 'backups',
+    syncMaxBackups: sync.maxBackups,
     v7Features: apiVersion >= 7,
     personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
     inspectorEnabled: inspector.enabled ?? true,
@@ -344,6 +352,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     distZip,
     versionPlugin,
     syncBackupsDir,
+    syncMaxBackups,
     v7Features,
     personalAccessToken,
     inspectorEnabled,
@@ -669,6 +678,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             {
               root: server.config.root,
               backupFolder: syncBackupsDir,
+              maxBackups: syncMaxBackups,
               buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
             },
             typeof distZip === 'object'
