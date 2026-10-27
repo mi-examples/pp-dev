@@ -30,6 +30,7 @@ import { safeNextImport } from './lib/next-import.js';
 import { ClientService } from './lib/client.service.js';
 import { DistService } from './lib/dist.service.js';
 import { PPDevHotServer } from './lib/pp-ws-server.js';
+import { registerProcessHandlers } from './lib/process-handlers.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from './lib/dev-panel.js';
 import {
   PP_DEV_CONFIG_NAMES,
@@ -530,42 +531,21 @@ cli
       }
     };
 
-    // Handle graceful shutdown
-    const gracefulShutdown = async (signal: string) => {
-      logger.info(colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`));
-
-      try {
-        // Clean up config watcher
+    registerProcessHandlers({
+      logger,
+      shutdown: async () => {
         if (configWatcher) {
           cleanupConfigWatcher(configWatcher);
           configWatcher = null;
         }
 
-        // Clean up server
         if (server) {
           await server.close();
           server = null;
         }
 
         stopProfiler(logger.info);
-        logger.info(colors.green('✅ Graceful shutdown completed'));
-        process.exit(0);
-      } catch (error) {
-        logger.error(colors.red(`❌ Error during graceful shutdown: ${error}`));
-        process.exit(1);
-      }
-    };
-
-    // Set up process signal handlers
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('uncaughtException', (error) => {
-      logger.error(colors.red(`❌ Uncaught Exception: ${error}`));
-      gracefulShutdown('uncaughtException');
-    });
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error(colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`));
-      gracefulShutdown('unhandledRejection');
+      },
     });
 
     // Start the server
@@ -595,7 +575,33 @@ cli
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
 
+    // Connections to the current HTTP server, so a restart or shutdown can end them.
+    const openSockets = new Set<import('node:net').Socket>();
+
     const logger = createLogger();
+
+    // Keep-alive connections would hold `close()` open, so they are ended first.
+    const closeHttpServer = async () => {
+      const server = httpServer;
+
+      if (!server) {
+        return;
+      }
+
+      for (const socket of openSockets) {
+        socket.destroy();
+      }
+
+      openSockets.clear();
+
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+
+      if (httpServer === server) {
+        httpServer = null;
+      }
+    };
 
     const startNextServer = async () => {
       if (isRestarting) {
@@ -618,12 +624,7 @@ cli
         // Clean up existing server if any
         if (httpServer) {
           logger.info(colors.yellow('🛑 Stopping existing Next.js server...'));
-          await new Promise<void>((resolve) => {
-            httpServer.close(() => {
-              httpServer = null;
-              resolve();
-            });
-          });
+          await closeHttpServer();
         }
 
         // Clean up existing Next.js app if any
@@ -820,9 +821,6 @@ cli
         // Start the server
         const port = typeof opts.port === 'number' ? opts.port : 3000;
         const host = typeof opts.host === 'string' ? opts.host || '0.0.0.0' : 'localhost';
-
-        // Track open sockets for proper cleanup
-        const openSockets = new Set<any>();
 
         // Create HTTP server with base path handling and pp-dev middlewares
         httpServer = createServer(async (req: any, res: any) => {
@@ -1245,100 +1243,6 @@ cli
             openSockets.add(socket);
             socket.on('close', () => openSockets.delete(socket));
           });
-
-          // Handle graceful shutdown
-          const gracefulShutdown = async (signal: string) => {
-            logger.info(colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`));
-
-            // Set a timeout to force exit if shutdown hangs
-            const shutdownTimeout = setTimeout(() => {
-              logger.info(colors.yellow('⏰ Shutdown timeout reached, forcing exit'));
-              process.exit(0);
-            }, 5000);
-
-            try {
-              // Clean up config watcher
-              if (configWatcher) {
-                cleanupConfigWatcher(configWatcher);
-                configWatcher = null;
-              }
-
-              // Close all open sockets first
-              for (const socket of Array.from(openSockets)) {
-                socket.destroy();
-              }
-
-              openSockets.clear();
-
-              // Close the dev-panel WebSocket server
-              if (hotServer) {
-                await hotServer.close();
-                hotServer = null;
-              }
-
-              // Stop accepting new connections and wait for server to close
-              await new Promise<void>((resolve) => {
-                httpServer.close(() => {
-                  logger.info(colors.yellow('🛑 HTTP server closed'));
-                  resolve();
-                });
-              });
-
-              // Close the Next.js app properly
-              if (nextApp && typeof nextApp.close === 'function') {
-                await nextApp.close();
-                logger.info(colors.yellow('🛑 Next.js app closed'));
-              }
-
-              clearTimeout(shutdownTimeout);
-              logger.info(colors.green('✅ Graceful shutdown completed'));
-              process.exit(0);
-            } catch (error) {
-              clearTimeout(shutdownTimeout);
-              logger.error(colors.red(`❌ Error during graceful shutdown: ${error}`));
-              process.exit(1);
-            }
-          };
-
-          // Handle process signals - try to use process.on if available
-          let processObj = process;
-
-          // If local process.on is not available, try global process
-          if (typeof process.on !== 'function') {
-            const globalProcess = (globalThis as any).process || (global as any).process;
-
-            if (globalProcess && typeof globalProcess.on === 'function') {
-              processObj = globalProcess;
-              logger.info(colors.green('✅ Using global process object for event handlers'));
-            }
-          }
-
-          if (typeof processObj.on === 'function') {
-            try {
-              processObj.on('SIGINT', () => gracefulShutdown('SIGINT'));
-              processObj.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-
-              // Handle uncaught exceptions
-              processObj.on('uncaughtException', (error) => {
-                logger.error(colors.red(`❌ Uncaught Exception: ${error}`));
-                gracefulShutdown('uncaughtException');
-              });
-
-              processObj.on('unhandledRejection', (reason, promise) => {
-                logger.error(colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`));
-                gracefulShutdown('unhandledRejection');
-              });
-
-              logger.info(colors.green('✅ Process event handlers registered successfully'));
-            } catch (error) {
-              logger.warn(colors.yellow(`⚠️  Failed to register process event handlers: ${error}`));
-            }
-          } else {
-            logger.warn(
-              colors.yellow('⚠️  process.on is not available, graceful shutdown handlers will not be registered'),
-            );
-            logger.info(colors.blue('💡 This might be due to bundling or environment constraints'));
-          }
         });
 
         isRestarting = false;
@@ -1365,57 +1269,26 @@ cli
       }
     };
 
-    // Handle graceful shutdown
-    const gracefulShutdown = async (signal: string) => {
-      logger.info(colors.yellow(`\n🛑 Received ${signal}, shutting down gracefully...`));
-
-      try {
-        // Clean up config watcher
+    registerProcessHandlers({
+      logger,
+      shutdown: async () => {
         if (configWatcher) {
           cleanupConfigWatcher(configWatcher);
           configWatcher = null;
         }
 
-        // Clean up dev-panel WebSocket server
         if (hotServer) {
           await hotServer.close();
           hotServer = null;
         }
 
-        // Clean up server
-        if (httpServer) {
-          await new Promise<void>((resolve) => {
-            httpServer.close(() => {
-              httpServer = null;
-              resolve();
-            });
-          });
-        }
+        await closeHttpServer();
 
-        // Clean up Next.js app
         if (nextApp && typeof nextApp.close === 'function') {
           await nextApp.close();
           nextApp = null;
         }
-
-        logger.info(colors.green('✅ Graceful shutdown completed'));
-        process.exit(0);
-      } catch (error) {
-        logger.error(colors.red(`❌ Error during graceful shutdown: ${error}`));
-        process.exit(1);
-      }
-    };
-
-    // Set up process signal handlers
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('uncaughtException', (error) => {
-      logger.error(colors.red(`❌ Uncaught Exception: ${error}`));
-      gracefulShutdown('uncaughtException');
-    });
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error(colors.red(`❌ Unhandled Rejection at: ${promise}, reason: ${reason}`));
-      gracefulShutdown('unhandledRejection');
+      },
     });
 
     // Start the server
