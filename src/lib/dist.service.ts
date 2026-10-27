@@ -59,15 +59,26 @@ export const DEFAULT_MAX_BACKUPS = 20;
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Matches the file names `backupNameTemplate` gives this page's backups, whatever their date. */
-export function backupNamePattern(template: string, pageName: string): RegExp {
+/**
+ * Matches the file names `backupNameTemplate` gives this page's backups, whatever their date.
+ *
+ * The date part must look like `sampleDate` (a date `dateFormat` formatted): each run of digits may
+ * be any run of digits, everything else is literal. A looser wildcard would also match another
+ * page whose name starts with this one (`page` and `page-admin-2026-…zip`) or any `page-notes.zip`,
+ * which pruning would then delete. With an unusual format, a backup is rather kept than matched.
+ */
+export function backupNamePattern(template: string, pageName: string, sampleDate: string): RegExp {
   const [before, after] = template.split(`{${TEMPLATE_PART_DATE}}`);
   const part = (text: string) =>
     escapeRegExp(text)
       .split(escapeRegExp(`{${TEMPLATE_PART_PAGE_NAME}}`))
       .join(escapeRegExp(pageName));
+  const date = sampleDate
+    .split(/(\d+)/)
+    .map((piece, index) => (index % 2 === 1 ? '\\d+' : escapeRegExp(piece)))
+    .join('');
 
-  return after === undefined ? new RegExp(`^${part(before)}$`) : new RegExp(`^${part(before)}.+${part(after)}$`);
+  return after === undefined ? new RegExp(`^${part(before)}$`) : new RegExp(`^${part(before)}${date}${part(after)}$`);
 }
 
 export interface SyncMeta {
@@ -283,7 +294,7 @@ export class DistService {
     }
 
     try {
-      const pattern = backupNamePattern(this.backupNameTemplate, this.pageName);
+      const pattern = backupNamePattern(this.backupNameTemplate, this.pageName, this.dateFormat(new Date()));
       const protectedNames = new Set([justSaved, this.currentMeta?.lastBackupName].filter(Boolean));
       const entries = await fs.readdir(this.backupFolder, { withFileTypes: true });
       const backups = await Promise.all(

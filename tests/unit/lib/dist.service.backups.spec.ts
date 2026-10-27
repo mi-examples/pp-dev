@@ -95,6 +95,10 @@ describe('DistService — start-up and backups', () => {
     }
 
     writeBackup(backups, 'other-page-2026-10-01T10-00-00.zip', 60);
+    // Pages whose names start with this one's, and a ZIP that only shares the prefix.
+    writeBackup(backups, 'page-admin-2026-10-01T10-00-00.zip', 60);
+    writeBackup(backups, 'page-v2-2026-10-01T10-00-00.zip', 60);
+    writeBackup(backups, 'page-notes.zip', 60);
     writeBackup(backups, 'notes.txt', 60);
 
     const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: 3 });
@@ -107,6 +111,9 @@ describe('DistService — start-up and backups', () => {
       [
         'notes.txt',
         'other-page-2026-10-01T10-00-00.zip',
+        'page-admin-2026-10-01T10-00-00.zip',
+        'page-v2-2026-10-01T10-00-00.zip',
+        'page-notes.zip',
         'page-2026-10-04T10-00-00.zip',
         'page-2026-10-05T10-00-00.zip',
         saved,
@@ -138,7 +145,7 @@ describe('DistService — start-up and backups', () => {
     memoryMeta();
 
     for (let index = 0; index < DEFAULT_MAX_BACKUPS + 5; index += 1) {
-      writeBackup(backups, `page-old-${String(index).padStart(2, '0')}.zip`, 100 - index);
+      writeBackup(backups, `page-2026-09-${String(index + 1).padStart(2, '0')}T10-00-00.zip`, 100 - index);
     }
 
     const service = new DistService('page', { root, backupFolder: 'backups' });
@@ -164,18 +171,32 @@ describe('DistService — start-up and backups', () => {
 });
 
 describe('backupNamePattern', () => {
+  const defaultDate = '2026-10-27T10-00-00';
+
   it('matches the default template for this page only', () => {
-    const pattern = backupNamePattern('{pageName}-{date}.zip', 'my.page');
+    const pattern = backupNamePattern('{pageName}-{date}.zip', 'my.page', defaultDate);
 
     expect(pattern.test('my.page-2026-10-27T10-00-00.zip')).toBe(true);
+    expect(pattern.test('my.page-2025-01-02T03-04-05.zip')).toBe(true);
     expect(pattern.test('myXpage-2026-10-27T10-00-00.zip')).toBe(false);
     expect(pattern.test('other-2026-10-27T10-00-00.zip')).toBe(false);
     expect(pattern.test('my.page-2026-10-27T10-00-00.zip.bak')).toBe(false);
   });
 
-  it('matches a custom template, with or without a date', () => {
-    expect(backupNamePattern('backup_{date}_{pageName}.zip', 'p').test('backup_20261027_p.zip')).toBe(true);
-    expect(backupNamePattern('{pageName}.zip', 'p').test('p.zip')).toBe(true);
-    expect(backupNamePattern('{pageName}.zip', 'p').test('p2.zip')).toBe(false);
+  it("doesn't match pages whose names start with this one's, or ZIPs that only share the prefix", () => {
+    const pattern = backupNamePattern('{pageName}-{date}.zip', 'page', defaultDate);
+
+    expect(pattern.test('page-admin-2026-10-26T14-00-00.zip')).toBe(false);
+    expect(pattern.test('page-v2-2026-10-26T14-00-00.zip')).toBe(false);
+    expect(pattern.test('page-2-2026-10-26T14-00-00.zip')).toBe(false);
+    expect(pattern.test('page-notes.zip')).toBe(false);
+    expect(pattern.test('page-.zip')).toBe(false);
+  });
+
+  it('matches a custom template and date format, with or without a date', () => {
+    expect(backupNamePattern('backup_{date}_{pageName}.zip', 'p', '20261027').test('backup_20251231_p.zip')).toBe(true);
+    expect(backupNamePattern('backup_{date}_{pageName}.zip', 'p', '20261027').test('backup_x_p.zip')).toBe(false);
+    expect(backupNamePattern('{pageName}.zip', 'p', defaultDate).test('p.zip')).toBe(true);
+    expect(backupNamePattern('{pageName}.zip', 'p', defaultDate).test('p2.zip')).toBe(false);
   });
 });
