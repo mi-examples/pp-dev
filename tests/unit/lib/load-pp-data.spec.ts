@@ -154,3 +154,67 @@ describe("load-pp-data middleware — a saved user's host (PP-4594)", () => {
     }
   });
 });
+
+/**
+ * Regression tests for the redirect loop on a failing MI: every error with an HTTP response (a 5xx,
+ * MI's HTML maintenance page) counted as "not authorized", so the page was redirected to
+ * `/home?proxyRedirect=%2F`, whose injected script led back to the page after 3 seconds, which
+ * failed again. Only 401, 403 and 412 are about the session or token; anything else must reach
+ * the error handler so the developer sees it.
+ */
+describe('load-pp-data middleware — MI errors that are not about authorization', () => {
+  const httpError = (status: number, data: unknown = { message: 'error' }) =>
+    Object.assign(new Error(`Request failed with status code ${status}`), {
+      isAxiosError: true,
+      response: { status, data },
+    });
+
+  beforeEach(() => {
+    authProvider.reset();
+    clearAPICache();
+  });
+
+  it.each([401, 403, 412])('sends a page load MI refused with %i to the login flow', async (status) => {
+    const middleware = initLoadPPData(/^\/$/, makeMi(() => Promise.reject(httpError(status))), { templateLess: true });
+    const res = makeRes();
+    const next = vi.fn();
+
+    await middleware(makeReq('/'), res as unknown as ServerResponse, next);
+
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/home?proxyRedirect=%2F');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a 500 with an HTML error page', httpError(500, '<!DOCTYPE html><html><body>Internal Server Error</body></html>')],
+    ['a 502', httpError(502)],
+    ['a 503 maintenance page', httpError(503, '<html><body>Down for maintenance</body></html>')],
+    ['a 504', httpError(504)],
+    ['a 400', httpError(400)],
+    ['a network error', Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:443'), { code: 'ECONNREFUSED' })],
+  ])('passes %s from MI on as an error instead of redirecting to the login flow', async (_name, error) => {
+    const middleware = initLoadPPData(/^\/$/, makeMi(() => Promise.reject(error)), { templateLess: true });
+    const res = makeRes();
+    const next = vi.fn();
+
+    await middleware(makeReq('/'), res as unknown as ServerResponse, next);
+
+    expect(res.headers.location).toBeUndefined();
+    expect(res.headersSent).toBe(false);
+    expect(next).toHaveBeenCalledWith(error);
+  });
+
+  it('passes an MI failure on /home on as an error, not as a successful login', async () => {
+    const error = httpError(503, '<html><body>Down for maintenance</body></html>');
+    const middleware = initLoadPPData(/^\/$/, makeMi(() => Promise.reject(error)), { templateLess: true });
+    const res = makeRes();
+    const next = vi.fn();
+
+    await middleware(makeReq('/home'), res as unknown as ServerResponse, next);
+
+    expect(res.headers.location).toBeUndefined();
+    expect(next).toHaveBeenCalledWith(error);
+    expect(authProvider.getState().isRedirected).toBe(false);
+  });
+});
