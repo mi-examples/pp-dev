@@ -4,6 +4,7 @@ import { cutUrlParams, redirect } from './helpers/url.helper.js';
 import { Headers, MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
+import { isTokenError } from './helpers/token.helper.js';
 import { ServerResponse } from 'http';
 import { cache, onProxyCacheInvalidate } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
@@ -153,6 +154,13 @@ export function initLoadPPData(
       ) {
         logger.info(colors.blue('Trying to authenticate and redirect to base'));
 
+        // The loads report an error that is not about authorization (MI down, a 5xx) through
+        // `next(error)`. Kept here, it is passed on below instead of being taken for a success.
+        let loadError: unknown;
+        const recordLoadError = (error?: unknown) => {
+          loadError = error;
+        };
+
         try {
           if (!isNeedTemplateLoad) {
             await handlePageInfoOnly(
@@ -165,7 +173,7 @@ export function initLoadPPData(
               },
               req,
               res,
-              () => {},
+              recordLoadError,
               logger,
             );
           } else {
@@ -179,7 +187,7 @@ export function initLoadPPData(
               },
               req,
               res,
-              () => {},
+              recordLoadError,
               logger,
             );
           }
@@ -190,6 +198,10 @@ export function initLoadPPData(
           // login loop.
           if (res.headersSent || res.writableEnded) {
             return;
+          }
+
+          if (loadError) {
+            return next(loadError);
           }
 
           authProvider.setRedirected(true);
@@ -414,10 +426,16 @@ function handleLoadError(
 }
 
 /**
- * Type guard to check if error is an authorization error
+ * Whether MI refused the request for want of a valid session or token (401, 403, 412), which
+ * logging in again can fix.
+ *
+ * Any other answer must not send the browser to the login flow: a 5xx or an HTML error page from
+ * MI (maintenance, a proxy in between) used to count as "not authorized" here, and the redirect to
+ * `/home?proxyRedirect=` led straight back to the page, which failed again — an endless loop that
+ * hid the real error.
  */
 function isAuthError(error: unknown): boolean {
-  return error !== null && typeof error === 'object' && 'response' in error && error.response !== undefined;
+  return error !== null && typeof error === 'object' && isTokenError(error);
 }
 
 // Export cache management for external use
