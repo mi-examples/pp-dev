@@ -232,6 +232,21 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body.ok).toBe(true);
       expect(res.body.warnings).toEqual([expect.stringContaining('"has$special!chars" contains a character')]);
     });
+
+    it('answers with JSON when the file cannot be written', async () => {
+      const { app, saveTemplateVariablesFile } = setup();
+      const res = makeRes();
+
+      saveTemplateVariablesFile.mockRejectedValue(new Error("EACCES: permission denied, open 'public/x'"));
+
+      await app.handlers.get('PUT /@api/variables/schema')!({ body: { raw: '{"tags":[]}' } }, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({
+        error: 'Failed to write __template_variables.json.',
+        details: "EACCES: permission denied, open 'public/x'",
+      });
+    });
   });
 
   describe('GET /@api/variables/values', () => {
@@ -946,6 +961,199 @@ describe('registerVariablesEditorRoutes', () => {
 
       editorWindow.refresh();
       expect(dom.window.document.querySelector('.ve-modal-title')?.textContent).toBe('Discard unsaved changes?');
+
+      dom.window.close();
+    });
+  });
+
+  describe('client: failed loads and saves', () => {
+    type FetchResponse = { ok: boolean; status?: number; statusText?: string; json: () => Promise<unknown> };
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    const htmlErrorPage = (status: number, statusText: string): FetchResponse => ({
+      ok: false,
+      status,
+      statusText,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON");
+      },
+    });
+
+    async function openEditor(tab: 'schema' | 'values', fetch: ReturnType<typeof vi.fn>) {
+      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+      const res = makeRes();
+
+      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+
+      const { JSDOM } = await import('jsdom');
+      const dom = new JSDOM(res.body as string, {
+        runScripts: 'outside-only',
+        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=${tab}`,
+      });
+
+      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+
+      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+
+      dom.window.eval(scripts.at(-1)!);
+      await flush();
+
+      const editor = dom.window as unknown as {
+        save: () => void;
+        refresh: () => void;
+        setDirty: (value: boolean) => void;
+        toggleRawMode: () => void;
+        toggleValuesRawMode: () => void;
+        onValuesRawInput: () => void;
+        updateValueField: (index: number, value: string) => void;
+      };
+      const banner = () => dom.window.document.querySelector('#content > .banner')?.textContent ?? '';
+      const confirmSave = async () => {
+        editor.save();
+        dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
+        await flush();
+      };
+      const asksToDiscard = () => {
+        editor.refresh();
+
+        const asked = dom.window.document.querySelector('.ve-modal-title')?.textContent === 'Discard unsaved changes?';
+
+        dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-cancel')?.click();
+
+        return asked;
+      };
+
+      return { dom, editor, banner, confirmSave, asksToDiscard };
+    }
+
+    const schemaResponse: FetchResponse = {
+      ok: true,
+      json: async () => ({ exists: true, raw: '{"tags":[{"name":"title"}]}', schema: { tags: [{ name: 'title' }] } }),
+    };
+
+    const valuesResponse: FetchResponse = {
+      ok: true,
+      json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'initial' }] }),
+    };
+
+    it('shows why a schema save failed on an HTML error page, keeping the raw draft and the unsaved state', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(schemaResponse)
+        .mockResolvedValueOnce(htmlErrorPage(500, 'Internal Server Error'));
+      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('schema', fetch);
+      const draft = '{"tags":[{"name":"title"},{"name":"subtitle"}]}';
+
+      editor.toggleRawMode();
+      dom.window.document.querySelector<HTMLTextAreaElement>('#raw-editor')!.value = draft;
+      editor.setDirty(true);
+      await confirmSave();
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(banner()).toContain('Save failed: the dev server answered HTTP 500 Internal Server Error');
+      expect(dom.window.document.querySelector<HTMLTextAreaElement>('#raw-editor')!.value).toBe(draft);
+      expect(asksToDiscard()).toBe(true);
+
+      dom.window.close();
+    });
+
+    it("shows the server's error for a values save over the body limit, keeping the raw draft", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(valuesResponse)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 413,
+          statusText: 'Payload Too Large',
+          json: async () => ({ error: 'The request body is larger than the dev server accepts (10mb).' }),
+        });
+      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+      const draft = '[{"name":"title","value":"edited"}]';
+
+      editor.toggleValuesRawMode();
+
+      const rawEditor = dom.window.document.querySelector<HTMLTextAreaElement>('#values-raw-editor')!;
+
+      rawEditor.value = draft;
+      editor.onValuesRawInput();
+      await confirmSave();
+
+      expect(banner()).toContain('Save failed: The request body is larger than the dev server accepts (10mb).');
+      expect(dom.window.document.querySelector<HTMLTextAreaElement>('#values-raw-editor')!.value).toBe(draft);
+      expect(asksToDiscard()).toBe(true);
+
+      dom.window.close();
+    });
+
+    it("shows the server's details when MI rejects a values save", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(valuesResponse)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 502,
+          statusText: 'Bad Gateway',
+          json: async () => ({ error: 'Failed to save live page variables.', details: 'Request failed with status 500' }),
+        });
+      const { dom, editor, banner, confirmSave } = await openEditor('values', fetch);
+
+      editor.updateValueField(0, 'edited');
+      await confirmSave();
+
+      expect(banner()).toContain('Save failed: Failed to save live page variables. Request failed with status 500');
+
+      dom.window.close();
+    });
+
+    it('shows a network failure of a save instead of leaving it pending', async () => {
+      const fetch = vi.fn().mockResolvedValueOnce(valuesResponse).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+
+      editor.updateValueField(0, 'edited');
+      await confirmSave();
+
+      expect(banner()).toContain('Save failed: Failed to fetch');
+      expect(asksToDiscard()).toBe(true);
+
+      dom.window.close();
+    });
+
+    it('treats a 2xx answer that is not JSON as a failed save', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(valuesResponse)
+        .mockResolvedValueOnce({ ...htmlErrorPage(200, 'OK'), ok: true });
+      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+
+      editor.updateValueField(0, 'edited');
+      await confirmSave();
+
+      expect(banner()).toContain('Save failed: the dev server sent an answer that is not JSON');
+      expect(asksToDiscard()).toBe(true);
+
+      dom.window.close();
+    });
+
+    it('shows a failed schema load as an error, not as a missing file', async () => {
+      const fetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        json: async () => ({ error: 'Dist service or MiAPI is not defined' }),
+      });
+      const { dom, editor, banner } = await openEditor('schema', fetch);
+
+      expect(banner()).toContain('Failed to load the schema: Dist service or MiAPI is not defined');
+      expect(dom.window.document.querySelector('#content')?.textContent).not.toContain(
+        'No local __template_variables.json found',
+      );
+
+      editor.save();
+      await flush();
+
+      expect(banner()).toContain('Cannot save the schema until it has loaded successfully.');
+      expect(fetch).toHaveBeenCalledTimes(1);
 
       dom.window.close();
     });
