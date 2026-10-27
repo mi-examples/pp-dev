@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, realpathSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { pathToFileURL } from 'url';
 
 describe('Config Loader', () => {
   let testDir: string;
@@ -190,6 +191,250 @@ describe('Config Loader', () => {
       expect(workspacePkg.name).toBe('workspace-root');
       expect(config.mi?.url).toBe('https://target.example.com');
       expect(pkg.name).toBe('target-app');
+    });
+  });
+
+  /**
+   * Regression tests for "the config watcher restarts the server with the old config". A JS
+   * config was imported from its own path, which Node caches for the life of the process, so
+   * `clearConfigCache()` + restart read the stale module. And a `.cts` config in an ESM project
+   * (or an `.mts` one in a CommonJS project) failed to load: it was compiled into a `.js` file
+   * read by the project's package.json `type`.
+   */
+  describe('reading a changed config again', () => {
+    // esbuild runs a long-lived service process, started in the cwd of its first call. Started
+    // from a test's temporary folder, it would keep Windows from deleting that folder. beforeAll
+    // runs before the outer beforeEach switches to that folder.
+    beforeAll(async () => {
+      const esbuild = await import('esbuild');
+
+      await esbuild.transform('');
+    });
+
+    async function loadAfterEdit(
+      pkg: Record<string, unknown>,
+      fileName: string,
+      source: (url: string) => string,
+      extraFiles: (url: string) => Record<string, string> = () => ({}),
+      editedFile = fileName,
+    ) {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', ...pkg }));
+
+      const write = (url: string) => {
+        const files = { [fileName]: source(url), ...extraFiles(url) };
+
+        for (const [name, content] of Object.entries(files)) {
+          if (name === editedFile || url === 'https://before.example.com') {
+            writeFileSync(join(testDir, name), content);
+          }
+        }
+      };
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      write('https://before.example.com');
+      clearConfigCache();
+
+      const before = await getConfig();
+
+      write('https://after.example.com');
+      clearConfigCache();
+
+      const after = await getConfig();
+
+      return { before: before.mi?.url, after: after.mi?.url };
+    }
+
+    it.each([
+      ['an .mjs config', {}, 'pp-dev.config.mjs', (url: string) => `export default { mi: { url: '${url}' } };`],
+      ['a .cjs config', {}, 'pp-dev.config.cjs', (url: string) => `module.exports = { mi: { url: '${url}' } };`],
+      [
+        'a .js config in an ESM project',
+        { type: 'module' },
+        'pp-dev.config.js',
+        (url: string) => `export default { mi: { url: '${url}' } };`,
+      ],
+      [
+        'a .js config in a CommonJS project',
+        { type: 'commonjs' },
+        'pp-dev.config.js',
+        (url: string) => `module.exports = { mi: { url: '${url}' } };`,
+      ],
+      [
+        'a .ts config',
+        { type: 'module' },
+        'pp-dev.config.ts',
+        (url: string) => `const url: string = '${url}';\nexport default { mi: { url } };`,
+      ],
+    ])('reads %s again after it changed', async (_name, pkg, fileName, source) => {
+      expect(await loadAfterEdit(pkg, fileName, source)).toEqual({
+        before: 'https://before.example.com',
+        after: 'https://after.example.com',
+      });
+    });
+
+    it('reads a changed file that the config imports', async () => {
+      const result = await loadAfterEdit(
+        { type: 'module' },
+        'pp-dev.config.js',
+        () => `import { url } from './mi-url.js';\nexport default { mi: { url } };`,
+        (url) => ({ 'mi-url.js': `export const url = '${url}';` }),
+        'mi-url.js',
+      );
+
+      expect(result).toEqual({ before: 'https://before.example.com', after: 'https://after.example.com' });
+    });
+
+    it.each([
+      ['a .cts config in an ESM project', { type: 'module' }, 'pp-dev.config.cts'],
+      ['an .mts config in a CommonJS project', { type: 'commonjs' }, 'pp-dev.config.mts'],
+    ])('loads %s', async (_name, pkg, fileName) => {
+      const result = await loadAfterEdit(
+        pkg,
+        fileName,
+        (url) => `const url: string = '${url}';\nexport default { mi: { url } };`,
+      );
+
+      expect(result).toEqual({ before: 'https://before.example.com', after: 'https://after.example.com' });
+    });
+
+    it('resolves paths in the config from its own folder', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      writeFileSync(
+        join(testDir, 'pp-dev.config.js'),
+        `import { fileURLToPath } from 'node:url';\nexport default { build: { outDir: fileURLToPath(new URL('./out', import.meta.url)) } };`,
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const config = (await getConfig()) as { build?: { outDir?: string } };
+
+      expect(config.build?.outDir).toBe(join(realpathSync(testDir), 'out'));
+    });
+
+    it('resolves module-relative paths in the files a config imports from their own folders', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      mkdirSync(join(testDir, 'settings'));
+      writeFileSync(
+        join(testDir, 'settings', 'paths.mjs'),
+        [
+          `import { fileURLToPath } from 'node:url';`,
+          `export const out = fileURLToPath(new URL('./out', import.meta.url));`,
+          `export const dir = import.meta.dirname;`,
+          `export const file = import.meta.filename;`,
+        ].join('\n'),
+      );
+      writeFileSync(
+        join(testDir, 'settings', 'legacy.cjs'),
+        `module.exports = { dir: __dirname, file: __filename };`,
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.mjs'),
+        [
+          `import { out, dir, file } from './settings/paths.mjs';`,
+          `import legacy from './settings/legacy.cjs';`,
+          `export default { paths: { out, dir, file, legacy, configDir: import.meta.dirname } };`,
+        ].join('\n'),
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const { paths } = (await getConfig()) as { paths: Record<string, unknown> };
+      const root = process.cwd();
+      const settings = join(root, 'settings');
+
+      expect(paths).toEqual({
+        out: join(settings, 'out'),
+        dir: settings,
+        file: join(settings, 'paths.mjs'),
+        legacy: { dir: settings, file: join(settings, 'legacy.cjs') },
+        configDir: root,
+      });
+    });
+
+    it("loads a CommonJS file that requires Node built-ins and packages into an ESM config, next to the config's own require", async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      mkdirSync(join(testDir, 'node_modules', 'local-pkg'), { recursive: true });
+      writeFileSync(join(testDir, 'node_modules', 'local-pkg', 'index.js'), `module.exports = 'from a package';`);
+      writeFileSync(
+        join(testDir, 'node_modules', 'local-pkg', 'package.json'),
+        JSON.stringify({ name: 'local-pkg', main: 'index.js' }),
+      );
+      writeFileSync(
+        join(testDir, 'helper.cjs'),
+        `const fs = require('node:fs');\nmodule.exports = { fs: typeof fs.readFileSync, pkg: require('local-pkg') };`,
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.mjs'),
+        [
+          `import { createRequire } from 'node:module';`,
+          `import helper from './helper.cjs';`,
+          `const require = createRequire(import.meta.url);`,
+          `export default { helper, own: typeof require('node:path').join };`,
+        ].join('\n'),
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      expect(await getConfig()).toEqual({ helper: { fs: 'function', pkg: 'from a package' }, own: 'function' });
+    });
+
+    it('loads a config and a helper that start with a hashbang', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      writeFileSync(join(testDir, 'helper.mjs'), `#!/usr/bin/env node\nexport const url = 'https://helper.example.com';`);
+      writeFileSync(
+        join(testDir, 'pp-dev.config.js'),
+        `#!/usr/bin/env node\nimport { url } from './helper.mjs';\nexport default { mi: { url }, dir: import.meta.dirname };`,
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      expect(await getConfig()).toEqual({ mi: { url: 'https://helper.example.com' }, dir: process.cwd() });
+    });
+
+    it('gives JSX and TSX helpers their own module-relative paths', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      mkdirSync(join(testDir, 'ui'));
+      writeFileSync(join(testDir, 'ui', 'a.jsx'), `export const a = { dir: import.meta.dirname, file: __filename };`);
+      writeFileSync(
+        join(testDir, 'ui', 'b.tsx'),
+        `export const b: { url: string } = { url: import.meta.url };`,
+      );
+      writeFileSync(
+        join(testDir, 'pp-dev.config.ts'),
+        `import { a } from './ui/a.jsx';\nimport { b } from './ui/b.tsx';\nexport default { a, b };`,
+      );
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+
+      const ui = join(process.cwd(), 'ui');
+
+      expect(await getConfig()).toEqual({
+        a: { dir: ui, file: join(ui, 'a.jsx') },
+        b: { url: pathToFileURL(join(ui, 'b.tsx')).href },
+      });
+    });
+
+    it('leaves no temporary files behind', async () => {
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
+      writeFileSync(join(testDir, 'pp-dev.config.mjs'), `export default { mi: { url: 'https://example.com' } };`);
+
+      const { getConfig, clearConfigCache } = await import('../../../src/config.js');
+
+      clearConfigCache();
+      await getConfig();
+
+      expect(readdirSync(testDir).filter((name) => name.startsWith('pp-config.timestamp-'))).toEqual([]);
     });
   });
 
