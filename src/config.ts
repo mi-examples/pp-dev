@@ -2,9 +2,9 @@ import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
 import { PP_DEV_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
-import type { PPDevConfig } from './plugin.js';
+import type { PPDevConfig } from './lib/pp-dev-config.js';
 
-export type { PPDevConfig } from './plugin.js';
+export type { PPDevConfig } from './lib/pp-dev-config.js';
 
 // Performance optimization: Cache for configuration files
 interface ConfigCache {

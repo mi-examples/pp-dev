@@ -1,14 +1,16 @@
 import { InlineConfig, PluginOption } from 'vite';
 import { execSync } from 'child_process';
-import type { NormalizedVitePPDevOptions } from './plugin.js';
-import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+import type { NormalizedVitePPDevOptions } from './lib/pp-dev-config.js';
+// Not from ./plugin.js: that module loads the dev server (express, axios, the proxy, …), and
+// withPPDev() runs while Next.js evaluates next.config.
+import { normalizePPDevConfig, validatePPDevConfig } from './lib/pp-dev-config.js';
 import { clientInjectionPlugin, miTopBarPlugin } from './plugins/index.js';
 import header from './banner/header.js';
 import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
 import { loadPPDevEnv } from './lib/env.js';
 import { getConfig, getPkg } from './config.js';
-import type { PPDevConfig } from './plugin.js';
+import type { PPDevConfig } from './lib/pp-dev-config.js';
 import {
   PATH_PAGE_PREFIX,
   PATH_TEMPLATE_PREFIX,
@@ -39,8 +41,8 @@ export type {
   MiInclude,
   AppType,
   VersionPluginOptions,
-} from './plugin.js';
-export { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+} from './lib/pp-dev-config.js';
+export { normalizePPDevConfig, validatePPDevConfig } from './lib/pp-dev-config.js';
 export { defineConfig } from './helpers.js';
 
 declare module 'vite' {
