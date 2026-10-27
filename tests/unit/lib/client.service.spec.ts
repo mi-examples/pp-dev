@@ -153,3 +153,143 @@ describe('ClientService — page-variables:reload', () => {
     });
   });
 });
+
+/**
+ * Regression tests for parallel template syncs: a double click, a second tab, or a click the
+ * panel replayed after a reconnect started a second build into the same output folder and a
+ * second upload to MI while the first was still running.
+ */
+describe('ClientService — one template sync at a time', () => {
+  const handlers = new Map<string, (...args: any[]) => any>();
+  let server: ViteDevServer;
+
+  function makeClient(): WebSocketClient {
+    return { send: vi.fn() } as unknown as WebSocketClient;
+  }
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+
+    return { promise, resolve, reject };
+  }
+
+  function setup() {
+    const builds: Array<ReturnType<typeof deferred<Buffer>>> = [];
+    const distService = {
+      buildNewAssets: vi.fn(() => {
+        const build = deferred<Buffer>();
+
+        builds.push(build);
+
+        return build.promise;
+      }),
+      getBackupMeta: vi.fn(() => ({
+        lastBackupName: 'backup.zip',
+        lastBackupHash: 'hash',
+        lastBackupDate: '2026-10-27T10:00:00.000Z',
+      })),
+    } as unknown as DistService;
+    const miAPI = {
+      // No current assets on MI: the sync goes straight to the build.
+      getAssets: vi.fn().mockResolvedValue(undefined),
+      updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
+    } as unknown as MiAPI;
+
+    new ClientService(server, { distService, miAPI });
+
+    return { distService, miAPI, builds };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    handlers.clear();
+
+    server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => any) => {
+          handlers.set(event, handler);
+        }),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+  });
+
+  it('answers a second request while a sync runs, without building or uploading again', async () => {
+    const { distService, miAPI, builds } = setup();
+    const first = makeClient();
+    const second = makeClient();
+
+    const firstSync = handlers.get('template:sync')!({}, first);
+
+    await flush();
+    await handlers.get('template:sync')!({}, second);
+
+    expect(distService.buildNewAssets).toHaveBeenCalledTimes(1);
+    expect(second.send).toHaveBeenCalledWith('template:sync:response', {
+      error: expect.stringContaining('already running'),
+      code: 'SYNC_IN_PROGRESS',
+    });
+
+    builds[0]!.resolve(Buffer.from('zip'));
+    await firstSync;
+
+    expect(miAPI.updateAssets).toHaveBeenCalledTimes(1);
+    expect(first.send).toHaveBeenCalledWith(
+      'template:sync:response',
+      expect.objectContaining({ backupFilename: 'backup.zip' }),
+    );
+    expect(first.send).not.toHaveBeenCalledWith('template:sync:response', expect.objectContaining({ code: 'SYNC_IN_PROGRESS' }));
+  });
+
+  it('runs the next sync once the previous one has finished', async () => {
+    const { distService, builds } = setup();
+    const client = makeClient();
+
+    const firstSync = handlers.get('template:sync')!({}, client);
+
+    await flush();
+    builds[0]!.resolve(Buffer.from('zip'));
+    await firstSync;
+
+    const secondSync = handlers.get('template:sync')!({}, client);
+
+    await flush();
+
+    expect(distService.buildNewAssets).toHaveBeenCalledTimes(2);
+
+    builds[1]!.resolve(Buffer.from('zip'));
+    await secondSync;
+  });
+
+  it('runs the next sync after the previous one failed', async () => {
+    const { distService, builds } = setup();
+    const client = makeClient();
+
+    const firstSync = handlers.get('template:sync')!({}, client);
+
+    await flush();
+    builds[0]!.reject(new Error('build command exited with code 1'));
+    await firstSync;
+
+    expect(client.send).toHaveBeenCalledWith('template:sync:response', {
+      error: 'build command exited with code 1',
+      code: 'SYNC_FAILED',
+    });
+
+    const secondSync = handlers.get('template:sync')!({}, client);
+
+    await flush();
+
+    expect(distService.buildNewAssets).toHaveBeenCalledTimes(2);
+
+    builds[1]!.resolve(Buffer.from('zip'));
+    await secondSync;
+  });
+});
