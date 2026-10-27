@@ -1,6 +1,6 @@
 import type { Application } from 'express';
 import { createHash, randomUUID } from 'crypto';
-import { DistService } from './dist.service.js';
+import { DistService, TEMPLATE_VARIABLES_FILE_NAME } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
 import { DESCRIPTION_MARKDOWN_SCRIPT } from './variables-editor-markdown.js';
 import {
@@ -174,7 +174,18 @@ export function registerVariablesEditorRoutes(
       }
     }
 
-    await distService.saveTemplateVariablesFile(Buffer.from(raw, 'utf-8'));
+    try {
+      await distService.saveTemplateVariablesFile(Buffer.from(raw, 'utf-8'));
+    } catch (error) {
+      // EACCES, ENOSPC, a read-only checkout: say so as JSON, which the editor shows, rather than
+      // letting Express answer with an HTML error page.
+      res.status(500).json({
+        error: `Failed to write ${TEMPLATE_VARIABLES_FILE_NAME}.`,
+        details: error instanceof Error ? error.message : String(error),
+      });
+
+      return;
+    }
 
     res.json({ ok: true, warnings });
   });
@@ -809,11 +820,11 @@ function renderSkeleton() {
 
 // ── Data loading ─────────────────────────────────────────────────────────────
 async function loadSchema(seq) {
+  let r;
   let data;
 
   try {
-    const r = await fetch('/@api/variables/schema');
-
+    r = await fetch('/@api/variables/schema');
     data = await r.json();
   } catch (e) {
     if (seq !== schemaSeq) { return; }
@@ -824,6 +835,16 @@ async function loadSchema(seq) {
   }
 
   if (seq !== schemaSeq) { return; }
+
+  // An error answer (e.g. 503 with no dist service) is not a schema: kept as one, it rendered as
+  // "No local __template_variables.json found" and offered to create a file over the real one.
+  if (!r.ok) {
+    schemaState = null;
+    schemaRows = [];
+    showBanner('error', 'Failed to load the schema: ' + escapeHtml((data && data.error) || ('HTTP ' + r.status)));
+
+    return;
+  }
 
   schemaState = data;
   schemaRows = (data.schema && Array.isArray(data.schema.tags)) ? data.schema.tags.map((t) => Object.assign({}, t)) : [];
@@ -2292,6 +2313,12 @@ function reorderSchemaRow(fromIndex, toIndex) {
 }
 
 async function saveSchema() {
+  if (!schemaState) {
+    showBanner('error', 'Cannot save the schema until it has loaded successfully.');
+
+    return;
+  }
+
   let raw;
   const beforeText = jsonBaseline.schema;
 
@@ -2318,23 +2345,56 @@ async function saveSchema() {
     return;
   }
 
-  showJsonDiffModal(beforeText, raw, () => commitSchemaSave(raw));
+  showJsonDiffModal(beforeText, raw, () => commitSchemaSave(raw).catch(showSaveError));
+}
+
+// Every way a save can fail ends in a visible error: a lost save must never look like a pending
+// one. The banner leaves the tab as it is (preserveContent), so the unsaved edits, raw JSON drafts
+// included, stay on screen and the tab stays dirty.
+function showSaveError(e) {
+  showBanner('error', 'Save failed: ' + escapeHtml((e && e.message) || String(e)), true);
+}
+
+// PUTs a save and resolves to the server's JSON answer, or shows why the save failed and resolves
+// to null. A response that isn't JSON (Express' HTML error page, a proxy in between) counts as a
+// failure too, also with a 2xx status.
+async function putSave(url, body) {
+  let r;
+
+  try {
+    r = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    showSaveError(e);
+
+    return null;
+  }
+
+  const data = await r.json().catch(() => null);
+
+  if (r.ok && data && typeof data === 'object') {
+    return data;
+  }
+
+  let message = (data && data.error) || (r.ok
+    ? 'the dev server sent an answer that is not JSON'
+    : 'the dev server answered HTTP ' + r.status + (r.statusText ? ' ' + r.statusText : ''));
+
+  if (data && data.details) { message += ' ' + data.details; }
+
+  showSaveError(new Error(message));
+
+  return null;
 }
 
 async function commitSchemaSave(raw) {
   const saveEditSeq = editSeq;
-  const r = await fetch('/@api/variables/schema', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw }),
-  });
-  const data = await r.json();
+  const data = await putSave('/@api/variables/schema', { raw });
 
-  if (!r.ok) {
-    showBanner('error', escapeHtml(data.error || 'Save failed.'));
-
-    return;
-  }
+  if (!data) { return; }
 
   const warnings = data.warnings || [];
   const hasNewerEdits = editSeq !== saveEditSeq;
@@ -3629,23 +3689,14 @@ async function saveValues() {
     return;
   }
 
-  showJsonDiffModal(beforeText, afterText, () => commitValuesSave(tags, afterText));
+  showJsonDiffModal(beforeText, afterText, () => commitValuesSave(tags, afterText).catch(showSaveError));
 }
 
 async function commitValuesSave(tags, afterText) {
   const saveEditSeq = editSeq;
-  const r = await fetch('/@api/variables/values', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tags }),
-  });
-  const data = await r.json();
+  const data = await putSave('/@api/variables/values', { tags });
 
-  if (!r.ok) {
-    showBanner('error', escapeHtml(data.error || 'Save failed.'));
-
-    return;
-  }
+  if (!data) { return; }
 
   const warnings = data.warnings || [];
   const hasNewerEdits = editSeq !== saveEditSeq;
@@ -3682,7 +3733,7 @@ async function commitValuesSave(tags, afterText) {
 }
 
 function save() {
-  (activeTab === 'schema' ? saveSchema() : saveValues());
+  (activeTab === 'schema' ? saveSchema() : saveValues()).catch(showSaveError);
 }
 
 // ── Local pages ──────────────────────────────────────────────────────────────
