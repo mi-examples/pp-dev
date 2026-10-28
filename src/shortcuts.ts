@@ -22,12 +22,28 @@ export type CLIShortcut = {
 
 let cleanupActiveShortcutBinding: (() => void) | null = null;
 
+/** The options each server's shortcuts were bound with, to bind them again after a restart. */
+const boundOptions = new WeakMap<ViteDevServer, BindShortcutsOptions>();
+
+/**
+ * Ctrl+C in raw mode arrives as input, so the CLI's SIGINT handlers (graceful shutdown) have to be
+ * run by hand. `process.kill(pid, 'SIGINT')` does that on POSIX, but on Windows it terminates the
+ * process at once (TerminateProcess) without running any handler; emitting the event runs them.
+ */
+export function interruptProcess(proc: Pick<NodeJS.Process, 'platform' | 'pid' | 'kill' | 'emit'> = process): void {
+  if (proc.platform === 'win32') {
+    proc.emit('SIGINT', 'SIGINT');
+  } else {
+    proc.kill(proc.pid, 'SIGINT');
+  }
+}
+
 export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions): void {
   if (!server.httpServer || !process.stdin.isTTY || process.env.CI) {
     return;
   }
 
-  (server as any)._shortcutsOptions = opts;
+  boundOptions.set(server, opts);
 
   const logger = createLogger();
 
@@ -53,8 +69,8 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
   const onInput = async (input: string) => {
     // ctrl+c or ctrl+d
     if (input === '\x03') {
-      // Re-emit SIGINT so the CLI graceful shutdown handlers run.
-      process.kill(process.pid, 'SIGINT');
+      // Raise SIGINT so the CLI's graceful shutdown handlers run.
+      interruptProcess();
 
       return;
     }
@@ -127,7 +143,15 @@ const BASE_SHORTCUTS: CLIShortcut[] = [
     key: 'r',
     description: 'restart the server',
     async action(server) {
+      const opts = boundOptions.get(server);
+
       await server.restart();
+
+      // Our stdin listener goes with the old HTTP server, and Vite only binds its own shortcuts
+      // again: bind ours to the restarted server (same object, new HTTP server).
+      if (opts) {
+        bindShortcuts(server, { ...opts, print: false });
+      }
     },
   },
   {

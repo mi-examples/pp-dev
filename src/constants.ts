@@ -3,13 +3,13 @@ import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const afterBundlePath = resolve(
-  // import.meta.url is `dist/node/constants.js` after bundle
+  // After the build this module is a chunk in `dist/esm/` or `dist/cjs/`: the package is 3 levels up.
   (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
   '../../..',
 );
 
 const beforeBundlePath = resolve(
-  // import.meta.url is `dist/node/constants.js` after bundle
+  // Run from source (`src/constants.ts`, e.g. in tests): the package is 2 levels up.
   (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
   '../..',
 );

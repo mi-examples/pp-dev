@@ -338,11 +338,15 @@ pp-dev next [options]
 # Aliases: pp-dev next-server, pp-dev next-dev
 ```
 
-| Option          | Default     | Description                       |
-| --------------- | ----------- | --------------------------------- |
-| `[root]`        | `.`         | Root directory of the application |
-| `--port <port>` | `3000`      | Server port                       |
-| `--host <host>` | `localhost` | Server hostname                   |
+| Option          | Default     | Description                                                          |
+| --------------- | ----------- | -------------------------------------------------------------------- |
+| `[root]`        | `.`         | Root directory of the application                                    |
+| `--port <port>` | `3000`      | Server port                                                          |
+| `--host [host]` | `localhost` | Server hostname; `--host` without a value listens on all addresses   |
+| `--webpack`     | -           | Use Webpack for Next dev (when Turbopack/native SWC is unavailable)  |
+| `--turbopack`   | -           | Use Turbopack for Next dev                                           |
+
+`--https`, `--open`, `--cors`, `--strictPort` and `--force` are accepted for compatibility but have no effect with `pp-dev next` (a warning says so); they will be removed.
 
 ### Build
 

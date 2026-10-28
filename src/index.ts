@@ -180,13 +180,13 @@ export async function getViteConfig(
 
   const pkg = getPkg(projectRoot);
 
-  const templateName = pkg.name;
-
   const ppDevConfig = await getConfig(projectRoot);
 
-  validatePPDevConfig(ppDevConfig, templateName);
+  validatePPDevConfig(ppDevConfig, pkg.name);
 
-  const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, templateName);
+  const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, pkg.name);
+  // `app.name`, else package.json's `name`: the one name for the base path, the ZIP and the plugin.
+  const { templateName } = normalizedPPDevConfig;
 
   if (overrides) {
     normalizedPPDevConfig.distZip = applyDistZipOverride(

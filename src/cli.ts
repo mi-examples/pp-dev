@@ -24,7 +24,6 @@ import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
 import { ChangelogGenerator } from './lib/changelog-generator.js';
 import { IconFontGenerator } from './lib/icon-font-generator.js';
-// Remove the explicit process import since it's globally available
 import internalServer from './lib/internal.middleware';
 import { safeNextImport } from './lib/next-import.js';
 import { ClientService } from './lib/client.service.js';
@@ -56,14 +55,13 @@ import { zipDirectoryToBuffer } from './lib/helpers/zip.helper.js';
 import { runNextBuildProcess, removeStaleDevTypes } from './lib/next-build-runner.js';
 import { createDefaultZipFileName, resolveOutputFilePath } from './lib/output-path.js';
 import { loadPPDevEnv } from './lib/env.js';
+import { cleanOptions, NEXT_IGNORED_FLAGS, resolveNextListenAddress } from './lib/cli-options.js';
 
 const cli = cac('pp-dev');
 
 // Config file watcher utility
 interface ConfigWatcher {
-  watcher: any;
-  restartCallback: () => Promise<void>;
-  logger: (message: string) => void;
+  watcher: ReturnType<typeof watch>;
 }
 
 function createConfigWatcher(
@@ -128,11 +126,7 @@ function createConfigWatcher(
     logger(colors.red(`❌ Config watcher error: ${error}`));
   });
 
-  return {
-    watcher,
-    restartCallback,
-    logger,
-  };
+  return { watcher };
 }
 
 function cleanupConfigWatcher(watcher: ConfigWatcher) {
@@ -325,29 +319,6 @@ const filterDuplicateOptions = <T extends object>(options: T) => {
     }
   }
 };
-
-/**
- * removing global flags before passing as command specific sub-configs
- */
-function cleanOptions<Options extends GlobalCLIOptions>(options: Options): Omit<Options, keyof GlobalCLIOptions> {
-  const ret = { ...options };
-
-  delete ret['--'];
-  delete ret.c;
-  delete ret.config;
-  delete ret.base;
-  delete ret.l;
-  delete ret.logLevel;
-  delete ret.clearScreen;
-  delete ret.d;
-  delete ret.debug;
-  delete ret.f;
-  delete ret.filter;
-  delete ret.m;
-  delete ret.mode;
-
-  return ret;
-}
 
 cli
   .option('-c, --config <file>', `[string] use specified config file`)
@@ -558,17 +529,32 @@ cli
   .command('next [root]', 'start Next.js development server with pp-dev integration')
   .alias('next-serve')
   .alias('next-dev')
-  .option('--host [host]', `[string] specify hostname`)
+  .option('--host [host]', `[string] specify hostname; without a value, listen on all addresses`)
   .option('--port <port>', `[number] specify port`, { default: 3000 })
-  .option('--https', `[boolean] use TLS + HTTP/2`)
-  .option('--open [path]', `[boolean | string] open browser on startup`)
-  .option('--cors', `[boolean] enable CORS`)
-  .option('--strictPort', `[boolean] exit if specified port is already in use`)
-  .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+  // Still accepted so existing scripts keep working, but `pp-dev next` has never acted on them.
+  .option('--https', `[boolean] no effect with pp-dev next (deprecated)`)
+  .option('--open [path]', `[boolean | string] no effect with pp-dev next (deprecated)`)
+  .option('--cors', `[boolean] no effect with pp-dev next (deprecated)`)
+  .option('--strictPort', `[boolean] no effect with pp-dev next (deprecated)`)
+  .option('--force', `[boolean] no effect with pp-dev next (deprecated)`)
   .option('--webpack', `[boolean] use Webpack for Next dev (use when Turbopack/native SWC is unavailable)`)
   .option('--turbopack', `[boolean] use Turbopack for Next dev when native bindings work`)
   .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
     filterDuplicateOptions(options);
+
+    const ignoredFlags = NEXT_IGNORED_FLAGS.filter((flag) => options[flag as keyof typeof options] !== undefined);
+
+    if (ignoredFlags.length > 0) {
+      createLogger(options.logLevel).warn(
+        colors.yellow(
+          `⚠️  ${ignoredFlags.map((flag) => `--${flag}`).join(', ')} ${ignoredFlags.length === 1 ? 'has' : 'have'} no effect with pp-dev next and will be removed.`,
+        ),
+      );
+    }
+
+    // `--host` alone (cac gives `true`) listens on all addresses, as with `pp-dev`; Next.js gets the
+    // same value it is listened on.
+    const { host: listenHost, port: listenPort } = resolveNextListenAddress(options.host, options.port);
 
     let nextApp: ReturnType<typeof import('next').default> | null = null;
     let httpServer: any = null;
@@ -579,7 +565,7 @@ cli
     // Connections to the current HTTP server, so a restart or shutdown can end them.
     const openSockets = new Set<import('node:net').Socket>();
 
-    const logger = createLogger();
+    const logger = createLogger(options.logLevel);
 
     // Next.js adds process listeners per app and leaves them attached after close().
     const nextAppListeners = createNextAppListenerTracker();
@@ -647,7 +633,7 @@ cli
 
         clearConfigCache();
 
-        const { join, basename } = await import('path');
+        const { join } = await import('path');
         const { createServer } = await import('http');
 
         const importConfig = await import('next/dist/server/config.js');
@@ -657,12 +643,9 @@ cli
           (importConfig as any)['module.exports'].default ||
           (importConfig as any).default;
 
-        const opts = cleanOptions(options);
         const projectRoot = root ? join(process.cwd(), root) : process.cwd();
 
         loadPPDevEnv(options.mode || 'development', projectRoot);
-
-        logger.info(projectRoot);
 
         // Get pp-dev config from Next.js app config
         const config = await loadConfig(PHASE_DEVELOPMENT_SERVER, projectRoot);
@@ -685,31 +668,28 @@ cli
               );
             }
           } catch (error) {
-            logger.info(colors.yellow('⚠️  Failed to load standalone pp-dev config, using defaults'));
-            console.debug('Error loading standalone config:', error);
+            logger.warn(
+              colors.yellow(
+                `⚠️  Failed to load standalone pp-dev config, using defaults: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            );
           }
         } else {
           logger.info(colors.blue(`🔧 Loaded pp-dev config from Next.js config`));
         }
 
-        // Get template name from config, package.json, or fallback to project directory name
-        let templateName: string | null = null;
-
-        try {
-          const { getPkg } = await import('./config.js');
-          const pkg = getPkg(projectRoot);
-
-          templateName = pkg.name;
-        } catch {
-          // Fallback to project directory name
-          templateName = basename(projectRoot);
-        }
+        const { getPkg } = await import('./config.js');
+        const packageName = getPkg(projectRoot).name;
 
         // Normalize grouped PPDevConfig to internal flat options
-        validatePPDevConfig(ppDevConfig, templateName ?? '');
+        validatePPDevConfig(ppDevConfig, packageName);
 
-        const _normalized = normalizePPDevConfig(ppDevConfig, templateName ?? '');
-        const backendBaseURL = _normalized.backendBaseURL ?? 'http://localhost:8080';
+        const _normalized = normalizePPDevConfig(ppDevConfig, packageName);
+        // `app.name`, else package.json's `name`: the one name for the base path, redirects and sync.
+        const { templateName } = _normalized;
+        // No `mi.url` (a standalone page without a backend): no MI middleware, as under `pp-dev`. A
+        // made-up `http://localhost:8080` used to switch it on, needing an app.id the page doesn't have.
+        const backendBaseURL = _normalized.backendBaseURL;
         const templateLess = _normalized.templateLess;
         const v7Features = _normalized.v7Features;
         const disableSSLValidation = _normalized.disableSSLValidation;
@@ -721,11 +701,10 @@ cli
         const inspectorMaxMemory = _normalized.inspectorMaxMemory;
         const inspectorCaptureLimit = _normalized.inspectorCaptureLimit;
 
-        const appId: number =
-          _normalized.appId ??
-          (process.env.MI_APP_ID ? parseInt(process.env.MI_APP_ID, 10) || undefined : undefined) ??
-          (process.env.MI_PORTAL_PAGE_ID ? parseInt(process.env.MI_PORTAL_PAGE_ID, 10) || undefined : undefined) ??
-          1;
+        // From the config only, as under `pp-dev`. Validation already requires `app.id` wherever
+        // page data is loaded; the undocumented MI_APP_ID / MI_PORTAL_PAGE_ID and a silent `1`
+        // could point the dev server at the wrong page.
+        const appId = _normalized.appId;
 
         const configBasePath = config?.basePath;
         let base = '';
@@ -749,8 +728,8 @@ cli
           const nextOptions: Parameters<typeof next>[0] = {
             dev: true,
             customServer: true,
-            hostname: (opts.host as string) || 'localhost',
-            port: opts.port,
+            hostname: listenHost,
+            port: listenPort,
             dir: projectRoot,
             conf: {
               ...config,
@@ -825,8 +804,8 @@ cli
         const handle = nextApp.getRequestHandler();
 
         // Start the server
-        const port = typeof opts.port === 'number' ? opts.port : 3000;
-        const host = typeof opts.host === 'string' ? opts.host || '0.0.0.0' : 'localhost';
+        const port = listenPort;
+        const host = listenHost;
 
         // Create HTTP server with base path handling and pp-dev middlewares
         httpServer = createServer(async (req: any, res: any) => {
@@ -960,6 +939,31 @@ cli
           fullMiddlewareChain.push(captureMiddleware);
         }
 
+        /** Serves pp-dev's own routes (API, inspector and editor UI) from `internalServer`. */
+        const internalServerWrapper = (req: any, res: any, next: () => void) => {
+          // Check if this is an internal pp-dev request (API or inspector/editor UI)
+          if (
+            req.url?.startsWith('/@api/') ||
+            req.url?.startsWith(INSPECTOR_PATH) ||
+            req.url?.startsWith(VARIABLES_EDITOR_PATH)
+          ) {
+            const mockNext = () => {};
+
+            internalServer(req, res, mockNext);
+
+            return; // Don't call next() for internal pp-dev requests
+          }
+
+          next();
+        };
+
+        // Without a backend there is no MI middleware, but the Request Inspector still works, as under
+        // `pp-dev`: its routes are served on their own.
+        if (!backendBaseURL && inspectorEnabled !== false) {
+          essentialMiddlewareChain.push(internalServerWrapper);
+          fullMiddlewareChain.push(internalServerWrapper);
+        }
+
         if (backendBaseURL) {
           const baseUrlHost = new URL(backendBaseURL).host;
 
@@ -993,7 +997,7 @@ cli
           // Note: We need to adapt Express middlewares to work with raw HTTP requests
 
           // 1. PP Redirect middleware (essential for all routes)
-          const ppRedirectMiddleware = initPPRedirect(base, templateName ?? undefined);
+          const ppRedirectMiddleware = initPPRedirect(base, templateName);
           const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
             ppRedirectMiddleware(req, res, next);
           };
@@ -1078,7 +1082,7 @@ cli
             ],
             disableSSLValidation,
             miAPI: mi,
-            templateName: templateName ?? undefined,
+            templateName,
           });
 
           const proxyPassWrapper = (req: any, res: any, next: () => void) => {
@@ -1088,24 +1092,6 @@ cli
           fullMiddlewareChain.push(proxyPassWrapper);
 
           // 5. Internal Server middleware (API endpoints + inspector UI) - essential for all routes
-          const internalServerMiddleware = internalServer;
-          const internalServerWrapper = (req: any, res: any, next: () => void) => {
-            // Check if this is an internal pp-dev request (API or inspector/editor UI)
-            if (
-              req.url?.startsWith('/@api/') ||
-              req.url?.startsWith(INSPECTOR_PATH) ||
-              req.url?.startsWith(VARIABLES_EDITOR_PATH)
-            ) {
-              const mockNext = () => {};
-
-              internalServerMiddleware(req, res, mockNext);
-
-              return; // Don't call next() for internal pp-dev requests
-            }
-
-            next();
-          };
-
           essentialMiddlewareChain.push(internalServerWrapper);
           fullMiddlewareChain.push(internalServerWrapper);
 
@@ -1152,16 +1138,24 @@ cli
           // With output:'export', the export lands in distDir (or `out` for the default).
           let exportDistDir: string | undefined = config?.distDir;
 
-          try {
-            // Not a real `next build` — just peeking at the prod config for distDir. Suppress
-            // withPPDev()'s "use pp-dev next-build" nudge for this internal lookup.
-            process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
+          // Not a real `next build` — just peeking at the prod config for distDir. Suppress
+          // withPPDev()'s "use pp-dev next-build" nudge for this internal lookup only.
+          const previousNextBuildFlag = process.env[PP_DEV_NEXT_BUILD_ENV_VAR];
 
+          process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
+
+          try {
             const prodConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
 
             exportDistDir = prodConfig?.distDir ?? exportDistDir;
           } catch {
             // Fall back to the dev config's distDir (normalized below).
+          } finally {
+            if (previousNextBuildFlag === undefined) {
+              delete process.env[PP_DEV_NEXT_BUILD_ENV_VAR];
+            } else {
+              process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = previousNextBuildFlag;
+            }
           }
 
           const normalizedDistDir = (exportDistDir ?? '')
@@ -1183,7 +1177,7 @@ cli
             // Fall back to defaults if the project package.json is unreadable.
           }
 
-          const distService = new DistService(templateName ?? basename(projectRoot), {
+          const distService = new DistService(templateName, {
             root: projectRoot,
             backupFolder: path.resolve(projectRoot, _normalized.syncBackupsDir),
             maxBackups: _normalized.syncMaxBackups,
@@ -1344,7 +1338,8 @@ cli
   .action(async (root: string, options: PPDevBuildOptions & BuildOverrideCLIOptions & GlobalCLIOptions) => {
     filterDuplicateOptions(options);
 
-    const buildOptions: PPDevBuildOptions = cleanOptions(options);
+    // Vite build options only: pp-dev's own flags (--changelog, --distZip…) are read from `options`.
+    const buildOptions: BuildOptions = cleanOptions(options);
     const cliOverrides = resolveBuildCliOverrides(options);
 
     try {
@@ -1385,7 +1380,7 @@ cli
 
       await build(buildConfig);
 
-      if (buildOptions.changelog) {
+      if (options.changelog) {
         const executionRoot = root || process.cwd();
         const outDir = (buildConfig.build?.outDir as string) || 'dist';
 
@@ -1403,7 +1398,7 @@ cli
         }
 
         await generatePostBuildChangelog({
-          changelog: buildOptions.changelog,
+          changelog: options.changelog,
           executionRoot,
           newAssetsPath: path.resolve(executionRoot, outDir),
           backupsDirPath: path.resolve(executionRoot, buildConfig.ppDevConfig?.syncBackupsDir || 'backups'),
@@ -1485,18 +1480,13 @@ cli
           ppDevConfig = await getConfig(projectRoot);
         }
 
-        let templateName: string;
-
-        try {
-          const { getPkg } = await import('./config.js');
-
-          templateName = getPkg(projectRoot).name;
-        } catch {
-          templateName = path.basename(projectRoot);
-        }
-
-        const normalized = normalizePPDevConfig(ppDevConfig, templateName);
-        const distZip = applyDistZipOverride(normalized.distZip, cliOverrides, createDefaultZipFileName(templateName));
+        const { getPkg } = await import('./config.js');
+        const normalized = normalizePPDevConfig(ppDevConfig, getPkg(projectRoot).name);
+        const distZip = applyDistZipOverride(
+          normalized.distZip,
+          cliOverrides,
+          createDefaultZipFileName(normalized.templateName),
+        );
         const versionPlugin = applyVersionManifestOverride(normalized.versionPlugin, cliOverrides);
 
         const removedDevTypes = removeStaleDevTypes(projectRoot, nextConfig);

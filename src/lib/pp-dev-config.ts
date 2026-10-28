@@ -171,14 +171,26 @@ const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
-export function validatePPDevConfig(config: PPDevConfig, templateName: string): void {
+/**
+ * @param templateName - package.json's `name`; `app.name` takes precedence over it, here and in
+ *   {@link normalizePPDevConfig} (whose `templateName` is the one name to use from then on).
+ */
+export function validatePPDevConfig(config: PPDevConfig, templateName: string | undefined): void {
   const miMode = config.mi?.mode ?? 'standalone';
   const appType = config.app?.type ?? 'template';
   const apiVersion = config.mi?.apiVersion ?? 7;
   const miUrl = config.mi?.url ?? process.env.MI_BACKEND_URL;
 
-  if (!templateName) {
+  if (!(config.app?.name ?? templateName)) {
     throw new Error('[pp-dev] app.name is required (or set package.json#name)');
+  }
+
+  const maxBackups = config.sync?.maxBackups;
+
+  if (maxBackups !== undefined && maxBackups !== false && !(Number.isInteger(maxBackups) && maxBackups >= 0)) {
+    throw new Error(
+      `[pp-dev] sync.maxBackups must be a whole number ≥ 0 or false (0 and false keep every backup), got ${JSON.stringify(maxBackups)}`,
+    );
   }
 
   if (config.mi?.include && miMode !== 'standalone') {
@@ -213,7 +225,10 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string): 
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
-export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
+export function normalizePPDevConfig(
+  config: PPDevConfig,
+  templateName: string | undefined,
+): NormalizedVitePPDevOptions {
   const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {}, users = {} } = config;
 
   const miMode = mi.mode ?? 'standalone';
@@ -233,6 +248,11 @@ export function normalizePPDevConfig(config: PPDevConfig, templateName: string):
   const templateLess = appType === 'page';
 
   const resolvedName = app.name ?? templateName;
+
+  if (!resolvedName) {
+    throw new Error('[pp-dev] app.name is required (or set package.json#name)');
+  }
+
   const defaultVersionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json';
 
   let distZip: NormalizedVitePPDevOptions['distZip'];

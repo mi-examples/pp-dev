@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import type next from 'next';
 import type * as nextConstants from 'next/constants';
 
@@ -33,12 +34,16 @@ export async function safeNextImport(): Promise<NextJSImports> {
   }
 }
 
+/** Resolves modules from where pp-dev is installed, as `safeNextImport()`'s `import('next')` does. */
+const requireFromPPDev = () => createRequire(import.meta.url);
+
 /**
- * Checks if Next.js is available without importing it
+ * Checks if Next.js is available without importing it: resolving its entry is enough, and loading
+ * Next.js itself takes seconds.
  */
 export async function isNextAvailable(): Promise<boolean> {
   try {
-    await import('next');
+    requireFromPPDev().resolve('next');
 
     return true;
   } catch {
@@ -51,9 +56,11 @@ export async function isNextAvailable(): Promise<boolean> {
  */
 export async function getNextVersion(): Promise<string | null> {
   try {
-    const nextPkg = await import('next/package.json');
+    // A JSON module can't be imported without `with { type: 'json' }` (ERR_IMPORT_ATTRIBUTE_MISSING,
+    // so this always returned null); `require` reads it in both builds.
+    const nextPkg = requireFromPPDev()('next/package.json') as { version?: unknown };
 
-    return nextPkg.version;
+    return typeof nextPkg.version === 'string' ? nextPkg.version : null;
   } catch {
     return null;
   }

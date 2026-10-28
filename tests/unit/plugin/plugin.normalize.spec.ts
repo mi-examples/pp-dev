@@ -334,6 +334,39 @@ describe('validatePPDevConfig', () => {
     expect(() => validatePPDevConfig({}, '')).toThrow('app.name is required');
   });
 
+  it('accepts app.name when package.json has no name, as its error message says', () => {
+    const config: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { name: 'my-page', id: 7 } };
+
+    expect(() => validatePPDevConfig(config, undefined)).not.toThrow();
+    expect(normalizePPDevConfig(config, undefined).templateName).toBe('my-page');
+  });
+
+  it('refuses to normalize without any name, instead of building paths from an empty one', () => {
+    expect(() => normalizePPDevConfig({}, undefined)).toThrow('app.name is required');
+  });
+
+  it.each([0, 1, 20, false])('accepts sync.maxBackups %j', (maxBackups) => {
+    const config: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 }, sync: { maxBackups } };
+
+    expect(() => validatePPDevConfig(config, 'app')).not.toThrow();
+  });
+
+  it.each([
+    ['"20" (a string from a JSON config)', '20'],
+    ['2.5', 2.5],
+    ['-1', -1],
+    ['NaN', Number.NaN],
+    ['true', true],
+  ])('refuses sync.maxBackups %s instead of silently keeping every backup', (_name, maxBackups) => {
+    const config = {
+      mi: { url: 'https://mi.example.com' },
+      app: { id: 7 },
+      sync: { maxBackups },
+    } as unknown as PPDevConfig;
+
+    expect(() => validatePPDevConfig(config, 'app')).toThrow('sync.maxBackups must be a whole number');
+  });
+
   it('throws if mi.include is set with embedding mode', () => {
     expect(() => validatePPDevConfig({ mi: { mode: 'embedding', include: 'top-bar' } }, 'app')).toThrow(
       'mi.include requires mi.mode to be "standalone"',
