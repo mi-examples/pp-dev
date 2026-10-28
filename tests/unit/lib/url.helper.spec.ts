@@ -67,6 +67,19 @@ describe('URL Helper', () => {
       expect(result).not.toContain('api.com');
       expect(result.match(/localhost/g)?.length).toBe(3);
     });
+
+    it('matches the dots in the host literally', () => {
+      const content = 'https://api.example.com/a https://apiXexample.com/b';
+
+      expect(urlReplacer('api.example.com', 'localhost', content)).toBe('http://localhost/a https://apiXexample.com/b');
+    });
+
+    it('gives the same result when called again for the same host', () => {
+      const content = 'https://api.com/a https://api.com/b';
+
+      expect(urlReplacer('api.com', 'localhost', content)).toBe('http://localhost/a http://localhost/b');
+      expect(urlReplacer('api.com', 'localhost', content)).toBe('http://localhost/a http://localhost/b');
+    });
   });
 
   describe('rewriteDataPagePathForV7Proxy', () => {
