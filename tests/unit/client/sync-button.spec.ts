@@ -185,6 +185,7 @@ describe('initSyncButton', () => {
     expect(deps.closeAllConfirmModals).toHaveBeenCalled();
     expect(deps.infoPopup).toHaveBeenCalledWith(expect.objectContaining({ title: 'Sync result unknown', type: 'warning' }));
 
+    await emit('vite:ws:connect');
     $button.click();
 
     expect(syncRequests()).toBe(2);
@@ -197,6 +198,25 @@ describe('initSyncButton', () => {
 
     expect(deps.infoPopup).not.toHaveBeenCalled();
     expect(deps.closeAllConfirmModals).not.toHaveBeenCalled();
+  });
+
+  // A click while disconnected went to the outbox with the button spinning until a reconnect,
+  // which then started the sync whenever it happened.
+  it('refuses a click while disconnected, and takes it again once connected', async () => {
+    const { $button, emit, deps, syncRequests } = setup();
+
+    await emit('vite:ws:disconnect');
+    $button.click();
+
+    expect(syncRequests()).toBe(0);
+    expect($button.disabled).toBe(false);
+    expect($button.classList.contains('syncing')).toBe(false);
+    expect(deps.infoPopup).toHaveBeenCalledWith(expect.objectContaining({ title: 'No connection', type: 'warning' }));
+
+    await emit('vite:ws:connect');
+    $button.click();
+
+    expect(syncRequests()).toBe(1);
   });
 
   it("answers the server's confirmation request with the user's choice", async () => {

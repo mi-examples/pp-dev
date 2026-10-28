@@ -1,22 +1,16 @@
 import type { ViteHotContext } from 'vite/types/hot.js';
 import type { InfoPopupOptions } from './popup.js';
+import {
+  SYNC_IN_PROGRESS_CODE,
+  type SyncActionRequiredPayload,
+  type SyncActionResponsePayload,
+  type TemplateSyncResponsePayload,
+} from '../shared/ws-messages.js';
 
-/**
- * `template:sync:response` code for a sync requested while another one runs. Kept in sync with
- * `SYNC_IN_PROGRESS_CODE` in `src/lib/client.service.ts` (server side, not importable here).
- */
-const SYNC_IN_PROGRESS_CODE = 'SYNC_IN_PROGRESS';
+export type { SyncActionRequiredPayload, TemplateSyncResponsePayload };
 
 const TITLE_AVAILABLE = 'Sync template';
 const TITLE_UNAVAILABLE = 'Sync is unavailable on this instance';
-
-export interface SyncActionRequiredPayload {
-  requestId: string;
-  title: string;
-  content: string;
-  confirmText: string;
-  cancelText: string;
-}
 
 export interface ConfirmModalOptions {
   title: string;
@@ -24,11 +18,6 @@ export interface ConfirmModalOptions {
   confirmText: string;
   cancelText: string;
 }
-
-export type TemplateSyncResponsePayload =
-  | { syncedAt: string; currentHash: string; backupFilename: string }
-  | { error: string; code?: string; config?: { canSync?: boolean; [key: string]: unknown }; refresh?: boolean }
-  | { cancelled: boolean; message: string };
 
 export interface SyncButtonDeps {
   infoPopup: (opts: InfoPopupOptions) => unknown;
@@ -55,6 +44,8 @@ export function initSyncButton(
 
   let available = !$button.disabled && !$button.classList.contains('disabled');
   let syncing = false;
+  // Until the connection is reported lost, it is taken as open: the panel loads with the page.
+  let connected = true;
 
   const applyState = () => {
     $button.disabled = syncing || !available;
@@ -95,7 +86,10 @@ export function initSyncButton(
       cancelText: payload.cancelText,
     });
 
-    hot.send('template:sync:action-response', { requestId: payload.requestId, approved });
+    hot.send('template:sync:action-response', {
+      requestId: payload.requestId,
+      approved,
+    } satisfies SyncActionResponsePayload);
   });
 
   hot.on('template:sync:response', (payload: TemplateSyncResponsePayload) => {
@@ -140,7 +134,13 @@ export function initSyncButton(
 
   // A response sent to a socket that has closed never arrives. Without this, the button would
   // spin, disabled, until the page is reloaded.
+  hot.on('vite:ws:connect', () => {
+    connected = true;
+  });
+
   hot.on('vite:ws:disconnect', () => {
+    connected = false;
+
     if (!syncing) {
       return;
     }
@@ -159,6 +159,18 @@ export function initSyncButton(
     ev.preventDefault();
 
     if (syncing || !available) {
+      return;
+    }
+
+    // Sent now, the request would wait for a reconnect with the button spinning, and start a sync
+    // whenever that happens. Say so instead, and let the click be repeated once connected.
+    if (!connected) {
+      deps.infoPopup({
+        title: 'No connection',
+        content: 'The dev server is not connected. Check that it is running, then try again.',
+        type: 'warning',
+      });
+
       return;
     }
 
