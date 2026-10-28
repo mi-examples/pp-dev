@@ -13,6 +13,7 @@ vi.mock('child_process', async (orig) => {
 });
 
 const { DistService, TEMPLATE_VARIABLES_FILE_NAME } = await import('../../../src/lib/dist.service.js');
+const { createLogger } = await import('../../../src/lib/logger.js');
 
 describe('DistService — root-scoped path resolution', () => {
   let projectRoot: string;
@@ -73,6 +74,36 @@ describe('DistService — root-scoped path resolution', () => {
     await expect(service.buildNewAssets()).rejects.toThrow('pp-dev build was stopped');
     await expect(service.buildNewAssets()).rejects.toThrow('pp-dev build was stopped');
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  // "Build finished" was logged for a stopped or failed build too.
+  it('logs how a build ended', async () => {
+    const info = vi.spyOn(createLogger(), 'info');
+    const ended = () =>
+      info.mock.calls.map(([message]) => String(message)).filter((m) => /Build (finished|failed|stopped)/.test(m));
+
+    fs.mkdirSync(path.join(projectRoot, 'dist'));
+
+    const service = new DistService('test-app', { root: projectRoot, buildInputFolder: 'dist' });
+
+    await service.buildNewAssets();
+    expect(ended().at(-1)).toContain('Build finished');
+
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new EventEmitter();
+
+      setImmediate(() => proc.emit('close', 1));
+
+      return proc;
+    });
+    await expect(service.buildNewAssets()).rejects.toThrow('exited with code 1');
+    expect(ended().at(-1)).toContain('Build failed');
+
+    service.stopBuilds();
+    await expect(service.buildNewAssets()).rejects.toThrow('was stopped');
+    expect(ended().at(-1)).toContain('Build stopped');
+
+    info.mockRestore();
   });
 
   it('reads and writes the template variables file under the explicit root', async () => {

@@ -825,9 +825,7 @@ export class DistService {
     );
 
     try {
-      await buildCommand.finally(() => {
-        this.logger.info(colors.cyan('[DistService] Build finished'));
-      });
+      await this.logBuild('Build', buildCommand);
 
       if (this.buildInputFolder) {
         const buildInputPath = path.resolve(this.root, this.buildInputFolder);
@@ -873,9 +871,10 @@ export class DistService {
 
     this.logger.info(colors.cyan('[DistService] Next.js build started'));
 
-    await runNextBuildProcess(projectRoot, { timeoutMs: this.buildTimeoutMs, signal: this.builds.signal });
-
-    this.logger.info(colors.cyan('[DistService] Next.js build finished'));
+    await this.logBuild(
+      'Next.js build',
+      runNextBuildProcess(projectRoot, { timeoutMs: this.buildTimeoutMs, signal: this.builds.signal }),
+    );
 
     const outDir = path.resolve(projectRoot, distDir);
 
@@ -892,6 +891,21 @@ export class DistService {
     });
 
     return await zipDirectoryToBuffer(outDir);
+  }
+
+  /** Logs how a build ended: "finished" was printed for a stopped or failed one too. */
+  private async logBuild(label: string, build: Promise<void>): Promise<void> {
+    try {
+      await build;
+    } catch (error) {
+      const stopped = this.builds.signal.aborted;
+
+      this.logger.info(colors.yellow(`[DistService] ${label} ${stopped ? 'stopped' : 'failed'}`));
+
+      throw error;
+    }
+
+    this.logger.info(colors.cyan(`[DistService] ${label} finished`));
   }
 
   private async isDirectory(target: string): Promise<boolean> {
