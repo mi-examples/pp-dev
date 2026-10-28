@@ -8,7 +8,7 @@ import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
 import { initUsersPanel } from './users-panel.js';
 import { initTheme } from './theme.js';
-import { createPopupElement, type InfoPopupOptions } from './popup.js';
+import { createPopupElement, startAutoDismiss, type InfoPopupOptions } from './popup.js';
 import { initSyncButton, type ConfirmModalOptions } from './sync-button.js';
 
 // Applied unconditionally (even if the panel itself is hidden) — this is what makes the
@@ -106,7 +106,19 @@ function infoPopup(opts: InfoPopupOptions): { close: () => void } {
   const $popup = createPopupElement(opts);
   const $closeButton = $popup.querySelector('.pp-dev-info__popup-title-close');
 
+  let removed = false;
+  let stopAutoDismiss: (() => void) | undefined;
+
+  // Once only: closing it by hand used to leave its timer running, which removed it again and
+  // counted it out of `activePopups` twice.
   const removePopup = async () => {
+    if (removed) {
+      return;
+    }
+
+    removed = true;
+    stopAutoDismiss?.();
+
     await animatePopup($popup, 'exit');
 
     $popup.remove();
@@ -131,41 +143,7 @@ function infoPopup(opts: InfoPopupOptions): { close: () => void } {
   const duration = opts.duration ?? 10000;
 
   if (duration > 0) {
-    let remainingTime = duration;
-    let lastUpdate = Date.now();
-    let isVisible = true;
-
-    const scheduleDismiss = () => {
-      if (!isVisible) {
-        return;
-      }
-
-      const now = Date.now();
-      const elapsed = now - lastUpdate;
-
-      remainingTime -= elapsed;
-      lastUpdate = now;
-
-      if (remainingTime <= 0) {
-        removePopup();
-
-        return;
-      }
-
-      requestAnimationFrame(scheduleDismiss);
-    };
-
-    // Handle visibility change
-    document.addEventListener('visibilitychange', () => {
-      isVisible = !document.hidden;
-
-      if (isVisible) {
-        lastUpdate = Date.now();
-        requestAnimationFrame(scheduleDismiss);
-      }
-    });
-
-    requestAnimationFrame(scheduleDismiss);
+    stopAutoDismiss = startAutoDismiss(duration, removePopup);
   }
 
   return { close: removePopup };

@@ -1,12 +1,8 @@
 import { IndexHtmlTransformResult, normalizePath, Plugin } from 'vite';
 import * as path from 'path';
-import { PP_DEV_CLIENT_ENTRY, PACKAGE_NAME, VERSION, PP_DEV_PACKAGE_DIR } from '../constants.js';
-import { getDevPanelAssetPaths } from '../lib/dev-panel.js';
+import { PP_DEV_CLIENT_ENTRY, PACKAGE_NAME, PP_DEV_PACKAGE_DIR } from '../constants.js';
+import { getDevPanelAssetPaths, renderDevPanelMarkup } from '../lib/dev-panel.js';
 import type { DevPanelPosition } from '../plugin.js';
-import * as fs from 'fs';
-import ejs from 'ejs';
-import type { AsyncTemplateFunction } from 'ejs';
-import { fileURLToPath } from 'url';
 
 export interface ClientInjectionPluginOpts {
   backendBaseURL?: string;
@@ -25,57 +21,8 @@ declare module 'vite' {
   }
 }
 
-// Memoized path resolution
-// Support both CJS and ESM contexts
-let DIRNAME: string;
-
-try {
-  // @ts-ignore - __filename is available in CJS
-  if (typeof __filename !== 'undefined' && __filename) {
-    // @ts-ignore - __filename is available in CJS
-    DIRNAME = path.resolve(path.dirname(__filename), '..');
-  } else if (typeof import.meta !== 'undefined' && import.meta && import.meta.url) {
-    DIRNAME = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
-  } else {
-    // Fallback to current working directory
-    DIRNAME = process.cwd();
-  }
-} catch {
-  // Fallback to current working directory if all else fails
-  DIRNAME = process.cwd();
-}
-
 const CLIENT_DIST_DIR = normalizePath(path.join(PP_DEV_PACKAGE_DIR, 'dist/client'));
 const PACKAGE_REGEXP = new RegExp(`^\\/?${PACKAGE_NAME}\\/client\\/(.*)$`);
-
-let cachedTemplateContent: string | null = null;
-let cachedTemplate: AsyncTemplateFunction | null = null;
-
-function getTemplate(): AsyncTemplateFunction {
-  if (cachedTemplate) {
-    return cachedTemplate;
-  }
-
-  const templatePath = path.resolve(DIRNAME, 'client', 'index.html');
-
-  if (!cachedTemplateContent) {
-    cachedTemplateContent = fs.readFileSync(templatePath, { encoding: 'utf8' });
-  }
-
-  cachedTemplate = ejs.compile(cachedTemplateContent, {
-    openDelimiter: '{',
-    closeDelimiter: '}',
-    async: true,
-    cache: true,
-    filename: templatePath,
-    rmWhitespace: true,
-    compileDebug: false,
-  });
-
-  return cachedTemplate;
-}
-
-// Memoized function to get CSS and JS paths
 
 export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin {
   return {
@@ -106,7 +53,6 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
 
     transformIndexHtml: async (html, ctx) => {
       const base = ctx.server?.config.base || '';
-      const template = getTemplate();
       const assetPaths = getDevPanelAssetPaths(base);
 
       const result: IndexHtmlTransformResult = {
@@ -123,32 +69,13 @@ export function clientInjectionPlugin(opts?: ClientInjectionPluginOpts): Plugin 
         ],
       };
 
-      const {
-        backendBaseURL,
-        templateLess = false,
-        appId,
-        canSync = true,
-        devPanelPosition = 'bottom-right',
-        devPanelHidden = false,
-        devPanelAutoHide = false,
-      } = opts || ctx.server?.config.clientInjectionPlugin || {};
-
-      const templateData = {
-        PACKAGE_NAME,
-        VERSION,
-        backendBaseURL,
-        templateLess,
-        appId,
-        canSync,
-        devPanelPosition,
-        devPanelHidden,
-        devPanelAutoHide,
-      };
+      // The same markup `pp-dev next` injects: one template, compiled once, with one set of defaults.
+      const { templateLess = false, ...panelOptions } = opts || ctx.server?.config.clientInjectionPlugin || {};
 
       result.tags.push({
         tag: 'div',
         injectTo: 'body-prepend',
-        children: await template(templateData),
+        children: renderDevPanelMarkup({ templateLess, ...panelOptions }),
       });
 
       result.tags.push({

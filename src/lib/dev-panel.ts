@@ -99,15 +99,17 @@ export function injectDevPanel(html: string, base: string, data: DevPanelData): 
   let result = html;
   let linkInjected = false;
 
+  // Function replacers: the panel markup carries config values (the backend URL, the base path), and
+  // as a replacement string any `$&` or `` $` `` in them was expanded into parts of the page.
   if (/<\/head>/i.test(result)) {
-    result = result.replace(/<\/head>/i, `${linkTag}</head>`);
+    result = result.replace(/<\/head>/i, (headEnd) => `${linkTag}${headEnd}`);
     linkInjected = true;
   }
 
   if (/<body[^>]*>/i.test(result)) {
     const head = linkInjected ? '' : linkTag;
 
-    result = result.replace(/(<body[^>]*>)/i, `$1${head}${bodyPrepend}`);
+    result = result.replace(/<body[^>]*>/i, (bodyStart) => `${bodyStart}${head}${bodyPrepend}`);
   } else {
     // No <body>: append everything (covers fragment-like responses that still passed the guard).
     result = `${linkInjected ? '' : linkTag}${result}${bodyPrepend}`;
