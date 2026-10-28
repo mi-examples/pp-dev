@@ -86,7 +86,7 @@ describe('normalizeSvgLikeMi', () => {
 });
 
 describe('normalizeSvgFilesInDir', () => {
-  it('normalizes every .svg file found recursively, and leaves other files untouched', () => {
+  it('normalizes every .svg file found recursively, and leaves other files untouched', async () => {
     const testDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-svg-normalize-'));
 
     try {
@@ -101,7 +101,7 @@ describe('normalizeSvgFilesInDir', () => {
       );
       writeFileSync(path.join(testDir, 'readme.txt'), 'not svg, leave me alone');
 
-      normalizeSvgFilesInDir(testDir);
+      await normalizeSvgFilesInDir(testDir);
 
       expect(readFileSync(path.join(testDir, 'icon.svg'), 'utf-8')).toBe(
         '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg">\n  <rect width="1" height="1"></rect>\n</svg>\n',
@@ -115,7 +115,7 @@ describe('normalizeSvgFilesInDir', () => {
     }
   });
 
-  it('does not rewrite a file that is already in normalized form', () => {
+  it('does not rewrite a file that is already in normalized form', async () => {
     const testDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-svg-normalize-'));
 
     try {
@@ -123,7 +123,7 @@ describe('normalizeSvgFilesInDir', () => {
 
       writeFileSync(path.join(testDir, 'icon.svg'), already);
 
-      normalizeSvgFilesInDir(testDir);
+      await normalizeSvgFilesInDir(testDir);
 
       expect(readFileSync(path.join(testDir, 'icon.svg'), 'utf-8')).toBe(already);
       expect(existsSync(path.join(testDir, 'icon.svg'))).toBe(true);
