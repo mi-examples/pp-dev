@@ -163,8 +163,10 @@ export function runBuildProcess(
       clearTimeout(killTimer);
       signal?.removeEventListener('abort', onAbort);
 
-      // A stopped build's workers may outlive its main process: none may keep writing the output.
-      if (stopReason && ownGroup) {
+      // A build's workers may outlive its main process, whether it was stopped, failed or finished.
+      // In a group of their own nothing else would end them (not even Ctrl+C in the terminal), and
+      // none may keep writing the output: the whole group goes with it.
+      if (ownGroup) {
         signalBuild(proc, 'SIGKILL', ownGroup);
       }
 

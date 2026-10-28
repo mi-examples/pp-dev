@@ -96,6 +96,33 @@ describe('runBuildProcess', () => {
     }
   });
 
+  // The group was ended only for a stopped build: a worker of one that failed kept running, out of
+  // reach of a later stop and of Ctrl+C. (On Windows the tree is gone once the build exits.)
+  it.skipIf(process.platform === 'win32')('ends what a failed build left running', async () => {
+    const pidFile = path.join(os.tmpdir(), `pp-dev-build-failed-${process.pid}-${Date.now()}.pid`);
+    const worker = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`;
+    const promise = runBuildProcess(
+      'test build',
+      process.execPath,
+      [
+        '-e',
+        `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(worker)}], { stdio: 'ignore' });` +
+          ` const wait = () => require('fs').existsSync(${JSON.stringify(pidFile)}) ? process.exit(1) : setTimeout(wait, 20); wait();`,
+      ],
+      { cwd: process.cwd(), env: process.env, signal: new AbortController().signal },
+    );
+
+    try {
+      await expect(promise).rejects.toThrow('test build exited with code 1');
+
+      const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+
+      await expect.poll(() => isAlive(pid), { timeout: 3_000 }).toBe(false);
+    } finally {
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
   // `next build` runs workers. Stopping only the process we spawned left them running (on POSIX,
   // SIGTERM went to that one process), still writing the build output.
   it('stops the processes the build started, too', async () => {
