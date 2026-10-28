@@ -164,9 +164,12 @@ describe('runBuildProcess', () => {
 
       controller.abort();
 
+      // Handled right away: the rejection may come before the process is seen gone.
+      const stopped = expect(promise).rejects.toThrow('test build was stopped');
+
       // Sent before `abort()` returns, so it holds even if the process exits right after.
       await expect.poll(() => isAlive(pid), { timeout: 3_000 }).toBe(false);
-      await expect(promise).rejects.toThrow('test build was stopped');
+      await stopped;
     } finally {
       fs.rmSync(pidFile, { force: true });
     }
