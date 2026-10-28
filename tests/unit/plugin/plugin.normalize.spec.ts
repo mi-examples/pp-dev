@@ -369,6 +369,16 @@ describe('validatePPDevConfig', () => {
 
   // A sync's build is stopped after 10 minutes; a large `next build` on a slow machine had no way
   // to get more time.
+  it('accepts sync.buildTimeoutMs up to the longest Node timer delay', () => {
+    const config: PPDevConfig = {
+      mi: { url: 'https://mi.example.com' },
+      app: { id: 7 },
+      sync: { buildTimeoutMs: 2_147_483_647 },
+    };
+
+    expect(() => validatePPDevConfig(config, 'app')).not.toThrow();
+  });
+
   it('passes sync.buildTimeoutMs on, and leaves it unset by default', () => {
     const base: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 } };
 
@@ -384,6 +394,8 @@ describe('validatePPDevConfig', () => {
     ['-1', -1],
     ['1.5', 1.5],
     ['NaN', Number.NaN],
+    // Over the longest Node timer delay, `setTimeout` would fire after 1 ms.
+    ['2147483648', 2_147_483_648],
   ])('refuses sync.buildTimeoutMs %s', (_name, buildTimeoutMs) => {
     const config = {
       mi: { url: 'https://mi.example.com' },

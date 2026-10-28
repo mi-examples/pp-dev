@@ -176,6 +176,9 @@ export interface NormalizedVitePPDevOptions {
 
 const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
+/** The longest delay `setTimeout` takes (2³¹ − 1 ms, about 24.8 days). */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 /**
@@ -202,9 +205,14 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
 
   const buildTimeoutMs = config.sync?.buildTimeoutMs;
 
-  if (buildTimeoutMs !== undefined && !(Number.isInteger(buildTimeoutMs) && buildTimeoutMs > 0)) {
+  // Capped at the longest delay a Node timer takes: `setTimeout` turns a longer one into 1 ms, and
+  // the build would be stopped at once.
+  if (
+    buildTimeoutMs !== undefined &&
+    !(Number.isInteger(buildTimeoutMs) && buildTimeoutMs > 0 && buildTimeoutMs <= MAX_TIMER_DELAY_MS)
+  ) {
     throw new Error(
-      `[pp-dev] sync.buildTimeoutMs must be a whole number of milliseconds > 0, got ${JSON.stringify(buildTimeoutMs)}`,
+      `[pp-dev] sync.buildTimeoutMs must be a whole number of milliseconds between 1 and ${MAX_TIMER_DELAY_MS}, got ${JSON.stringify(buildTimeoutMs)}`,
     );
   }
 
