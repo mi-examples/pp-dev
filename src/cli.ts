@@ -1186,6 +1186,7 @@ cli
             root: projectRoot,
             backupFolder: path.resolve(projectRoot, _normalized.syncBackupsDir),
             maxBackups: _normalized.syncMaxBackups,
+            buildTimeoutMs: _normalized.syncBuildTimeoutMs,
             nextBuild: {
               projectRoot,
               distDir: nextExportDir,

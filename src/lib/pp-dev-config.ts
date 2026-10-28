@@ -82,6 +82,11 @@ export interface SyncConfig {
    * `false` or `0` keeps them all. @default 20
    */
   maxBackups?: number | false;
+  /**
+   * How long the build a sync starts (`pp-dev build`, `next build`) may run, in milliseconds,
+   * before it is stopped and the sync fails. @default 600000 (10 minutes)
+   */
+  buildTimeoutMs?: number;
 }
 
 export interface InspectorConfig {
@@ -156,6 +161,8 @@ export interface NormalizedVitePPDevOptions {
   syncBackupsDir: string;
   /** `undefined` leaves DistService's default. */
   syncMaxBackups?: number | false;
+  /** `undefined` leaves DistService's default. */
+  syncBuildTimeoutMs?: number;
   v7Features: boolean;
   personalAccessToken?: string;
   inspectorEnabled: boolean;
@@ -190,6 +197,14 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
   if (maxBackups !== undefined && maxBackups !== false && !(Number.isInteger(maxBackups) && maxBackups >= 0)) {
     throw new Error(
       `[pp-dev] sync.maxBackups must be a whole number ≥ 0 or false (0 and false keep every backup), got ${JSON.stringify(maxBackups)}`,
+    );
+  }
+
+  const buildTimeoutMs = config.sync?.buildTimeoutMs;
+
+  if (buildTimeoutMs !== undefined && !(Number.isInteger(buildTimeoutMs) && buildTimeoutMs > 0)) {
+    throw new Error(
+      `[pp-dev] sync.buildTimeoutMs must be a whole number of milliseconds > 0, got ${JSON.stringify(buildTimeoutMs)}`,
     );
   }
 
@@ -317,6 +332,7 @@ export function normalizePPDevConfig(
     versionPlugin,
     syncBackupsDir: sync.backupsDir ?? 'backups',
     syncMaxBackups: sync.maxBackups,
+    syncBuildTimeoutMs: sync.buildTimeoutMs,
     v7Features: apiVersion >= 7,
     personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
     inspectorEnabled: inspector.enabled ?? true,

@@ -191,6 +191,7 @@ module.exports = defineConfig({
 |--------------|-------------------|-------------|-----------------------------------------------------------------------------------------------------|
 | `backupsDir` | `string`          | `'backups'` | Directory for backups from the MI server                                                            |
 | `maxBackups` | `number \| false` | `20`        | How many of this page's backups to keep; each new backup deletes the oldest beyond that. `false` or `0` keeps them all. |
+| `buildTimeoutMs` | `number`      | `600000`    | How long the build a sync starts (`pp-dev build`, `next build`) may run, in milliseconds, before it is stopped and the sync fails (default 10 minutes). |
 
 ### `devPanel` — Dev panel appearance
 

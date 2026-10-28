@@ -54,6 +54,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     versionPlugin,
     syncBackupsDir,
     syncMaxBackups,
+    syncBuildTimeoutMs,
     v7Features,
     personalAccessToken,
     inspectorEnabled,
@@ -387,6 +388,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
               root: server.config.root,
               backupFolder: syncBackupsDir,
               maxBackups: syncMaxBackups,
+              buildTimeoutMs: syncBuildTimeoutMs,
               buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
             },
             typeof distZip === 'object'

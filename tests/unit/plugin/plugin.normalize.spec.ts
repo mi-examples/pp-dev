@@ -367,6 +367,33 @@ describe('validatePPDevConfig', () => {
     expect(() => validatePPDevConfig(config, 'app')).toThrow('sync.maxBackups must be a whole number');
   });
 
+  // A sync's build is stopped after 10 minutes; a large `next build` on a slow machine had no way
+  // to get more time.
+  it('passes sync.buildTimeoutMs on, and leaves it unset by default', () => {
+    const base: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 } };
+
+    expect(normalizePPDevConfig({ ...base, sync: { buildTimeoutMs: 1_800_000 } }, 'app').syncBuildTimeoutMs).toBe(
+      1_800_000,
+    );
+    expect(normalizePPDevConfig(base, 'app').syncBuildTimeoutMs).toBeUndefined();
+  });
+
+  it.each([
+    ['"600000" (a string from a JSON config)', '600000'],
+    ['0', 0],
+    ['-1', -1],
+    ['1.5', 1.5],
+    ['NaN', Number.NaN],
+  ])('refuses sync.buildTimeoutMs %s', (_name, buildTimeoutMs) => {
+    const config = {
+      mi: { url: 'https://mi.example.com' },
+      app: { id: 7 },
+      sync: { buildTimeoutMs },
+    } as unknown as PPDevConfig;
+
+    expect(() => validatePPDevConfig(config, 'app')).toThrow('sync.buildTimeoutMs must be a whole number');
+  });
+
   it('throws if mi.include is set with embedding mode', () => {
     expect(() => validatePPDevConfig({ mi: { mode: 'embedding', include: 'top-bar' } }, 'app')).toThrow(
       'mi.include requires mi.mode to be "standalone"',

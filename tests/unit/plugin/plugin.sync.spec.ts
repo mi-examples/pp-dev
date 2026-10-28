@@ -91,3 +91,31 @@ describe('vitePPDev on dev server close', () => {
     expect(clientServiceDispose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('vitePPDev sync build timeout', () => {
+  it('passes sync.buildTimeoutMs to DistService', () => {
+    const options = normalizePPDevConfig(
+      {
+        app: { id: 123, type: 'template' },
+        inspector: { enabled: false },
+        mi: { url: 'https://mi.example.com' },
+        proxy: { cache: false },
+        sync: { buildTimeoutMs: 1_800_000 },
+      },
+      'test-app',
+    );
+    const plugin = vitePPDev(options);
+    const server = {
+      config: { base: '/', logger: { error: vi.fn(), info: vi.fn() } },
+      middlewares: { use: vi.fn() },
+      ws: {},
+    } as unknown as ViteDevServer;
+
+    (plugin.configureServer as (server: ViteDevServer) => void)(server);
+
+    expect(distServiceConstructor).toHaveBeenLastCalledWith(
+      'test-app',
+      expect.objectContaining({ buildTimeoutMs: 1_800_000 }),
+    );
+  });
+});
