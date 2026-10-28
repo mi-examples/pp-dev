@@ -36,7 +36,10 @@ function describe(error: unknown): string {
  * Registers the dev server's process handlers, once per command run (never per server restart),
  * and returns a function that removes them.
  *
- * - SIGINT / SIGTERM shut down and exit with 0. A second signal while shutting down exits at once.
+ * - SIGINT / SIGTERM / SIGHUP shut down and exit with 0. A second signal while shutting down exits at
+ *   once. SIGHUP comes when the terminal closes (on Windows, the console window): by default it would
+ *   end the process without the shutdown, leaving a sync's build (in a process group of its own)
+ *   writing the output.
  * - An uncaught exception leaves the process in an unknown state: shut down and exit with 1, so a
  *   crash never reports success.
  * - An unhandled rejection is logged and the server keeps running, as Vite does: one rejected
@@ -63,7 +66,7 @@ export function registerProcessHandlers({
     escalate(code);
 
     if (shuttingDown) {
-      if (reason === 'SIGINT' || reason === 'SIGTERM') {
+      if (reason === 'SIGINT' || reason === 'SIGTERM' || reason === 'SIGHUP') {
         logger.warn(colors.yellow(`
 ⚠️  Received ${reason} again, exiting without waiting for the shutdown`));
         processRef.exit(exitCode);
@@ -98,6 +101,7 @@ export function registerProcessHandlers({
 
   const onSigint = () => void shutdownAndExit('SIGINT', 0);
   const onSigterm = () => void shutdownAndExit('SIGTERM', 0);
+  const onSighup = () => void shutdownAndExit('SIGHUP', 0);
   const onUncaughtException = (error: unknown) => {
     logger.error(colors.red(`❌ Uncaught exception: ${describe(error)}`));
     void shutdownAndExit('uncaughtException', EXIT_FAILURE);
@@ -116,12 +120,14 @@ export function registerProcessHandlers({
 
   processRef.on('SIGINT', onSigint);
   processRef.on('SIGTERM', onSigterm);
+  processRef.on('SIGHUP', onSighup);
   processRef.on('uncaughtException', onUncaughtException);
   processRef.on('unhandledRejection', onUnhandledRejection);
 
   return () => {
     processRef.off('SIGINT', onSigint);
     processRef.off('SIGTERM', onSigterm);
+    processRef.off('SIGHUP', onSighup);
     processRef.off('uncaughtException', onUncaughtException);
     processRef.off('unhandledRejection', onUnhandledRejection);
   };

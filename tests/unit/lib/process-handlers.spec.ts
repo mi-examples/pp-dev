@@ -27,12 +27,12 @@ describe('registerProcessHandlers', () => {
   it('registers one listener per event', () => {
     const { proc } = setup();
 
-    for (const event of ['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']) {
+    for (const event of ['SIGINT', 'SIGTERM', 'SIGHUP', 'uncaughtException', 'unhandledRejection']) {
       expect(proc.listenerCount(event)).toBe(1);
     }
   });
 
-  it.each(['SIGINT', 'SIGTERM'])('shuts down once on %s and exits with 0', async (signal) => {
+  it.each(['SIGINT', 'SIGTERM', 'SIGHUP'])('shuts down once on %s and exits with 0', async (signal) => {
     const { proc, shutdown } = setup();
 
     proc.emit(signal);
@@ -195,7 +195,7 @@ describe('registerProcessHandlers', () => {
 
     dispose();
 
-    for (const event of ['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']) {
+    for (const event of ['SIGINT', 'SIGTERM', 'SIGHUP', 'uncaughtException', 'unhandledRejection']) {
       expect(proc.listenerCount(event)).toBe(0);
     }
   });
