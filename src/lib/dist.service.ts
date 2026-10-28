@@ -173,8 +173,8 @@ export class DistService {
   private readonly nextBuild?: NextBuildOptions;
   private readonly maxBackups: number;
   private readonly buildTimeoutMs: number;
-  /** Aborted by {@link stopBuilds}; replaced then, so later syncs can build again. */
-  private builds = new AbortController();
+  /** Aborted by {@link stopBuilds}, for good. */
+  private readonly builds = new AbortController();
   /** Settles once the sync meta file is read; never rejects (see loadMeta). */
   private readonly metaLoaded: Promise<void>;
 
@@ -221,10 +221,13 @@ export class DistService {
     this.metaLoaded = this.loadMeta();
   }
 
-  /** Stops the builds running for a sync, e.g. when the dev server shuts down. */
+  /**
+   * Stops the build running for a sync, and refuses any later one: the dev server this service
+   * belongs to is shutting down. A sync still fetching assets or saving a backup would otherwise
+   * build and upload afterwards, maybe next to a restarted server, which has a service of its own.
+   */
   stopBuilds() {
     this.builds.abort();
-    this.builds = new AbortController();
   }
 
   async checkMeta() {

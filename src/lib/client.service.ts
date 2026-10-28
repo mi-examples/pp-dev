@@ -63,15 +63,20 @@ export class ClientService {
       ws.on(event, handler);
     }
 
-    // The dev server shuts down: no dialog can be answered, and a running build would outlive it.
-    ws.on('close', () => {
-      this.clearAllPendingSyncActions(false);
-      this.opts.distService?.stopBuilds();
-    });
-
     ws.on('error', () => {
       this.clearAllPendingSyncActions(false);
     });
+  }
+
+  /**
+   * The dev server shuts down: no dialog can be answered any more, and a running sync's build must
+   * not outlive it. Called by whoever closes the server (the Vite plugin's `closeBundle`, `pp-dev
+   * next`'s restart and shutdown). Not a WebSocket `close` listener: Vite takes `ws.on('close')` for
+   * a message any page could send, and never calls it on shutdown.
+   */
+  dispose() {
+    this.clearAllPendingSyncActions(false);
+    this.opts.distService?.stopBuilds();
   }
 
   private resolveSyncAction(requestId: string, approved: boolean) {

@@ -49,18 +49,38 @@ export interface BuildProcessOptions {
   timeoutMs?: number;
   /** Stops the build, e.g. when the dev server shuts down. */
   signal?: AbortSignal;
+  /** How long a stopped build gets to exit on SIGTERM. @default KILL_GRACE_MS */
+  killGraceMs?: number;
 }
 
-/** Stops a build and what it started: on Windows `kill()` would end only the process itself. */
-function killProcessTree(proc: child_process.ChildProcess): void {
-  if (proc.exitCode !== null || proc.signalCode !== null || !proc.pid) {
+/** How long a stopped build gets to exit on SIGTERM before its processes are killed outright. */
+const KILL_GRACE_MS = 5_000;
+
+/**
+ * On POSIX a build runs in a process group of its own, so stopping it reaches the workers it
+ * started too (`next build` has several), not only the process we spawned. On Windows `taskkill /T`
+ * walks the process tree instead, and a detached child would get a console window of its own.
+ */
+const OWN_PROCESS_GROUP = process.platform !== 'win32';
+
+/** Signals a build and everything it started. */
+function signalBuild(proc: child_process.ChildProcess, signal: 'SIGTERM' | 'SIGKILL'): void {
+  if (!proc.pid) {
     return;
   }
 
-  if (process.platform === 'win32') {
-    child_process.spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
-  } else {
-    proc.kill('SIGTERM');
+  if (!OWN_PROCESS_GROUP) {
+    if (proc.exitCode === null && proc.signalCode === null) {
+      child_process.spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+    }
+
+    return;
+  }
+
+  try {
+    process.kill(-proc.pid, signal);
+  } catch {
+    // The whole group has exited.
   }
 }
 
@@ -80,6 +100,7 @@ export function runBuildProcess(
     env,
     timeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
     signal,
+    killGraceMs = KILL_GRACE_MS,
   }: BuildProcessOptions & { cwd: string; env: NodeJS.ProcessEnv },
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -89,12 +110,20 @@ export function runBuildProcess(
       return;
     }
 
-    const proc = child_process.spawn(command, args, { cwd, env, stdio: 'inherit' });
+    const proc = child_process.spawn(command, args, { cwd, env, stdio: 'inherit', detached: OWN_PROCESS_GROUP });
     let stopReason: string | undefined;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // SIGTERM first; whatever is still running after the grace period (a build that ignores it) is
+    // killed, so the sync can't stay waiting for it.
     const stop = (reason: string) => {
-      stopReason ??= reason;
-      killProcessTree(proc);
+      if (stopReason) {
+        return;
+      }
+
+      stopReason = reason;
+      signalBuild(proc, 'SIGTERM');
+      killTimer = setTimeout(() => signalBuild(proc, 'SIGKILL'), killGraceMs);
     };
     const onAbort = () => stop(`${label} was stopped`);
     const timer = setTimeout(() => stop(`${label} timed out after ${Math.round(timeoutMs / 1000)} s`), timeoutMs);
@@ -103,7 +132,13 @@ export function runBuildProcess(
 
     const settle = (error?: Error) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
       signal?.removeEventListener('abort', onAbort);
+
+      // A stopped build's workers may outlive its main process: none may keep writing the output.
+      if (stopReason) {
+        signalBuild(proc, 'SIGKILL');
+      }
 
       if (error) {
         reject(error);

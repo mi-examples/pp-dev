@@ -22,6 +22,17 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** The pid a child wrote to `pidFile`, once it has. */
+async function waitForPid(pidFile: string): Promise<number> {
+  const deadline = Date.now() + 10_000;
+
+  while (!fs.existsSync(pidFile) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  return Number(fs.readFileSync(pidFile, 'utf8'));
+}
+
 describe('runBuildProcess', () => {
   it('resolves when the build exits with 0', async () => {
     await expect(
@@ -83,6 +94,55 @@ describe('runBuildProcess', () => {
     } finally {
       fs.rmSync(pidFile, { force: true });
     }
+  });
+
+  // `next build` runs workers. Stopping only the process we spawned left them running (on POSIX,
+  // SIGTERM went to that one process), still writing the build output.
+  it('stops the processes the build started, too', async () => {
+    const controller = new AbortController();
+    const pidFile = path.join(os.tmpdir(), `pp-dev-build-worker-${process.pid}-${Date.now()}.pid`);
+    const worker = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`;
+    const promise = runBuildProcess(
+      'test build',
+      process.execPath,
+      [
+        '-e',
+        `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(worker)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`,
+      ],
+      { cwd: process.cwd(), env: process.env, signal: controller.signal },
+    );
+
+    try {
+      const pid = await waitForPid(pidFile);
+
+      expect(isAlive(pid)).toBe(true);
+
+      controller.abort();
+
+      await expect(promise).rejects.toThrow('test build was stopped');
+      await expect.poll(() => isAlive(pid), { timeout: 5_000 }).toBe(false);
+    } finally {
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
+  // A build that ignores SIGTERM kept the sync waiting for it forever. (On Windows, `taskkill /F`
+  // already stops it outright.)
+  it.skipIf(process.platform === 'win32')('kills a build that ignores SIGTERM after the grace period', async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    const promise = runBuildProcess(
+      'test build',
+      process.execPath,
+      ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+      { cwd: process.cwd(), env: process.env, signal: controller.signal, killGraceMs: 300 },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    controller.abort();
+
+    await expect(promise).rejects.toThrow('test build was stopped');
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it('does not start a build whose signal already aborted', async () => {

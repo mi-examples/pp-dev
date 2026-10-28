@@ -63,6 +63,18 @@ describe('DistService — root-scoped path resolution', () => {
     );
   });
 
+  // stopBuilds replaced its AbortController, so a sync still fetching assets when the server closed
+  // got a fresh signal and built (and uploaded) afterwards.
+  it('refuses every build once stopped, also one a sync starts later', async () => {
+    const service = new DistService('test-app', { root: projectRoot, buildInputFolder: 'dist' });
+
+    service.stopBuilds();
+
+    await expect(service.buildNewAssets()).rejects.toThrow('pp-dev build was stopped');
+    await expect(service.buildNewAssets()).rejects.toThrow('pp-dev build was stopped');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it('reads and writes the template variables file under the explicit root', async () => {
     const service = new DistService('test-app', { root: projectRoot });
 

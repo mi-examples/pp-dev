@@ -364,9 +364,19 @@ describe('ClientService — dialogs and builds when connections close', () => {
     expect(socket.listenerCount('close')).toBe(0);
   });
 
-  it('stops running builds when the dev server closes', () => {
-    handlers.get('close')!();
+  it('stops running builds and cancels open dialogs when disposed with the dev server', async () => {
+    const client = { send: vi.fn(), socket: makeSocket() } as unknown as WebSocketClient;
+    const answer = service.requestSyncAction(dialog, client);
+
+    service.dispose();
 
     expect(stopBuilds).toHaveBeenCalledTimes(1);
+    await expect(answer).resolves.toBe(false);
+  });
+
+  // Vite takes `ws.on('close')` for a custom message any page can send, and never calls it on
+  // shutdown: a page could stop every build with it, and the server's own close never did.
+  it('does not listen for a `close` message on the WebSocket', () => {
+    expect(handlers.has('close')).toBe(false);
   });
 });

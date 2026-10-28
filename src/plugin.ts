@@ -66,10 +66,17 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   } = options || {};
 
   let isFirstRequest = true;
+  let clientService: ClientService | undefined;
 
   return {
     name: 'vite-pp-dev',
     apply: 'serve',
+    // A `serve`-only plugin's closeBundle runs when the dev server closes (or restarts, which makes a
+    // new one): the place to stop what the panel started, such as a sync's build.
+    closeBundle() {
+      clientService?.dispose();
+      clientService = undefined;
+    },
     config: (config) => {
       config.clientInjectionPlugin = {
         backendBaseURL,
@@ -396,7 +403,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           ),
         );
 
-        new ClientService(server, { distService, miAPI: mi });
+        clientService = new ClientService(server, { distService, miAPI: mi });
         registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
         registerUserRoutes(internalServer, { miAPI: mi });
         startKeepingUsers({
