@@ -1,7 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as child_process from 'child_process';
-import * as process from 'process';
 import { createRequire } from 'module';
 import { PP_DEV_NEXT_BUILD_ENV_VAR } from '../constants.js';
 

@@ -30,7 +30,7 @@ describe('runBuildProcess — a build started from the terminal', () => {
     vi.useRealTimers();
     spawnMock.mockReset();
     spawnSyncMock.mockReset();
-    killMock.mockRestore();
+    vi.restoreAllMocks();
   });
 
   function fakeBuild() {
@@ -64,7 +64,10 @@ describe('runBuildProcess — a build started from the terminal', () => {
     await expect(build).resolves.toBeUndefined();
   });
 
-  it.skipIf(process.platform === 'win32')('runs a build pp-dev can stop in a process group of its own', async () => {
+  // On a POSIX platform whatever the tests run on, so the group handling is checked on Windows too.
+  it('runs a build pp-dev can stop in a process group of its own (POSIX)', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+
     const proc = fakeBuild();
     const build = runBuildProcess('pp-dev build', 'node', ['build'], {
       cwd: '.',
