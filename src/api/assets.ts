@@ -1,12 +1,7 @@
-import { Axios } from 'axios';
 import { Headers } from './constants.js';
 import { BaseAPI } from './base.js';
 
 export class AssetsAPI extends BaseAPI {
-  constructor(axios: Axios) {
-    super(axios);
-  }
-
   protected getDownloadUrl(appId: number | string) {
     return `/admin/page/downloadassets/id/${appId}`;
   }
@@ -24,13 +19,7 @@ export class AssetsAPI extends BaseAPI {
   }
 
   async downloadPageAssets(appId: number | string, headers?: Headers) {
-    return this.axios
-      .get<Buffer>(this.getDownloadUrl(appId), {
-        withCredentials: true,
-        headers: Object.assign({}, headers, { accept: '*/*' }),
-        responseType: 'arraybuffer',
-      })
-      .then((res) => res.data);
+    return this.download(this.getDownloadUrl(appId), headers);
   }
 
   /**
@@ -40,34 +29,11 @@ export class AssetsAPI extends BaseAPI {
    * @param headers
    */
   async uploadPageAssets(appId: number | string, file: Buffer, headers?: Headers) {
-    const formData = new FormData();
-
-    const assetFile = new File([new Uint8Array(file)], 'file.zip', { type: 'application/zip' });
-
-    formData.append('file', assetFile);
-
-    const url = this.getUploadUrl(appId);
-
-    return this.axios
-      .post<{ status?: 'OK' }>(url, formData, {
-        withCredentials: true,
-        headers: Object.assign({}, headers, {
-          accept: 'application/json',
-          'Content-Type': 'multipart/form-data',
-          Referer: this.axios.getUri({ url }),
-        }),
-      })
-      .then((res) => res.data);
+    return this.upload(this.getUploadUrl(appId), file, headers);
   }
 
   async downloadTemplateAssets(templateId: number | string, headers?: Headers) {
-    return this.axios
-      .get<Buffer>(this.getDownloadTemplateUrl(templateId), {
-        withCredentials: true,
-        headers: Object.assign({}, headers, { accept: '*/*' }),
-        responseType: 'arraybuffer',
-      })
-      .then((res) => res.data);
+    return this.download(this.getDownloadTemplateUrl(templateId), headers);
   }
 
   /**
@@ -77,13 +43,24 @@ export class AssetsAPI extends BaseAPI {
    * @param headers
    */
   async uploadTemplateAssets(templateId: number | string, file: Buffer, headers?: Headers) {
+    return this.upload(this.getUploadTemplateUrl(templateId), file, headers);
+  }
+
+  private async download(url: string, headers?: Headers) {
+    return this.axios
+      .get<Buffer>(url, {
+        withCredentials: true,
+        headers: Object.assign({}, headers, { accept: '*/*' }),
+        responseType: 'arraybuffer',
+      })
+      .then((res) => res.data);
+  }
+
+  /** Sends {@link file}, a zip of assets, as the `file` field of a multipart form. */
+  private async upload(url: string, file: Buffer, headers?: Headers) {
     const formData = new FormData();
 
-    const assetFile = new File([new Uint8Array(file)], 'file.zip', { type: 'application/zip' });
-
-    formData.append('file', assetFile, 'file.zip');
-
-    const url = this.getUploadTemplateUrl(templateId);
+    formData.append('file', new File([new Uint8Array(file)], 'file.zip', { type: 'application/zip' }), 'file.zip');
 
     return this.axios
       .post<{ status?: 'OK' }>(url, formData, {
