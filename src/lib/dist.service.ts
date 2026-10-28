@@ -834,13 +834,18 @@ export class DistService {
           throw new Error(`Build input directory ${buildInputPath} not found`);
         }
 
-        return await zipDirectoryToBuffer(buildInputPath);
+        const zip = await zipDirectoryToBuffer(buildInputPath);
+
+        this.throwIfStopped('pp-dev build');
+
+        return zip;
       }
 
       const assetFile = path.resolve(this.root, this.distZipFolder, this.distZipFilename);
+      let assets: Buffer;
 
       try {
-        return await fs.readFile(assetFile);
+        assets = await fs.readFile(assetFile);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
           throw new Error(`File ${assetFile} not found`);
@@ -848,6 +853,10 @@ export class DistService {
 
         throw error;
       }
+
+      this.throwIfStopped('pp-dev build');
+
+      return assets;
     } catch (e) {
       this.logger.error(e instanceof Error ? (e.stack ?? e.message) : String(e));
 
@@ -882,6 +891,10 @@ export class DistService {
       throw new Error(`Next.js build output directory not found: ${outDir}`);
     }
 
+    // The steps after the build take a while too (the manifest hashes the whole output): a server
+    // stopped meanwhile mustn't get assets to upload.
+    this.throwIfStopped('next build');
+
     await writeBuildVersionManifest({
       outDir,
       packageVersion: this.nextBuild!.packageVersion,
@@ -890,7 +903,24 @@ export class DistService {
       packageBranchName: this.nextBuild!.packageBranchName,
     });
 
-    return await zipDirectoryToBuffer(outDir);
+    this.throwIfStopped('next build');
+
+    const zip = await zipDirectoryToBuffer(outDir);
+
+    this.throwIfStopped('next build');
+
+    return zip;
+  }
+
+  /** Whether {@link stopBuilds} was called: the dev server this service belongs to is shutting down. */
+  get stopped(): boolean {
+    return this.builds.signal.aborted;
+  }
+
+  private throwIfStopped(label: string): void {
+    if (this.stopped) {
+      throw new Error(`${label} was stopped`);
+    }
   }
 
   /** Logs how a build ended: "finished" was printed for a stopped or failed one too. */

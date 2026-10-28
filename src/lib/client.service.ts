@@ -459,6 +459,15 @@ export class ClientService {
         }
 
         if (newAssets && newAssets instanceof Buffer) {
+          // Built, but the dev server is shutting down (or restarting, with a sync of its own to come):
+          // nothing is uploaded from here any more.
+          if (distService.stopped) {
+            this.sendSyncResponse(client, { error: 'Sync stopped: the dev server is shutting down.' });
+            this.logger.warn(colors.yellow('Sync stopped before the upload: the dev server is shutting down'));
+
+            return;
+          }
+
           const updateResult = await miAPI?.updateAssets(newAssets);
 
           if (updateResult?.status === 'OK') {

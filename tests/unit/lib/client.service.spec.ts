@@ -417,3 +417,35 @@ describe('ClientService — a sync before any backup was saved', () => {
     expect(Date.parse(payload.syncedAt)).toBeGreaterThanOrEqual(before - 1000);
   });
 });
+
+/** A build that finished as the dev server was shutting down (or restarting) was still uploaded. */
+describe('ClientService — a sync whose dev server stopped after the build', () => {
+  it('uploads nothing and says why', async () => {
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+    const distService = {
+      buildNewAssets: vi.fn().mockResolvedValue(Buffer.from('zip')),
+      getBackupMeta: vi.fn(() => ({})),
+      stopped: true,
+    } as unknown as DistService;
+    const miAPI = {
+      getAssets: vi.fn().mockResolvedValue(undefined),
+      updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
+    } as unknown as MiAPI;
+    const client = { send: vi.fn() } as unknown as WebSocketClient;
+
+    new ClientService(server, { distService, miAPI });
+    await handlers.get('template:sync')!({}, client);
+
+    expect(miAPI.updateAssets).not.toHaveBeenCalled();
+    expect(client.send).toHaveBeenLastCalledWith('template:sync:response', {
+      error: 'Sync stopped: the dev server is shutting down.',
+    });
+  });
+});

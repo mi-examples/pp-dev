@@ -76,6 +76,25 @@ describe('DistService — root-scoped path resolution', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  // A server stopped while the finished build was being zipped still got assets to upload.
+  it('returns no assets when stopped right after the build', async () => {
+    fs.mkdirSync(path.join(projectRoot, 'dist'));
+    fs.writeFileSync(path.join(projectRoot, 'dist', 'index.html'), '<html></html>');
+
+    const service = new DistService('test-app', { root: projectRoot, buildInputFolder: 'dist' });
+    const info = vi.spyOn(createLogger(), 'info').mockImplementation((message: string) => {
+      if (String(message).includes('Build finished')) {
+        service.stopBuilds();
+      }
+    });
+
+    try {
+      await expect(service.buildNewAssets()).rejects.toThrow('pp-dev build was stopped');
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   // "Build finished" was logged for a stopped or failed build too.
   it('logs how a build ended', async () => {
     const info = vi.spyOn(createLogger(), 'info');
