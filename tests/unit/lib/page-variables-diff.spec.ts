@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildPageVariablesExport,
+  isTemplateVariableTagType,
   planPageVariablesImport,
+  TEMPLATE_VARIABLE_TAG_TYPES,
   validateValueAgainstTag,
   type TemplateVariablesSchema,
   type TemplateVariableTag,
@@ -287,6 +289,42 @@ describe('validateValueAgainstTag', () => {
     };
 
     expect(validateValueAgainstTag(tag, 'anything')).toEqual([]);
+  });
+
+  // A plain-string option list was compared by `id`/`text` only, so every value got a false
+  // "does not match any declared option" warning.
+  it('matches a select value against plain-string options', () => {
+    const tag: TemplateVariableTag = { name: 'color', tag_type: 'select', additional_options: ['Red', 'Blue'] };
+
+    expect(validateValueAgainstTag(tag, 'Red')).toEqual([]);
+    expect(validateValueAgainstTag(tag, 'Green')).toEqual([
+      expect.objectContaining({ name: 'color', message: expect.stringContaining('"Green"') }),
+    ]);
+  });
+
+  it('matches multiselect tokens against plain-string and mixed options', () => {
+    const tag: TemplateVariableTag = {
+      name: 'colors',
+      tag_type: 'multiselect',
+      additional_options: ['Red', { id: '2', text: 'Blue' }, 3, null],
+    };
+
+    expect(validateValueAgainstTag(tag, 'Red, 2, Blue, 3')).toEqual([]);
+    expect(validateValueAgainstTag(tag, 'Red, Green')).toEqual([
+      expect.objectContaining({ name: 'colors', message: expect.stringContaining('"Green"') }),
+    ]);
+  });
+});
+
+describe('isTemplateVariableTagType', () => {
+  it("accepts MI editor's tag types only", () => {
+    for (const type of TEMPLATE_VARIABLE_TAG_TYPES) {
+      expect(isTemplateVariableTagType(type)).toBe(true);
+    }
+
+    for (const value of ['textarea', 'Select', '', undefined, null, 1]) {
+      expect(isTemplateVariableTagType(value)).toBe(false);
+    }
   });
 });
 

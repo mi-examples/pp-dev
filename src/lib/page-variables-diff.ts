@@ -2,7 +2,22 @@ import { PageVariableTagEntry } from '../api/index.js';
 
 export type PageVariableEntry = PageVariableTagEntry;
 
-export type TemplateVariableTagType = 'text' | 'select' | 'multiselect' | 'file' | 'list' | 'color' | 'boolean';
+/** The `tag_type`s MI's own editor offers. */
+export const TEMPLATE_VARIABLE_TAG_TYPES = [
+  'text',
+  'select',
+  'multiselect',
+  'file',
+  'list',
+  'color',
+  'boolean',
+] as const;
+
+export type TemplateVariableTagType = (typeof TEMPLATE_VARIABLE_TAG_TYPES)[number];
+
+export function isTemplateVariableTagType(value: unknown): value is TemplateVariableTagType {
+  return (TEMPLATE_VARIABLE_TAG_TYPES as readonly unknown[]).includes(value);
+}
 
 /**
  * One entry of `public/__template_variables.json`'s `tags[]`.
@@ -11,7 +26,8 @@ export type TemplateVariableTagType = 'text' | 'select' | 'multiselect' | 'file'
 export interface TemplateVariableTag {
   name: string;
   uid?: string;
-  tag_type?: TemplateVariableTagType | string;
+  /** One of {@link TEMPLATE_VARIABLE_TAG_TYPES}, or anything a hand-edited or legacy file has. */
+  tag_type?: TemplateVariableTagType | (string & {});
   tag_source?: string;
   default_value?: string;
   additional_options?: unknown;
@@ -41,7 +57,7 @@ export interface PageVariableValidationIssue {
  */
 export interface ListItemFieldConfig {
   name: string;
-  type?: 'textarea' | 'color' | 'select' | 'multi-select' | 'file' | string;
+  type?: 'textarea' | 'color' | 'select' | 'multi-select' | 'file' | (string & {});
   /** `select`/`multi-select` only. Defaults to `'static'`. Same per-source rules as the tag-level
    *  `tag_source`/`additional_options` pair (see TEMPLATE_VARIABLES.md) — just fed by `options`
    *  below instead of the tag's own `additional_options`. */
@@ -61,27 +77,27 @@ export interface ListItemFieldConfig {
 const BOOLEAN_ALLOWED_VALUES = ['true', 'false', 'Y', 'N', '1', '0'];
 const COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
-function isOptionsWithEnumerableList(
-  additionalOptions: unknown,
-): additionalOptions is { id?: string; text?: string }[] {
-  return Array.isArray(additionalOptions);
-}
-
 function optionMatches(option: { id?: string; text?: string }, token: string): boolean {
   return option.id === token || option.text === token;
 }
 
-/** A `ListItemFieldConfig.options` entry may be a plain string or an `{ id, text }` object
- *  (same shape as the tag-level list) — normalize before matching/display so an object entry
- *  never gets `.includes()`-compared or `.join()`-ed as `"[object Object]"`. */
-function normalizeFieldOption(option: string | { id?: string; text?: string }): { id?: string; text: string } {
-  if (typeof option === 'string') {
-    return { id: option, text: option };
+/** An option entry, of a tag-level `additional_options` list or of `ListItemFieldConfig.options`, may
+ *  be a plain string or an `{ id, text }` object — normalize before matching/display so a string
+ *  entry matches its own value and an object entry never gets `.join()`-ed as `"[object Object]"`.
+ *  Anything else in a hand-edited file (a number, `null`) counts as its string form, if any. */
+function normalizeFieldOption(option: unknown): { id?: string; text: string } {
+  if (typeof option === 'string' || typeof option === 'number') {
+    return { id: String(option), text: String(option) };
   }
 
-  const text = option.text ?? option.id ?? '';
+  if (typeof option !== 'object' || option === null) {
+    return { text: '' };
+  }
 
-  return { id: option.id, text };
+  const { id, text } = option as { id?: unknown; text?: unknown };
+  const optionId = typeof id === 'string' || typeof id === 'number' ? String(id) : undefined;
+
+  return { id: optionId, text: typeof text === 'string' ? text : (optionId ?? '') };
 }
 
 /** `null` when `additional_options` doesn't declare per-item fields (flat list of primitives). */
@@ -295,8 +311,9 @@ export function validateValueAgainstTag(tag: TemplateVariableTag, value: string)
 
     case 'select':
     case 'multiselect': {
-      if (isOptionsWithEnumerableList(tag.additional_options)) {
-        const options = tag.additional_options;
+      if (Array.isArray(tag.additional_options)) {
+        // A plain-string option (`["Red", "Blue"]`) is as common as `{ id, text }` and must match too.
+        const options = tag.additional_options.map(normalizeFieldOption);
         const tokens = tag.tag_type === 'multiselect' ? value.split(',').map((v) => v.trim()) : [value];
         const unmatched = tokens.filter((token) => !options.some((option) => optionMatches(option, token)));
 

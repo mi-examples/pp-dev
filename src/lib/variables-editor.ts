@@ -5,6 +5,7 @@ import { MiAPI } from './pp.middleware.js';
 import { DESCRIPTION_MARKDOWN_SCRIPT } from './variables-editor-markdown.js';
 import {
   buildPageVariablesExport,
+  isTemplateVariableTagType,
   planPageVariablesImport,
   validateValueAgainstTag,
   PageVariableEntry,
@@ -15,7 +16,6 @@ import {
 
 export const VARIABLES_EDITOR_PATH = '/@pp-dev/variables-editor';
 
-const KNOWN_TAG_TYPES = new Set(['text', 'select', 'multiselect', 'file', 'list', 'color', 'boolean']);
 // Matches MI's own "Create/Edit Variable" form: letters, digits, underscore, whitespace, hyphen.
 const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\s-]+$/;
 const MISSING_DEPS_ERROR = 'Dist service or MiAPI is not defined';
@@ -26,25 +26,79 @@ interface VariablesEditorRouteState {
 
 const routeStates = new WeakMap<Application, VariablesEditorRouteState>();
 
-/** `null` when the file is missing, unreadable, or not valid `{tags: [...]}`. */
-async function readSchema(distService: DistService | undefined): Promise<TemplateVariablesSchema | null> {
-  if (!distService) {
-    return null;
-  }
+/** The schema file: its text, and the schema when it is a JSON object with a `tags` array. */
+interface SchemaFile {
+  raw: string;
+  schema: TemplateVariablesSchema | null;
+  /** Why {@link schema} is `null`. */
+  parseError?: string;
+}
 
+/**
+ * Reads the schema file, `null` when there is none. The one reading of it, so the editor and the
+ * routes that check values against it agree on what counts as a schema.
+ */
+async function readSchemaFile(distService: DistService): Promise<SchemaFile | null> {
   const buffer = await distService.readPublicTemplateVariablesFile();
 
   if (!buffer) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(buffer.toString('utf-8'));
+  const raw = buffer.toString('utf-8');
+  let parsed: unknown;
 
-    return parsed && Array.isArray(parsed.tags) ? (parsed as TemplateVariablesSchema) : null;
-  } catch {
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return { raw, schema: null, parseError: error instanceof Error ? error.message : 'Invalid JSON' };
+  }
+
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    !Array.isArray((parsed as { tags?: unknown }).tags)
+  ) {
+    return { raw, schema: null, parseError: 'The root value must be a JSON object with a "tags" array.' };
+  }
+
+  return { raw, schema: parsed as TemplateVariablesSchema };
+}
+
+/** `null` when the file is missing, unreadable, or not valid `{tags: [...]}`. */
+async function readSchema(distService: DistService | undefined): Promise<TemplateVariablesSchema | null> {
+  return distService ? ((await readSchemaFile(distService))?.schema ?? null) : null;
+}
+
+/**
+ * The `{name, value}[]` a request body's `tags` must be, copied to just those two keys (MI stores
+ * whatever else an entry carries); `null` when it isn't one.
+ */
+function readPageVariableEntries(body: unknown): PageVariableEntry[] | null {
+  const tags = typeof body === 'object' && body !== null ? (body as { tags?: unknown }).tags : undefined;
+
+  if (!Array.isArray(tags)) {
     return null;
   }
+
+  const entries: PageVariableEntry[] = [];
+
+  for (const entry of tags as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) {
+      return null;
+    }
+
+    const { name, value } = entry as { name?: unknown; value?: unknown };
+
+    if (typeof name !== 'string' || !name || typeof value !== 'string') {
+      return null;
+    }
+
+    entries.push({ name, value });
+  }
+
+  return entries;
 }
 
 export function registerVariablesEditorRoutes(
@@ -73,26 +127,9 @@ export function registerVariablesEditorRoutes(
       return;
     }
 
-    const buffer = await distService.readPublicTemplateVariablesFile();
+    const file = await readSchemaFile(distService);
 
-    if (!buffer) {
-      res.json({ exists: false, schema: null, raw: null });
-
-      return;
-    }
-
-    const raw = buffer.toString('utf-8');
-
-    try {
-      res.json({ exists: true, schema: JSON.parse(raw), raw });
-    } catch (error) {
-      res.json({
-        exists: true,
-        schema: null,
-        raw,
-        parseError: error instanceof Error ? error.message : 'Invalid JSON',
-      });
-    }
+    res.json(file ? { exists: true, ...file } : { exists: false, schema: null, raw: null });
   });
 
   // ── API: write the schema file ──────────────────────────────────────────────
@@ -105,7 +142,7 @@ export function registerVariablesEditorRoutes(
       return;
     }
 
-    const raw = req.body?.raw;
+    const raw: unknown = (req.body as { raw?: unknown } | undefined)?.raw;
 
     if (typeof raw !== 'string') {
       res.status(400).json({ error: 'Request body must be { raw: string }.' });
@@ -161,7 +198,7 @@ export function registerVariablesEditorRoutes(
 
       seenNames.add(tag.name);
 
-      if (tag.tag_type && !KNOWN_TAG_TYPES.has(tag.tag_type)) {
+      if (tag.tag_type && !isTemplateVariableTagType(tag.tag_type)) {
         warnings.push(`"${tag.name}" has an unrecognized tag_type "${tag.tag_type}".`);
       }
 
@@ -212,19 +249,9 @@ export function registerVariablesEditorRoutes(
   // ── API: write live values (full replacement, matches MI's own PUT) ────────
   app.put('/@api/variables/values', async (req, res) => {
     const { distService, miAPI } = current.deps;
-    const tags = req.body?.tags;
+    const tags = readPageVariableEntries(req.body);
 
-    if (
-      !Array.isArray(tags) ||
-      tags.some(
-        (entry) =>
-          typeof entry !== 'object' ||
-          entry === null ||
-          typeof entry.name !== 'string' ||
-          !entry.name ||
-          typeof entry.value !== 'string',
-      )
-    ) {
+    if (!tags) {
       res.status(400).json({ error: 'Request body must be { tags: {name, value}[] }.' });
 
       return;
@@ -235,7 +262,7 @@ export function registerVariablesEditorRoutes(
       const schemaMap = new Map<string, TemplateVariableTag>((schema?.tags ?? []).map((tag) => [tag.name, tag]));
       const warnings: PageVariableValidationIssue[] = [];
 
-      for (const entry of tags as PageVariableEntry[]) {
+      for (const entry of tags) {
         const tag = schemaMap.get(entry.name);
 
         if (tag) {
@@ -243,7 +270,7 @@ export function registerVariablesEditorRoutes(
         }
       }
 
-      await miAPI.applyPageVariables(tags as PageVariableEntry[]);
+      await miAPI.applyPageVariables(tags);
 
       // The local pages show the saved values from their next load on. If MI can't be asked now,
       // the save still stands, and the editor offers to update them later.
@@ -1664,7 +1691,7 @@ function renderSchemaTab() {
   if (rawMode) {
     return \`
       <div class="raw-toggle"><button class="btn btn-sm" onclick="toggleRawMode()">Switch to table view</button></div>
-      \${schemaState.parseError ? '<div class="banner banner-error">File exists but is not valid JSON: ' + escapeHtml(schemaState.parseError) + '</div>' : ''}
+      \${schemaState.parseError ? '<div class="banner banner-error">The file is not a valid schema: ' + escapeHtml(schemaState.parseError) + '</div>' : ''}
       <textarea class="raw-editor" id="raw-editor" oninput="setDirty(true)">\${escapeHtml(schemaState.raw || '')}</textarea>
       <div class="hint">Editing the raw file text directly. Must be valid JSON with a top-level "tags" array.</div>
     \`;

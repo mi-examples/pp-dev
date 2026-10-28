@@ -18,7 +18,7 @@ export interface Page {
 
 export class PageAPI extends BaseAPI {
   async getAll(headers?: Headers) {
-    return (
+    const data = (
       await this.axios.get<{ pages: Page[] }>('/api/page', {
         withCredentials: true,
         headers: Object.assign({}, headers, {
@@ -29,7 +29,14 @@ export class PageAPI extends BaseAPI {
           Expires: '0',
         }),
       })
-    ).data.pages;
+    ).data;
+
+    // Not a JSON response (e.g. MI's HTML maintenance page, which also comes with a 200)
+    if (typeof data !== 'object' || data === null || !Array.isArray(data.pages)) {
+      throw unavailablePageDataError();
+    }
+
+    return data.pages;
   }
 
   async get(id: number | string, headers?: Headers) {
@@ -44,7 +51,7 @@ export class PageAPI extends BaseAPI {
     ).data;
 
     // Not a JSON response
-    if (typeof data !== 'object' || data === null) {
+    if (typeof data !== 'object' || data === null || typeof data.page !== 'object' || data.page === null) {
       throw unavailablePageDataError();
     }
 
@@ -64,7 +71,7 @@ export class PageAPI extends BaseAPI {
   }
 
   async create(page: Omit<Page, 'id'>, headers?: Headers) {
-    return (
+    const data = (
       await this.axios.post<{ page: Page }>('/api/page', page, {
         withCredentials: true,
         headers: Object.assign({}, headers, {
@@ -72,6 +79,13 @@ export class PageAPI extends BaseAPI {
           'content-type': 'application/json',
         }),
       })
-    ).data.page;
+    ).data;
+
+    // Not a JSON response
+    if (typeof data !== 'object' || data === null || typeof data.page !== 'object' || data.page === null) {
+      throw unavailablePageDataError();
+    }
+
+    return data.page;
   }
 }
