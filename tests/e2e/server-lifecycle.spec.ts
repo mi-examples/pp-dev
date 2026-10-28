@@ -34,10 +34,10 @@ interface ProcOutput {
   kill(): void;
 }
 
-function startPPDev(extraEnv?: Record<string, string>): ProcOutput {
+function startPPDev(extraEnv?: Record<string, string>, args: string[] = []): ProcOutput {
   // Use npm run dev so npm resolves the node binary via nvm4w correctly.
   // process.execPath on nvm4w points to a shim that breaks chokidar's native watcher.
-  const proc: ChildProcess = spawn('npm', ['run', 'dev'], {
+  const proc: ChildProcess = spawn('npm', ['run', 'dev', ...(args.length ? ['--', ...args] : [])], {
     cwd: TEST_APP_DIR,
     env: { ...process.env, NO_COLOR: '1', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -190,5 +190,61 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     // Asserts shape, not MI's exact auth-info schema (which has changed under us before) — this
     // is only here to prove the proxy round-trips a real cassette response for this path.
     expect(await res.json()).toMatchObject({ user: expect.any(Object) });
+  });
+});
+
+// A standalone page with no backend: no `mi.url`, no `app.id`. `pp-dev next` used to make up a
+// backend (`http://localhost:8080`) for it; without one, it first failed to start ("Custom App ID is
+// required…"), then started without serving the Request Inspector it prints, whose routes were only
+// mounted along with the MI middleware.
+describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
+  const PORT = 3100;
+  let ppdev: ProcOutput;
+  let originalConfig: string;
+
+  beforeAll(async () => {
+    originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
+    fs.writeFileSync(
+      CONFIG_PATH,
+      [
+        "import { defineConfig } from '@metricinsights/pp-dev';",
+        '',
+        "export default defineConfig({ mi: { mode: 'standalone', apiVersion: 7 }, app: { type: 'page' } });",
+        '',
+      ].join('\n'),
+    );
+
+    ppdev = startPPDev({ MI_BACKEND_URL: '' }, ['--port', String(PORT)]);
+    await ppdev.waitForLine(/Config file watcher started|Custom App ID is required/i, 60_000);
+  }, 90_000);
+
+  afterAll(() => {
+    ppdev?.kill();
+
+    if (originalConfig !== undefined) {
+      fs.writeFileSync(CONFIG_PATH, originalConfig);
+    }
+  });
+
+  it('starts', () => {
+    const errors = ppdev.lines.filter((l) => /\[ERROR\]|Custom App ID is required|unhandled exception/i.test(l));
+
+    expect(errors, `Unexpected errors:\n${errors.join('\n')}`).toHaveLength(0);
+    expect(ppdev.lines.some((l) => /pp-dev Next\.js server running/i.test(l))).toBe(true);
+    expect(ppdev.lines.some((l) => /Backend URL/i.test(l))).toBe(false);
+  });
+
+  it('serves the Request Inspector it advertises', async () => {
+    expect(ppdev.lines.some((l) => /Request Inspector/i.test(l))).toBe(true);
+
+    const page = await fetch(`http://localhost:${PORT}/@pp-dev/inspector`, { signal: AbortSignal.timeout(10_000) });
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toMatch(/text\/html/);
+
+    const list = await fetch(`http://localhost:${PORT}/@api/requests`, { signal: AbortSignal.timeout(10_000) });
+
+    expect(list.status).toBe(200);
+    expect(await list.json()).toMatchObject({ requests: expect.any(Array) });
   });
 });

@@ -939,6 +939,31 @@ cli
           fullMiddlewareChain.push(captureMiddleware);
         }
 
+        /** Serves pp-dev's own routes (API, inspector and editor UI) from `internalServer`. */
+        const internalServerWrapper = (req: any, res: any, next: () => void) => {
+          // Check if this is an internal pp-dev request (API or inspector/editor UI)
+          if (
+            req.url?.startsWith('/@api/') ||
+            req.url?.startsWith(INSPECTOR_PATH) ||
+            req.url?.startsWith(VARIABLES_EDITOR_PATH)
+          ) {
+            const mockNext = () => {};
+
+            internalServer(req, res, mockNext);
+
+            return; // Don't call next() for internal pp-dev requests
+          }
+
+          next();
+        };
+
+        // Without a backend there is no MI middleware, but the Request Inspector still works, as under
+        // `pp-dev`: its routes are served on their own.
+        if (!backendBaseURL && inspectorEnabled !== false) {
+          essentialMiddlewareChain.push(internalServerWrapper);
+          fullMiddlewareChain.push(internalServerWrapper);
+        }
+
         if (backendBaseURL) {
           const baseUrlHost = new URL(backendBaseURL).host;
 
@@ -1067,24 +1092,6 @@ cli
           fullMiddlewareChain.push(proxyPassWrapper);
 
           // 5. Internal Server middleware (API endpoints + inspector UI) - essential for all routes
-          const internalServerMiddleware = internalServer;
-          const internalServerWrapper = (req: any, res: any, next: () => void) => {
-            // Check if this is an internal pp-dev request (API or inspector/editor UI)
-            if (
-              req.url?.startsWith('/@api/') ||
-              req.url?.startsWith(INSPECTOR_PATH) ||
-              req.url?.startsWith(VARIABLES_EDITOR_PATH)
-            ) {
-              const mockNext = () => {};
-
-              internalServerMiddleware(req, res, mockNext);
-
-              return; // Don't call next() for internal pp-dev requests
-            }
-
-            next();
-          };
-
           essentialMiddlewareChain.push(internalServerWrapper);
           fullMiddlewareChain.push(internalServerWrapper);
 
