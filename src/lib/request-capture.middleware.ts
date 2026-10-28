@@ -124,7 +124,8 @@ export function redactRequestBody(url: string, contentType: string | undefined, 
   return body;
 }
 
-const SKIP_PREFIXES = ['/@pp-dev/', '/@api/', '/_next/', '/__nextjs_', '/@vite', '/@metricinsights', '/@'];
+// `/@` covers the dev server's own paths: `/@pp-dev/`, `/@api/`, `/@vite`, `/@metricinsights`, …
+const SKIP_PREFIXES = ['/@', '/_next/', '/__nextjs_'];
 
 const SKIP_EXACT = new Set(['/favicon.ico', '/installHook.js.map']);
 

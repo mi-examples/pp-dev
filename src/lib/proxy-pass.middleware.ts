@@ -1,5 +1,5 @@
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
-import { rewriteDataPagePathForV7Proxy, urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
+import { getOriginRegExp, rewriteDataPagePathForV7Proxy, urlReplacer, urlPathReplacer } from './helpers/url.helper.js';
 import { ViteDevServer } from 'vite';
 import { Express } from 'express';
 import { createLogger } from './logger.js';
@@ -102,6 +102,18 @@ function getLoggedOutUser(req: IncomingMessage, users: UserRegistry): SavedUser 
   const name = getUserNameFromHost(req.headers.host);
 
   return name === undefined ? undefined : users.get(name);
+}
+
+/**
+ * Points an absolute `Location` on the MI host at the dev server `req` came to, in its scheme. A
+ * relative one, or one to another host, is left as it is.
+ */
+export function rewriteLocationHeader(location: string, miHost: string, req: IncomingMessage): string {
+  const devHost = req.headers.host;
+
+  return devHost
+    ? location.replace(getOriginRegExp(miHost), `${isSecureRequest(req) ? 'https' : 'http'}://${devHost}`)
+    : location;
 }
 
 /** The personal access token each proxied request was sent to MI with. */
@@ -305,12 +317,10 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
       return false;
     },
 
+    // `selfHandleResponse` skips http-proxy's own response passes (`autoRewrite`, `cookieDomainRewrite`, …):
+    // `proxyRes` below rewrites `Set-Cookie` and `Location` itself.
     target: baseURL,
     changeOrigin: true,
-    autoRewrite: true,
-    cookieDomainRewrite: {
-      [host]: 'localhost',
-    },
     logger: {
       info: () => {},
       warn: () => {},
@@ -327,7 +337,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         const referer = proxyReq.getHeader('referer');
 
         if (host && referer && typeof referer === 'string') {
-          proxyReq.setHeader('referer', referer.replace(new RegExp(`https?://${host}`), baseURL));
+          proxyReq.setHeader('referer', referer.replace(getOriginRegExp(host), baseURL));
         }
 
         // A saved user goes as its own token, or (a session user) as the MI session its host's
@@ -413,19 +423,21 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           }`,
         );
 
-        // Keep-alive reuses `req.socket`; each proxied request adds one listener until the
-        // socket closes once. Use `socket.once('close')` — the socket emits `close` at most
-        // once, so this matches `on` without retaining duplicate handlers. setMaxListeners(0)
-        // avoids MaxListenersExceeded when many proxied requests share one connection.
-        // (Do not use `req.once('close')`: that can fire too early vs upstream response.)
-        req.socket.setMaxListeners(0);
-        req.socket.once('close', () => {
+        // The browser going away aborts the upstream request. (Not `req.once('close')`: that can fire
+        // before MI answers.) Keep-alive reuses `req.socket` for many requests, so the listener goes
+        // as soon as this request is done; otherwise each would hold its `proxyReq` until the
+        // connection closes.
+        const { socket } = req;
+        const abortUpstream = () => {
           setTimeout(() => {
             if (!proxyReq.destroyed) {
               proxyReq.destroy();
             }
           }, 200);
-        });
+        };
+
+        socket.once('close', abortUpstream);
+        proxyReq.once('close', () => socket.off('close', abortUpstream));
 
         return proxyReq;
       },
@@ -437,6 +449,11 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
             serverRes.headers['set-cookie'],
             isSecureRequest(req),
           );
+        }
+
+        // A redirect MI makes to itself (`https://<mi-host>/…`) must stay on the dev server.
+        if (serverRes.headers.location) {
+          serverRes.headers.location = rewriteLocationHeader(serverRes.headers.location, host, req);
         }
 
         // Logging out as a saved user ends its session (or token) at MI, as it would anywhere else.
@@ -586,13 +603,6 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
                 };
 
                 response += '<script>' + `(${redirectToFunction.toString()})()` + '</script>';
-              }
-
-              if (reqUrl.pathname.startsWith('/login')) {
-                //disable cache
-                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-                res.setHeader('Pragma', 'no-cache');
-                res.setHeader('Expires', '0');
               }
 
               const slice = response.slice(0, 100);

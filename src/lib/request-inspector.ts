@@ -12,6 +12,13 @@ interface InspectorRouteState {
 
 const routeStates = new WeakMap<Application, InspectorRouteState>();
 
+/** A query parameter as one string: Express gives an array for `?search=a&search=b`. */
+function firstQueryValue(value: unknown): string | undefined {
+  const first = Array.isArray(value) ? value[0] : value;
+
+  return typeof first === 'string' ? first : undefined;
+}
+
 export function registerInspectorRoutes(app: Application, store: RequestStore, captureLimit = 10 * 1024 * 1024): void {
   const existing = routeStates.get(app);
 
@@ -29,7 +36,10 @@ export function registerInspectorRoutes(app: Application, store: RequestStore, c
   // ── API: list requests ────────────────────────────────────────────────────────
   app.get('/@api/requests', (req, res) => {
     const { store: activeStore } = current;
-    const { limit, offset, method, search } = req.query as Record<string, string | undefined>;
+    const limit = firstQueryValue(req.query.limit);
+    const offset = firstQueryValue(req.query.offset);
+    const method = firstQueryValue(req.query.method);
+    const search = firstQueryValue(req.query.search);
     const parsedLimit = limit !== undefined ? parseInt(limit, 10) : undefined;
     const items = activeStore.list({
       limit: Number.isFinite(parsedLimit) ? parsedLimit : DEFAULT_LIST_LIMIT,

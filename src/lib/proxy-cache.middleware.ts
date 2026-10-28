@@ -33,6 +33,12 @@ declare module 'vite' {
   }
 }
 
+declare module 'express' {
+  interface Express {
+    cache?: ProxyCache;
+  }
+}
+
 // Optimized regex for file extensions - compiled once
 const FILE_EXTENSION_REGEX = /\.(?:[a-z0-9]+)$/i;
 
@@ -40,6 +46,32 @@ const FILE_EXTENSION_REGEX = /\.(?:[a-z0-9]+)$/i;
 const DEFAULT_TTL = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_MAX_SIZE = 100 * 1024 * 1024; // 100MB
 const DEFAULT_MAX_ITEMS = 1000;
+
+/** The largest body the cache keeps; a larger response goes to the client as it arrives. */
+const MAX_CACHED_ITEM_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Whether a proxied response may be cached, decided once its headers are set: a 200 that isn't
+ * streamed (Server-Sent Events, `X-Accel-Buffering: no`) and doesn't announce a body too large to
+ * keep. Anything else must reach the client as it arrives instead of being held until it ends.
+ */
+function isCacheableResponse(res: ServerResponse): boolean {
+  if (res.statusCode !== 200) {
+    return false;
+  }
+
+  if (/^text\/event-stream/i.test(String(res.getHeader('content-type') ?? ''))) {
+    return false;
+  }
+
+  if (String(res.getHeader('x-accel-buffering') ?? '').toLowerCase() === 'no') {
+    return false;
+  }
+
+  const contentLength = Number(res.getHeader('content-length'));
+
+  return !(Number.isFinite(contentLength) && contentLength >= MAX_CACHED_ITEM_SIZE);
+}
 
 /**
  * In-memory TTL cache with item-count and total-size limits.
@@ -276,10 +308,9 @@ function hasVerifiedSession(req: Connect.IncomingMessage, requestUser: RequestUs
  * default user is served on both `localhost` and its own host.
  */
 function generateCacheKey(url: string, userKey: string, host: string): string {
-  // Remove query parameters for better cache hit rates
+  // Only files with extensions are cached (judged by the path); the key keeps the query.
   const cleanUrl = url.split('?')[0];
 
-  // Only cache files with extensions
   if (!FILE_EXTENSION_REGEX.test(cleanUrl)) {
     return '';
   }
@@ -398,50 +429,116 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     const originalEnd = res.end;
     const originalWrite = res.write;
     const chunks: Buffer[] = [];
+    let bufferedSize = 0;
+    // Decided on the first write or end, once the response's status and headers are known.
+    let mode: 'undecided' | 'buffer' | 'pass' = 'undecided';
 
-    // Override write method to capture response data
-    (res as any).write = function (
-      data: any,
-      encoding?: BufferEncoding,
-      callback?: (error?: Error | null) => void,
-    ): boolean {
-      if (!res.hasHeader(PROXY_HEADER)) {
-        return originalWrite.call(this, data, encoding as BufferEncoding, callback);
+    const toBuffer = (data: unknown, encoding?: BufferEncoding): Buffer | null => {
+      if (data === undefined || data === null) {
+        return null;
       }
 
-      // Convert data to Buffer and store
       if (typeof data === 'string') {
-        const safeEncoding: BufferEncoding = encoding || 'utf8';
-
-        chunks.push(Buffer.from(data, safeEncoding));
-      } else if (Buffer.isBuffer(data)) {
-        chunks.push(data);
-      } else if (data !== null && data !== undefined) {
-        chunks.push(Buffer.from(String(data), 'utf8'));
+        return Buffer.from(data, encoding || 'utf8');
       }
 
-      callback?.();
+      // A copy: the producer may reuse its buffer once the write is acknowledged.
+      if (data instanceof Uint8Array) {
+        return Buffer.from(data);
+      }
 
-      return true;
+      return Buffer.from(String(data), 'utf8');
     };
 
-    // Override end method to finalize response and cache
-    (res as any).end = function (chunk?: any, encoding?: BufferEncoding, callback?: () => void): ServerResponse {
+    // Stop capturing and send what was held so far. The overrides stay in place and only forward from
+    // now on: putting `res.write`/`res.end` back would also drop whatever a later middleware wrapped
+    // them in (Next.js compresses its chunks that way, and their tails went out uncompressed).
+    const passThrough = () => {
+      mode = 'pass';
+
+      for (const held of chunks.splice(0)) {
+        (originalWrite as (chunk: Buffer) => boolean).call(res, held);
+      }
+    };
+
+    const decide = () => {
+      if (mode !== 'undecided') {
+        return;
+      }
+
       if (!res.hasHeader(PROXY_HEADER)) {
-        return originalEnd.call(this, chunk, encoding as BufferEncoding, callback);
+        mode = 'pass';
+
+        return;
+      }
+
+      // Only a complete 200 that isn't streamed is ever cached. Anything else goes to the client
+      // as it arrives: an event stream used to reach it only once it ended, and a redirect or
+      // error was held for nothing.
+      if (!isCacheableResponse(res)) {
+        passThrough();
+
+        return;
+      }
+
+      mode = 'buffer';
+    };
+
+    // Override write method to capture response data
+    res.write = function (
+      this: ServerResponse,
+      data: unknown,
+      encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+      callback?: (error?: Error | null) => void,
+    ): boolean {
+      decide();
+
+      if (mode === 'pass') {
+        return (originalWrite as (...args: unknown[]) => boolean).call(this, data, encodingOrCallback, callback);
+      }
+
+      const encoding = typeof encodingOrCallback === 'string' ? encodingOrCallback : undefined;
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      const buffer = toBuffer(data, encoding);
+
+      if (buffer) {
+        chunks.push(buffer);
+        bufferedSize += buffer.length;
+      }
+
+      // Past the largest item the cache keeps: stop holding the body, send it on as it comes.
+      if (bufferedSize > MAX_CACHED_ITEM_SIZE) {
+        passThrough();
+      }
+
+      if (done) {
+        process.nextTick(done);
+      }
+
+      return true;
+    } as ServerResponse['write'];
+
+    // Override end method to finalize response and cache
+    res.end = function (this: ServerResponse, chunk?: unknown, encoding?: unknown, callback?: unknown): ServerResponse {
+      decide();
+
+      if (mode === 'pass') {
+        return (originalEnd as (...args: unknown[]) => ServerResponse).call(this, chunk, encoding, callback);
+      }
+
+      if (typeof chunk === 'function') {
+        callback = chunk;
+        chunk = undefined;
+      } else if (typeof encoding === 'function') {
+        callback = encoding;
+        encoding = undefined;
       }
 
       // Add final chunk if provided
-      if (chunk !== undefined && chunk !== null) {
-        if (typeof chunk === 'string') {
-          const safeEncoding: BufferEncoding = encoding || 'utf8';
+      const last = toBuffer(chunk, typeof encoding === 'string' ? (encoding as BufferEncoding) : undefined);
 
-          chunks.push(Buffer.from(chunk, safeEncoding));
-        } else if (Buffer.isBuffer(chunk)) {
-          chunks.push(chunk);
-        } else {
-          chunks.push(Buffer.from(String(chunk), 'utf8'));
-        }
+      if (last) {
+        chunks.push(last);
       }
 
       // Create final buffer and cache response
@@ -452,13 +549,13 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
         const responseSize = Buffer.byteLength(finalBuffer);
 
-        // Only cache successful, non-empty responses of reasonable size (max 10MB per item). A
-        // redirect or error (e.g. MI's login redirect for an asset while logged out) must not
-        // outlive the state that produced it.
+        // Only cache successful, non-empty responses of reasonable size. A redirect or error (e.g.
+        // MI's login redirect for an asset while logged out) must not outlive the state that
+        // produced it.
         if (
           res.statusCode === 200 &&
           responseSize > 0 &&
-          responseSize < 10 * 1024 * 1024 &&
+          responseSize < MAX_CACHED_ITEM_SIZE &&
           isStillSameIdentity(requestUser, sessionAtStart, users)
         ) {
           // Replaying a cached `Set-Cookie` would put the browser back on the session that was
@@ -481,23 +578,10 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
         finalBuffer = createResponseBuffer(chunks);
       }
 
-      // Send response with proper encoding handling
-      const finalEncoding = encoding || 'utf8';
-
-      return originalEnd.call(this, finalBuffer, finalEncoding as BufferEncoding, callback);
-    };
+      return (originalEnd as (...args: unknown[]) => ServerResponse).call(this, finalBuffer, callback);
+    } as ServerResponse['end'];
 
     next();
-  };
-}
-
-// Export cache statistics for monitoring
-export function getCacheStats() {
-  return {
-    totalSize: cache.getTotalSize(),
-    itemCount: cache.getItemCount(),
-    maxSize: cache.maxSize,
-    maxItems: cache.maxItems,
   };
 }
 
