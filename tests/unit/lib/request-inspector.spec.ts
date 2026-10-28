@@ -79,6 +79,40 @@ describe('registerInspectorRoutes', () => {
   });
 });
 
+describe('GET /@api/requests', () => {
+  it('takes the first value of a repeated query parameter instead of failing', () => {
+    const app = makeApp();
+    const store = new RequestStore();
+    const res: any = { json: (body: unknown) => (res.body = body) };
+
+    for (const [method, url] of [
+      ['GET', '/a'],
+      ['POST', '/b'],
+    ]) {
+      store.add({
+        id: store.allocateId(),
+        timestamp: 0,
+        method,
+        url,
+        statusCode: 200,
+        duration: 0,
+        source: 'proxy',
+        requestHeaders: {},
+        requestBody: null,
+        requestBodyTruncated: false,
+        responseHeaders: {},
+        responseBody: null,
+        responseBodyTruncated: false,
+      });
+    }
+
+    registerInspectorRoutes(app, store);
+    app.handlers.get('GET /@api/requests')!({ query: { method: ['post', 'get'], search: ['/b', '/a'] } }, res);
+
+    expect(res.body.requests.map((e: { url: string }) => e.url)).toEqual(['/b']);
+  });
+});
+
 describe('request inspector JSON rendering', () => {
   it('escapes invalid JSON before inserting it into the detail HTML', () => {
     const payload = '</pre><img src=x onerror=alert(1)>';

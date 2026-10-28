@@ -2,10 +2,36 @@ import { randomUUID } from 'node:crypto';
 
 export const DEFAULT_MAX_MEMORY = 1 * 1024 * 1024 * 1024; // 1 GB
 
+/**
+ * Most requests kept, whatever their size: the inspector polls the list every 2 seconds, and a long
+ * session of small requests stays far below {@link DEFAULT_MAX_MEMORY}.
+ */
+export const DEFAULT_MAX_ENTRIES = 10_000;
+
 // Approximate per-entry overhead (headers, URL, metadata) so zero-body entries still count
-// toward maxMemory and get evicted — otherwise a long dev session could grow entries/insertOrder
-// without bound even though totalSize never appeared to grow.
+// toward maxMemory and get evicted.
 const ENTRY_OVERHEAD_BYTES = 512;
+
+function entrySize(entry: RequestEntry): number {
+  return (entry.requestBody?.byteLength ?? 0) + (entry.responseBody?.byteLength ?? 0) + ENTRY_OVERHEAD_BYTES;
+}
+
+function toMeta(e: RequestEntry): RequestMeta {
+  return {
+    id: e.id,
+    timestamp: e.timestamp,
+    method: e.method,
+    url: e.url,
+    statusCode: e.statusCode,
+    duration: e.duration,
+    source: e.source,
+    user: e.user,
+    requestSize: e.requestBody?.byteLength ?? 0,
+    responseSize: e.responseBody?.byteLength ?? 0,
+    requestBodyTruncated: e.requestBodyTruncated,
+    responseBodyTruncated: e.responseBodyTruncated,
+  };
+}
 
 export type RequestSource = 'local' | 'proxy' | 'proxy-cache';
 
@@ -44,12 +70,32 @@ export interface RequestMeta {
 
 export class RequestStore {
   private entries = new Map<string, RequestEntry>();
+  /** Ids oldest first; the live ones start at {@link head}, so evicting is not an O(n) `shift()`. */
   private insertOrder: string[] = [];
+  private head = 0;
   private totalSize = 0;
   readonly maxMemory: number;
+  readonly maxEntries: number;
 
-  constructor(maxMemory = DEFAULT_MAX_MEMORY) {
+  constructor(maxMemory = DEFAULT_MAX_MEMORY, maxEntries = DEFAULT_MAX_ENTRIES) {
     this.maxMemory = maxMemory;
+    this.maxEntries = maxEntries;
+  }
+
+  private evictOldest(): void {
+    const oldest = this.insertOrder[this.head++];
+    const old = this.entries.get(oldest);
+
+    if (old) {
+      this.totalSize -= entrySize(old);
+      this.entries.delete(oldest);
+    }
+
+    // Drop the evicted ids once they make up most of the array.
+    if (this.head >= 1024 && this.head * 2 >= this.insertOrder.length) {
+      this.insertOrder = this.insertOrder.slice(this.head);
+      this.head = 0;
+    }
   }
 
   allocateId(): string {
@@ -71,17 +117,14 @@ export class RequestStore {
       bodyBytes = 0;
     }
 
-    const size = bodyBytes + ENTRY_OVERHEAD_BYTES;
+    const size = entrySize(storedEntry);
 
     // Evict oldest entries until we have room
-    while (this.totalSize + size > this.maxMemory && this.insertOrder.length > 0) {
-      const oldest = this.insertOrder.shift()!;
-      const old = this.entries.get(oldest);
-
-      if (old) {
-        this.totalSize -= (old.requestBody?.byteLength ?? 0) + (old.responseBody?.byteLength ?? 0) + ENTRY_OVERHEAD_BYTES;
-        this.entries.delete(oldest);
-      }
+    while (
+      (this.totalSize + size > this.maxMemory || this.entries.size >= this.maxEntries) &&
+      this.head < this.insertOrder.length
+    ) {
+      this.evictOldest();
     }
 
     this.entries.set(storedEntry.id, storedEntry);
@@ -93,51 +136,59 @@ export class RequestStore {
     return this.entries.get(id);
   }
 
+  /**
+   * The matching requests, oldest first: the most recent `limit` of them, or with an `offset`, `limit`
+   * of them from the `offset`-th oldest. Only the entries returned are copied: the inspector polls
+   * this every 2 seconds.
+   */
   list(opts?: { limit?: number; offset?: number; method?: string; search?: string }): RequestMeta[] {
-    let result = this.insertOrder.slice().map((id) => {
-      const e = this.entries.get(id)!;
+    const method = opts?.method?.toUpperCase();
+    const search = opts?.search?.toLowerCase();
+    const matches = (e: RequestEntry) =>
+      (!method || e.method === method) && (!search || e.url.toLowerCase().includes(search));
+    const limit = Number.isFinite(opts?.limit) ? opts!.limit! : Infinity;
+    const result: RequestMeta[] = [];
 
-      return {
-        id: e.id,
-        timestamp: e.timestamp,
-        method: e.method,
-        url: e.url,
-        statusCode: e.statusCode,
-        duration: e.duration,
-        source: e.source,
-        user: e.user,
-        requestSize: e.requestBody?.byteLength ?? 0,
-        responseSize: e.responseBody?.byteLength ?? 0,
-        requestBodyTruncated: e.requestBodyTruncated,
-        responseBodyTruncated: e.responseBodyTruncated,
-      };
-    });
-
-    if (opts?.method) {
-      result = result.filter((e) => e.method === opts.method!.toUpperCase());
+    if (limit <= 0) {
+      return result;
     }
-
-    if (opts?.search) {
-      const q = opts.search.toLowerCase();
-
-      result = result.filter((e) => e.url.toLowerCase().includes(q));
-    }
-
-    const limit = Number.isFinite(opts?.limit) ? opts!.limit! : result.length;
 
     // Without an explicit offset, return the most recent `limit` entries (not the oldest).
     if (opts?.offset === undefined) {
-      return result.slice(Math.max(0, result.length - limit));
+      for (let i = this.insertOrder.length - 1; i >= this.head && result.length < limit; i -= 1) {
+        const e = this.entries.get(this.insertOrder[i]);
+
+        if (e && matches(e)) {
+          result.push(toMeta(e));
+        }
+      }
+
+      return result.reverse();
     }
 
-    const offset = Number.isFinite(opts.offset) ? opts.offset! : 0;
+    let skip = Number.isFinite(opts.offset) ? Math.max(0, opts.offset!) : 0;
 
-    return result.slice(offset, offset + limit);
+    for (let i = this.head; i < this.insertOrder.length && result.length < limit; i += 1) {
+      const e = this.entries.get(this.insertOrder[i]);
+
+      if (!e || !matches(e)) {
+        continue;
+      }
+
+      if (skip > 0) {
+        skip -= 1;
+      } else {
+        result.push(toMeta(e));
+      }
+    }
+
+    return result;
   }
 
   clear(): void {
     this.entries.clear();
     this.insertOrder = [];
+    this.head = 0;
     this.totalSize = 0;
   }
 
