@@ -175,6 +175,36 @@ describe('runBuildProcess', () => {
     }
   });
 
+  // Stopping with the dev server did nothing to a build already in its timeout's grace period: one
+  // ignoring SIGTERM outlived the server if it exited before the grace timer fired.
+  it('kills a build in its timeout grace period at once when the dev server stops', async () => {
+    const controller = new AbortController();
+    const pidFile = path.join(os.tmpdir(), `pp-dev-build-grace-${process.pid}-${Date.now()}.pid`);
+    const promise = runBuildProcess(
+      'test build',
+      process.execPath,
+      [
+        '-e',
+        `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`,
+      ],
+      { cwd: process.cwd(), env: process.env, signal: controller.signal, timeoutMs: 200, killGraceMs: 60_000 },
+    );
+    const timedOut = expect(promise).rejects.toThrow('test build timed out');
+
+    try {
+      const pid = await waitForPid(pidFile);
+
+      // Past the timeout, inside its grace period.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      controller.abort();
+
+      await expect.poll(() => isAlive(pid), { timeout: 3_000 }).toBe(false);
+      await timedOut;
+    } finally {
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
   it('does not start a build whose signal already aborted', async () => {
     const controller = new AbortController();
 

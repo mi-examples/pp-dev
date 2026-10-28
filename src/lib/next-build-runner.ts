@@ -123,7 +123,15 @@ export function runBuildProcess(
     let killTimer: ReturnType<typeof setTimeout> | undefined;
 
     const stop = (reason: string, graceful: boolean) => {
+      // A build that timed out is in its grace period: a stop with the dev server still kills it at
+      // once (the timer that was to do it may not outlive the server). Anything else is already done.
       if (stopReason) {
+        if (!graceful && killTimer !== undefined) {
+          clearTimeout(killTimer);
+          killTimer = undefined;
+          signalBuild(proc, 'SIGKILL', ownGroup);
+        }
+
         return;
       }
 
@@ -134,7 +142,10 @@ export function runBuildProcess(
       // the server may exit right after, and with it any timer that was to kill it later.
       if (graceful) {
         signalBuild(proc, 'SIGTERM', ownGroup);
-        killTimer = setTimeout(() => signalBuild(proc, 'SIGKILL', ownGroup), killGraceMs);
+        killTimer = setTimeout(() => {
+          killTimer = undefined;
+          signalBuild(proc, 'SIGKILL', ownGroup);
+        }, killGraceMs);
       } else {
         signalBuild(proc, 'SIGKILL', ownGroup);
       }
