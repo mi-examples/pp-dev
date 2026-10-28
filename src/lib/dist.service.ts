@@ -3,15 +3,13 @@ import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
 import * as crypto from 'crypto';
 import * as process from 'process';
-import * as child_process from 'child_process';
-import * as console from 'console';
 import * as os from 'os';
 import { createLogger } from './logger.js';
 import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
 import { zipDirectoryToBuffer, extractZipSafe } from './helpers/zip.helper.js';
-import { runNextBuildProcess } from './next-build-runner.js';
+import { DEFAULT_BUILD_TIMEOUT_MS, runBuildProcess, runNextBuildProcess } from './next-build-runner.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
@@ -52,7 +50,12 @@ export interface SyncOptions {
    * `false` or `0` keeps them all. @default DEFAULT_MAX_BACKUPS
    */
   maxBackups?: number | false;
+  /** How long a sync's build may run before it is stopped. @default DEFAULT_BUILD_TIMEOUT_MS */
+  buildTimeoutMs?: number;
 }
+
+/** `PK\x03\x04`: how a ZIP file starts. */
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 /** Backups kept per page when `maxBackups` is not set. */
 export const DEFAULT_MAX_BACKUPS = 20;
@@ -169,6 +172,9 @@ export class DistService {
   private readonly buildInputFolder?: string;
   private readonly nextBuild?: NextBuildOptions;
   private readonly maxBackups: number;
+  private readonly buildTimeoutMs: number;
+  /** Aborted by {@link stopBuilds}; replaced then, so later syncs can build again. */
+  private builds = new AbortController();
   /** Settles once the sync meta file is read; never rejects (see loadMeta). */
   private readonly metaLoaded: Promise<void>;
 
@@ -188,6 +194,7 @@ export class DistService {
       dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
       nextBuild,
       maxBackups = DEFAULT_MAX_BACKUPS,
+      buildTimeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
     } = syncOptions || {};
 
     this.root = root;
@@ -205,12 +212,19 @@ export class DistService {
     this.nextBuild = nextBuild;
     this.maxBackups =
       typeof maxBackups === 'number' && Number.isInteger(maxBackups) && maxBackups > 0 ? maxBackups : Infinity;
+    this.buildTimeoutMs = buildTimeoutMs;
 
     this.logger = createLogger();
 
     // Read in the background, but awaited by everything that uses the meta (see meta()): a
     // constructor can't await, and the meta must not be used before it is read.
     this.metaLoaded = this.loadMeta();
+  }
+
+  /** Stops the builds running for a sync, e.g. when the dev server shuts down. */
+  stopBuilds() {
+    this.builds.abort();
+    this.builds = new AbortController();
   }
 
   async checkMeta() {
@@ -298,7 +312,7 @@ export class DistService {
 
   /**
    * Deletes this page's oldest backups beyond `maxBackups`. Only files named after the backup
-   * template for this page count; the backup just saved and the one the meta points at are never
+   * template for this page count; the backup just saved (the one the meta points at) is never
    * deleted. Failing to prune never fails the sync.
    */
   private async pruneBackups(justSaved: string) {
@@ -308,7 +322,8 @@ export class DistService {
 
     try {
       const pattern = backupNamePattern(this.backupNameTemplate, this.pageName, this.dateFormat(new Date()));
-      const protectedNames = new Set([justSaved, this.currentMeta?.lastBackupName].filter(Boolean));
+      // `saveBackup` points the meta at `justSaved` before pruning, so it is the only one to keep.
+      const protectedNames = new Set([justSaved]);
       const entries = await fs.readdir(this.backupFolder, { withFileTypes: true });
       const backups = await Promise.all(
         entries
@@ -698,8 +713,9 @@ export class DistService {
   }
 
   async analyzeBackup(backupFile: Buffer): Promise<BackupAnalysis> {
-    // Verify if the backup file is an ZIP file (magic number)
-    if (backupFile.toString('utf-8').slice(0, 4) !== 'PK\x03\x04') {
+    // A ZIP file starts with its local file header signature. Compared as bytes: decoding the
+    // whole backup as UTF-8 to read four of them copied it once more for nothing.
+    if (!ZIP_SIGNATURE.equals(backupFile.subarray(0, ZIP_SIGNATURE.length))) {
       throw new Error('Backup file is not a ZIP file');
     }
 
@@ -791,40 +807,22 @@ export class DistService {
       return await this.buildNextAssets();
     }
 
-    const buildCommand = new Promise<string>((resolve, reject) => {
-      let data = '';
+    this.logger.info(colors.cyan('[DistService] Build started'));
 
-      // Colorized log output with message about build start
-      this.logger.info(colors.cyan('[DistService] Build started'));
-
-      const proc = child_process.spawn('node', [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'], {
+    const buildCommand = runBuildProcess(
+      'pp-dev build',
+      'node',
+      [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'],
+      {
         cwd: this.root,
         env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
-        stdio: 'inherit',
-      });
-
-      proc.on('message', (msg) => {
-        data += msg;
-      });
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`build command exited with code ${code}`));
-
-          return;
-        }
-
-        resolve(data);
-      });
-
-      proc.on('error', (err) => {
-        reject(err);
-      });
-    });
+        timeoutMs: this.buildTimeoutMs,
+        signal: this.builds.signal,
+      },
+    );
 
     try {
       await buildCommand.finally(() => {
-        // Colorized log output with message about build end
         this.logger.info(colors.cyan('[DistService] Build finished'));
       });
 
@@ -840,11 +838,15 @@ export class DistService {
 
       const assetFile = path.resolve(this.root, this.distZipFolder, this.distZipFilename);
 
-      if (!(await fs.stat(assetFile))) {
-        throw new Error(`File ${assetFile} not found`);
-      }
+      try {
+        return await fs.readFile(assetFile);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new Error(`File ${assetFile} not found`);
+        }
 
-      return await fs.readFile(assetFile);
+        throw error;
+      }
     } catch (e) {
       this.logger.error(e instanceof Error ? (e.stack ?? e.message) : String(e));
 
@@ -868,7 +870,7 @@ export class DistService {
 
     this.logger.info(colors.cyan('[DistService] Next.js build started'));
 
-    await runNextBuildProcess(projectRoot);
+    await runNextBuildProcess(projectRoot, { timeoutMs: this.buildTimeoutMs, signal: this.builds.signal });
 
     this.logger.info(colors.cyan('[DistService] Next.js build finished'));
 
@@ -878,7 +880,7 @@ export class DistService {
       throw new Error(`Next.js build output directory not found: ${outDir}`);
     }
 
-    writeBuildVersionManifest({
+    await writeBuildVersionManifest({
       outDir,
       packageVersion: this.nextBuild!.packageVersion,
       versionFileTemplate: this.versionFileTemplate,

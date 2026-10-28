@@ -41,38 +41,107 @@ export function removeStaleDevTypes(
   return devTypesDir;
 }
 
-/** Run `next build` in `projectRoot`, resolving the `next` binary from the app itself. */
-export function runNextBuildProcess(projectRoot: string): Promise<void> {
+/** How long a sync's build may run before it is stopped. */
+export const DEFAULT_BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+
+export interface BuildProcessOptions {
+  /** @default DEFAULT_BUILD_TIMEOUT_MS */
+  timeoutMs?: number;
+  /** Stops the build, e.g. when the dev server shuts down. */
+  signal?: AbortSignal;
+}
+
+/** Stops a build and what it started: on Windows `kill()` would end only the process itself. */
+function killProcessTree(proc: child_process.ChildProcess): void {
+  if (proc.exitCode !== null || proc.signalCode !== null || !proc.pid) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    child_process.spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    proc.kill('SIGTERM');
+  }
+}
+
+/**
+ * Runs a build command for a template sync, with its output in the dev server's terminal.
+ *
+ * It is stopped once it runs longer than {@link BuildProcessOptions.timeoutMs} or when
+ * {@link BuildProcessOptions.signal} aborts: a hung build used to keep the sync (and every later
+ * one) waiting, and outlived the dev server it was started from.
+ */
+export function runBuildProcess(
+  label: string,
+  command: string,
+  args: string[],
+  {
+    cwd,
+    env,
+    timeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
+    signal,
+  }: BuildProcessOptions & { cwd: string; env: NodeJS.ProcessEnv },
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    let nextBin: string;
-
-    try {
-      const require = createRequire(path.join(projectRoot, 'package.json'));
-      const nextPkgPath = require.resolve('next/package.json');
-
-      nextBin = path.resolve(path.dirname(nextPkgPath), 'dist/bin/next');
-    } catch {
-      reject(new Error(`Unable to resolve the "next" binary from ${projectRoot}. Is Next.js installed?`));
+    if (signal?.aborted) {
+      reject(new Error(`${label} was stopped`));
 
       return;
     }
 
-    const proc = child_process.spawn(process.execPath, [nextBin, 'build'], {
-      cwd: projectRoot,
-      env: Object.assign({}, process.env, { NODE_ENV: 'production', [PP_DEV_NEXT_BUILD_ENV_VAR]: '1' }),
-      stdio: 'inherit',
-    });
+    const proc = child_process.spawn(command, args, { cwd, env, stdio: 'inherit' });
+    let stopReason: string | undefined;
+
+    const stop = (reason: string) => {
+      stopReason ??= reason;
+      killProcessTree(proc);
+    };
+    const onAbort = () => stop(`${label} was stopped`);
+    const timer = setTimeout(() => stop(`${label} timed out after ${Math.round(timeoutMs / 1000)} s`), timeoutMs);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    const settle = (error?: Error) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
 
     proc.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`next build exited with code ${code}`));
-
-        return;
+      if (stopReason) {
+        settle(new Error(stopReason));
+      } else if (code !== 0) {
+        settle(new Error(`${label} exited with code ${code}`));
+      } else {
+        settle();
       }
-
-      resolve();
     });
 
-    proc.on('error', reject);
+    proc.on('error', (error) => settle(error));
+  });
+}
+
+/** Run `next build` in `projectRoot`, resolving the `next` binary from the app itself. */
+export async function runNextBuildProcess(projectRoot: string, options: BuildProcessOptions = {}): Promise<void> {
+  let nextBin: string;
+
+  try {
+    const require = createRequire(path.join(projectRoot, 'package.json'));
+    const nextPkgPath = require.resolve('next/package.json');
+
+    nextBin = path.resolve(path.dirname(nextPkgPath), 'dist/bin/next');
+  } catch {
+    throw new Error(`Unable to resolve the "next" binary from ${projectRoot}. Is Next.js installed?`);
+  }
+
+  await runBuildProcess('next build', process.execPath, [nextBin, 'build'], {
+    ...options,
+    cwd: projectRoot,
+    env: Object.assign({}, process.env, { NODE_ENV: 'production', [PP_DEV_NEXT_BUILD_ENV_VAR]: '1' }),
   });
 }

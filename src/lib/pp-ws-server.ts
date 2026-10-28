@@ -22,6 +22,8 @@ type CustomMessage = { type: 'custom'; event: string; data?: unknown };
 /** Per-connection sender handed to {@link import('./client.service.js').ClientService} handlers. */
 export interface PPDevHotClient {
   send(event: string, payload?: unknown): void;
+  /** The connection itself, as on Vite's `WebSocketClient` (e.g. to notice it closing). */
+  socket: WebSocket;
 }
 
 type EventListener = (data: any, client: PPDevHotClient) => void;
@@ -136,6 +138,7 @@ export class PPDevHotServer {
   private onConnection(socket: WebSocket) {
     const client: PPDevHotClient = {
       send: (event, payload) => this.sendToSocket(socket, event, payload),
+      socket,
     };
 
     this.clients.set(socket, client);
