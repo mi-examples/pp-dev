@@ -155,6 +155,25 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body.raw).toBe('not json');
       expect(res.body.parseError).toBeTruthy();
     });
+
+    // The editor used to get any JSON as the schema (`{}` showed an empty table whose save dropped
+    // the rest of the file), while the values routes ignored it: both now read it one way.
+    it.each([['{}'], ['[]'], ['{"tags":"x"}']])('reports %s as not a schema, still returning raw text', async (raw) => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(Buffer.from(raw)),
+      } as unknown as DistService;
+      const app = register({ distService, miAPI: {} as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/schema')!({}, res);
+
+      expect(res.body).toEqual({
+        exists: true,
+        schema: null,
+        raw,
+        parseError: 'The root value must be a JSON object with a "tags" array.',
+      });
+    });
   });
 
   describe('PUT /@api/variables/schema', () => {
@@ -311,6 +330,42 @@ describe('registerVariablesEditorRoutes', () => {
       await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x' }] } }, res);
 
       expect(res.statusCode).toBe(400);
+    });
+
+    it.each([
+      [undefined],
+      [null],
+      ['tags'],
+      [{ tags: 'x' }],
+      [{ tags: [null] }],
+      [{ tags: [{ name: '', value: '' }] }],
+    ])('400s on the body %j', async (body) => {
+      const applyPageVariables = vi.fn();
+      const app = register({ miAPI: { applyPageVariables } as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!({ body }, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(applyPageVariables).not.toHaveBeenCalled();
+    });
+
+    // Anything else an entry carried went to MI, which stores it.
+    it('sends MI only the name and value of each entry', async () => {
+      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const applyPageVariables = vi.fn().mockResolvedValue(undefined);
+      const miAPI = { applyPageVariables, reloadPageVariables: vi.fn().mockResolvedValue([]) } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!(
+        { body: { tags: [{ name: 'Region', value: 'US', uid: 'x', __proto__: { injected: true }, extra: 1 }] } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(applyPageVariables).toHaveBeenCalledWith([{ name: 'Region', value: 'US' }]);
+      expect(Object.keys(applyPageVariables.mock.calls[0][0][0])).toEqual(['name', 'value']);
     });
 
     it('saves and returns non-blocking warnings from validateValueAgainstTag', async () => {
