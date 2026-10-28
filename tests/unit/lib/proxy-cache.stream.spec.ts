@@ -22,12 +22,34 @@ const listen = (server: http.Server) =>
 
 const close = (server: http.Server) => new Promise<void>((resolve) => server.close(() => resolve()));
 
+/** Wraps `res.write`/`res.end` the way a compression middleware does, upper-casing instead of zipping. */
+function upperCaseWrites(res: http.ServerResponse) {
+  const write = res.write;
+  const end = res.end;
+  const transform = (chunk: unknown) =>
+    chunk === undefined || chunk === null || typeof chunk === 'function'
+      ? chunk
+      : Buffer.from(String(chunk).toUpperCase());
+
+  res.write = function (this: http.ServerResponse, chunk: unknown, ...args: unknown[]) {
+    return (write as (...a: unknown[]) => boolean).call(this, transform(chunk), ...args);
+  } as http.ServerResponse['write'];
+
+  res.end = function (this: http.ServerResponse, chunk?: unknown, ...args: unknown[]) {
+    return (end as (...a: unknown[]) => http.ServerResponse).call(this, transform(chunk), ...args);
+  } as http.ServerResponse['end'];
+}
+
 describe('proxy cache — responses it does not keep', () => {
   let upstream: http.Server;
   let proxy: http.Server;
   let port: number;
   let handler: Handler;
   let upstreamHits = 0;
+  // A later middleware that wraps `res.write`/`res.end`, as Next.js's compression does.
+  let wrapDownstream = false;
+  // Answers instead of the proxy: a response the dev server makes itself (Next.js chunks, say).
+  let localHandler: Handler | undefined;
 
   beforeAll(async () => {
     upstream = http.createServer((req, res) => {
@@ -44,12 +66,22 @@ describe('proxy cache — responses it does not keep', () => {
     });
 
     proxy = http.createServer((req, res) => {
-      cacheMiddleware(req as never, res, () =>
+      cacheMiddleware(req as never, res, () => {
+        if (wrapDownstream) {
+          upperCaseWrites(res);
+        }
+
+        if (localHandler) {
+          localHandler(req, res);
+
+          return;
+        }
+
         proxyMiddleware(req as never, res, () => {
           res.statusCode = 404;
           res.end();
-        }),
-      );
+        });
+      });
     });
     port = await listen(proxy);
   });
@@ -62,6 +94,8 @@ describe('proxy cache — responses it does not keep', () => {
   beforeEach(() => {
     cache.clear();
     upstreamHits = 0;
+    wrapDownstream = false;
+    localHandler = undefined;
   });
 
   function get(path: string) {
@@ -127,6 +161,37 @@ describe('proxy cache — responses it does not keep', () => {
     expect(body.length).toBe(chunk.length * chunks + 3);
     expect(body.subarray(-3).toString()).toBe('end');
     expect(cache.getItemCount()).toBe(0);
+  });
+
+  // Next.js compresses its chunks by wrapping `res.write`/`res.end` after the cache. The cache gave the
+  // response its original methods back on the first write, dropping that wrapper: the rest of the
+  // chunk went out uncompressed after a gzip start, and the browser failed it (ERR_CONTENT_DECODING_FAILED).
+  it('keeps a wrapper set after it on a response the dev server makes itself', async () => {
+    wrapDownstream = true;
+    localHandler = (_req, res) => {
+      res.setHeader('content-type', 'application/javascript');
+      res.write('one ');
+      res.write('two ');
+      res.end('three');
+    };
+
+    expect((await readAll(await get('/pl/page/_next/static/chunks/a.js'))).toString()).toBe('ONE TWO THREE');
+  });
+
+  it('keeps a wrapper set after it on an event stream it passes through', async () => {
+    wrapDownstream = true;
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('data: one\n\n');
+      setTimeout(() => {
+        res.write('data: two\n\n');
+        res.end('data: three\n\n');
+      }, 50);
+    };
+
+    expect((await readAll(await get('/data/page/pp/assets/events.txt'))).toString()).toBe(
+      'DATA: ONE\n\nDATA: TWO\n\nDATA: THREE\n\n',
+    );
   });
 
   it('still caches a complete 200', async () => {

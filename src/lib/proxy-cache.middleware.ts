@@ -450,11 +450,11 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
       return Buffer.from(String(data), 'utf8');
     };
 
-    // Stop capturing: give the response its own write/end back, and send what was held so far.
+    // Stop capturing and send what was held so far. The overrides stay in place and only forward from
+    // now on: putting `res.write`/`res.end` back would also drop whatever a later middleware wrapped
+    // them in (Next.js compresses its chunks that way, and their tails went out uncompressed).
     const passThrough = () => {
       mode = 'pass';
-      res.write = originalWrite;
-      res.end = originalEnd;
 
       for (const held of chunks.splice(0)) {
         (originalWrite as (chunk: Buffer) => boolean).call(res, held);
@@ -468,8 +468,6 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
       if (!res.hasHeader(PROXY_HEADER)) {
         mode = 'pass';
-        res.write = originalWrite;
-        res.end = originalEnd;
 
         return;
       }
