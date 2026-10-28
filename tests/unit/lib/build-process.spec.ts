@@ -128,21 +128,48 @@ describe('runBuildProcess', () => {
 
   // A build that ignores SIGTERM kept the sync waiting for it forever. (On Windows, `taskkill /F`
   // already stops it outright.)
-  it.skipIf(process.platform === 'win32')('kills a build that ignores SIGTERM after the grace period', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'kills a build that timed out and ignores SIGTERM after the grace period',
+    async () => {
+      const started = Date.now();
+      const promise = runBuildProcess(
+        'test build',
+        process.execPath,
+        ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+        { cwd: process.cwd(), env: process.env, timeoutMs: 300, killGraceMs: 300 },
+      );
+
+      await expect(promise).rejects.toThrow('test build timed out');
+      expect(Date.now() - started).toBeLessThan(5_000);
+    },
+  );
+
+  // `dispose()` doesn't wait, and the dev server exits right after: a SIGKILL still due after a grace
+  // period never came, leaving a build that ignores SIGTERM running.
+  it('kills a build stopped with the dev server at once, without a grace period', async () => {
     const controller = new AbortController();
-    const started = Date.now();
+    const pidFile = path.join(os.tmpdir(), `pp-dev-build-stubborn-${process.pid}-${Date.now()}.pid`);
     const promise = runBuildProcess(
       'test build',
       process.execPath,
-      ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
-      { cwd: process.cwd(), env: process.env, signal: controller.signal, killGraceMs: 300 },
+      [
+        '-e',
+        `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`,
+      ],
+      { cwd: process.cwd(), env: process.env, signal: controller.signal, killGraceMs: 60_000 },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    controller.abort();
+    try {
+      const pid = await waitForPid(pidFile);
 
-    await expect(promise).rejects.toThrow('test build was stopped');
-    expect(Date.now() - started).toBeLessThan(5_000);
+      controller.abort();
+
+      // Sent before `abort()` returns, so it holds even if the process exits right after.
+      await expect.poll(() => isAlive(pid), { timeout: 3_000 }).toBe(false);
+      await expect(promise).rejects.toThrow('test build was stopped');
+    } finally {
+      fs.rmSync(pidFile, { force: true });
+    }
   });
 
   it('does not start a build whose signal already aborted', async () => {
