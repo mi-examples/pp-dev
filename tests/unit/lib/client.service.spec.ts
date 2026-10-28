@@ -380,3 +380,40 @@ describe('ClientService — dialogs and builds when connections close', () => {
     expect(handlers.has('close')).toBe(false);
   });
 });
+
+/**
+ * A page with no assets on MI yet syncs without saving a backup, so the sync meta is still `{}`.
+ * Converting its missing date threw `RangeError: Invalid time value` after the upload had succeeded,
+ * and the panel was told the sync failed.
+ */
+describe('ClientService — a sync before any backup was saved', () => {
+  it('reports success, dated now', async () => {
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+    const distService = {
+      buildNewAssets: vi.fn().mockResolvedValue(Buffer.from('zip')),
+      getBackupMeta: vi.fn(() => ({})),
+    } as unknown as DistService;
+    const miAPI = {
+      getAssets: vi.fn().mockResolvedValue(undefined),
+      updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
+    } as unknown as MiAPI;
+    const client = { send: vi.fn() } as unknown as WebSocketClient;
+    const before = Date.now();
+
+    new ClientService(server, { distService, miAPI });
+    await handlers.get('template:sync')!({}, client);
+
+    const [event, payload] = (client.send as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+
+    expect(event).toBe('template:sync:response');
+    expect(payload).toEqual({ syncedAt: expect.any(String), currentHash: '', backupFilename: '' });
+    expect(Date.parse(payload.syncedAt)).toBeGreaterThanOrEqual(before - 1000);
+  });
+});

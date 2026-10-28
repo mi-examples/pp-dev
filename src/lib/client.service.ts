@@ -462,22 +462,16 @@ export class ClientService {
           const updateResult = await miAPI?.updateAssets(newAssets);
 
           if (updateResult?.status === 'OK') {
+            // The meta is `{}` until a first backup is saved (a page with no assets on MI yet).
             const backupMeta = distService?.getBackupMeta();
-
-            const {
-              lastBackupName: backupFilename,
-              lastBackupHash: currentHash,
-              lastBackupDate: backupDate,
-            } = backupMeta || {
-              lastBackupName: '',
-              lastBackupHash: '',
-              lastBackupDate: new Date().toISOString(),
-            };
+            const backupDate = backupMeta?.lastBackupDate ? new Date(backupMeta.lastBackupDate) : new Date();
 
             this.sendSyncResponse(client, {
-              syncedAt: new Date(backupDate).toISOString(),
-              currentHash,
-              backupFilename,
+              // Now, for a date that doesn't parse: `toISOString()` throws on one, after the upload
+              // succeeded, and the panel showed a failed sync.
+              syncedAt: (Number.isNaN(backupDate.getTime()) ? new Date() : backupDate).toISOString(),
+              currentHash: backupMeta?.lastBackupHash ?? '',
+              backupFilename: backupMeta?.lastBackupName ?? '',
             });
 
             this.logger.info(colors.green('Template synced'));
