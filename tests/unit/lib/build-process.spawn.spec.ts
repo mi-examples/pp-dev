@@ -1,12 +1,13 @@
 import { EventEmitter } from 'node:events';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawnMock = vi.hoisted(() => vi.fn());
+const spawnSyncMock = vi.hoisted(() => vi.fn());
 
 vi.mock('child_process', async (orig) => {
   const actual = await orig<typeof import('child_process')>();
 
-  return { ...actual, spawn: spawnMock };
+  return { ...actual, spawn: spawnMock, spawnSync: spawnSyncMock };
 });
 
 const { runBuildProcess } = await import('../../../src/lib/next-build-runner.js');
@@ -17,9 +18,19 @@ const { runBuildProcess } = await import('../../../src/lib/next-build-runner.js'
  * default, a long build was stopped halfway.
  */
 describe('runBuildProcess — a build started from the terminal', () => {
+  // The fake build's pid is made up: a real `process.kill(-pid)` (POSIX) or `taskkill /PID` (Windows)
+  // could hit an unrelated process (group) on the machine running the tests.
+  let killMock: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    killMock = vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     spawnMock.mockReset();
+    spawnSyncMock.mockReset();
+    killMock.mockRestore();
   });
 
   function fakeBuild() {
@@ -65,5 +76,8 @@ describe('runBuildProcess — a build started from the terminal', () => {
 
     proc.emit('close', 0);
     await expect(build).resolves.toBeUndefined();
+
+    // Its group goes with it, and only its group.
+    expect(killMock).toHaveBeenCalledWith(-4242, 'SIGKILL');
   });
 });
