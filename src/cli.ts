@@ -687,7 +687,9 @@ cli
         const _normalized = normalizePPDevConfig(ppDevConfig, packageName);
         // `app.name`, else package.json's `name`: the one name for the base path, redirects and sync.
         const { templateName } = _normalized;
-        const backendBaseURL = _normalized.backendBaseURL ?? 'http://localhost:8080';
+        // No `mi.url` (a standalone page without a backend): no MI middleware, as under `pp-dev`. A
+        // made-up `http://localhost:8080` used to switch it on, needing an app.id the page doesn't have.
+        const backendBaseURL = _normalized.backendBaseURL;
         const templateLess = _normalized.templateLess;
         const v7Features = _normalized.v7Features;
         const disableSSLValidation = _normalized.disableSSLValidation;
