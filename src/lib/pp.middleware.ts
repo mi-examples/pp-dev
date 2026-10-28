@@ -38,6 +38,15 @@ export class MiAPI {
   /** Whether {@link #pageVars} holds the page's values yet (they are loaded with the page data). */
   #pageVarsLoaded = false;
 
+  /** See `#getPageVarReplacements()`. */
+  #pageVarReplacements: {
+    vars: { name: string; value: string }[];
+    replacements: { regExp: RegExp; value: string }[];
+  } | null = null;
+
+  /** See `#getPageShell()`. */
+  #pageShell: { template: string | null; title: string; before: string; after: string } | null = null;
+
   #v7Features!: boolean;
 
   #personalAccessToken!: string | undefined;
@@ -86,10 +95,9 @@ export class MiAPI {
     if (axiosInstanceCache.has(cacheKey)) {
       this.#axios = axiosInstanceCache.get(cacheKey)!;
     } else {
-      if (disableSSLValidation) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-      }
-
+      // TLS is relaxed for this client only: not through `NODE_TLS_REJECT_UNAUTHORIZED` or
+      // `axios.defaults`, which would turn certificate checks off for every HTTPS call in the process.
+      // The proxy relaxes its own through `secure`.
       const httpsAgent = new https.Agent({
         // Axios http adapter registers `socket.on('error', …)` per request; concurrent
         // requests on one keep-alive TLS socket stack listeners and trigger MaxListenersExceededWarning.
@@ -105,13 +113,6 @@ export class MiAPI {
         httpAgent: new http.Agent({ keepAlive: false }),
         httpsAgent,
       });
-
-      // Some code paths (redirects, deps, or bare `axios` in the same process) merge with
-      // `axios.defaults`; setting the same agent avoids a second pool and keeps TLS relaxed
-      // consistent with `disableSSLValidation` without re‑enabling keep-alive.
-      if (disableSSLValidation) {
-        axios.defaults.httpsAgent = httpsAgent;
-      }
 
       axiosInstanceCache.set(cacheKey, this.#axios);
     }
@@ -594,57 +595,98 @@ export class MiAPI {
   buildPage(content: string | Buffer, miHudLess = false) {
     let result = typeof content === 'string' ? content : content.toString('utf-8');
 
-    for (const v of this.#pageVars) {
-      const escapedName = this.#escapeRegExp(v.name);
-      const pageVarRegex = new RegExp(`\\[${escapedName}\\]`, 'g');
+    for (const { regExp, value } of this.#getPageVarReplacements()) {
+      result = result.replace(regExp, () => value);
+    }
 
-      result = result.replace(pageVarRegex, () => v.value);
+    if (miHudLess) {
+      const JSDOM = getJSDOM();
+
+      return new JSDOM(result).serialize();
+    }
+
+    const { before, after } = this.#getPageShell();
+
+    return before + result + after;
+  }
+
+  /** {@link buildPage}'s `[VarName]` substitutions, compiled once for each loaded set of variables. */
+  #getPageVarReplacements(): { regExp: RegExp; value: string }[] {
+    if (this.#pageVarReplacements?.vars !== this.#pageVars) {
+      this.#pageVarReplacements = {
+        vars: this.#pageVars,
+        replacements: this.#pageVars.map(({ name, value }) => ({
+          regExp: new RegExp(`\\[${this.#escapeRegExp(name)}\\]`, 'g'),
+          value,
+        })),
+      };
+    }
+
+    return this.#pageVarReplacements.replacements;
+  }
+
+  /**
+   * The page template with the page's title, split where {@link buildPage} puts the page's content.
+   * Parsing and serializing the template takes a DOM, so it is done once for each template and title,
+   * not on every page load.
+   */
+  #getPageShell(): { before: string; after: string } {
+    const template = this.#pageTemplate;
+    const title = this.#pageTitle;
+
+    if (this.#pageShell?.template === template && this.#pageShell.title === title) {
+      return this.#pageShell;
     }
 
     const JSDOM = getJSDOM();
-    const dom = new JSDOM(miHudLess ? result : this.#pageTemplate!);
-
+    const dom = new JSDOM(template!);
+    const { document } = dom.window;
     const placeholderText = '%%PLACEHOLDER%%';
+    const placeholder = document.createElement('div');
 
-    if (!miHudLess) {
-      const placeholder = dom.window.document.createElement('div');
+    placeholder.innerHTML = placeholderText;
 
-      placeholder.innerHTML = placeholderText;
+    const container = document.querySelector('.main-side');
 
-      const container = dom.window.document.querySelector('.main-side');
+    if (container) {
+      const scripts = container.querySelectorAll('script');
 
-      if (container) {
-        const scripts = container.querySelectorAll('script');
-
-        if (scripts.length) {
-          container.insertBefore(placeholder, scripts.item(scripts.length - 1));
-        } else {
-          container.append(placeholder);
-        }
+      if (scripts.length) {
+        container.insertBefore(placeholder, scripts.item(scripts.length - 1));
       } else {
-        const container = dom.window.document.createElement('div');
-
         container.append(placeholder);
-
-        dom.window.document.body.append(container);
       }
+    } else {
+      const container = document.createElement('div');
 
-      const head = dom.window.document.querySelector('head')!;
-      const title = head!.querySelector('title');
+      container.append(placeholder);
 
-      if (title) {
-        title.text = this.#pageTitle;
-      } else {
-        const titleEl = dom.window.document.createElement('title');
+      document.body.append(container);
+    }
 
-        titleEl.textContent = this.#pageTitle;
-        head.appendChild(titleEl);
-      }
+    const head = document.querySelector('head')!;
+    const titleElement = head.querySelector('title');
+
+    if (titleElement) {
+      titleElement.text = title;
+    } else {
+      const titleEl = document.createElement('title');
+
+      titleEl.textContent = title;
+      head.appendChild(titleEl);
     }
 
     const serializedDom = dom.serialize();
+    const match = new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i').exec(serializedDom)!;
 
-    return serializedDom.replace(new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i'), result);
+    this.#pageShell = {
+      template,
+      title,
+      before: serializedDom.slice(0, match.index),
+      after: serializedDom.slice(match.index + match[0].length),
+    };
+
+    return this.#pageShell;
   }
 
   async getAssets() {
@@ -728,18 +770,8 @@ export class MiAPI {
         // Log detailed error information with suggestions
         logTokenError(this.logger, error, 'API Request');
 
-        // Preserve the original error structure but enhance it with our error info
-        if (error.response) {
-          // If it's already an Axios error, enhance it
-          error.tokenErrorInfo = errorInfo;
-        } else {
-          // If it's a generic error, create a mock response structure
-          (error as any).response = {
-            status: errorInfo.status,
-            data: { message: errorInfo.message },
-          };
-          error.tokenErrorInfo = errorInfo;
-        }
+        // A known code comes from the response's status, so the error always has a response here.
+        error.tokenErrorInfo = errorInfo;
 
         throw error;
       }
