@@ -258,3 +258,32 @@ describe('initSyncButton', () => {
     expect(syncRequests()).toBe(1);
   });
 });
+
+// Under `pp-dev next`, the first socket may still be connecting: a click went to the outbox, and if
+// that attempt failed, the queued sync started on some later reconnect without another click.
+describe('initSyncButton — a transport that says whether it is connected', () => {
+  it('refuses a click until the socket is open', () => {
+    document.body.innerHTML = '<button id="sync-template" class="sync-button" title="Sync template"></button>';
+
+    const $button = document.getElementById('sync-template') as HTMLButtonElement;
+    const send = vi.fn();
+    let open = false;
+    const deps = {
+      infoPopup: vi.fn(),
+      confirmModal: vi.fn().mockResolvedValue(true),
+      closeAllConfirmModals: vi.fn(),
+    } satisfies SyncButtonDeps;
+
+    initSyncButton({ on: vi.fn(), send, isConnected: () => open } as never, $button, deps);
+
+    $button.click();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(deps.infoPopup).toHaveBeenCalledWith(expect.objectContaining({ title: 'No connection' }));
+
+    open = true;
+    $button.click();
+
+    expect(send).toHaveBeenCalledWith('template:sync', {});
+  });
+});

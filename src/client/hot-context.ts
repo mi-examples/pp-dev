@@ -14,6 +14,9 @@ import { PP_DEV_HMR_WS_PATH } from '../shared/ws-messages.js';
 
 type CustomMessage = { type: 'custom'; event: string; data?: unknown };
 
+/** {@link ViteHotContext}, plus whether the socket is open right now. */
+export type PPDevHotContext = ViteHotContext & { isConnected(): boolean };
+
 type Handler = (payload: any) => void;
 
 const MAX_OUTBOX_SIZE = 50;
@@ -25,7 +28,7 @@ function resolveWebSocketUrl(): string {
   return `${wsProtocol}//${host}${PP_DEV_HMR_WS_PATH}`;
 }
 
-export function createPPDevHotContext(): ViteHotContext {
+export function createPPDevHotContext(): PPDevHotContext {
   const handlers = new Map<string, Set<Handler>>();
   /** Outgoing messages queued while the socket is not OPEN; flushed on connect. */
   const outbox: string[] = [];
@@ -132,7 +135,7 @@ export function createPPDevHotContext(): ViteHotContext {
 
   const noop = () => {};
 
-  const context: Pick<ViteHotContext, 'on' | 'off' | 'send'> & Partial<ViteHotContext> = {
+  const context: Pick<PPDevHotContext, 'on' | 'off' | 'send' | 'isConnected'> & Partial<ViteHotContext> = {
     on(event, cb) {
       let set = handlers.get(event);
 
@@ -159,6 +162,9 @@ export function createPPDevHotContext(): ViteHotContext {
         outbox.push(payload);
       }
     },
+    // Not part of Vite's API: lets the panel tell an open connection from one still connecting, whose
+    // queued messages would go out whenever it opens (see `src/client/sync-button.ts`).
+    isConnected: () => socket?.readyState === WebSocket.OPEN,
     // Unused by the dev-panel client; provided as no-ops to satisfy the shape.
     accept: noop as ViteHotContext['accept'],
     acceptExports: noop as ViteHotContext['acceptExports'],
@@ -168,5 +174,5 @@ export function createPPDevHotContext(): ViteHotContext {
     data: {},
   };
 
-  return context as ViteHotContext;
+  return context as PPDevHotContext;
 }

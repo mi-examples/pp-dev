@@ -111,6 +111,18 @@ describe('createPPDevHotContext connection events', () => {
     expect(onConnect).toHaveBeenCalledTimes(1);
   });
 
+  it('says it is connected only while the socket is open', () => {
+    const hot = createPPDevHotContext();
+
+    expect(hot.isConnected()).toBe(false);
+
+    FakeWebSocket.instances[0]!.fireOpen();
+    expect(hot.isConnected()).toBe(true);
+
+    FakeWebSocket.instances[0]!.fireClose();
+    expect(hot.isConnected()).toBe(false);
+  });
+
   it('connects to the path the pp-dev next server listens on', () => {
     createPPDevHotContext();
 

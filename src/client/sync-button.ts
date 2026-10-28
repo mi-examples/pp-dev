@@ -36,7 +36,7 @@ export interface SyncButtonDeps {
  * a failed sync (MI unreachable, a build error) can simply be retried.
  */
 export function initSyncButton(
-  hot: Pick<ViteHotContext, 'on' | 'send'>,
+  hot: Pick<ViteHotContext, 'on' | 'send'> & { isConnected?: () => boolean },
   $button: HTMLButtonElement,
   deps: SyncButtonDeps,
 ): void {
@@ -44,8 +44,11 @@ export function initSyncButton(
 
   let available = !$button.disabled && !$button.classList.contains('disabled');
   let syncing = false;
-  // Until the connection is reported lost, it is taken as open: the panel loads with the page.
+  // Vite's connection is taken as open until reported lost: it may have opened before these handlers
+  // were registered, and its client reloads the page once a lost one is back. The `pp-dev next`
+  // transport says itself whether its socket is open, also while the first one is still connecting.
   let connected = true;
+  const isConnected = () => connected && (hot.isConnected?.() ?? true);
 
   const applyState = () => {
     $button.disabled = syncing || !available;
@@ -164,7 +167,7 @@ export function initSyncButton(
 
     // Sent now, the request would wait for a reconnect with the button spinning, and start a sync
     // whenever that happens. Say so instead, and let the click be repeated once connected.
-    if (!connected) {
+    if (!isConnected()) {
       deps.infoPopup({
         title: 'No connection',
         content: 'The dev server is not connected. Check that it is running, then try again.',
