@@ -51,6 +51,29 @@ function setCachedResponse(key: string, data: any): void {
 // A cached "page data loaded" belongs to the MI session that loaded it.
 onProxyCacheInvalidate(() => apiResponseCache.clear());
 
+/**
+ * Whether the last page data load succeeded. One that succeeds after none did, or after one failed,
+ * is a login: what the proxy cached before it was answered to a logged-out browser. A load repeated
+ * only because {@link apiResponseCache} expired is not, and must not drop every user's cached
+ * responses (session changes already drop theirs through `invalidateProxyCache`).
+ */
+let pageDataLoaded = false;
+
+function onPageDataLoaded(logger: ReturnType<typeof createLogger>): void {
+  if (pageDataLoaded) {
+    return;
+  }
+
+  pageDataLoaded = true;
+  logger.info(colors.blue('Clearing proxy cache after successful login'));
+  cache.clear();
+}
+
+function onPageDataLoadFailed(): void {
+  pageDataLoaded = false;
+  authProvider.reset();
+}
+
 // Constants
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
 
@@ -264,7 +287,7 @@ export function initLoadPPData(
         ),
       );
 
-      authProvider.reset();
+      onPageDataLoadFailed();
 
       return next(error);
     }
@@ -309,8 +332,7 @@ async function handlePageInfoOnly(
 
     await mi.getPageInfo(appId, headers);
 
-    logger.info(colors.blue('Clearing proxy cache after successful login'));
-    cache.clear();
+    onPageDataLoaded(logger);
 
     // Cache the successful response
     setCachedResponse(cacheKey, { success: true });
@@ -321,7 +343,7 @@ async function handlePageInfoOnly(
 
     return next();
   } catch (error) {
-    authProvider.reset();
+    onPageDataLoadFailed();
 
     return handleLoadError(
       error,
@@ -367,8 +389,7 @@ async function handleTemplateLoad(
 
     await loadPageData;
 
-    logger.info(colors.blue('Clearing proxy cache after successful login'));
-    cache.clear();
+    onPageDataLoaded(logger);
 
     // Cache the successful response
     setCachedResponse(cacheKey, { success: true });
@@ -377,7 +398,7 @@ async function handleTemplateLoad(
 
     return next();
   } catch (error) {
-    authProvider.reset();
+    onPageDataLoadFailed();
 
     return handleLoadError(
       error,
@@ -438,14 +459,8 @@ function isAuthError(error: unknown): boolean {
   return error !== null && typeof error === 'object' && isTokenError(error);
 }
 
-// Export cache management for external use
+/** Forgets every page data load, as at startup: the next successful one counts as a login. */
 export function clearAPICache(): void {
   apiResponseCache.clear();
-}
-
-export function getAPICacheStats(): { size: number; entries: string[] } {
-  return {
-    size: apiResponseCache.size,
-    entries: Array.from(apiResponseCache.keys()),
-  };
+  pageDataLoaded = false;
 }
