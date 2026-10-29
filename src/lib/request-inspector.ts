@@ -1,21 +1,8 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import type { Application } from 'express';
 import { RequestStore } from './request-store.js';
-import { PP_DEV_CLIENT_ENTRY } from '../constants.js';
+import { CLIENT_DIST_DIR, serveClientPage } from './client-page.js';
 
 export const INSPECTOR_PATH = '/@pp-dev/inspector';
-
-/** Where the client build puts the page's files (next to the dev panel's). */
-const CLIENT_DIST_DIR = path.dirname(PP_DEV_CLIENT_ENTRY);
-
-/** The files the page loads from `${INSPECTOR_PATH}/<file>`, and their content types. */
-const INSPECTOR_ASSETS: Record<string, string> = {
-  'request-inspector.js': 'text/javascript; charset=utf-8',
-  'request-inspector.css': 'text/css; charset=utf-8',
-  'request-inspector.js.map': 'application/json; charset=utf-8',
-  'request-inspector.css.map': 'application/json; charset=utf-8',
-};
 
 const DEFAULT_LIST_LIMIT = 500;
 
@@ -135,41 +122,12 @@ export function registerInspectorRoutes(
   });
 
   // ── Web UI ────────────────────────────────────────────────────────────────────
-  // The page and its script and styles, built from src/client/request-inspector into dist/client.
-  app.get(INSPECTOR_PATH, (_req, res) => {
-    fs.readFile(path.join(clientDir, 'request-inspector.html'), 'utf-8', (error, html) => {
-      if (error) {
-        res.status(500).type('text/plain').end(`Request Inspector page not built (${error.message})`);
-
-        return;
-      }
-
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.end(html.replace('{{captureLimit}}', String(current.captureLimit)));
-    });
-  });
-
-  app.get(`${INSPECTOR_PATH}/:file`, (req, res, next) => {
-    const contentType = INSPECTOR_ASSETS[req.params.file];
-
-    if (!contentType) {
-      next();
-
-      return;
-    }
-
-    fs.readFile(path.join(clientDir, req.params.file), (error, content) => {
-      if (error) {
-        next();
-
-        return;
-      }
-
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'no-cache');
-      res.end(content);
-    });
+  // The page, built from src/client/request-inspector into dist/client, and its script and styles.
+  serveClientPage(app, {
+    path: INSPECTOR_PATH,
+    name: 'request-inspector',
+    clientDir,
+    values: () => ({ captureLimit: String(current.captureLimit) }),
   });
 }
 

@@ -11,16 +11,13 @@
  *
  * Everything else is escaped, so a description can't inject markup. Line breaks are kept, as the
  * plain-text hint did before.
- *
- * It runs in the editor page's script, so it is plain JavaScript in a string; `String.raw` keeps
- * the regular expressions' backslashes as they are.
  */
-export const DESCRIPTION_MARKDOWN_SCRIPT = String.raw`
-function renderDescriptionMarkdown(text) {
-  const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export function renderDescriptionMarkdown(text: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  const inline = (line) => {
-    const codes = [];
+  const inline = (line: string) => {
+    const codes: string[] = [];
     // Code spans first, so nothing inside them is formatted: a whole run of backticks up to the
     // same run. Mismatched runs stay as they are.
     let out = line.replace(/(?<!\x60)(\x60+)([^\x60]|[^\x60][\s\S]*?[^\x60])\1(?!\x60)/g, (_, ticks, code) => {
@@ -40,9 +37,9 @@ function renderDescriptionMarkdown(text) {
   };
 
   const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
-  const blocks = [];
-  let paragraph = [];
-  let list = null;
+  const blocks: string[] = [];
+  let paragraph: string[] = [];
+  let list: { tag: string; items: string[]; start: number | undefined } | null = null;
 
   const flushParagraph = () => {
     if (paragraph.length) {
@@ -56,7 +53,16 @@ function renderDescriptionMarkdown(text) {
       // A numbered list goes on from the number its first item has: "2." after a blank line is 2.
       const start = list.start && list.start !== 1 ? ' start="' + list.start + '"' : '';
 
-      blocks.push('<' + list.tag + start + '>' + list.items.map((item) => '<li>' + inline(item) + '</li>').join('') + '</' + list.tag + '>');
+      blocks.push(
+        '<' +
+          list.tag +
+          start +
+          '>' +
+          list.items.map((item) => '<li>' + inline(item) + '</li>').join('') +
+          '</' +
+          list.tag +
+          '>',
+      );
       list = null;
     }
   };
@@ -71,7 +77,7 @@ function renderDescriptionMarkdown(text) {
       flushParagraph();
       flushList();
 
-      const code = [];
+      const code: string[] = [];
 
       // Closed by a line of only backticks, at least as many as opened it.
       const close = new RegExp('^\\s*\\x60{' + fence[1].length + ',}\\s*$');
@@ -91,7 +97,9 @@ function renderDescriptionMarkdown(text) {
 
       flushParagraph();
 
-      if (list && list.tag !== tag) { flushList(); }
+      if (list && list.tag !== tag) {
+        flushList();
+      }
 
       list = list || { tag, items: [], start: item[2] ? Number(item[2]) : undefined };
       list.items.push(item[3]);
@@ -119,4 +127,3 @@ function renderDescriptionMarkdown(text) {
 
   return blocks.join('');
 }
-`;

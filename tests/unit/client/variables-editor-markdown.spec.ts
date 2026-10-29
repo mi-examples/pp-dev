@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { DESCRIPTION_MARKDOWN_SCRIPT } from '../../../src/lib/variables-editor-markdown.js';
+import { renderDescriptionMarkdown as render } from '../../../src/client/variables-editor/markdown.js';
 
 /** Markdown in page variable descriptions, the subset MI's showdown renders that matters there. */
-
-const render = new Function(`${DESCRIPTION_MARKDOWN_SCRIPT}; return renderDescriptionMarkdown;`)() as (
-  text: string,
-) => string;
 
 describe('renderDescriptionMarkdown', () => {
   it('formats bold and italic both ways, but not inside words', () => {
