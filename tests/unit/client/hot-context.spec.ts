@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPPDevHotContext } from '../../../src/client/hot-context.js';
+import { PP_DEV_HMR_WS_PATH } from '../../../src/constants.js';
 
 /**
  * The raw-WebSocket stand-in for `import.meta.hot` under `pp-dev next` emits Vite's own
@@ -86,5 +87,45 @@ describe('createPPDevHotContext connection events', () => {
 
     expect(FakeWebSocket.instances).toHaveLength(3);
     expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  // The panel only knew of a lost connection, so with a server that was down when the page
+  // loaded, a click queued its sync until some later reconnect.
+  it('emits vite:ws:disconnect once when the first connection never opens', () => {
+    const hot = createPPDevHotContext();
+    const onConnect = vi.fn();
+    const onDisconnect = vi.fn();
+
+    hot.on('vite:ws:connect', onConnect);
+    hot.on('vite:ws:disconnect', onDisconnect);
+
+    FakeWebSocket.instances[0]!.fireClose();
+    vi.advanceTimersByTime(1_000);
+    FakeWebSocket.instances[1]!.fireClose();
+
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(2_000);
+    FakeWebSocket.instances[2]!.fireOpen();
+
+    expect(onConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is connected only while the socket is open', () => {
+    const hot = createPPDevHotContext();
+
+    expect(hot.isConnected()).toBe(false);
+
+    FakeWebSocket.instances[0]!.fireOpen();
+    expect(hot.isConnected()).toBe(true);
+
+    FakeWebSocket.instances[0]!.fireClose();
+    expect(hot.isConnected()).toBe(false);
+  });
+
+  it('connects to the path the pp-dev next server listens on', () => {
+    createPPDevHotContext();
+
+    expect(new URL(FakeWebSocket.instances[0]!.url).pathname).toBe(PP_DEV_HMR_WS_PATH);
   });
 });

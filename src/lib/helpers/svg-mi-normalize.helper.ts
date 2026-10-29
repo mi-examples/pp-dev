@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from 'fs';
+import { readFile, readdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { getJSDOM } from './jsdom.helper.js';
 
@@ -36,18 +36,18 @@ export function normalizeSvgLikeMi(svgText: string): string {
 }
 
 /** Normalizes every `.svg` file found under `dir` in place, overwriting changed files only. */
-export function normalizeSvgFilesInDir(dir: string): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+export async function normalizeSvgFilesInDir(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      normalizeSvgFilesInDir(fullPath);
+      await normalizeSvgFilesInDir(fullPath);
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.svg')) {
-      const original = readFileSync(fullPath, 'utf-8');
+      const original = await readFile(fullPath, 'utf-8');
       const normalized = normalizeSvgLikeMi(original);
 
       if (normalized !== original) {
-        writeFileSync(fullPath, normalized, 'utf-8');
+        await writeFile(fullPath, normalized, 'utf-8');
       }
     }
   }

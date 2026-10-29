@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'node:events';
 import type { ViteDevServer, WebSocketClient } from 'vite';
 import { ClientService } from '../../../src/lib/client.service.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
@@ -291,5 +292,160 @@ describe('ClientService — one template sync at a time', () => {
 
     builds[1]!.resolve(Buffer.from('zip'));
     await secondSync;
+  });
+});
+
+/**
+ * A tab closed while a sync's dialog is open never answers it: the sync waited for the 120 s timeout,
+ * and every other sync was refused as "already running" meanwhile. And a build the sync started
+ * outlived the dev server.
+ */
+describe('ClientService — dialogs and builds when connections close', () => {
+  const handlers = new Map<string, (...args: any[]) => void>();
+  let service: ClientService;
+  let stopBuilds: ReturnType<typeof vi.fn>;
+
+  function makeSocket(readyState = 1) {
+    return Object.assign(new EventEmitter(), { readyState, OPEN: 1 });
+  }
+
+  beforeEach(() => {
+    handlers.clear();
+    stopBuilds = vi.fn();
+
+    const server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          handlers.set(event, handler);
+        }),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+
+    service = new ClientService(server, {
+      distService: { stopBuilds } as unknown as DistService,
+      syncActionTimeoutMs: 60_000,
+    });
+  });
+
+  const dialog = { title: 't', content: 'c', confirmText: 'ok', cancelText: 'no' };
+
+  it("cancels a dialog at once when its tab's connection closes", async () => {
+    const socket = makeSocket();
+    const client = { send: vi.fn(), socket } as unknown as WebSocketClient;
+    const answer = service.requestSyncAction(dialog, client);
+
+    expect(client.send).toHaveBeenCalledWith('template:sync:action-required', expect.objectContaining(dialog));
+
+    socket.emit('close');
+
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it('cancels a dialog for a connection that is already closed, without sending it', async () => {
+    const client = { send: vi.fn(), socket: makeSocket(3) } as unknown as WebSocketClient;
+
+    await expect(service.requestSyncAction(dialog, client)).resolves.toBe(false);
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('stops listening to the connection once the dialog is answered', async () => {
+    const socket = makeSocket();
+    const client = { send: vi.fn(), socket } as unknown as WebSocketClient;
+    const answer = service.requestSyncAction(dialog, client);
+    const { requestId } = (client.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+
+    expect(socket.listenerCount('close')).toBe(1);
+
+    handlers.get('template:sync:action-response')!({ requestId, approved: true });
+
+    await expect(answer).resolves.toBe(true);
+    expect(socket.listenerCount('close')).toBe(0);
+  });
+
+  it('stops running builds and cancels open dialogs when disposed with the dev server', async () => {
+    const client = { send: vi.fn(), socket: makeSocket() } as unknown as WebSocketClient;
+    const answer = service.requestSyncAction(dialog, client);
+
+    service.dispose();
+
+    expect(stopBuilds).toHaveBeenCalledTimes(1);
+    await expect(answer).resolves.toBe(false);
+  });
+
+  // Vite takes `ws.on('close')` for a custom message any page can send, and never calls it on
+  // shutdown: a page could stop every build with it, and the server's own close never did.
+  it('does not listen for a `close` message on the WebSocket', () => {
+    expect(handlers.has('close')).toBe(false);
+  });
+});
+
+/**
+ * A page with no assets on MI yet syncs without saving a backup, so the sync meta is still `{}`.
+ * Converting its missing date threw `RangeError: Invalid time value` after the upload had succeeded,
+ * and the panel was told the sync failed.
+ */
+describe('ClientService — a sync before any backup was saved', () => {
+  it('reports success, dated now', async () => {
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+    const distService = {
+      buildNewAssets: vi.fn().mockResolvedValue(Buffer.from('zip')),
+      getBackupMeta: vi.fn(() => ({})),
+    } as unknown as DistService;
+    const miAPI = {
+      getAssets: vi.fn().mockResolvedValue(undefined),
+      updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
+    } as unknown as MiAPI;
+    const client = { send: vi.fn() } as unknown as WebSocketClient;
+    const before = Date.now();
+
+    new ClientService(server, { distService, miAPI });
+    await handlers.get('template:sync')!({}, client);
+
+    const [event, payload] = (client.send as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+
+    expect(event).toBe('template:sync:response');
+    expect(payload).toEqual({ syncedAt: expect.any(String), currentHash: '', backupFilename: '' });
+    expect(Date.parse(payload.syncedAt)).toBeGreaterThanOrEqual(before - 1000);
+  });
+});
+
+/** A build that finished as the dev server was shutting down (or restarting) was still uploaded. */
+describe('ClientService — a sync whose dev server stopped after the build', () => {
+  it('uploads nothing and says why', async () => {
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
+        send: vi.fn(),
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+    const distService = {
+      buildNewAssets: vi.fn().mockResolvedValue(Buffer.from('zip')),
+      getBackupMeta: vi.fn(() => ({})),
+      stopped: true,
+    } as unknown as DistService;
+    const miAPI = {
+      getAssets: vi.fn().mockResolvedValue(undefined),
+      updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
+    } as unknown as MiAPI;
+    const client = { send: vi.fn() } as unknown as WebSocketClient;
+
+    new ClientService(server, { distService, miAPI });
+    await handlers.get('template:sync')!({}, client);
+
+    expect(miAPI.updateAssets).not.toHaveBeenCalled();
+    expect(client.send).toHaveBeenLastCalledWith('template:sync:response', {
+      error: 'Sync stopped: the dev server is shutting down.',
+    });
   });
 });

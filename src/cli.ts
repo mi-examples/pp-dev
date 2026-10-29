@@ -559,6 +559,8 @@ cli
     let nextApp: ReturnType<typeof import('next').default> | null = null;
     let httpServer: any = null;
     let hotServer: PPDevHotServer | null = null;
+    /** The dev panel service on {@link hotServer}; disposed before it closes, to stop a sync's build. */
+    let clientService: ClientService | null = null;
     let configWatcher: ConfigWatcher | null = null;
     let isRestarting = false;
 
@@ -614,6 +616,9 @@ cli
         const { PHASE_DEVELOPMENT_SERVER } = constants;
 
         // Clean up existing dev-panel WebSocket server if any
+        clientService?.dispose();
+        clientService = null;
+
         if (hotServer) {
           await hotServer.close();
           hotServer = null;
@@ -1181,6 +1186,7 @@ cli
             root: projectRoot,
             backupFolder: path.resolve(projectRoot, _normalized.syncBackupsDir),
             maxBackups: _normalized.syncMaxBackups,
+            buildTimeoutMs: _normalized.syncBuildTimeoutMs,
             nextBuild: {
               projectRoot,
               distDir: nextExportDir,
@@ -1195,7 +1201,7 @@ cli
             config: { clientInjectionPlugin: { v7Features } },
           } as unknown as ViteDevServer;
 
-          new ClientService(clientServiceServer, { distService, miAPI: mi });
+          clientService = new ClientService(clientServiceServer, { distService, miAPI: mi });
           registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
           registerUserRoutes(internalServer, { miAPI: mi });
           startKeepingUsers({ persist: _normalized.persistUsers, miAPI: mi, projectRoot, miUrl: backendBaseURL });
@@ -1278,6 +1284,9 @@ cli
           cleanupConfigWatcher(configWatcher);
           configWatcher = null;
         }
+
+        clientService?.dispose();
+        clientService = null;
 
         if (hotServer) {
           await hotServer.close();
@@ -1516,7 +1525,7 @@ cli
         const projectPkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
 
         if (versionPlugin !== false && versionPlugin.enabled !== false) {
-          writeBuildVersionManifest({
+          await writeBuildVersionManifest({
             outDir,
             packageVersion: typeof projectPkg.version === 'string' ? projectPkg.version : '0.0.0',
             versionFileTemplate: versionPlugin.versionFileTemplate,

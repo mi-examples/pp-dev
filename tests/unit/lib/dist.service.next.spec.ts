@@ -16,6 +16,7 @@ vi.mock('child_process', async (orig) => {
 });
 
 const { DistService } = await import('../../../src/lib/dist.service.js');
+const { createLogger } = await import('../../../src/lib/logger.js');
 
 describe('DistService — Next.js build strategy', () => {
   let exportDir: string;
@@ -105,5 +106,46 @@ describe('DistService — Next.js build strategy', () => {
     });
 
     await expect(createService().buildNewAssets()).rejects.toThrow(/next build exited with code 1/);
+  });
+});
+
+/**
+ * The steps after `next build` (the manifest hashes the whole output, then the ZIP) take a while.
+ * A dev server stopped (or restarted) meanwhile still got assets from them, and its sync uploaded them.
+ */
+describe('DistService — stopped right after the Next.js build', () => {
+  it('neither writes the manifest nor returns assets', async () => {
+    const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-next-export-'));
+
+    try {
+      fs.writeFileSync(path.join(exportDir, 'index.html'), '<html></html>');
+      spawnMock.mockImplementation(() => {
+        const proc: any = new EventEmitter();
+
+        setImmediate(() => proc.emit('close', 0));
+
+        return proc;
+      });
+
+      const service = new DistService('test-app', {
+        nextBuild: { projectRoot: process.cwd(), distDir: exportDir, packageVersion: '1.2.3' },
+      });
+      // The build has just finished when this is logged: the server stops at that moment.
+      const info = vi.spyOn(createLogger(), 'info').mockImplementation((message: string) => {
+        if (String(message).includes('Next.js build finished')) {
+          service.stopBuilds();
+        }
+      });
+
+      try {
+        await expect(service.buildNewAssets()).rejects.toThrow('next build was stopped');
+      } finally {
+        info.mockRestore();
+      }
+
+      expect(fs.existsSync(path.join(exportDir, 'BUILD-MANIFEST.json'))).toBe(false);
+    } finally {
+      fs.rmSync(exportDir, { recursive: true, force: true });
+    }
   });
 });

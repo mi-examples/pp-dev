@@ -82,6 +82,11 @@ export interface SyncConfig {
    * `false` or `0` keeps them all. @default 20
    */
   maxBackups?: number | false;
+  /**
+   * How long the build a sync starts (`pp-dev build`, `next build`) may run, in milliseconds,
+   * before it is stopped and the sync fails. @default 600000 (10 minutes)
+   */
+  buildTimeoutMs?: number;
 }
 
 export interface InspectorConfig {
@@ -156,6 +161,8 @@ export interface NormalizedVitePPDevOptions {
   syncBackupsDir: string;
   /** `undefined` leaves DistService's default. */
   syncMaxBackups?: number | false;
+  /** `undefined` leaves DistService's default. */
+  syncBuildTimeoutMs?: number;
   v7Features: boolean;
   personalAccessToken?: string;
   inspectorEnabled: boolean;
@@ -168,6 +175,9 @@ export interface NormalizedVitePPDevOptions {
 }
 
 const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+
+/** The longest delay `setTimeout` takes (2³¹ − 1 ms, about 24.8 days). */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -190,6 +200,19 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
   if (maxBackups !== undefined && maxBackups !== false && !(Number.isInteger(maxBackups) && maxBackups >= 0)) {
     throw new Error(
       `[pp-dev] sync.maxBackups must be a whole number ≥ 0 or false (0 and false keep every backup), got ${JSON.stringify(maxBackups)}`,
+    );
+  }
+
+  const buildTimeoutMs = config.sync?.buildTimeoutMs;
+
+  // Capped at the longest delay a Node timer takes: `setTimeout` turns a longer one into 1 ms, and
+  // the build would be stopped at once.
+  if (
+    buildTimeoutMs !== undefined &&
+    !(Number.isInteger(buildTimeoutMs) && buildTimeoutMs > 0 && buildTimeoutMs <= MAX_TIMER_DELAY_MS)
+  ) {
+    throw new Error(
+      `[pp-dev] sync.buildTimeoutMs must be a whole number of milliseconds between 1 and ${MAX_TIMER_DELAY_MS}, got ${JSON.stringify(buildTimeoutMs)}`,
     );
   }
 
@@ -317,6 +340,7 @@ export function normalizePPDevConfig(
     versionPlugin,
     syncBackupsDir: sync.backupsDir ?? 'backups',
     syncMaxBackups: sync.maxBackups,
+    syncBuildTimeoutMs: sync.buildTimeoutMs,
     v7Features: apiVersion >= 7,
     personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
     inspectorEnabled: inspector.enabled ?? true,

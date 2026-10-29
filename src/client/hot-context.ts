@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import type { ViteHotContext } from 'vite/types/hot.js';
+import { PP_DEV_HMR_WS_PATH } from '../shared/ws-messages.js';
 
 /**
  * Minimal `import.meta.hot`-compatible context for environments without Vite HMR
@@ -11,13 +12,10 @@ import type { ViteHotContext } from 'vite/types/hot.js';
  * instead and this code never runs.
  */
 
-/**
- * WebSocket path the pp-dev Next.js server listens on for dev-panel messages.
- * Kept in sync with `PP_DEV_HMR_WS_PATH` in `src/constants.ts` (server side).
- */
-const PP_DEV_HMR_WS_PATH = '/@pp-dev-hmr';
-
 type CustomMessage = { type: 'custom'; event: string; data?: unknown };
+
+/** {@link ViteHotContext}, plus whether the socket is open right now. */
+export type PPDevHotContext = ViteHotContext & { isConnected(): boolean };
 
 type Handler = (payload: any) => void;
 
@@ -30,12 +28,14 @@ function resolveWebSocketUrl(): string {
   return `${wsProtocol}//${host}${PP_DEV_HMR_WS_PATH}`;
 }
 
-export function createPPDevHotContext(): ViteHotContext {
+export function createPPDevHotContext(): PPDevHotContext {
   const handlers = new Map<string, Set<Handler>>();
   /** Outgoing messages queued while the socket is not OPEN; flushed on connect. */
   const outbox: string[] = [];
 
   let socket: WebSocket | null = null;
+  /** The connection state last reported to the panel, so each change is reported once. */
+  let reported: 'connected' | 'disconnected' | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1_000;
   const MAX_RECONNECT_DELAY = 10_000;
@@ -77,11 +77,9 @@ export function createPPDevHotContext(): ViteHotContext {
       return;
     }
 
-    let opened = false;
-
     socket.addEventListener('open', () => {
-      opened = true;
       reconnectDelay = 1_000;
+      reported = 'connected';
       dispatch('vite:ws:connect', {});
       flushOutbox();
     });
@@ -104,9 +102,11 @@ export function createPPDevHotContext(): ViteHotContext {
       socket = null;
 
       // Same events as Vite's own HMR client, so the panel can tell a lost connection apart
-      // (e.g. a sync whose response will never arrive). Only for a socket that was open: a
-      // failed reconnect attempt is not a new disconnect.
-      if (opened) {
+      // (e.g. a sync whose response will never arrive, or a click that can't be sent). Once per
+      // loss: each failed reconnect attempt is not a new one, but a first connection that never
+      // opened is.
+      if (reported !== 'disconnected') {
+        reported = 'disconnected';
         dispatch('vite:ws:disconnect', {});
       }
 
@@ -135,7 +135,7 @@ export function createPPDevHotContext(): ViteHotContext {
 
   const noop = () => {};
 
-  const context: Pick<ViteHotContext, 'on' | 'off' | 'send'> & Partial<ViteHotContext> = {
+  const context: Pick<PPDevHotContext, 'on' | 'off' | 'send' | 'isConnected'> & Partial<ViteHotContext> = {
     on(event, cb) {
       let set = handlers.get(event);
 
@@ -162,6 +162,9 @@ export function createPPDevHotContext(): ViteHotContext {
         outbox.push(payload);
       }
     },
+    // Not part of Vite's API: lets the panel tell an open connection from one still connecting, whose
+    // queued messages would go out whenever it opens (see `src/client/sync-button.ts`).
+    isConnected: () => socket?.readyState === WebSocket.OPEN,
     // Unused by the dev-panel client; provided as no-ops to satisfy the shape.
     accept: noop as ViteHotContext['accept'],
     acceptExports: noop as ViteHotContext['acceptExports'],
@@ -171,5 +174,5 @@ export function createPPDevHotContext(): ViteHotContext {
     data: {},
   };
 
-  return context as ViteHotContext;
+  return context as PPDevHotContext;
 }

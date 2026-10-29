@@ -25,12 +25,8 @@ const { version, name } = JSON.parse(readFileSync(resolve(PP_DEV_PACKAGE_DIR, 'p
 export const VERSION = version as string;
 export const PACKAGE_NAME = name as string;
 
-/**
- * WebSocket path used by the dev-panel client to talk to the `pp-dev next` server
- * (the non-Vite fallback transport). Kept in sync with the client-side copy in
- * `src/client/hot-context.ts`.
- */
-export const PP_DEV_HMR_WS_PATH = '/@pp-dev-hmr';
+// The WebSocket path the dev panel talks to the `pp-dev next` server on, shared with the panel.
+export { PP_DEV_HMR_WS_PATH } from './shared/ws-messages.js';
 
 export const PATH_PAGE_PREFIX = '/p';
 export const PATH_TEMPLATE_PREFIX = '/pt';

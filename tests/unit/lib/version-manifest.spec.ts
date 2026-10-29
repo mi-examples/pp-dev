@@ -5,28 +5,61 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { writeBuildVersionManifest } from '../../../src/lib/version-manifest.js';
 
-describe('writeBuildVersionManifest output path', () => {
-  it('rejects a generated VERSION filename outside the build directory', () => {
+describe('writeBuildVersionManifest — does not block the dev server', () => {
+  // Under `pp-dev next` it runs in the dev server after a sync's build: hashing the whole output
+  // synchronously stalled the proxy and the panel's WebSocket until it finished.
+  it('lets other work run while it hashes the output', async () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-'));
 
     try {
-      expect(() =>
+      for (let i = 0; i < 50; i += 1) {
+        writeFileSync(path.join(outDir, `file-${i}.js`), `console.log(${i});`);
+      }
+
+      let ticks = 0;
+      const timer = setInterval(() => (ticks += 1), 0);
+
+      try {
+        const written = writeBuildVersionManifest({ outDir, packageVersion: '1.0.0' });
+
+        // Started, not finished: a synchronous version would already have written both files.
+        expect(existsSync(path.join(outDir, 'BUILD-MANIFEST.json'))).toBe(false);
+
+        await written;
+      } finally {
+        clearInterval(timer);
+      }
+
+      expect(ticks).toBeGreaterThan(0);
+      expect(existsSync(path.join(outDir, 'BUILD-MANIFEST.json'))).toBe(true);
+    } finally {
+      rmSync(outDir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe('writeBuildVersionManifest output path', () => {
+  it('rejects a generated VERSION filename outside the build directory', async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-'));
+
+    try {
+      await expect(
         writeBuildVersionManifest({
           outDir,
           packageVersion: '1.0.0',
           versionFileTemplate: '../package.json',
         }),
-      ).toThrow('VERSION output file name must stay inside its output directory');
+      ).rejects.toThrow('VERSION output file name must stay inside its output directory');
     } finally {
       rmSync(outDir, { force: true, recursive: true });
     }
   });
 
-  it('creates parent directories for a nested VERSION path', () => {
+  it('creates parent directories for a nested VERSION path', async () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-'));
 
     try {
-      writeBuildVersionManifest({
+      await writeBuildVersionManifest({
         outDir,
         packageVersion: '1.0.0',
         versionFileTemplate: 'metadata/VERSION.json',
@@ -39,7 +72,7 @@ describe('writeBuildVersionManifest output path', () => {
     }
   });
 
-  it('resolves a relative outDir against the explicit root, not process.cwd()', () => {
+  it('resolves a relative outDir against the explicit root, not process.cwd()', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-root-'));
     const originalCwd = process.cwd();
 
@@ -47,7 +80,7 @@ describe('writeBuildVersionManifest output path', () => {
       mkdirSync(path.join(root, 'dist'));
       process.chdir(tmpdir());
 
-      writeBuildVersionManifest({
+      await writeBuildVersionManifest({
         outDir: 'dist',
         root,
         packageVersion: '1.0.0',
@@ -60,7 +93,7 @@ describe('writeBuildVersionManifest output path', () => {
     }
   });
 
-  it('normalizes .svg files to match MI (PP-4123) before hashing, so the manifest matches what actually ships', () => {
+  it('normalizes .svg files to match MI (PP-4123) before hashing, so the manifest matches what actually ships', async () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-version-manifest-'));
 
     try {
@@ -69,7 +102,7 @@ describe('writeBuildVersionManifest output path', () => {
       // SVGO-style minified input: self-closing, no XML declaration.
       writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>');
 
-      writeBuildVersionManifest({ outDir, packageVersion: '1.0.0' });
+      await writeBuildVersionManifest({ outDir, packageVersion: '1.0.0' });
 
       const normalizedOnDisk = readFileSync(svgPath, 'utf-8');
 

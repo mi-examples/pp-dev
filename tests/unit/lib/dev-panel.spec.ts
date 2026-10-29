@@ -21,7 +21,7 @@ vi.mock('fs', async (importActual) => {
   };
 });
 
-const { getDevPanelAssetPaths, injectDevPanel } = await import('../../../src/lib/dev-panel.js');
+const { getDevPanelAssetPaths, injectDevPanel, renderDevPanelMarkup } = await import('../../../src/lib/dev-panel.js');
 
 describe('dev-panel', () => {
   describe('getDevPanelAssetPaths', () => {
@@ -88,5 +88,41 @@ describe('dev-panel', () => {
 
       expect(injectDevPanel(json, '/p/my-app/', { templateLess: false })).toBe(json);
     });
+
+    // As a replacement string, `$&` in the inserted markup (here from the base path) expanded into
+    // the matched `</head>` / `<body>`.
+    it('inserts `$` sequences as they are', () => {
+      const out = injectDevPanel(baseHtml, "/p/a$&b$'c/", { templateLess: false });
+
+      expect(out).toContain(
+        `<link rel="stylesheet" href="/p/a$&b$'c/@metricinsights/pp-dev/client/client.css"></head>`,
+      );
+      expect(out).toContain(`<script type="module" src="/p/a$&b$'c/@metricinsights/pp-dev/client/client.js"></script>`);
+      expect(out.match(/<\/head>/g)).toHaveLength(1);
+      expect(out.match(/<body>/g)).toHaveLength(1);
+    });
+  });
+
+  // The Vite plugin compiled the same template a second time, with its own copy of the defaults.
+  describe('clientInjectionPlugin', () => {
+    it('injects the same panel markup as `pp-dev next`, with the same defaults', async () => {
+      const { clientInjectionPlugin } = await import('../../../src/plugins/client-injection-plugin.js');
+      const opts = { templateLess: false, devPanelPosition: 'top-left' as const };
+      const plugin = clientInjectionPlugin(opts);
+      const transform = plugin.transformIndexHtml as (
+        html: string,
+        ctx: object,
+      ) => Promise<{
+        tags: { tag: string; children?: string }[];
+      }>;
+
+      const { tags } = await transform(baseHtmlForPlugin, { server: { config: { base: '/p/my-app/' } } });
+      const panel = tags.find((tag) => tag.tag === 'div')?.children;
+
+      expect(panel).toBe(renderDevPanelMarkup(opts));
+      expect(panel).toContain('data-hidden="false"');
+    });
   });
 });
+
+const baseHtmlForPlugin = '<html><head></head><body></body></html>';

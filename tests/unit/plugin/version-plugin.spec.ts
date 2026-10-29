@@ -6,7 +6,7 @@ import { createHash } from 'crypto';
 import type { Plugin, ResolvedConfig } from 'vite';
 import { versionPlugin } from '../../../src/plugins/version-plugin.js';
 
-function invokeCloseBundle(plugin: Plugin) {
+async function invokeCloseBundle(plugin: Plugin): Promise<void> {
   const hook = plugin.closeBundle;
 
   if (!hook) {
@@ -14,14 +14,14 @@ function invokeCloseBundle(plugin: Plugin) {
   }
 
   if (typeof hook === 'function') {
-    (hook as (this: unknown) => void).call(undefined);
+    await (hook as (this: unknown) => void | Promise<void>).call(undefined);
   } else if (typeof hook === 'object' && hook !== null && 'handler' in hook) {
     const { handler } = hook as {
       handler: (this: unknown) => void | Promise<void>;
     };
 
     if (typeof handler === 'function') {
-      handler.call(undefined);
+      await handler.call(undefined);
     }
   }
 }
@@ -57,7 +57,7 @@ describe('versionPlugin', () => {
   });
 
   describe('closeBundle', () => {
-    it('writes manifests to the resolved Vite outDir', () => {
+    it('writes manifests to the resolved Vite outDir', async () => {
       const configuredOutDir = join(tempDir, 'dist');
       const resolvedOutDir = join(tempDir, 'custom-build');
       const plugin = versionPlugin({
@@ -69,13 +69,13 @@ describe('versionPlugin', () => {
       writeFileSync(join(resolvedOutDir, 'index.html'), '<html>custom</html>', 'utf-8');
 
       invokeConfigResolved(plugin, resolvedOutDir);
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       expect(existsSync(join(resolvedOutDir, 'BUILD-MANIFEST.json'))).toBe(true);
       expect(existsSync(join(configuredOutDir, 'BUILD-MANIFEST.json'))).toBe(false);
     });
 
-    it('should create VERSION JSON with version, date, checksum, and files', () => {
+    it('should create VERSION JSON with version, date, checksum, and files', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(outDir, { recursive: true });
@@ -87,7 +87,7 @@ describe('versionPlugin', () => {
         packageVersion: '1.2.3',
       });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const versionFile = join(outDir, 'VERSION-v1.2.3-');
       const files = require('fs').readdirSync(outDir);
@@ -120,7 +120,7 @@ describe('versionPlugin', () => {
       expect(buildManifest.compat).toEqual({ versionFileRequired: true });
     });
 
-    it('should hash file content only (deterministic for same content)', () => {
+    it('should hash file content only (deterministic for same content)', async () => {
       const outDir = join(tempDir, 'dist');
       mkdirSync(outDir, { recursive: true });
       const content = 'identical content';
@@ -131,7 +131,7 @@ describe('versionPlugin', () => {
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -141,7 +141,7 @@ describe('versionPlugin', () => {
       expect(manifest.files['b.txt']).toBe(expectedHash);
     });
 
-    it('should produce deterministic checksum for same file set', () => {
+    it('should produce deterministic checksum for same file set', async () => {
       const outDir = join(tempDir, 'dist');
       mkdirSync(outDir, { recursive: true });
       writeFileSync(join(outDir, 'f1.js'), 'a', 'utf-8');
@@ -149,14 +149,14 @@ describe('versionPlugin', () => {
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
       const manifest1 = JSON.parse(readFileSync(join(outDir, versionFilename!), 'utf-8'));
 
       rmSync(join(outDir, versionFilename!));
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const filesAfter = require('fs').readdirSync(outDir);
       const versionFilename2 = filesAfter.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -165,7 +165,7 @@ describe('versionPlugin', () => {
       expect(manifest1.checksum).toBe(manifest2.checksum);
     });
 
-    it('should use custom versionFileTemplate when provided', () => {
+    it('should use custom versionFileTemplate when provided', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(outDir, { recursive: true });
@@ -177,7 +177,7 @@ describe('versionPlugin', () => {
         versionFileTemplate: 'manifest-{packageversion}-{currentDate}.json',
       });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const manifestFilename = files.find((f: string) => f.startsWith('manifest-2.0.0-beta-') && f.endsWith('.json'));
@@ -190,7 +190,7 @@ describe('versionPlugin', () => {
       expect(buildManifest.versionFileTemplate).toBe('manifest-{packageversion}-{currentDate}.json');
     });
 
-    it('should include normalized repository URL when provided', () => {
+    it('should include normalized repository URL when provided', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(outDir, { recursive: true });
@@ -202,7 +202,7 @@ describe('versionPlugin', () => {
         packageRepositoryUrl: 'git+https://github.com/example/template.git',
       });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -211,7 +211,7 @@ describe('versionPlugin', () => {
       expect(manifest.repositoryUrl).toBe('https://github.com/example/template');
     });
 
-    it('should convert SSH repository URL to HTTPS when possible', () => {
+    it('should convert SSH repository URL to HTTPS when possible', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(outDir, { recursive: true });
@@ -223,7 +223,7 @@ describe('versionPlugin', () => {
         packageRepositoryUrl: 'git@github.com:example/template.git',
       });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -232,7 +232,7 @@ describe('versionPlugin', () => {
       expect(manifest.repositoryUrl).toBe('https://github.com/example/template');
     });
 
-    it('should include branch name when provided', () => {
+    it('should include branch name when provided', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(outDir, { recursive: true });
@@ -244,7 +244,7 @@ describe('versionPlugin', () => {
         packageBranchName: 'feature/version-metadata',
       });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -253,7 +253,7 @@ describe('versionPlugin', () => {
       expect(manifest.branchName).toBe('feature/version-metadata');
     });
 
-    it('should not run when enabled is false', () => {
+    it('should not run when enabled is false', async () => {
       const outDir = join(tempDir, 'dist');
       mkdirSync(outDir, { recursive: true });
       writeFileSync(join(outDir, 'test.txt'), 'test', 'utf-8');
@@ -264,7 +264,7 @@ describe('versionPlugin', () => {
         enabled: false,
       });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFile = files.find((f: string) => f.includes('VERSION') || f.includes('manifest'));
@@ -272,7 +272,7 @@ describe('versionPlugin', () => {
       expect(versionFile).toBeUndefined();
     });
 
-    it('should include files in subdirectories', () => {
+    it('should include files in subdirectories', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(join(outDir, 'assets', 'nested'), { recursive: true });
@@ -282,7 +282,7 @@ describe('versionPlugin', () => {
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -293,7 +293,7 @@ describe('versionPlugin', () => {
       expect(manifest.files).toHaveProperty('assets/nested/script.js');
     });
 
-    it('should exclude the version file itself from the files map', () => {
+    it('should exclude the version file itself from the files map', async () => {
       const outDir = join(tempDir, 'dist');
 
       mkdirSync(outDir, { recursive: true });
@@ -301,7 +301,7 @@ describe('versionPlugin', () => {
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
-      invokeCloseBundle(plugin);
+      await invokeCloseBundle(plugin);
 
       const files = require('fs').readdirSync(outDir);
       const versionFilename = files.find((f: string) => f.startsWith('VERSION-') && f.endsWith('.json'));
@@ -311,14 +311,14 @@ describe('versionPlugin', () => {
       expect(Object.keys(manifest.files)).toEqual(['only.txt']);
     });
 
-    it('should return early when outDir does not exist', () => {
+    it('should return early when outDir does not exist', async () => {
       const outDir = join(tempDir, 'nonexistent');
 
       expect(existsSync(outDir)).toBe(false);
 
       const plugin = versionPlugin({ outDir, packageVersion: '1.0.0' });
 
-      expect(() => invokeCloseBundle(plugin)).not.toThrow();
+      await expect(invokeCloseBundle(plugin)).resolves.toBeUndefined();
 
       expect(existsSync(outDir)).toBe(false);
     });
@@ -334,6 +334,14 @@ describe('versionPlugin', () => {
       expect(plugin.name).toBe('pp-dev-version');
       expect(plugin.apply).toBe('build');
       expect(plugin.enforce).toBe('post');
+    });
+
+    // `closeBundle` hooks run in parallel unless marked sequential: the dist ZIP could then be
+    // packed before the (now asynchronous) VERSION and BUILD-MANIFEST files are written.
+    it('writes the manifests in a sequential closeBundle', () => {
+      const plugin = versionPlugin({ outDir: 'dist', packageVersion: '1.0.0' });
+
+      expect(plugin.closeBundle).toMatchObject({ sequential: true, handler: expect.any(Function) });
     });
   });
 });

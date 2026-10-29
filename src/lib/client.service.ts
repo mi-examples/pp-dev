@@ -7,25 +7,14 @@ import { MiAPI } from './pp.middleware.js';
 import { Logger, ViteDevServer, WebSocketClient } from 'vite';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
+import {
+  SYNC_IN_PROGRESS_CODE,
+  type SyncActionRequiredPayload,
+  type SyncActionResponsePayload,
+  type TemplateSyncResponsePayload,
+} from '../shared/ws-messages.js';
 
-/**
- * `template:sync:response` code for a sync requested while another one runs. The dev panel
- * (src/client/sync-button.ts) has its own copy, since it can't import this Node module.
- */
-export const SYNC_IN_PROGRESS_CODE = 'SYNC_IN_PROGRESS';
-
-interface SyncActionRequestPayload {
-  requestId: string;
-  title: string;
-  content: string;
-  confirmText: string;
-  cancelText: string;
-}
-
-interface SyncActionResponsePayload {
-  requestId: string;
-  approved: boolean;
-}
+export { SYNC_IN_PROGRESS_CODE };
 
 export interface ClientServiceOptions {
   distService?: DistService;
@@ -48,7 +37,7 @@ export class ClientService {
   private syncInFlight: Promise<void> | null = null;
   private readonly syncActionResolvers = new Map<
     string,
-    { resolve: (approved: boolean) => void; timeoutId: ReturnType<typeof setTimeout> }
+    { resolve: (approved: boolean) => void; timeoutId: ReturnType<typeof setTimeout>; cleanup: () => void }
   >();
 
   constructor(server: ViteDevServer, opts?: ClientServiceOptions) {
@@ -74,13 +63,20 @@ export class ClientService {
       ws.on(event, handler);
     }
 
-    ws.on('close', () => {
-      this.clearAllPendingSyncActions(false);
-    });
-
     ws.on('error', () => {
       this.clearAllPendingSyncActions(false);
     });
+  }
+
+  /**
+   * The dev server shuts down: no dialog can be answered any more, and a running sync's build must
+   * not outlive it. Called by whoever closes the server (the Vite plugin's `closeBundle`, `pp-dev
+   * next`'s restart and shutdown). Not a WebSocket `close` listener: Vite takes `ws.on('close')` for
+   * a message any page could send, and never calls it on shutdown.
+   */
+  dispose() {
+    this.clearAllPendingSyncActions(false);
+    this.opts.distService?.stopBuilds();
   }
 
   private resolveSyncAction(requestId: string, approved: boolean) {
@@ -91,6 +87,7 @@ export class ClientService {
     }
 
     clearTimeout(entry.timeoutId);
+    entry.cleanup();
     this.syncActionResolvers.delete(requestId);
     entry.resolve(approved);
   }
@@ -100,6 +97,11 @@ export class ClientService {
     for (const requestId of [...this.syncActionResolvers.keys()]) {
       this.resolveSyncAction(requestId, approved);
     }
+  }
+
+  /** Tells the panel how its sync ended, in the shape it reads (`src/shared/ws-messages.ts`). */
+  private sendSyncResponse(client: WebSocketClient, payload: TemplateSyncResponsePayload) {
+    client.send('template:sync:response', payload);
   }
 
   onInfoDataRequest(_data: unknown, client: WebSocketClient) {
@@ -114,21 +116,30 @@ export class ClientService {
     this.resolveSyncAction(payload.requestId, payload.approved);
   }
 
-  async requestSyncAction(payload: Omit<SyncActionRequestPayload, 'requestId'>, client: WebSocketClient) {
+  async requestSyncAction(payload: Omit<SyncActionRequiredPayload, 'requestId'>, client: WebSocketClient) {
     const requestId = randomUUID();
     const timeoutMs = this.opts.syncActionTimeoutMs ?? 120_000;
 
     return await new Promise<boolean>((resolve) => {
-      const timeoutId = setTimeout(() => {
-        this.resolveSyncAction(requestId, false);
-      }, timeoutMs);
+      const cancel = () => this.resolveSyncAction(requestId, false);
+      const timeoutId = setTimeout(cancel, timeoutMs);
+      // A tab closed while its dialog is open will never answer: cancel the sync at once instead of
+      // keeping every other sync blocked until the timeout.
+      const { socket } = client as Partial<Pick<WebSocketClient, 'socket'>>;
 
-      this.syncActionResolvers.set(requestId, { resolve, timeoutId });
+      socket?.once('close', cancel);
+      this.syncActionResolvers.set(requestId, { resolve, timeoutId, cleanup: () => socket?.off('close', cancel) });
+
+      if (socket && socket.readyState !== socket.OPEN) {
+        cancel();
+
+        return;
+      }
 
       client.send('template:sync:action-required', {
         ...payload,
         requestId,
-      } satisfies SyncActionRequestPayload);
+      } satisfies SyncActionRequiredPayload);
     });
   }
 
@@ -141,7 +152,7 @@ export class ClientService {
     if (this.syncInFlight) {
       this.logger.warn(colors.yellow('Template sync requested while another one is running; ignored'));
 
-      client.send('template:sync:response', {
+      this.sendSyncResponse(client, {
         error:
           'A template sync is already running. Wait for it to finish, or answer its dialog in the tab that started it.',
         code: SYNC_IN_PROGRESS_CODE,
@@ -168,7 +179,7 @@ export class ClientService {
       try {
         if (this.server.config.clientInjectionPlugin?.v7Features) {
           if (!miAPI?.isV710OrHigher) {
-            client.send('template:sync:response', {
+            this.sendSyncResponse(client, {
               error: 'This feature is available only for MI v7.1.0 or higher',
               config: {
                 canSync: false,
@@ -199,14 +210,14 @@ export class ClientService {
 
                 if (validation && !validation.isValid) {
                   this.logger.error(colors.red(`Authentication error: ${validation.error}`));
-                  client.send('template:sync:response', {
-                    error: validation.error,
+                  this.sendSyncResponse(client, {
+                    error: validation.error ?? 'Authentication failed',
                     code: validation.code,
                     refresh: true,
                   });
                 } else {
                   this.logger.info(colors.yellow('Session expired'));
-                  client.send('template:sync:response', {
+                  this.sendSyncResponse(client, {
                     error: 'Session expired',
                     code: 'SESSION_EXPIRED',
                     refresh: true,
@@ -214,7 +225,7 @@ export class ClientService {
                 }
               } catch (validationError) {
                 this.logger.info(colors.yellow('Session expired'));
-                client.send('template:sync:response', {
+                this.sendSyncResponse(client, {
                   error: 'Session expired',
                   code: 'SESSION_EXPIRED',
                   refresh: true,
@@ -234,7 +245,7 @@ export class ClientService {
                 colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
               );
 
-              client.send('template:sync:response', {
+              this.sendSyncResponse(client, {
                 error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
                 code: 'CONNECTION_ERROR',
               });
@@ -250,7 +261,7 @@ export class ClientService {
                 colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),
               );
 
-              client.send('template:sync:response', {
+              this.sendSyncResponse(client, {
                 error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
                 code: 'CONNECTION_ERROR',
               });
@@ -267,7 +278,7 @@ export class ClientService {
               ),
             );
 
-            client.send('template:sync:response', {
+            this.sendSyncResponse(client, {
               error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
               code: 'CONNECTION_ERROR',
             });
@@ -362,7 +373,7 @@ export class ClientService {
               );
 
               if (!shouldContinueSync) {
-                client.send('template:sync:response', {
+                this.sendSyncResponse(client, {
                   cancelled: true,
                   message: 'Sync cancelled by user. Backup was saved.',
                 });
@@ -396,7 +407,7 @@ export class ClientService {
               );
 
               if (!shouldContinueAfterVersionMismatch) {
-                client.send('template:sync:response', {
+                this.sendSyncResponse(client, {
                   cancelled: true,
                   message: 'Sync cancelled by user. Backup was saved.',
                 });
@@ -426,7 +437,7 @@ export class ClientService {
               );
 
               if (!shouldContinueAfterMismatch) {
-                client.send('template:sync:response', {
+                this.sendSyncResponse(client, {
                   cancelled: true,
                   message: 'Sync cancelled by user. Backup was saved.',
                 });
@@ -448,30 +459,33 @@ export class ClientService {
         }
 
         if (newAssets && newAssets instanceof Buffer) {
+          // Built, but the dev server is shutting down (or restarting, with a sync of its own to come):
+          // nothing is uploaded from here any more.
+          if (distService.stopped) {
+            this.sendSyncResponse(client, { error: 'Sync stopped: the dev server is shutting down.' });
+            this.logger.warn(colors.yellow('Sync stopped before the upload: the dev server is shutting down'));
+
+            return;
+          }
+
           const updateResult = await miAPI?.updateAssets(newAssets);
 
           if (updateResult?.status === 'OK') {
+            // The meta is `{}` until a first backup is saved (a page with no assets on MI yet).
             const backupMeta = distService?.getBackupMeta();
+            const backupDate = backupMeta?.lastBackupDate ? new Date(backupMeta.lastBackupDate) : new Date();
 
-            const {
-              lastBackupName: backupFilename,
-              lastBackupHash: currentHash,
-              lastBackupDate: backupDate,
-            } = backupMeta || {
-              lastBackupName: '',
-              lastBackupHash: '',
-              lastBackupDate: new Date().toISOString(),
-            };
-
-            client.send('template:sync:response', {
-              syncedAt: new Date(backupDate),
-              currentHash,
-              backupFilename,
+            this.sendSyncResponse(client, {
+              // Now, for a date that doesn't parse: `toISOString()` throws on one, after the upload
+              // succeeded, and the panel showed a failed sync.
+              syncedAt: (Number.isNaN(backupDate.getTime()) ? new Date() : backupDate).toISOString(),
+              currentHash: backupMeta?.lastBackupHash ?? '',
+              backupFilename: backupMeta?.lastBackupName ?? '',
             });
 
             this.logger.info(colors.green('Template synced'));
           } else {
-            client.send('template:sync:response', {
+            this.sendSyncResponse(client, {
               error: 'Failed to update assets',
             });
 
@@ -479,7 +493,7 @@ export class ClientService {
           }
         } else {
           if (newAssets instanceof Error) {
-            client.send('template:sync:response', {
+            this.sendSyncResponse(client, {
               error: newAssets.message,
             });
 
@@ -488,7 +502,7 @@ export class ClientService {
             return;
           }
 
-          client.send('template:sync:response', {
+          this.sendSyncResponse(client, {
             error: 'Failed to build new assets',
           });
 
@@ -501,7 +515,7 @@ export class ClientService {
 
         this.logger.error(colors.red(`Template sync failed: ${message}`));
 
-        client.send('template:sync:response', {
+        this.sendSyncResponse(client, {
           error: message,
           code: 'SYNC_FAILED',
         });
@@ -509,7 +523,7 @@ export class ClientService {
         return;
       }
     } else {
-      client.send('template:sync:response', {
+      this.sendSyncResponse(client, {
         error: 'Dist service or MiAPI is not defined',
       });
 
