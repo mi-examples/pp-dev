@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -17,6 +17,14 @@ vi.mock('child_process', async (orig) => {
 
 const { DistService } = await import('../../../src/lib/dist.service.js');
 const { createLogger } = await import('../../../src/lib/logger.js');
+
+// The sync meta and backups of these services, outside the repository and the Next.js output.
+const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-next-state-'));
+const state = { backupFolder: path.join(stateDir, 'backups'), metaDir: path.join(stateDir, '.pp-dev-meta') };
+
+afterAll(() => {
+  fs.rmSync(stateDir, { recursive: true, force: true });
+});
 
 describe('DistService — Next.js build strategy', () => {
   let exportDir: string;
@@ -50,6 +58,7 @@ describe('DistService — Next.js build strategy', () => {
 
   function createService() {
     return new DistService('test-app', {
+      ...state,
       nextBuild: {
         // Resolve the `next` binary from the repo (next is a devDependency here).
         projectRoot: process.cwd(),
@@ -128,6 +137,7 @@ describe('DistService — stopped right after the Next.js build', () => {
       });
 
       const service = new DistService('test-app', {
+        ...state,
         nextBuild: { projectRoot: process.cwd(), distDir: exportDir, packageVersion: '1.2.3' },
       });
       // The build has just finished when this is logged: the server stops at that moment.

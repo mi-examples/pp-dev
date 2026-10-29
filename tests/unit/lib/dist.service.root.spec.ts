@@ -51,6 +51,7 @@ describe('DistService — root-scoped path resolution', () => {
 
     const service = new DistService('test-app', {
       root: projectRoot,
+      metaDir: '.pp-dev-meta',
       buildInputFolder: 'dist',
     });
 
@@ -67,7 +68,11 @@ describe('DistService — root-scoped path resolution', () => {
   // stopBuilds replaced its AbortController, so a sync still fetching assets when the server closed
   // got a fresh signal and built (and uploaded) afterwards.
   it('refuses every build once stopped, also one a sync starts later', async () => {
-    const service = new DistService('test-app', { root: projectRoot, buildInputFolder: 'dist' });
+    const service = new DistService('test-app', {
+      root: projectRoot,
+      metaDir: '.pp-dev-meta',
+      buildInputFolder: 'dist',
+    });
 
     service.stopBuilds();
 
@@ -81,7 +86,11 @@ describe('DistService — root-scoped path resolution', () => {
     fs.mkdirSync(path.join(projectRoot, 'dist'));
     fs.writeFileSync(path.join(projectRoot, 'dist', 'index.html'), '<html></html>');
 
-    const service = new DistService('test-app', { root: projectRoot, buildInputFolder: 'dist' });
+    const service = new DistService('test-app', {
+      root: projectRoot,
+      metaDir: '.pp-dev-meta',
+      buildInputFolder: 'dist',
+    });
     const info = vi.spyOn(createLogger(), 'info').mockImplementation((message: string) => {
       if (String(message).includes('Build finished')) {
         service.stopBuilds();
@@ -103,7 +112,11 @@ describe('DistService — root-scoped path resolution', () => {
 
     fs.mkdirSync(path.join(projectRoot, 'dist'));
 
-    const service = new DistService('test-app', { root: projectRoot, buildInputFolder: 'dist' });
+    const service = new DistService('test-app', {
+      root: projectRoot,
+      metaDir: '.pp-dev-meta',
+      buildInputFolder: 'dist',
+    });
 
     await service.buildNewAssets();
     expect(ended().at(-1)).toContain('Build finished');
@@ -126,7 +139,7 @@ describe('DistService — root-scoped path resolution', () => {
   });
 
   it('reads and writes the template variables file under the explicit root', async () => {
-    const service = new DistService('test-app', { root: projectRoot });
+    const service = new DistService('test-app', { root: projectRoot, metaDir: '.pp-dev-meta' });
 
     await service.saveTemplateVariablesFile(Buffer.from('{"a":1}', 'utf-8'));
 
@@ -142,6 +155,7 @@ describe('DistService — root-scoped path resolution', () => {
     // eslint-disable-next-line no-new -- the constructor's fire-and-forget syncMeta() creates the folder
     new DistService('test-app', {
       root: projectRoot,
+      metaDir: '.pp-dev-meta',
       backupFolder: 'backups',
     });
 
@@ -155,7 +169,7 @@ describe('DistService — root-scoped path resolution', () => {
   });
 
   it('defaults root to process.cwd() when not provided', async () => {
-    const service = new DistService('test-app', {});
+    const service = new DistService('test-app', { metaDir: '.pp-dev-meta' });
 
     await service.saveTemplateVariablesFile(Buffer.from('{}', 'utf-8'));
 

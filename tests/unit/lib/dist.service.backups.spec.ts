@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DistService,
   DEFAULT_MAX_BACKUPS,
@@ -57,18 +57,35 @@ describe('DistService — start-up and backups', () => {
   }
 
   it('creates a backups folder whose parent does not exist yet', async () => {
-    const service = new DistService('page', { root, backupFolder: '.pp-dev/backups' });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: '.pp-dev/backups' });
 
     await service.checkMeta();
 
     expect(fs.statSync(path.join(root, '.pp-dev', 'backups')).isDirectory()).toBe(true);
   });
 
+  // The default folder is next to the installed package; run from the repository, that is outside
+  // the checkout, shared by every test run and worker (and not writable from some clones in WSL).
+  it('keeps the sync meta in the given folder, relative to the root or absolute', async () => {
+    const relative = new DistService('page', { root, metaDir: 'state/meta', backupFolder: 'backups' });
+
+    await relative.syncMeta();
+
+    expect(fs.existsSync(path.join(root, 'state', 'meta', 'sync-service.meta.json'))).toBe(true);
+
+    const absoluteDir = path.join(root, 'elsewhere');
+    const absolute = new DistService('page', { root, metaDir: absoluteDir, backupFolder: 'backups' });
+
+    await absolute.syncMeta();
+
+    expect(fs.readdirSync(absoluteDir)).toEqual(['sync-service.meta.json']);
+  });
+
   it('waits for the sync meta before using it', async () => {
     memoryMeta({ lastBackupName: 'page-old.zip' }, 20);
     fs.writeFileSync(path.join(root, 'page-old.zip'), 'zip');
 
-    const service = new DistService('page', { root, backupFolder: '.' });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: '.' });
 
     // Called right away, while the meta file is still being read.
     await expect(service.getLatestSavedBackup()).resolves.toBe(path.join(root, 'page-old.zip'));
@@ -78,7 +95,7 @@ describe('DistService — start-up and backups', () => {
     vi.spyOn(DistService.prototype, 'readMetaFile').mockRejectedValue(new Error('EACCES: permission denied'));
     vi.spyOn(DistService.prototype, 'writeMetaFile').mockResolvedValue(undefined);
 
-    const service = new DistService('page', { root, backupFolder: '.' });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: '.' });
 
     await expect(service.getLatestSavedBackup()).resolves.toBeNull();
     expect(service.getBackupMeta()).toEqual({});
@@ -101,7 +118,7 @@ describe('DistService — start-up and backups', () => {
     writeBackup(backups, 'page-notes.zip', 60);
     writeBackup(backups, 'notes.txt', 60);
 
-    const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: 3 });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: 'backups', maxBackups: 3 });
 
     await service.saveBackup(Buffer.from('new zip'), analysis('new'));
 
@@ -131,7 +148,12 @@ describe('DistService — start-up and backups', () => {
       writeBackup(backups, `page-2026-10-0${index + 1}T10-00-00.zip`, 50 - index);
     }
 
-    const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: false });
+    const service = new DistService('page', {
+      root,
+      metaDir: '.pp-dev-meta',
+      backupFolder: 'backups',
+      maxBackups: false,
+    });
 
     await service.saveBackup(Buffer.from('new zip'), analysis('new'));
 
@@ -148,7 +170,7 @@ describe('DistService — start-up and backups', () => {
       writeBackup(backups, `page-2026-09-${String(index + 1).padStart(2, '0')}T10-00-00.zip`, 100 - index);
     }
 
-    const service = new DistService('page', { root, backupFolder: 'backups' });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: 'backups' });
 
     await service.saveBackup(Buffer.from('new zip'), analysis('new'));
 
@@ -164,7 +186,7 @@ describe('DistService — start-up and backups', () => {
     writeBackup(backups, 'page-2026-10-01T10-00-00.zip', -60);
     writeBackup(backups, 'page-2026-10-02T10-00-00.zip', 10);
 
-    const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: 1 });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: 'backups', maxBackups: 1 });
 
     await service.saveBackup(Buffer.from('new zip'), analysis('new'));
 
@@ -177,7 +199,7 @@ describe('DistService — start-up and backups', () => {
     fs.mkdirSync(backups);
     memoryMeta();
 
-    const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: 1 });
+    const service = new DistService('page', { root, metaDir: '.pp-dev-meta', backupFolder: 'backups', maxBackups: 1 });
 
     vi.spyOn(fs.promises, 'readdir').mockRejectedValueOnce(new Error('EPERM'));
 
@@ -188,6 +210,15 @@ describe('DistService — start-up and backups', () => {
 
 describe('backupNamePattern', () => {
   const defaultDate = '2026-10-27T10-00-00';
+  let root: string;
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-backup-names-'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(root, { force: true, recursive: true });
+  });
 
   it('matches the default template for this page only', () => {
     const pattern = backupNamePattern('{pageName}-{date}.zip', 'my.page', defaultDate);
@@ -223,14 +254,18 @@ describe('backupNamePattern', () => {
     '{pageName}-{pageName}-{date}.zip',
     '{date}/{pageName}-{date}.zip',
     'backup.zip',
-  ])('matches the names backupName() gives with template %s, and nothing shorter', (template) => {
-    const service = new DistService('p', { root: os.tmpdir(), backupNameTemplate: template });
+  ])('matches the names backupName() gives with template %s, and nothing shorter', async (template) => {
+    const service = new DistService('p', { root, metaDir: '.pp-dev-meta', backupNameTemplate: template });
     const dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, '');
     const pattern = backupNamePattern(template, 'p', dateFormat(new Date('2026-10-27T10:00:00Z')));
     const name = service.backupName('p', new Date('2025-01-02T03:04:05Z'));
 
     expect(pattern.test(name)).toBe(true);
     expect(pattern.test(name.slice(0, -4))).toBe(false);
+
+    // The constructor reads the meta (and creates its folders) in the background: done before
+    // afterAll removes the root, or a late mkdir recreates it, or rmSync meets a folder being made.
+    await service.getLatestSavedBackup();
   });
 
   it("doesn't take a repeated placeholder for a second one", () => {
