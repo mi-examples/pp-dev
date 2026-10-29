@@ -219,6 +219,9 @@ function listValueWidget(tag: SchemaTag | undefined, row: ValueRow, i: number): 
         '" data-drop="list-item">' +
         '<span class="ve-values-list-item-handle" draggable="true" data-drag="list-item" title="Drag to reorder" aria-label="Drag to reorder" role="button" tabindex="0">⠿</span>' +
         listItemFieldsHtml(config, item, i, itemIndex) +
+        '<button type="button" class="btn btn-sm ve-values-list-item-remove" title="Remove item" aria-label="Remove item"' +
+        actionAttrs('remove-list-item', { index: i, item: itemIndex }) +
+        '>✕</button>' +
         '</div>'
       );
     })

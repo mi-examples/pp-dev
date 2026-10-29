@@ -930,6 +930,38 @@ describe('Variables Editor page', () => {
       dom.close();
     });
 
+    it('removes an item of a list, of objects and of plain strings', async () => {
+      const { dom } = await openValues(
+        [
+          {
+            name: 'Rows',
+            tag_type: 'list',
+            tag_source: 'static',
+            additional_options: [{ name: 'label', type: 'text' }],
+          },
+          { name: 'Names', tag_type: 'list', tag_source: 'static', additional_options: '' },
+        ],
+        [
+          { name: 'Rows', value: '[{"label":"first"},{"label":"second"},{"label":"third"}]' },
+          { name: 'Names', value: '["ann","bob"]' },
+        ],
+      );
+
+      click('[data-action="remove-list-item"][data-index="0"][data-item="1"]');
+
+      expect(document.querySelectorAll('.ve-values-list-item[data-value-index="0"]')).toHaveLength(2);
+
+      click('[data-action="select-value-row"][data-value-index="1"]');
+      click('[data-action="remove-list-item"][data-index="1"][data-item="0"]');
+
+      expect(rawValues()).toEqual([
+        { name: 'Rows', value: [{ label: 'first' }, { label: 'third' }] },
+        { name: 'Names', value: ['bob'] },
+      ]);
+
+      dom.close();
+    });
+
     it('sets a boolean from its checkbox', async () => {
       const { dom } = await openValues([{ name: 'On', tag_type: 'boolean' }], [{ name: 'On', value: 'false' }]);
       const box = find<HTMLInputElement>('[data-action="value-boolean"]');

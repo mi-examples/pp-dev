@@ -698,6 +698,9 @@ tr.details-row.is-drop-target td {
   flex: 1;
   min-width: 0;
 }
+.ve-values-list-item-remove {
+  flex-shrink: 0;
+}
 .checkbox-row {
   display: flex;
   flex-wrap: wrap;

@@ -1225,6 +1225,16 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     render();
   }
 
+  function removeListItem(i: number, itemIndex: number) {
+    const items = parseListItems(valueRows[i]) || [];
+
+    items.splice(itemIndex, 1);
+    valueRows[i].value = JSON.stringify(items);
+    selectedValueIndex = i;
+    setDirty(true);
+    render();
+  }
+
   let listItemDrag: { valueIndex: number; fromIndex: number } | null = null;
 
   function onListItemDragStart(ev: DragEvent) {
@@ -2058,6 +2068,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     'remove-value-row': (el) => removeValueRow(index(el)),
     'remove-chip': (el) => onChipRemove(el),
     'add-list-item': (el) => addListItem(index(el)),
+    'remove-list-item': (el) => removeListItem(index(el), item(el)),
     'close-import-modal': () => closeImportModal(),
     'back-to-import-picker': () => backToImportPicker(),
     'select-import-page': (el) => void selectImportSourcePage(el.dataset.pageId!, el.dataset.pageName!),
