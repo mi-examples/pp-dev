@@ -80,6 +80,40 @@ describe('URL Helper', () => {
       expect(urlReplacer('api.com', 'localhost', content)).toBe('http://localhost/a http://localhost/b');
       expect(urlReplacer('api.com', 'localhost', content)).toBe('http://localhost/a http://localhost/b');
     });
+
+    // The MI host has no port since `mi.url`'s default one is dropped (`https://mi.example.com:443`
+    // → `mi.example.com`): a link written with the port became `http://localhost:3000:443/home`.
+    it("replaces a URL that writes out its scheme's default port, port and all", () => {
+      const content = [
+        'https://mi.example.com:443/home',
+        'http://mi.example.com:80/a',
+        String.raw`"https:\/\/mi.example.com:443\/b"`,
+      ].join(' ');
+
+      expect(urlReplacer('mi.example.com', 'localhost:3000', content)).toBe(
+        ['http://localhost:3000/home', 'http://localhost:3000/a', String.raw`"http:\/\/localhost:3000\/b"`].join(' '),
+      );
+    });
+
+    it('leaves a URL on another port of the host alone', () => {
+      const content = 'https://mi.example.com:8443/x http://mi.example.com:443/y https://mi.example.com/z';
+
+      expect(urlReplacer('mi.example.com', 'localhost:3000', content)).toBe(
+        'https://mi.example.com:8443/x http://mi.example.com:443/y http://localhost:3000/z',
+      );
+    });
+
+    it('keeps a URL marked with !!, port and all, without the marker', () => {
+      expect(urlReplacer('mi.example.com', 'localhost:3000', '!!https://mi.example.com:443/keep')).toBe(
+        'https://mi.example.com:443/keep',
+      );
+    });
+
+    it('matches a host configured with its port as written', () => {
+      expect(urlReplacer('mi.example.com:8443', 'localhost:3000', 'https://mi.example.com:8443/x')).toBe(
+        'http://localhost:3000/x',
+      );
+    });
   });
 
   describe('rewriteDataPagePathForV7Proxy', () => {
