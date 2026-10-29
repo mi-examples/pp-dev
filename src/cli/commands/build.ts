@@ -1,14 +1,13 @@
 import * as path from 'path';
 import { BuildOptions, InlineConfig } from 'vite';
-import { getViteConfig } from '../../index.js';
-import { mergeConfig, build, loadConfigFromFile } from 'vite';
+import { mergeConfig, build } from 'vite';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
 import { resolveBuildCliOverrides, BuildOverrideCLIOptions } from '../../lib/build-cli-overrides.js';
-import { loadPPDevEnv } from '../../lib/env.js';
 import { cleanOptions } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
 import { type PPDevBuildOptions, type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
+import { loadCommandViteConfig } from '../vite-config.js';
 import { generatePostBuildChangelog } from '../post-build-changelog.js';
 import { stopProfiler } from '../profiler.js';
 
@@ -64,24 +63,14 @@ export function registerBuildCommand(cli: CAC): void {
 
       try {
         const mode = options.mode || 'production';
-        const envDir = path.resolve(process.cwd(), root ?? '.');
-
-        loadPPDevEnv(mode, envDir);
-
-        const configFromFile = await loadConfigFromFile(
-          { mode, command: 'build' },
-          options.config,
+        const { config } = await loadCommandViteConfig({
           root,
-          options.logLevel,
-        );
-
-        let config = await getViteConfig(cliOverrides, { mode, root: envDir });
-
-        if (configFromFile) {
-          const { plugins, ...fileConfig } = configFromFile.config;
-
-          config = mergeConfig(config, fileConfig);
-        }
+          mode,
+          command: 'build',
+          configFile: options.config,
+          logLevel: options.logLevel,
+          buildOverrides: cliOverrides,
+        });
 
         const buildConfig = mergeConfig(
           config,

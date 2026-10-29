@@ -1,11 +1,9 @@
-import * as path from 'path';
-import { getViteConfig } from '../../index.js';
-import { mergeConfig, preview, loadConfigFromFile } from 'vite';
+import { mergeConfig, preview } from 'vite';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
-import { loadPPDevEnv } from '../../lib/env.js';
 import type { CAC } from 'cac';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
+import { loadCommandViteConfig } from '../vite-config.js';
 import { stopProfiler } from '../profiler.js';
 
 export function registerPreviewCommand(cli: CAC): void {
@@ -33,24 +31,13 @@ export function registerPreviewCommand(cli: CAC): void {
 
         try {
           const mode = options.mode || 'production';
-          const envDir = path.resolve(process.cwd(), root ?? '.');
-
-          loadPPDevEnv(mode, envDir);
-
-          const configFromFile = await loadConfigFromFile(
-            { mode, command: 'build' },
-            options.config,
+          const { config } = await loadCommandViteConfig({
             root,
-            options.logLevel,
-          );
-
-          let config = await getViteConfig(undefined, { mode, root: envDir });
-
-          if (configFromFile) {
-            const { plugins, ...fileConfig } = configFromFile.config;
-
-            config = mergeConfig(config, fileConfig);
-          }
+            mode,
+            command: 'build',
+            configFile: options.config,
+            logLevel: options.logLevel,
+          });
 
           const server = await preview(
             mergeConfig(config, {

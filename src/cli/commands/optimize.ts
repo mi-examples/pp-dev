@@ -1,11 +1,9 @@
-import * as path from 'path';
-import { getViteConfig } from '../../index.js';
-import { mergeConfig, optimizeDeps, resolveConfig, loadConfigFromFile } from 'vite';
+import { mergeConfig, optimizeDeps, resolveConfig } from 'vite';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
-import { loadPPDevEnv } from '../../lib/env.js';
 import type { CAC } from 'cac';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
+import { loadCommandViteConfig } from '../vite-config.js';
 
 export function registerOptimizeCommand(cli: CAC): void {
   cli
@@ -15,24 +13,13 @@ export function registerOptimizeCommand(cli: CAC): void {
       filterDuplicateOptions(options);
       try {
         const mode = options.mode || 'production';
-        const envDir = path.resolve(process.cwd(), root ?? '.');
-
-        loadPPDevEnv(mode, envDir);
-
-        const configFromFile = await loadConfigFromFile(
-          { mode, command: 'build' },
-          options.config,
+        const { config } = await loadCommandViteConfig({
           root,
-          options.logLevel,
-        );
-
-        let config = await getViteConfig(undefined, { mode, root: envDir });
-
-        if (configFromFile) {
-          const { plugins, ...fileConfig } = configFromFile.config;
-
-          config = mergeConfig(config, fileConfig);
-        }
+          mode,
+          command: 'build',
+          configFile: options.config,
+          logLevel: options.logLevel,
+        });
 
         const optimizeConfig = await resolveConfig(
           mergeConfig(config, {

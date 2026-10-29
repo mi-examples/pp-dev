@@ -1,9 +1,5 @@
 import { BuildOptions, LogLevel } from 'vite';
 
-export function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export interface PPDevBuildOptions extends BuildOptions {
   changelog?: boolean | string;
 }

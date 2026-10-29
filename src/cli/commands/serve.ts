@@ -3,17 +3,16 @@ import { performance } from 'node:perf_hooks';
 import { ServerOptions } from 'vite';
 import { VERSION } from '../../constants.js';
 import { bindShortcuts } from '../../shortcuts.js';
-import { getViteConfig } from '../../index.js';
-import { mergeConfig, ViteDevServer, loadConfigFromFile } from 'vite';
+import { mergeConfig, ViteDevServer } from 'vite';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { INSPECTOR_PATH } from '../../lib/request-inspector.js';
-import { loadPPDevEnv } from '../../lib/env.js';
 import { cleanOptions } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
 import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
+import { loadCommandViteConfig } from '../vite-config.js';
 import { stopProfiler, profilerShortcuts } from '../profiler.js';
 
 export function registerServeCommand(cli: CAC): void {
@@ -62,24 +61,13 @@ export function registerServeCommand(cli: CAC): void {
           // is ok here
           const { createServer } = await import('vite');
           const mode = options.mode || 'development';
-          const envDir = path.resolve(process.cwd(), root ?? '.');
-
-          loadPPDevEnv(mode, envDir);
-
-          const configFromFile = await loadConfigFromFile(
-            { mode, command: 'serve' },
-            options.config,
+          const { config, envDir } = await loadCommandViteConfig({
             root,
-            options.logLevel,
-          );
-
-          let config = await getViteConfig(undefined, { mode, root: envDir });
-
-          if (configFromFile) {
-            const { plugins, ...fileConfig } = configFromFile.config;
-
-            config = mergeConfig(config, fileConfig);
-          }
+            mode,
+            command: 'serve',
+            configFile: options.config,
+            logLevel: options.logLevel,
+          });
 
           server = await createServer(
             mergeConfig(

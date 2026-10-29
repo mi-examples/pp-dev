@@ -6,13 +6,18 @@ import { ViteDevServer } from 'vite';
 import { parse } from 'url';
 import { initRewriteResponse } from '../../lib/rewrite-response.middleware.js';
 import { initPPRedirect } from '../../lib/pp-redirect.middleware.js';
-import { MiAPI, MiAPIOptions } from '../../lib/pp.middleware.js';
+import { MiAPI } from '../../lib/pp.middleware.js';
 import { initProxyCache } from '../../lib/proxy-cache.middleware.js';
 import proxyPassMiddleware from '../../lib/proxy-pass.middleware.js';
 import { initLoadPPData } from '../../lib/load-pp-data.middleware.js';
 import { createUserHostGuard } from '../../lib/user-registry.js';
-import { registerUserRoutes } from '../../lib/user-routes.js';
-import { startKeepingUsers } from '../../lib/user-store.js';
+import {
+  getIndexPageRegExp,
+  getMiAPIOptions,
+  getProxyIgnore,
+  resolveProxyCacheTtl,
+  startSyncAndUsers,
+} from '../../lib/dev-server-setup.js';
 import { urlReplacer } from '../../lib/helpers/url.helper.js';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
@@ -34,13 +39,12 @@ import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-conf
 import { RequestStore } from '../../lib/request-store.js';
 import { createRequestCaptureMiddleware } from '../../lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from '../../lib/request-inspector.js';
-import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from '../../lib/variables-editor.js';
+import { VARIABLES_EDITOR_PATH } from '../../lib/variables-editor.js';
 import { loadPPDevEnv } from '../../lib/env.js';
 import { NEXT_IGNORED_FLAGS, resolveNextListenAddress } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
 import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
 import {
-  escapeRegExp,
   type NextCommandCLIOptions,
   type NextBundlerChoice,
   parseNextBundlerCli,
@@ -507,18 +511,13 @@ export function registerNextCommand(cli: CAC): void {
             }
 
             // Initialize MiAPI
-            const miConfig: MiAPIOptions = {
-              headers: {
-                host: baseUrlHost,
-                referer: backendBaseURL,
-                origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
-              },
+            const miConfig = getMiAPIOptions(backendBaseURL, {
               appId,
               templateLess,
               disableSSLValidation,
               v7Features,
-              personalAccessToken: personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
-            };
+              personalAccessToken,
+            });
 
             mi = new MiAPI(backendBaseURL, miConfig);
 
@@ -542,11 +541,7 @@ export function registerNextCommand(cli: CAC): void {
 
             // 2. Proxy Cache middleware (only for non-internal routes)
             if (enableProxyCache) {
-              let ttl = +proxyCacheTTL;
-
-              if (!ttl || Number.isNaN(ttl) || ttl < 0) {
-                ttl = 10 * 60 * 1000; // 10 minutes
-              }
+              const ttl = resolveProxyCacheTtl(proxyCacheTTL);
 
               // Create mock devServer object that satisfies the type requirements
               const mockDevServer = {
@@ -572,7 +567,7 @@ export function registerNextCommand(cli: CAC): void {
             }
 
             // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
-            const isIndexRegExp = new RegExp(`^((${escapeRegExp(base)})|/)$`);
+            const isIndexRegExp = getIndexPageRegExp(base);
             const loadPPDataMiddleware = initLoadPPData(
               isIndexRegExp,
               mi,
@@ -585,7 +580,6 @@ export function registerNextCommand(cli: CAC): void {
             fullMiddlewareChain.push(loadPPDataWrapper);
 
             // 4. Proxy Pass middleware (only for non-internal routes)
-            const baseWithoutTrailingSlash = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
 
             // Create mock devServer object for proxy pass middleware
             const mockProxyDevServer = {
@@ -599,10 +593,7 @@ export function registerNextCommand(cli: CAC): void {
               devServer: mockProxyDevServer,
               baseURL: backendBaseURL,
               proxyIgnore: [
-                '/@vite',
-                '/@metricinsights',
-                '/@',
-                baseWithoutTrailingSlash,
+                ...getProxyIgnore(base),
                 // Next.js internal routes that should not be proxied
                 '/_next',
                 '/favicon.ico',
@@ -725,10 +716,15 @@ export function registerNextCommand(cli: CAC): void {
               config: { clientInjectionPlugin: { v7Features } },
             } as unknown as ViteDevServer;
 
-            clientService = new ClientService(clientServiceServer, { distService, miAPI: mi });
-            registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
-            registerUserRoutes(internalServer, { miAPI: mi });
-            startKeepingUsers({ persist: _normalized.persistUsers, miAPI: mi, projectRoot, miUrl: backendBaseURL });
+            clientService = startSyncAndUsers({
+              server: clientServiceServer,
+              internalServer,
+              distService,
+              miAPI: mi,
+              persistUsers: _normalized.persistUsers,
+              projectRoot,
+              miUrl: backendBaseURL,
+            });
 
             // Route HTTP upgrades: pp-dev WS to our server, everything else (Next.js HMR)
             // to Next's own upgrade handler when available.
