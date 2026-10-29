@@ -177,6 +177,9 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   let schemaSeq = 0;
   let valuesSeq = 0;
   let autoLoadTimer: ReturnType<typeof setTimeout> | null = null;
+  // Set by stop(): a load, save or timer that completes afterwards must not paint over the markup,
+  // which a new instance may have taken over meanwhile.
+  let stopped = false;
 
   const onBeforeUnload = (e: BeforeUnloadEvent) => {
     if (dirty) {
@@ -196,6 +199,10 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   }
 
   function showBanner(type: BannerType, html: string, preserveContent?: boolean) {
+    if (stopped) {
+      return;
+    }
+
     banner = { type, html };
 
     if (preserveContent) {
@@ -1108,7 +1115,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     setTimeout(() => {
       const list = byId('combo-list-' + i);
 
-      if (list) {
+      if (list && !stopped) {
         list.style.display = 'none';
       }
     }, 150);
@@ -1608,7 +1615,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     const data = (await r.json().catch(() => ({}))) as PagesResponse;
 
-    if (!overlay.isConnected) {
+    if (stopped || !overlay.isConnected) {
       return;
     }
 
@@ -1634,7 +1641,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   }
 
   function setImportBodyError(overlay: HTMLElement, message: string) {
-    if (!overlay.isConnected) {
+    if (stopped || !overlay.isConnected) {
       return;
     }
 
@@ -1697,7 +1704,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     const data = (await r.json().catch(() => ({}))) as ImportPlan;
 
     // A newer pick (or Back) landed before this one resolved — drop the stale response.
-    if (!overlay.isConnected || overlay.dataset.sourcePageId !== String(pageId)) {
+    if (stopped || !overlay.isConnected || overlay.dataset.sourcePageId !== String(pageId)) {
       return;
     }
 
@@ -1945,7 +1952,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   function renderLocalUpdateButton() {
     const btn = byId<HTMLButtonElement>('local-update-btn');
 
-    if (!btn) {
+    if (!btn || stopped) {
       return;
     }
 
@@ -1997,13 +2004,20 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     } catch (e) {
       showBanner('error', 'Failed to update the local values: ' + escapeHtml(errorMessage(e)), true);
     } finally {
-      btn.disabled = false;
+      if (!stopped) {
+        btn.disabled = false;
+      }
+
       renderLocalUpdateButton();
     }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
   function render() {
+    if (stopped) {
+      return;
+    }
+
     const bannerHtml = banner ? '<div class="banner banner-' + banner.type + '">' + banner.html + '</div>' : '';
 
     contentEl.innerHTML =
@@ -2238,6 +2252,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   void loadTabData(activeTab).then(render);
 
   return () => {
+    stopped = true;
     window.removeEventListener('beforeunload', onBeforeUnload);
     document.removeEventListener('click', onThemeClick);
 

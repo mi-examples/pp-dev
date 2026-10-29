@@ -477,6 +477,67 @@ describe('Variables Editor page', () => {
     dom.close();
   });
 
+  it("leaves a restarted page to the new instance when the stopped one's load resolves late", async () => {
+    type FetchResponse = { ok: boolean; json: () => Promise<unknown> };
+
+    const values = (value: string) => ({
+      ok: true,
+      json: () => Promise.resolve({ schema: null, live: [], combined: [{ name: 'title', value }] }),
+    });
+    const pending: Array<(response: FetchResponse) => void> = [];
+    const pendingError: Array<(error: Error) => void> = [];
+
+    const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+    // Two instances on the same markup, stopped while their loads are pending; those resolve once
+    // a third has loaded.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<FetchResponse>((resolve, reject) => {
+            pending.push(resolve);
+            pendingError.push(reject);
+          }),
+      ),
+    );
+    startVariablesEditor({ templateLess: false })();
+    startVariablesEditor({ templateLess: false })();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(values('current')));
+    dom.start();
+    await flush();
+
+    pending[0](values('stale'));
+    pendingError[1](new Error('network down'));
+    await flush();
+
+    expect(find<HTMLInputElement>('#content .ve-values-detail input').value).toBe('current');
+    expect(banner()).toBe('');
+
+    dom.close();
+  });
+
+  it('does not load the tab switched to after being stopped within the debounce', async () => {
+    const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+    const fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({ schema: null, live: [], combined: [] }) });
+
+    vi.stubGlobal('fetch', fetch);
+    dom.start();
+    await flush();
+    click('#tab-schema');
+    dom.close();
+    vi.stubGlobal('fetch', fetch);
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.unstubAllGlobals();
+  });
+
   describe('client: failed loads and saves', () => {
     type FetchResponse = { ok: boolean; status?: number; statusText?: string; json: () => Promise<unknown> };
 
