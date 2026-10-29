@@ -8,12 +8,11 @@
  * is TerminateProcess), so no handler would run.
  */
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { spawn, type ChildProcess } from 'child_process';
-import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
+import { pointConfigAt, startDevServer, type DevServerProcess } from './helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,7 +22,6 @@ interface Fixture {
   configFile: string;
   args: string[];
   port: number;
-  ready: RegExp;
   signal: NodeJS.Signals;
 }
 
@@ -32,9 +30,9 @@ const fixtures: Fixture[] = [
     name: 'pp-dev (Vite)',
     dir: path.resolve(__dirname, '../test-commonjs'),
     configFile: 'pp-dev.config.ts',
-    args: [],
+    // Vite would move to the next free port; the test must fail on a taken one instead, saying why.
+    args: ['--strictPort'],
     port: 3102,
-    ready: /Config file watcher started/i,
     signal: 'SIGINT',
   },
   {
@@ -43,7 +41,6 @@ const fixtures: Fixture[] = [
     configFile: 'pp-dev.config.ts',
     args: ['next'],
     port: 3101,
-    ready: /Config file watcher started/i,
     signal: 'SIGTERM',
   },
 ];
@@ -74,89 +71,40 @@ describe.skipIf(process.platform === 'win32')('graceful shutdown on a signal', {
 
   for (const fixture of fixtures) {
     describe(fixture.name, () => {
-      const configPath = path.join(fixture.dir, fixture.configFile);
-      let originalConfig: string;
-      let proc: ChildProcess | undefined;
-      const lines: string[] = [];
+      let config: { restore(): void } | undefined;
+      let server: DevServerProcess | undefined;
 
       beforeAll(async () => {
-        originalConfig = fs.readFileSync(configPath, 'utf-8');
-
-        const patched = originalConfig.replace(/url:\s*['"]https?:\/\/[^'"]+['"]/, `url: '${mockMi.url}'`);
-
-        if (patched === originalConfig) {
-          throw new Error(`Could not point ${configPath} at mock-mi`);
-        }
-
-        fs.writeFileSync(configPath, patched);
+        config = pointConfigAt(path.join(fixture.dir, fixture.configFile), mockMi.url);
 
         // The package's own bin, run by node directly: a signal sent to `npm run` reaches npm first.
         const bin = path.join(fixture.dir, 'node_modules', '@metricinsights', 'pp-dev', 'bin', 'pp-dev.js');
 
-        proc = spawn(process.execPath, [bin, ...fixture.args, '--port', String(fixture.port)], {
+        server = startDevServer(process.execPath, [bin, ...fixture.args, '--port', String(fixture.port)], {
           cwd: fixture.dir,
-          env: { ...process.env, NO_COLOR: '1' },
-          stdio: ['ignore', 'pipe', 'pipe'],
         });
-
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(
-            () => reject(new Error(`${fixture.name} did not start:\n${lines.join('\n')}`)),
-            90_000,
-          );
-          let buffered = '';
-          const onData = (data: Buffer) => {
-            buffered += data.toString();
-
-            const parts = buffered.split(/\r?\n/);
-
-            buffered = parts.pop() ?? '';
-
-            for (const line of parts.map((part) => part.trim()).filter(Boolean)) {
-              lines.push(line);
-
-              if (fixture.ready.test(line)) {
-                clearTimeout(timer);
-                resolve();
-              }
-            }
-          };
-
-          proc!.stdout!.on('data', onData);
-          proc!.stderr!.on('data', onData);
-          proc!.once('exit', (code) => {
-            clearTimeout(timer);
-            reject(new Error(`${fixture.name} exited with ${code} before it started:\n${lines.join('\n')}`));
-          });
-        });
+        await server.waitForLine(/Config file watcher started/i, 90_000);
       }, 120_000);
 
       afterAll(() => {
-        if (proc && proc.exitCode === null && proc.signalCode === null) {
-          proc.kill('SIGKILL');
-        }
-
-        if (originalConfig !== undefined) {
-          fs.writeFileSync(configPath, originalConfig);
-        }
+        // The whole process group: a server that didn't stop may have left Next.js workers running,
+        // holding the port for the next E2E file.
+        server?.kill('SIGKILL');
+        config?.restore();
       });
 
       it(`closes everything and exits with 0 on ${fixture.signal}`, async () => {
         expect(await isListening(fixture.port)).toBe(true);
 
-        // Drops the "exited before it started" listener first.
-        proc!.removeAllListeners('exit');
+        // To the server process alone, as a terminal's Ctrl+C or a process manager would send it.
+        server!.proc.kill(fixture.signal);
 
-        // `close`, not `exit`: it comes once stdout and stderr have ended too, so the last log lines are in.
-        const exited = new Promise<number | null>((resolve) => proc!.once('close', (code) => resolve(code)));
-
-        proc!.kill(fixture.signal);
-
+        // `closed` settles once stdout and stderr have ended too, so the last log lines are in.
         const code = await Promise.race([
-          exited,
+          server!.closed,
           new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 15_000)),
         ]);
-        const output = lines.join('\n');
+        const output = server!.lines.join('\n');
 
         expect(code, output).toBe(0);
         expect(output).toContain(`Received ${fixture.signal}, shutting down gracefully`);
