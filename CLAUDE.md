@@ -67,7 +67,7 @@ src/client/
 
 | Suite | Config | Pool | Timeout | Location |
 |---|---|---|---|---|
-| Unit | `vitest.config.ts` | threads | 10 s | `tests/unit/**/*.spec.ts` |
+| Unit | `vitest.config.ts` | threads, not isolated (specs that `vi.mock` modules run isolated) | 10 s | `tests/unit/**/*.spec.ts` |
 | Integration | `vitest.integration.config.ts` | forks | 30 s | `tests/integration/**/*.spec.ts` |
 | E2E | `playwright.config.ts` | browser | — | `e2e/` |
 
@@ -83,6 +83,11 @@ Test fixtures (real apps installed with the local .tgz):
 - **Lazy heavy imports** — `esbuild`, `jsdom`, `sharp` are imported lazily to keep startup fast.
 - **Axios instance cache** — one Axios instance per base URL; `keepAlive: false` avoids max-listeners warnings.
 - **No bare `npm audit`** — always `npm run audit:all` so test fixtures are included.
+
+## Commits and changes
+
+- Commit messages follow Conventional Commits, `<type>(<scope>): <subject>`: imperative mood, lower-case start, no period. Types, scopes and examples are in `CONTRIBUTING.md` ("Commit Message Convention"). Which types produce a release (`feat`, `fix`, `perf`, `revert`, breaking changes) is under "Release Process" there.
+- Change only the code the task needs. Don't rework working patterns unless asked, and check what else uses the code you change.
 
 ## PR message format
 

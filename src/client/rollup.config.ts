@@ -47,7 +47,8 @@ export default defineConfig({
       fileName: 'client.css',
       sourceMap: true,
       sass,
-      silenceDeprecations: ['legacy-js-api'],
+      // Passed on to sass as is; the plugin's options type doesn't list sass's own options.
+      ...{ silenceDeprecations: ['legacy-js-api'] },
       outputStyle: 'compressed',
       // Better CSS optimization
       includePaths: ['node_modules'],
