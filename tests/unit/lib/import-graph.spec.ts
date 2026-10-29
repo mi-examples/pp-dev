@@ -21,7 +21,7 @@ beforeAll(async () => {
   const esbuild = await import('esbuild');
   const result = await esbuild.build({
     absWorkingDir: root,
-    entryPoints: ['src/index.ts', 'src/cli.ts', 'src/lib/pp-dev-config.ts'],
+    entryPoints: ['src/index.ts', 'src/cli.ts', 'src/plugin.ts', 'src/helpers.ts', 'src/lib/pp-dev-config.ts'],
     bundle: true,
     write: false,
     metafile: true,
@@ -94,5 +94,66 @@ describe('static import graph', () => {
 
   it('still finds static imports (guards the test itself)', () => {
     expect(staticPackages('src/cli.ts')).toContain('vite');
+  });
+});
+
+/** Every cycle of static imports among the files of `graph`, each as the files on it. */
+function findImportCycles(graph: Map<string, string[]>): string[][] {
+  const cycles: string[][] = [];
+  const state = new Map<string, 'visiting' | 'done'>();
+  const stack: string[] = [];
+
+  const visit = (file: string) => {
+    state.set(file, 'visiting');
+    stack.push(file);
+
+    for (const next of graph.get(file) ?? []) {
+      if (state.get(next) === 'visiting') {
+        cycles.push(stack.slice(stack.indexOf(next)));
+      } else if (!state.has(next)) {
+        visit(next);
+      }
+    }
+
+    stack.pop();
+    state.set(file, 'done');
+  };
+
+  for (const file of graph.keys()) {
+    if (!state.has(file)) {
+      visit(file);
+    }
+  }
+
+  return cycles;
+}
+
+/**
+ * The rollup build fails on an import cycle in src: two had crept in unnoticed while it dropped
+ * CIRCULAR_DEPENDENCY warnings. Type-only imports don't count, as in the build.
+ */
+describe('import cycles', () => {
+  it('has none among the files of the package entries', () => {
+    const graph = new Map(
+      Object.entries(metafile.inputs).map(([file, input]) => [
+        file,
+        input.imports
+          .filter((imported) => imported.kind === 'import-statement' && !imported.external)
+          .map((i) => i.path),
+      ]),
+    );
+
+    expect(findImportCycles(graph)).toEqual([]);
+  });
+
+  it('finds a cycle when there is one (guards the test itself)', () => {
+    const graph = new Map([
+      ['a.ts', ['b.ts']],
+      ['b.ts', ['c.ts']],
+      ['c.ts', ['a.ts']],
+      ['d.ts', ['a.ts']],
+    ]);
+
+    expect(findImportCycles(graph)).toEqual([['a.ts', 'b.ts', 'c.ts']]);
   });
 });
