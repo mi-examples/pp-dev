@@ -1,8 +1,11 @@
+import type { Socket } from 'node:net';
+import type createNextApp from 'next';
+import type loadNextConfig from 'next/dist/server/config.js';
 import * as path from 'path';
 import * as fs from 'fs';
 import { EventEmitter } from 'node:events';
-import { ServerOptions } from 'vite';
-import { ViteDevServer } from 'vite';
+import { type ServerOptions } from 'vite';
+import { type ViteDevServer } from 'vite';
 import { parse } from 'url';
 import { initRewriteResponse } from '../../lib/rewrite-response.middleware.js';
 import { initPPRedirect } from '../../lib/pp-redirect.middleware.js';
@@ -23,7 +26,7 @@ import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
 import internalServer from '../../lib/internal.middleware';
 import { safeNextImport } from '../../lib/next-import.js';
-import { ClientService } from '../../lib/client.service.js';
+import { type ClientService } from '../../lib/client.service.js';
 import { DistService } from '../../lib/dist.service.js';
 import { PPDevHotServer } from '../../lib/pp-ws-server.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
@@ -84,7 +87,7 @@ export function registerNextCommand(cli: CAC): void {
       // same value it is listened on.
       const { host: listenHost, port: listenPort } = resolveNextListenAddress(options.host, options.port);
 
-      let nextApp: ReturnType<typeof import('next').default> | null = null;
+      let nextApp: ReturnType<typeof createNextApp> | null = null;
       let httpServer: any = null;
       let hotServer: PPDevHotServer | null = null;
       /** The dev panel service on {@link hotServer}; disposed before it closes, to stop a sync's build. */
@@ -93,7 +96,7 @@ export function registerNextCommand(cli: CAC): void {
       let isRestarting = false;
 
       // Connections to the current HTTP server, so a restart or shutdown can end them.
-      const openSockets = new Set<import('node:net').Socket>();
+      const openSockets = new Set<Socket>();
 
       const logger = createLogger(options.logLevel);
 
@@ -171,7 +174,7 @@ export function registerNextCommand(cli: CAC): void {
 
           const importConfig = await import('next/dist/server/config.js');
 
-          const loadConfig: typeof import('next/dist/server/config.js').default =
+          const loadConfig: typeof loadNextConfig =
             (importConfig as any).default.default ||
             (importConfig as any)['module.exports'].default ||
             (importConfig as any).default;
@@ -279,7 +282,7 @@ export function registerNextCommand(cli: CAC): void {
 
             nextAppListeners.beforeCreate();
             nextApp = next(nextOptions);
-            await nextApp!.prepare();
+            await nextApp.prepare();
             nextAppListeners.afterCreate();
           };
 
@@ -457,9 +460,9 @@ export function registerNextCommand(cli: CAC): void {
           // Initialize pp-dev middlewares
           let mi: MiAPI | null = null;
           /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
-          let fullMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
+          const fullMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
           /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
-          let essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
+          const essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
 
           // Request inspector: register routes on the shared internalServer and add capture middleware
           if (inspectorEnabled !== false) {

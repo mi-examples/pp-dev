@@ -1,9 +1,9 @@
 import * as path from 'path';
-import { BuildOptions, InlineConfig } from 'vite';
+import { type BuildOptions, type InlineConfig } from 'vite';
 import { mergeConfig, build } from 'vite';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
-import { resolveBuildCliOverrides, BuildOverrideCLIOptions } from '../../lib/build-cli-overrides.js';
+import { resolveBuildCliOverrides, type BuildOverrideCLIOptions } from '../../lib/build-cli-overrides.js';
 import { cleanOptions } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
 import { type PPDevBuildOptions, type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';

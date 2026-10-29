@@ -1,3 +1,4 @@
+import type loadNextConfig from 'next/dist/server/config.js';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createLogger } from '../../lib/logger.js';
@@ -9,7 +10,7 @@ import {
   resolveBuildCliOverrides,
   applyDistZipOverride,
   applyVersionManifestOverride,
-  BuildOverrideCLIOptions,
+  type BuildOverrideCLIOptions,
 } from '../../lib/build-cli-overrides.js';
 import { writeBuildVersionManifest } from '../../lib/version-manifest.js';
 import { zipDirectoryToBuffer } from '../../lib/helpers/zip.helper.js';
@@ -70,7 +71,7 @@ export function registerNextBuildCommand(cli: CAC): void {
 
           const importConfig = await import('next/dist/server/config.js');
 
-          const loadConfig: typeof import('next/dist/server/config.js').default =
+          const loadConfig: typeof loadNextConfig =
             (importConfig as any).default.default ||
             (importConfig as any)['module.exports'].default ||
             (importConfig as any).default;

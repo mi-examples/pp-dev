@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { LogLevel } from 'vite';
+import { type LogLevel } from 'vite';
 import { createLogger } from '../lib/logger.js';
 import { colors } from '../lib/helpers/color.helper.js';
 import { ChangelogGenerator } from '../lib/changelog-generator.js';

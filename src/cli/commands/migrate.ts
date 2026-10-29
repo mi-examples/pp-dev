@@ -52,7 +52,7 @@ export function registerMigrateCommand(cli: CAC): void {
         logger.info(colors.blue(`Found config: ${path.relative(projectRoot, sourceFile)}`));
 
         // Load the config
-        const { getConfig, getPkg } = await import('../../config.js');
+        const { getPkg } = await import('../../config.js');
         const pkg = getPkg();
         let rawConfig: Record<string, unknown> = {};
 

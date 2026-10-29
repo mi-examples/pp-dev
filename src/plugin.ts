@@ -1,8 +1,8 @@
-import { IndexHtmlTransformResult, Plugin } from 'vite';
+import { type IndexHtmlTransformResult, type Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
 import { redirect, urlReplacer } from './lib/helpers/url.helper.js';
-import { ClientService } from './lib/client.service.js';
+import { type ClientService } from './lib/client.service.js';
 import { initProxyCache, invalidateProxyCache } from './lib/proxy-cache.middleware.js';
 import { DistService } from './lib/dist.service.js';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';

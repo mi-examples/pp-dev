@@ -1,4 +1,4 @@
-import { BuildOptions, LogLevel } from 'vite';
+import { type BuildOptions, type LogLevel } from 'vite';
 
 export interface PPDevBuildOptions extends BuildOptions {
   changelog?: boolean | string;

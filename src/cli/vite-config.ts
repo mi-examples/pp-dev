@@ -34,8 +34,9 @@ export async function loadCommandViteConfig(
   let config = await getViteConfig(opts.buildOverrides, { mode, root: envDir });
 
   if (configFromFile) {
-    const { plugins, ...fileConfig } = configFromFile.config;
+    const fileConfig = { ...configFromFile.config };
 
+    delete fileConfig.plugins;
     config = mergeConfig(config, fileConfig);
   }
 

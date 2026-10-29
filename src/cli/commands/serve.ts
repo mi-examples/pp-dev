@@ -1,9 +1,9 @@
 import * as path from 'path';
 import { performance } from 'node:perf_hooks';
-import { ServerOptions } from 'vite';
+import { type ServerOptions } from 'vite';
 import { VERSION } from '../../constants.js';
 import { bindShortcuts } from '../../shortcuts.js';
-import { mergeConfig, ViteDevServer } from 'vite';
+import { mergeConfig, type ViteDevServer } from 'vite';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
