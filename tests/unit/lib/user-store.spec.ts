@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getUserStorePath, keepTokenUsers, readStoredUsers, writeStoredUsers } from '../../../src/lib/user-store.js';
 import { UserRegistry } from '../../../src/lib/user-registry.js';
-import type { TokenCheck } from '../../../src/lib/user-routes.js';
+import type { TokenCheck } from '../../../src/lib/mi-identity.js';
 
 /** PP-4600: token users kept between dev server runs, in a file in the home directory. */
 
@@ -214,5 +214,66 @@ describe('keepTokenUsers', () => {
 
     expect(storedNames()).toEqual(['viewer']);
     expect(checkToken).not.toHaveBeenCalled();
+  });
+
+  // Two dev servers on one project and MI instance share the file, and the last one to write
+  // dropped the users the other had added.
+  it('keeps the users another dev server wrote to the same file', async () => {
+    await keep();
+
+    writeStoredUsers(file, [{ name: 'theirs', token: 'their-token' }], { project: '/work/app', miUrl: MI_URL });
+    users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+
+    expect(readStoredUsers(file)).toEqual([
+      { name: 'viewer', token: 'viewer-token' },
+      { name: 'theirs', token: 'their-token' },
+    ]);
+  });
+
+  it('does not merge back a user removed or renamed here', async () => {
+    writeStoredUsers(
+      file,
+      [
+        { name: 'gone', token: 'gone-token' },
+        { name: 'old-name', token: 'renamed-token' },
+      ],
+      { project: '/work/app', miUrl: MI_URL },
+    );
+    await keep();
+
+    users.remove('gone');
+    users.replace('old-name', { name: 'new-name', kind: 'token', token: 'renamed-token' });
+
+    expect(storedNames()).toEqual(['new-name']);
+  });
+
+  // Each start for another file (another project or MI instance) added a pair of registry
+  // listeners, and none was ever removed.
+  it('removes its registry listeners when it starts keeping another file', async () => {
+    let active = 0;
+    const track = <T extends (...args: never[]) => () => void>(subscribe: T) =>
+      ((listener: never) => {
+        const unsubscribe = subscribe(listener);
+
+        active += 1;
+
+        return () => {
+          active -= 1;
+          unsubscribe();
+        };
+      }) as T;
+
+    users.onChange = track(users.onChange.bind(users));
+    users.onRemove = track(users.onRemove.bind(users));
+
+    await keep();
+
+    const afterFirst = active;
+
+    await keepTokenUsers(users, { projectRoot: '/work/other-app', miUrl: MI_URL, checkToken, homeDir: home });
+    await keepTokenUsers(users, { projectRoot: '/work/app', miUrl: MI_URL, checkToken, homeDir: home });
+
+    expect(afterFirst).toBe(2);
+    expect(active).toBe(2);
   });
 });

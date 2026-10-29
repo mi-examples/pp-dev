@@ -214,7 +214,7 @@ section for the full feature description.
 
 | Field     | Type      | Default | Description                                                                                                  |
 |-----------|-----------|---------|--------------------------------------------------------------------------------------------------------------|
-| `persist` | `boolean` | `false` | Keep the users added with an API token between dev server runs, in `~/.pp-dev/users/` (readable by you only) |
+| `persist` | `boolean` | `false` | Keep the users added with an API token between dev server runs, in `~/.pp-dev/users/` (plain text, readable by you only; on Windows, by your profile's permissions) |
 
 See [Working as other users](#working-as-other-users).
 
@@ -593,7 +593,7 @@ Logging out on a user's host ends that user's MI session (or token) as it would 
 
 ### Keeping users between runs
 
-Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, readable by you only, outside the project so it never ends up in git or a build. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as *API token turned down by MI*.
+Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, outside the project so it never ends up in git or a build. The tokens are stored as plain text: on macOS and Linux the file is readable by you only (mode `0600`); Windows ignores file modes, so there it is as private as your user profile folder (by default readable by you, administrators and the system). Two dev servers on the same project and MI instance share the file: each keeps the users the other added. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as *API token turned down by MI*.
 
 ```typescript
 // pp-dev.config.ts

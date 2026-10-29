@@ -2,8 +2,13 @@
  * Keeps token users between dev server runs (PP-4600), when `users.persist` is on.
  *
  * The file lives in the home directory, `~/.pp-dev/users/<hash>.json`, one per project and MI
- * instance, readable by its owner only. Outside the project it can't end up in git or in a build.
- * Only token users are kept (name and API token); passwords and MI sessions are never written.
+ * instance. Outside the project it can't end up in git or in a build. Only token users are kept (name
+ * and API token, as plain text); passwords and MI sessions are never written. On macOS and Linux it is
+ * readable by its owner only (mode 0600); Windows ignores file modes, so there it is as private as the
+ * user profile folder it is in (by default: the user, administrators and the system).
+ *
+ * Two dev servers on one project and MI instance share the file: each write merges in the users the
+ * other one wrote, instead of replacing them.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -63,7 +68,7 @@ export function readStoredUsers(file: string): StoredUser[] {
   );
 }
 
-/** Writes `users` to `file`, readable by its owner only. */
+/** Writes `users` to `file`, readable by its owner only (where file modes apply: not on Windows). */
 export function writeStoredUsers(file: string, users: StoredUser[], meta: { project: string; miUrl: string }): void {
   const content: StoreFile = { version: STORE_VERSION, ...meta, users };
   const tmp = `${file}.${process.pid}.tmp`;
@@ -78,6 +83,19 @@ export function writeStoredUsers(file: string, users: StoredUser[], meta: { proj
 
 /** Registries already kept in a file, so a dev server restart in the same process doesn't do it twice. */
 const keptRegistries = new WeakMap<UserRegistry, string>();
+
+/**
+ * Removes the registry listeners a keeping set up. They used to stay: each start for another file
+ * (another project or MI instance, `users.persist` turned off and on again) added a pair more.
+ */
+const keepingListeners = new WeakMap<UserRegistry, () => void>();
+
+/** Stops keeping `users` in a file. */
+function stopKeeping(users: UserRegistry): void {
+  keptRegistries.delete(users);
+  keepingListeners.get(users)?.();
+  keepingListeners.delete(users);
+}
 
 /**
  * Restores the token users kept for this project and MI instance, then keeps the file in step with
@@ -96,6 +114,7 @@ export async function keepTokenUsers(
     return;
   }
 
+  stopKeeping(users);
   keptRegistries.set(users, file);
 
   const stored = readStoredUsers(file);
@@ -108,27 +127,40 @@ export async function keepTokenUsers(
   let changedWhileRestoring = users.list().some((user) => user.kind === 'token' && user.token);
   // Users removed while the stored tokens are checked stay removed: a DELETE wins over the file.
   const removedWhileRestoring = new Set<string>();
+  // Users removed here (or renamed away from), so the file's copy of them isn't merged back in.
+  const removedHere = new Set<string>();
 
+  // Another dev server on this project and MI instance writes the same file: its users are kept,
+  // merged in by name (this one's version of a user wins). Writing just this registry's users made
+  // the last server to write drop the users the other one had added.
   const save = () => {
     const tokenUsers = users
       .list()
       .filter((user) => user.kind === 'token' && user.token)
       .map((user) => ({ name: user.name, token: user.token! }));
+    const names = new Set(tokenUsers.map((user) => user.name));
+    const othersUsers = readStoredUsers(file).filter((user) => !names.has(user.name) && !removedHere.has(user.name));
 
     try {
-      writeStoredUsers(file, tokenUsers, meta);
+      writeStoredUsers(file, [...tokenUsers, ...othersUsers], meta);
     } catch (error) {
       logger.warn(colors.yellow(`Could not save the users to ${file}: ${String(error)}`));
     }
   };
 
-  users.onRemove((user) => {
-    if (restoring && keptRegistries.get(users) === file) {
+  const stopOnRemove = users.onRemove((user) => {
+    if (keptRegistries.get(users) !== file) {
+      return;
+    }
+
+    removedHere.add(user.name);
+
+    if (restoring) {
       removedWhileRestoring.add(user.name);
     }
   });
 
-  users.onChange(() => {
+  const stopOnChange = users.onChange(() => {
     if (keptRegistries.get(users) !== file) {
       return;
     }
@@ -140,6 +172,11 @@ export async function keepTokenUsers(
     }
 
     save();
+  });
+
+  keepingListeners.set(users, () => {
+    stopOnRemove();
+    stopOnChange();
   });
 
   try {
@@ -198,12 +235,12 @@ export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projec
 
   if (userRegistry.context !== context) {
     // Detach the old file first: dropping the old instance's users must not empty its store.
-    keptRegistries.delete(userRegistry);
+    stopKeeping(userRegistry);
     userRegistry.useContext(context);
   }
 
   if (!opts.persist) {
-    keptRegistries.delete(userRegistry);
+    stopKeeping(userRegistry);
 
     return;
   }
