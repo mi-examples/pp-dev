@@ -13,11 +13,11 @@ import { MiAPI } from './pp.middleware';
 import { SavedUser, UserRegistry, getUserNameFromHost, getUserOrigin, userRegistry } from './user-registry.js';
 import {
   SessionUserTracker,
-  createSessionCheck,
   withSessionCookie,
   withoutSessionCookie,
   withoutSessionSetCookie,
 } from './session-users.js';
+import { createSessionCheck } from './mi-identity.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;

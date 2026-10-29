@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { UserRegistry, getUserNameError, userRegistry } from './user-registry.js';
-import { checkUserToken, type TokenCheck } from './user-routes.js';
+import { checkUserToken, type TokenCheck } from './mi-identity.js';
 import type { MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';

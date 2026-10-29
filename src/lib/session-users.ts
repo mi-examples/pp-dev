@@ -4,10 +4,9 @@
  * about the session ending, from the responses MI sends to that host.
  */
 import type { IncomingMessage } from 'node:http';
-import { MiAPI } from './pp.middleware.js';
+import type { SessionCheck } from './mi-identity.js';
 import { SavedUser, UserRegistry, getUserNameFromHost } from './user-registry.js';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
-import { getTokenErrorInfo } from './helpers/token.helper.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
@@ -19,43 +18,6 @@ const MAX_SUPERSEDED = 20;
 
 /** Where MI sends a request whose session is gone. */
 const LOGIN_LOCATION_REGEXP = /(?:^|\/\/[^/]+)\/(?:login|auth\/saml\/login)(?:[/?#]|$)/i;
-
-/**
- * The MI user an MI session belongs to, or `undefined` for a guest (not logged in) session. Throws
- * when MI can't tell (down, timing out, a server error): that says nothing about the session.
- */
-export type SessionCheck = (session: string) => Promise<{ id: number; username: string } | undefined>;
-
-/** Asks MI who a session belongs to, the way the API token check does for tokens. */
-export function createSessionCheck(miAPI: MiAPI): SessionCheck {
-  return async (session) => {
-    try {
-      const response = await miAPI.get<{ user?: { user_id?: unknown; username?: unknown } }>(
-        '/data/page/index/auth/info',
-        {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          Cookie: `${MI_SESSION_COOKIE}=${session}`,
-        },
-        true,
-      );
-      const user = response.data?.user;
-
-      return typeof user?.user_id === 'number'
-        ? { id: user.user_id, username: typeof user.username === 'string' ? user.username : '' }
-        : undefined;
-    } catch (error) {
-      const { status } = getTokenErrorInfo(error);
-
-      // MI turned the session down; anything else is MI not answering.
-      if (status === 401 || status === 403 || status === 412) {
-        return undefined;
-      }
-
-      throw error;
-    }
-  };
-}
 
 /** The cookies of a `Cookie` header other than the MI session. */
 function getOtherCookies(cookieHeader: string | undefined): string[] {

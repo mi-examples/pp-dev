@@ -753,7 +753,17 @@ export class MiAPI {
     }
   }
 
-  async get<T extends any = any>(path: string, headers?: Record<string, any>, cleanup = false) {
+  /**
+   * @param options.quiet Don't log a refused request: for a check whose refusal is an answer (whose
+   *   token or session this is), where "API request failed" and the advice to refresh a token read as
+   *   if the developer's own token had failed.
+   */
+  async get<T extends any = any>(
+    path: string,
+    headers?: Record<string, any>,
+    cleanup = false,
+    options: { quiet?: boolean } = {},
+  ) {
     const normalizedHeaders = cleanup ? headers : Object.assign({}, this.#clearHeaders(this.#headers), headers);
 
     try {
@@ -765,10 +775,12 @@ export class MiAPI {
       if (getTokenErrorInfo(error).code !== 'UNKNOWN_ERROR') {
         const errorInfo = getTokenErrorInfo(error);
 
-        this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
+        if (!options.quiet) {
+          this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
 
-        // Log detailed error information with suggestions
-        logTokenError(this.logger, error, 'API Request');
+          // Log detailed error information with suggestions
+          logTokenError(this.logger, error, 'API Request');
+        }
 
         // A known code comes from the response's status, so the error always has a response here.
         error.tokenErrorInfo = errorInfo;
