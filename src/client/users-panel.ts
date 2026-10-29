@@ -4,6 +4,8 @@
  * works on its own host, `<name>.localhost:<port>`; see src/lib/user-registry.ts.
  */
 
+import { MAX_USER_NAME_LENGTH, USER_HOST_SUFFIX, USER_NAME_PATTERN, getUserNameError } from '../shared/user-names.js';
+
 interface PublicUser {
   name: string;
   kind: 'token' | 'session';
@@ -22,7 +24,8 @@ interface UsersResponse {
 const USERS_API = '/@api/users';
 const REFRESH_INTERVAL = 3000;
 
-const USER_HOST_REGEXP = /^([a-z](?:[a-z0-9-]*[a-z0-9])?)\.localhost$/;
+// The server's name rules (src/shared/user-names.ts), not a copy of them.
+const USER_HOST_REGEXP = new RegExp(`^(${USER_NAME_PATTERN})${USER_HOST_SUFFIX.replace('.', '\\.')}$`);
 
 /** Marks the user this tab works as, apart from the radio, which picks localhost's user. */
 const THIS_TAB_BADGE = '<span class="pp-dev-info__users-badge">this tab</span>';
@@ -242,7 +245,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
 
         if (user.kind === 'token' && user.name === editing) {
           return `<form class="pp-dev-info__users-row pp-dev-info__users-edit" data-user="${name}">
-            <input class="pp-dev-info__users-input pp-dev-info__users-edit-name" value="${name}" maxlength="32"
+            <input class="pp-dev-info__users-input pp-dev-info__users-edit-name" value="${name}" maxlength="${MAX_USER_NAME_LENGTH}" pattern="${USER_NAME_PATTERN}"
               autocomplete="off" spellcheck="false" aria-label="Name" data-focus-key="${name}:edit-name"
               title="Lowercase latin letters, digits and -, starting with a letter. The user opens on <name>.localhost." />
             <input class="pp-dev-info__users-input pp-dev-info__users-edit-token" type="password" autocomplete="off"
@@ -302,7 +305,11 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       $open.addEventListener('click', (ev) => {
         ev.preventDefault();
 
-        const target = $open.dataset.open!;
+        const target = $open.dataset.open;
+
+        if (!target) {
+          return;
+        }
 
         window.open($open.dataset.raw ? target : samePageOn(target), '_blank');
       });
@@ -318,7 +325,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $list.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(($edit) => {
       $edit.addEventListener('click', (ev) => {
         ev.preventDefault();
-        startEditing($edit.dataset.edit!);
+        startEditing($edit.dataset.edit ?? null);
       });
     });
 
@@ -331,10 +338,15 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $list.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')?.addEventListener('submit', async (ev) => {
       ev.preventDefault();
 
-      const name = editing!;
+      const name = editing;
       const $form = ev.currentTarget as HTMLFormElement;
-      const newName = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value.trim();
-      const token = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')!.value.trim();
+
+      if (!name) {
+        return;
+      }
+
+      const newName = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')?.value.trim() ?? '';
+      const token = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')?.value.trim() ?? '';
       const response = await request('PATCH', `${USERS_API}/${encodeURIComponent(name)}`, {
         name: newName,
         ...(token ? { token } : {}),
@@ -362,7 +374,9 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       $remove.addEventListener('click', async (ev) => {
         ev.preventDefault();
 
-        if (await request('DELETE', `${USERS_API}/${encodeURIComponent($remove.dataset.remove!)}`)) {
+        const name = $remove.dataset.remove;
+
+        if (name && (await request('DELETE', `${USERS_API}/${encodeURIComponent(name)}`))) {
           await refresh();
         }
       });
@@ -456,13 +470,27 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       return;
     }
 
-    const $name = $popover.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input')!;
-    const $token = $popover.querySelector<HTMLInputElement>('.pp-dev-info__users-token')!;
-    const $submit = $popover.querySelector<HTMLButtonElement>('.pp-dev-info__users-submit')!;
-    const body =
-      addKind === 'token'
-        ? { name: $name.value.trim(), token: $token.value }
-        : { name: $name.value.trim(), kind: 'session' };
+    const $name = $popover.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input');
+    const $token = $popover.querySelector<HTMLInputElement>('.pp-dev-info__users-token');
+    const $submit = $popover.querySelector<HTMLButtonElement>('.pp-dev-info__users-submit');
+
+    if (!$name || !$token || !$submit) {
+      return;
+    }
+
+    const name = $name.value.trim();
+    const nameError = getUserNameError(name);
+
+    if (nameError) {
+      setError(nameError);
+
+      return;
+    }
+
+    const body = addKind === 'token' ? { name, token: $token.value } : { name, kind: 'session' };
+    // A session user logs in on a tab of its own. Opened here, while the click still counts as the
+    // user's: opened after the request, Safari and Chrome blocked it as a popup.
+    const loginTab = addKind === 'session' ? window.open('', '_blank') : null;
 
     $submit.disabled = true;
 
@@ -471,6 +499,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $submit.disabled = false;
 
     if (!response) {
+      loginTab?.close();
+
       return;
     }
 
@@ -479,8 +509,10 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     $name.value = '';
     $token.value = '';
 
-    if (user.kind === 'session' && user.loginUrl) {
-      window.open(user.loginUrl, '_blank');
+    if (user.kind === 'session' && user.loginUrl && loginTab) {
+      loginTab.location.href = user.loginUrl;
+    } else {
+      loginTab?.close();
     }
 
     await refresh();
@@ -507,8 +539,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
           <button type="button" class="pp-dev-info__theme-btn pp-dev-info__users-kind" data-kind="token">API token</button>
           <button type="button" class="pp-dev-info__theme-btn pp-dev-info__users-kind" data-kind="session">Username + password</button>
         </div>
-        <input class="pp-dev-info__users-input pp-dev-info__users-name-input" placeholder="Name, e.g. viewer" maxlength="32"
-          autocomplete="off" spellcheck="false" pattern="[a-z]([a-z0-9-]*[a-z0-9])?"
+        <input class="pp-dev-info__users-input pp-dev-info__users-name-input" placeholder="Name, e.g. viewer" maxlength="${MAX_USER_NAME_LENGTH}"
+          autocomplete="off" spellcheck="false" pattern="${USER_NAME_PATTERN}"
           title="Lowercase latin letters, digits and -, starting with a letter. The user opens on <name>.localhost." />
         <input class="pp-dev-info__users-input pp-dev-info__users-token" type="password" placeholder="API token" autocomplete="off" />
         <button type="submit" class="pp-dev-info__vars-btn pp-dev-info__users-submit">Add user</button>
@@ -526,7 +558,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       });
     });
 
-    $popover.querySelector<HTMLFormElement>('.pp-dev-info__users-add')!.addEventListener('submit', (ev) => {
+    $popover.querySelector<HTMLFormElement>('.pp-dev-info__users-add')?.addEventListener('submit', (ev) => {
       ev.preventDefault();
       submit();
     });

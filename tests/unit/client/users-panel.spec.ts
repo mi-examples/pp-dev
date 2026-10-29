@@ -60,6 +60,7 @@ describe('initUsersPanel', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   async function openPopover() {
@@ -203,8 +204,11 @@ describe('initUsersPanel', () => {
     );
   });
 
-  it('adds a session user and opens its login page', async () => {
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+  // The login page opened after the request had answered: no longer from the click, so Safari and
+  // Chrome blocked it as a popup. The tab opens on the click and goes to the page once it is known.
+  it('adds a session user and opens its login page from the click itself', async () => {
+    const loginTab = { location: { href: '' }, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(loginTab as unknown as Window);
     const $panel = await openPopover();
 
     $panel.querySelector<HTMLButtonElement>('[data-kind="session"]')!.click();
@@ -215,6 +219,10 @@ describe('initUsersPanel', () => {
       json(201, { user: { name: 'qa2', kind: 'session', origin: 'o', loginUrl: 'http://qa2.localhost:3000/login' } }),
     );
     $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-add')!.requestSubmit();
+
+    // Before anything was awaited.
+    expect(openSpy).toHaveBeenCalledWith('', '_blank');
+
     await flush();
     await flush();
 
@@ -222,12 +230,75 @@ describe('initUsersPanel', () => {
       '/@api/users',
       expect.objectContaining({ body: JSON.stringify({ name: 'qa2', kind: 'session' }) }),
     );
-    expect(openSpy).toHaveBeenCalledWith('http://qa2.localhost:3000/login', '_blank');
+    expect(loginTab.location.href).toBe('http://qa2.localhost:3000/login');
+    expect(loginTab.close).not.toHaveBeenCalled();
+  });
+
+  it('closes the login tab again when the session user could not be added', async () => {
+    const loginTab = { location: { href: '' }, close: vi.fn() };
+
+    vi.spyOn(window, 'open').mockReturnValue(loginTab as unknown as Window);
+
+    const $panel = await openPopover();
+
+    $panel.querySelector<HTMLButtonElement>('[data-kind="session"]')!.click();
+    $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input')!.value = 'viewer';
+    fetchMock.mockResolvedValueOnce(json(409, { error: 'A user named "viewer" already exists' }));
+    $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-add')!.requestSubmit();
+    await flush();
+    await flush();
+
+    expect(loginTab.close).toHaveBeenCalled();
+  });
+
+  it('lets the browser refuse a name its pattern rejects, sending and opening nothing', async () => {
+    const openSpy = vi.spyOn(window, 'open');
+    const $panel = await openPopover();
+    const $input = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input')!;
+
+    $panel.querySelector<HTMLButtonElement>('[data-kind="session"]')!.click();
+    $input.value = 'Bad-';
+    fetchMock.mockClear();
+    $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-add')!.requestSubmit();
+    await flush();
+
+    expect($input.validity.patternMismatch).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('checks the name with the server’s rules before sending it, opening nothing', async () => {
+    const openSpy = vi.spyOn(window, 'open');
+    const $panel = await openPopover();
+
+    $panel.querySelector<HTMLButtonElement>('[data-kind="session"]')!.click();
+    // Longer than allowed: `maxlength` only stops typing, not a value set like this one.
+    $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input')!.value = 'a'.repeat(33);
+    fetchMock.mockClear();
+    $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-add')!.requestSubmit();
+    await flush();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    expect($panel.querySelector<HTMLElement>('.pp-dev-info__users-error')!.textContent).toContain('at most 32');
+  });
+
+  // The rules were copied by hand into the panel, and its `pattern` didn't compile where browsers
+  // compile it (with the `v` flag), so they ignored it.
+  it('gives the name input a pattern browsers accept, of the same rules as the server', async () => {
+    const $panel = await openPopover();
+    const $input = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input')!;
+    const pattern = new RegExp(`^(?:${$input.pattern})$`, 'v');
+
+    expect($input.maxLength).toBe(32);
+    expect(['viewer', 'qa-2', 'a'].every((name) => pattern.test(name))).toBe(true);
+    expect(['Viewer', '2qa', 'qa-', 'q_a'].some((name) => pattern.test(name))).toBe(false);
   });
 
   it("shows the API's error", async () => {
     const $panel = await openPopover();
 
+    $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-name-input')!.value = 'viewer';
     fetchMock.mockResolvedValueOnce(json(409, { error: 'A user named "viewer" already exists' }));
     $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-add')!.requestSubmit();
     await flush();
