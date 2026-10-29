@@ -93,6 +93,9 @@ export function respondToProxyError(
 /** MI's login page, where the token login form is added. */
 const LOGIN_PAGE_REGEXP = /^\/login(?:\/|$)/i;
 
+/** MI's SAML login, which the proxied pages point at `/login` instead. */
+const SAML_LOGIN_PATH = '/auth/saml/login';
+
 /** `value` as a JavaScript string literal that can sit in an inline `<script>` (no `</script>` in it). */
 function scriptString(value: string): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
@@ -625,8 +628,16 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         delete serverRes.headers['expires'];
         delete serverRes.headers['pragma'];
 
+        // The same rewrite as the buffered one below, minus the scripts it adds to pages.
         const rewriteUrls = (data: Buffer, encoding: BufferEncoding) =>
-          Buffer.from(urlReplacer(host, req.headers.host ?? '', data.toString(encoding)), encoding);
+          Buffer.from(
+            urlPathReplacer(
+              SAML_LOGIN_PATH,
+              '/login',
+              urlReplacer(host, req.headers.host ?? '', data.toString(encoding)),
+            ),
+            encoding,
+          );
 
         if (
           serverRes.headers['content-type']?.includes('text/event-stream') ||
@@ -639,6 +650,12 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         }
 
         const handling = getResponseHandling(serverRes.headers);
+
+        if (handling === 'stream') {
+          // Rewriting drops the Content-Length, by which the proxy cache in front tells a body too
+          // large to keep: without it, the cache held the first 10 MB before sending any on.
+          serverRes.headers['x-accel-buffering'] = 'no';
+        }
 
         if (handling !== 'buffer') {
           return streamResponseInterceptor(handling === 'stream' ? rewriteUrls : undefined)(serverRes, req, res);
@@ -721,7 +738,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
             const reqHost = req.headers.host ?? '';
 
             // manipulate response and return the result
-            return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
+            return urlPathReplacer(SAML_LOGIN_PATH, '/login', urlReplacer(host, reqHost, response));
           }
         });
 

@@ -149,7 +149,8 @@ describe('proxy-pass middleware — big and binary MI responses', () => {
   });
 
   it('rewrites a large text response as it arrives, before MI has sent all of it', async () => {
-    const firstLine = `{"url":"${upstreamOrigin}/home"}\n`;
+    // With the SAML login pointed at /login, as the buffered rewrite does.
+    const firstLine = `{"url":"${upstreamOrigin}/home","login":"/auth/saml/login"}\n`;
     const total = 10 * MB + 1;
     let finish!: () => void;
     const finished = new Promise<void>((resolve) => (finish = resolve));
@@ -165,7 +166,7 @@ describe('proxy-pass middleware — big and binary MI responses', () => {
     const response = get('/big.json', firstChunk);
 
     expect((await within(first, 3000, 'no data before the upstream ended')).toString()).toBe(
-      '{"url":"http://localhost:3000/home"}\n',
+      '{"url":"http://localhost:3000/home","login":"/login"}\n',
     );
     finish();
 
@@ -173,7 +174,9 @@ describe('proxy-pass middleware — big and binary MI responses', () => {
 
     // Rewritten, so no longer the length MI announced.
     expect(res.headers['content-length']).toBeUndefined();
-    expect(body.length).toBe(total - upstreamOrigin.length + 'http://localhost:3000'.length);
+    expect(body.length).toBe(
+      total - upstreamOrigin.length + 'http://localhost:3000'.length - '/auth/saml/login'.length + '/login'.length,
+    );
   });
 
   it('still adds the return-from-login script to a large page', async () => {
