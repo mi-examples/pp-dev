@@ -47,6 +47,7 @@ describe('DistService — Vite in-memory sync archive', () => {
   it('zips the build directory even when no persistent ZIP is configured', async () => {
     const service = new DistService('test-app', {
       backupFolder: backupDir,
+      metaDir: path.join(rootDir, '.pp-dev-meta'),
       buildInputFolder: buildDir,
     });
     const buffer = await service.buildNewAssets();

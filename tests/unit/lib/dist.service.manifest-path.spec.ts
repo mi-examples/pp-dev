@@ -50,7 +50,10 @@ describe('DistService VERSION manifest paths', () => {
   it('allows parent segments that normalize inside the backup root', async () => {
     const content = 'safe content';
     const backup = await createBackup({ 'nested/../safe.txt': sha256(content) }, { 'safe.txt': content });
-    const analysis = await new DistService('test-app', { backupFolder: backupDir }).analyzeBackup(backup);
+    const analysis = await new DistService('test-app', {
+      backupFolder: backupDir,
+      metaDir: path.join(backupDir, '.pp-dev-meta'),
+    }).analyzeBackup(backup);
 
     expect(analysis.versionManifestHashMismatches).toEqual([]);
     expect(analysis.unknownFiles).toEqual([]);
@@ -65,7 +68,10 @@ describe('DistService VERSION manifest paths', () => {
 
     try {
       const backup = await createBackup({ [`../../${outsideFileName}`]: sha256(content) }, {});
-      const service = new DistService('test-app', { backupFolder: backupDir });
+      const service = new DistService('test-app', {
+        backupFolder: backupDir,
+        metaDir: path.join(backupDir, '.pp-dev-meta'),
+      });
 
       await expect(service.analyzeBackup(backup)).rejects.toThrow(/outside.*backup root/i);
     } finally {

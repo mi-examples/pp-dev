@@ -52,6 +52,11 @@ export interface SyncOptions {
   maxBackups?: number | false;
   /** How long a sync's build may run before it is stopped. @default DEFAULT_BUILD_TIMEOUT_MS */
   buildTimeoutMs?: number;
+  /**
+   * Folder of the sync meta file. @default `.pp-dev-meta` next to the installed package, in the
+   * project's `node_modules`. Run from the repository (tests), that default is outside the checkout.
+   */
+  metaDir?: string;
 }
 
 /** `PK\x03\x04`: how a ZIP file starts. */
@@ -150,9 +155,8 @@ export interface BackupAnalysis {
   versionManifestHashMismatches: VersionManifestHashMismatch[];
 }
 
-const metaDirName = '.pp-dev-meta';
-const metaDirPath = path.resolve(node_modules_path, metaDirName);
-const metaFilePath = path.resolve(metaDirPath, 'sync-service.meta.json');
+const defaultMetaDir = path.resolve(node_modules_path, '.pp-dev-meta');
+const metaFileName = 'sync-service.meta.json';
 const UNKNOWN_FILE_PLACEHOLDER_HASH = '__NOT_IN_VERSION_FILE__';
 const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
 
@@ -173,6 +177,7 @@ export class DistService {
   private readonly nextBuild?: NextBuildOptions;
   private readonly maxBackups: number;
   private readonly buildTimeoutMs: number;
+  private readonly metaDir: string;
   /** Aborted by {@link stopBuilds}, for good. */
   private readonly builds = new AbortController();
   /** Settles once the sync meta file is read; never rejects (see loadMeta). */
@@ -195,6 +200,7 @@ export class DistService {
       nextBuild,
       maxBackups = DEFAULT_MAX_BACKUPS,
       buildTimeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
+      metaDir = defaultMetaDir,
     } = syncOptions || {};
 
     this.root = root;
@@ -213,6 +219,7 @@ export class DistService {
     this.maxBackups =
       typeof maxBackups === 'number' && Number.isInteger(maxBackups) && maxBackups > 0 ? maxBackups : Infinity;
     this.buildTimeoutMs = buildTimeoutMs;
+    this.metaDir = path.resolve(root, metaDir);
 
     this.logger = createLogger();
 
@@ -232,7 +239,7 @@ export class DistService {
 
   async checkMeta() {
     // Recursive: a backups folder such as `.pp-dev/backups` may not have its parent yet.
-    await fs.mkdir(metaDirPath, { recursive: true });
+    await fs.mkdir(this.metaDir, { recursive: true });
     await fs.mkdir(this.backupFolder, { recursive: true });
   }
 
@@ -266,7 +273,7 @@ export class DistService {
     await this.checkMeta();
 
     return await fs
-      .readFile(metaFilePath, {
+      .readFile(path.join(this.metaDir, metaFileName), {
         encoding: 'utf-8',
       })
       .catch(() => '{}');
@@ -275,7 +282,7 @@ export class DistService {
   async writeMetaFile(meta: SyncMeta) {
     await this.checkMeta();
 
-    return await fs.writeFile(metaFilePath, JSON.stringify(meta, null, 2), {
+    return await fs.writeFile(path.join(this.metaDir, metaFileName), JSON.stringify(meta, null, 2), {
       encoding: 'utf-8',
     });
   }
