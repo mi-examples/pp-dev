@@ -34,6 +34,9 @@ describe('getResponseHandling', () => {
     [{ 'content-type': 'image/svg+xml' }, 'buffer'],
     [{ 'content-type': 'application/json', 'content-length': String(MB) }, 'buffer'],
     [{ 'content-type': 'application/json', 'content-length': String(10 * MB) }, 'stream'],
+    // A page may get the return-from-login script or the token login form: rewritten as a whole.
+    [{ 'content-type': 'text/html; charset=utf-8', 'content-length': String(10 * MB) }, 'buffer'],
+    [{ 'content-type': 'application/xhtml+xml', 'content-length': String(10 * MB) }, 'buffer'],
     // Compressed text has to be decoded to be rewritten, which the stream doesn't do.
     [{ 'content-type': 'application/json', 'content-length': String(10 * MB), 'content-encoding': 'gzip' }, 'buffer'],
     [{ 'content-length': String(10 * MB) }, 'buffer'],
@@ -171,6 +174,19 @@ describe('proxy-pass middleware — big and binary MI responses', () => {
     // Rewritten, so no longer the length MI announced.
     expect(res.headers['content-length']).toBeUndefined();
     expect(body.length).toBe(total - upstreamOrigin.length + 'http://localhost:3000'.length);
+  });
+
+  it('still adds the return-from-login script to a large page', async () => {
+    const page = `<html><body>${'x'.repeat(10 * MB)}</body></html>`;
+
+    handle = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(page) });
+      res.end(page);
+    };
+
+    const { body } = await get('/home?proxyRedirect=%2Fp%2Fpage');
+
+    expect(body.toString()).toContain('pp-dev::redirectCount');
   });
 
   it('still rewrites the MI address in SVG and other text', async () => {

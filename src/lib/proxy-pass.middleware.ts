@@ -183,6 +183,20 @@ function isTextualContentType(contentType: string): boolean {
  */
 const MAX_PENDING_STREAM_CHUNK = 64 * 1024;
 
+/** What a URL origin as `urlReplacer` matches it is made of: `!!https:\/\/host:port`. */
+const ORIGIN_CHAR_REGEXP = /[\w.:/\\!-]/;
+
+/** Index of the last character in `text` that can't be part of a URL origin, or -1. */
+function lastNonOriginCharIndex(text: string): number {
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    if (!ORIGIN_CHAR_REGEXP.test(text[index])) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 /**
  * Streamed bodies are only rewritten when they are plain text we can decode: a
  * `content-encoding` means the bytes are compressed, and a non-textual `content-type` (the
@@ -200,6 +214,13 @@ function isRewritableStream(headers: IncomingMessage['headers']): boolean {
   return typeof contentType === 'string' && isTextualContentType(contentType);
 }
 
+/** An HTML page: the buffered rewrite adds scripts to some of them (the return from MI's login, the token login form). */
+function isHtmlContentType(contentType: string | string[] | undefined): boolean {
+  const mediaType = typeof contentType === 'string' ? contentType.split(';', 1)[0].trim().toLowerCase() : '';
+
+  return mediaType === 'text/html' || mediaType === 'application/xhtml+xml';
+}
+
 /** From this size on, a text response is rewritten as it arrives instead of as a whole. */
 const MAX_BUFFERED_BODY_SIZE = 10 * 1024 * 1024;
 
@@ -209,7 +230,8 @@ const MAX_BUFFERED_BODY_SIZE = 10 * 1024 * 1024;
  *
  * - `pipe`: a binary file (a declared content type that isn't text, JSON, XML or script), untouched.
  *   It went through the text rewrite too, which corrupted one `file-type` didn't recognise.
- * - `stream`: uncompressed text of at least {@link MAX_BUFFERED_BODY_SIZE}, rewritten as it arrives.
+ * - `stream`: uncompressed text other than HTML, of at least {@link MAX_BUFFERED_BODY_SIZE}, rewritten
+ *   as it arrives.
  * - `buffer`: everything else, rewritten as a whole: MI's pages get scripts added, and compressed text
  *   has to be decoded first.
  */
@@ -222,7 +244,10 @@ export function getResponseHandling(headers: IncomingMessage['headers']): 'pipe'
 
   const contentLength = Number(headers['content-length']);
 
-  return Number.isFinite(contentLength) && contentLength >= MAX_BUFFERED_BODY_SIZE && isRewritableStream(headers)
+  return Number.isFinite(contentLength) &&
+    contentLength >= MAX_BUFFERED_BODY_SIZE &&
+    isRewritableStream(headers) &&
+    !isHtmlContentType(contentType)
     ? 'stream'
     : 'buffer';
 }
@@ -300,8 +325,12 @@ export function streamResponseInterceptor(interceptor?: (data: Buffer, encoding:
       }
 
       if (pending.length >= MAX_PENDING_STREAM_CHUNK) {
-        flush(pending);
-        pending = '';
+        // Cut after the last character no URL origin can contain, so one split by the cut (in
+        // minified JSON or JS, with no line breaks) is still rewritten whole with what follows.
+        const cut = lastNonOriginCharIndex(pending) + 1 || pending.length;
+
+        flush(pending.slice(0, cut));
+        pending = pending.slice(cut);
       }
     });
 
