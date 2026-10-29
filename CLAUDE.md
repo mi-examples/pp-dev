@@ -84,6 +84,11 @@ Test fixtures (real apps installed with the local .tgz):
 - **Axios instance cache** — one Axios instance per base URL; `keepAlive: false` avoids max-listeners warnings.
 - **No bare `npm audit`** — always `npm run audit:all` so test fixtures are included.
 
+## Commits and changes
+
+- Commit messages follow Conventional Commits, `<type>(<scope>): <subject>`: imperative mood, lower-case start, no period. Types, scopes and examples are in `CONTRIBUTING.md` ("Commit Message Convention"). Which types produce a release (`feat`, `fix`, `perf`, `revert`, breaking changes) is under "Release Process" there.
+- Change only the code the task needs. Don't rework working patterns unless asked, and check what else uses the code you change.
+
 ## PR message format
 
 See `.cursor/rules/pr-message-format.mdc`. Use emojis: 🚀 features, 🔧 fixes, 🔐 security, 🧪 tests, 🧹 chore.

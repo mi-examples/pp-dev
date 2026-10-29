@@ -1,110 +1,82 @@
 # pp-dev Testing Guide
 
-This document describes the comprehensive testing setup for the pp-dev package.
+How the pp-dev tests are organized and how to run them.
 
 ## Test Architecture
 
-The testing suite is organized into three layers:
-
 ### 1. Unit Tests (`tests/unit/`)
 
-Unit tests verify isolated functions and modules without external dependencies.
-
-```
-tests/unit/
-├── config/
-│   ├── config.loader.spec.ts      # Config file loading & caching
-│   └── config.validation.spec.ts  # Config file name patterns
-├── plugin/
-│   └── plugin.normalize.spec.ts   # normalizeVitePPDevConfig function
-├── lib/
-│   ├── url.helper.spec.ts         # URL replacement utilities
-│   └── color.helper.spec.ts       # Terminal color utilities
-└── helpers/
-    └── formatting.spec.ts         # Template literal helpers
-```
-
-**Run unit tests:**
+Isolated functions and modules: `api/`, `client/` (dev panel, under jsdom), `config/`, `helpers/`, `lib/`, `mock-mi/`, `plugin/`.
 
 ```bash
 npm run test:unit           # Run once
 npm run test:unit:watch     # Watch mode
-npm run test:unit:coverage  # With coverage report
+npm run test:unit:coverage  # With coverage report (coverage/unit/)
 ```
 
 ### 2. Integration Tests (`tests/integration/`)
 
-Integration tests verify middleware and server components working together.
-
-```
-tests/integration/
-└── middleware/
-    ├── pp-redirect.spec.ts       # PP redirect middleware
-    ├── proxy-cache.spec.ts       # Proxy cache middleware
-    └── rewrite-response.spec.ts  # Response rewriting middleware
-```
-
-**Run integration tests:**
+Middleware and servers working together over real HTTP and WebSocket connections (`tests/integration/middleware/`). They run in forked processes.
 
 ```bash
 npm run test:integration        # Run once
 npm run test:integration:watch  # Watch mode
 ```
 
-### 3. E2E Tests (`e2e/`)
+### 3. Server lifecycle E2E (`tests/e2e/`)
 
-End-to-end tests using Playwright verify complete user workflows.
-
-```
-e2e/
-├── server.spec.ts              # Basic server functionality
-├── config.spec.ts              # Config file watcher
-├── toolbar/
-│   ├── toolbar.visibility.spec.ts  # Toolbar display
-│   ├── toolbar.minimize.spec.ts    # Minimize functionality
-│   ├── toolbar.sync.spec.ts        # Sync button
-│   └── toolbar.popups.spec.ts      # Popup notifications
-└── config-watcher/
-    ├── watcher.reload.spec.ts      # Config change detection
-    └── watcher.debounce.spec.ts    # Debounce behavior
-```
-
-**Run E2E tests:**
+Vitest starts the `pp-dev` and `pp-dev next` dev servers of the test fixtures as child processes and checks startup, restarts and shutdown. The fixtures must have the current package installed: run `npm run reinstall:all` after changing `src/`.
 
 ```bash
-npm run test:e2e     # Run all E2E tests via Docker
-npm run test:e2e:ui  # Run with Playwright UI
+npm run test:e2e
 ```
 
-## Running All Tests
+### 4. Browser E2E (`e2e/`)
+
+Playwright tests of the dev panel, config watcher and users. `scripts/run-playwright-e2e.ts` starts a mock MI server (`tests/mock-mi/`), starts a dev server for each fixture and runs Playwright against it.
 
 ```bash
-npm run test:all  # Runs unit, integration, and E2E tests
+npm run test:e2e:browser  # All fixtures, against the recorded mock MI
+npm run test:e2e:ui       # Playwright UI
 ```
+
+Environment variables of the runner:
+
+- `PP_DEV_E2E_FIXTURES`: comma-separated fixtures to run (`commonjs`, `nextjs`, `nextjs-cjs`; default: all).
+- `PP_DEV_E2E_MOCK_MODE`: `replay` (default) serves the recorded cassettes; `record` proxies a real MI at `REAL_MI_URL` and records them.
+- `PP_DEV_E2E_CASSETTE`: the cassette to use (default `startup`).
+- `PP_DEV_E2E_COMMONJS_PORT`, `PP_DEV_E2E_NEXTJS_PORT`, `PP_DEV_E2E_NEXTJS_CJS_PORT`: dev server ports (3105, 3106, 3107).
+
+The specs read `TEST_TYPE` (`dev-commonjs`, `dev-nextjs`, `dev-nextjs-cjs`) and `BASE_URL`, which the runner sets.
+
+Record new cassettes from a real MI with `npm run record:mi`.
+
+## Running Tests
+
+```bash
+npm run test      # Same as test:all
+npm run test:all  # Unit and integration tests (not the E2E suites)
+```
+
+CI also runs `test:e2e` and `test:e2e:browser`.
 
 ## Test Configuration Files
 
-| File                           | Purpose                        |
-| ------------------------------ | ------------------------------ |
-| `vitest.config.ts`             | Unit test configuration        |
-| `vitest.integration.config.ts` | Integration test configuration |
-| `playwright.config.ts`         | E2E test configuration         |
-| `tests/tsconfig.json`          | TypeScript config for tests    |
-| `tests/setup.ts`               | Global test setup              |
-
-## Test Environment Variables
-
-For E2E tests:
-
-- `TEST_TYPE` - Type of test (dev-commonjs, dev-nextjs, dev-nextjs-cjs, config)
-- `BASE_URL` - Base URL for the test server
+| File                           | Purpose                             |
+| ------------------------------ | ----------------------------------- |
+| `vitest.config.ts`             | Unit tests                          |
+| `vitest.integration.config.ts` | Integration tests                   |
+| `vitest.e2e.config.ts`         | Server lifecycle E2E (`tests/e2e/`) |
+| `playwright.config.ts`         | Browser E2E (`e2e/`)                |
+| `tests/tsconfig.json`          | TypeScript config for tests         |
+| `tests/setup.ts`               | Global unit test setup              |
 
 ## Writing Tests
 
 ### Unit Test Example
 
 ```typescript
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 describe('MyFunction', () => {
   it('should do something', () => {
@@ -117,7 +89,7 @@ describe('MyFunction', () => {
 ### Integration Test Example
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it } from 'vitest';
 import { initPPRedirect } from '../../../src/lib/pp-redirect.middleware.js';
 
 describe('PP Redirect Middleware', () => {
@@ -139,54 +111,28 @@ test('should display toolbar', async ({ page, baseURL }) => {
 });
 ```
 
-## Coverage Reports
+## Reports
 
-Coverage reports are generated in:
-
-- `coverage/unit/` - Unit test coverage
-- `coverage/integration/` - Integration test coverage
-- `playwright-report/` - E2E test reports
-
-## Docker Testing
-
-E2E tests run in Docker containers for isolation:
-
-```bash
-# Build test image
-docker build -f Dockerfile -t pp-dev-tests .
-
-# Run specific test type
-docker run --rm -p 3000:3000 pp-dev-tests dev-commonjs
-```
-
-See `tests/README.md` for more details on Docker testing.
+- `coverage/unit/`: unit test coverage
+- `coverage/integration/`: integration test coverage
+- `playwright-report/`: browser E2E reports
 
 ## Debugging Tests
-
-### Unit/Integration Tests
 
 ```bash
 npm run test:unit -- --reporter=verbose
 npm run test:integration -- --reporter=verbose
-```
-
-### E2E Tests
-
-```bash
-npx playwright test --debug
-npx playwright test --ui
+npm run test:e2e:browser -- --debug
 ```
 
 ## Test Fixtures
 
-Test fixtures and mock data are located in:
+Real apps that install the local `.tgz` of the package:
 
-- `tests/test-commonjs/` - CommonJS/Vite test project
-- `tests/test-nextjs/` - Next.js ESM test project
-- `tests/test-nextjs-cjs/` - Next.js CJS test project
+- `tests/test-commonjs/`: CommonJS Vite app
+- `tests/test-nextjs/`: Next.js ESM app
+- `tests/test-nextjs-cjs/`: Next.js CJS app
 
 ## Known Issues
 
-1. **Config normalization spread bug**: The `normalizeVitePPDevConfig` function has a bug where `...config` at the end overwrites normalized values. Tests document this behavior with comments.
-
-2. **Next.js toolbar tests**: Toolbar E2E tests are skipped for Next.js as the toolbar injection works differently.
+- **Next.js toolbar tests**: the toolbar E2E tests are skipped for the Next.js fixtures, where the panel is injected differently.
