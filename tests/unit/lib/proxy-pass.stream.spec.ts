@@ -279,4 +279,22 @@ describe('streamResponseInterceptor', () => {
 
     proxyRes.end();
   });
+
+  // Minified JSON has no line breaks: the forced flush cut an MI origin in two, and neither half
+  // matched, so the link kept pointing at MI.
+  it('rewrites an origin that a forced flush of a line with no breaks would cut in two', async () => {
+    const proxyRes = makeProxyRes({ 'content-type': 'application/json' });
+    const res = makeRes();
+    const prefix = `{"pad":"${'a'.repeat(64 * 1024)}","url":"`;
+    const first = `${prefix}https://${upstreamHost.slice(0, 5)}`;
+    const second = `${upstreamHost.slice(5)}/page"}`;
+
+    await runStream(proxyRes, res, (stream) => {
+      stream.write(first);
+      stream.write(second);
+      stream.end();
+    });
+
+    expect(res.body).toBe(`${prefix}https://${localHost}/page"}`);
+  });
 });

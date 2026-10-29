@@ -18,7 +18,6 @@ export const TEMPLATE_PART_DATE = 'date';
 const DIRNAME = path.dirname((typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url));
 
 const pluginPath = path.resolve(DIRNAME, '..', '..');
-const node_modules_path = path.resolve(pluginPath, '..', '..');
 
 /**
  * When set, {@link DistService.buildNewAssets} builds with `next build` and zips the
@@ -53,8 +52,8 @@ export interface SyncOptions {
   /** How long a sync's build may run before it is stopped. @default DEFAULT_BUILD_TIMEOUT_MS */
   buildTimeoutMs?: number;
   /**
-   * Folder of the sync meta file. @default `.pp-dev-meta` next to the installed package, in the
-   * project's `node_modules`. Run from the repository (tests), that default is outside the checkout.
+   * Folder of the sync meta file (the last backup's name, hash and date), relative to `root`.
+   * @default `.pp-dev-meta` in the backups folder, next to the backups it describes
    */
   metaDir?: string;
 }
@@ -155,7 +154,6 @@ export interface BackupAnalysis {
   versionManifestHashMismatches: VersionManifestHashMismatch[];
 }
 
-const defaultMetaDir = path.resolve(node_modules_path, '.pp-dev-meta');
 const metaFileName = 'sync-service.meta.json';
 const UNKNOWN_FILE_PLACEHOLDER_HASH = '__NOT_IN_VERSION_FILE__';
 const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
@@ -200,7 +198,7 @@ export class DistService {
       nextBuild,
       maxBackups = DEFAULT_MAX_BACKUPS,
       buildTimeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
-      metaDir = defaultMetaDir,
+      metaDir,
     } = syncOptions || {};
 
     this.root = root;
@@ -219,7 +217,10 @@ export class DistService {
     this.maxBackups =
       typeof maxBackups === 'number' && Number.isInteger(maxBackups) && maxBackups > 0 ? maxBackups : Infinity;
     this.buildTimeoutMs = buildTimeoutMs;
-    this.metaDir = path.resolve(root, metaDir);
+    // It was `.pp-dev-meta` two folders above the package files: `node_modules/.pp-dev-meta` with
+    // npm, but with pnpm inside the shared store (one meta for every project on that pp-dev
+    // version) and with `npm link` in the global prefix.
+    this.metaDir = metaDir === undefined ? path.join(this.backupFolder, '.pp-dev-meta') : path.resolve(root, metaDir);
 
     this.logger = createLogger();
 

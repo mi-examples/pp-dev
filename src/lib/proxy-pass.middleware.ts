@@ -93,6 +93,9 @@ export function respondToProxyError(
 /** MI's login page, where the token login form is added. */
 const LOGIN_PAGE_REGEXP = /^\/login(?:\/|$)/i;
 
+/** MI's SAML login, which the proxied pages point at `/login` instead. */
+const SAML_LOGIN_PATH = '/auth/saml/login';
+
 /** `value` as a JavaScript string literal that can sit in an inline `<script>` (no `</script>` in it). */
 function scriptString(value: string): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
@@ -113,15 +116,38 @@ function getLoggedOutUser(req: IncomingMessage, users: UserRegistry): SavedUser 
 }
 
 /**
- * Points an absolute `Location` on the MI host at the dev server `req` came to, in its scheme. A
- * relative one, or one to another host, is left as it is.
+ * The host of `mi.url` as a URL has it: lower case, without its scheme's default port, so
+ * `https://mi.example.com:443` and `https://mi.example.com` are the same MI.
+ */
+export function getMiHost(baseURL: string): string {
+  try {
+    return new URL(baseURL).host;
+  } catch {
+    return baseURL.replace(hostOriginRegExp, '$2');
+  }
+}
+
+/**
+ * Points an absolute `Location` on the MI host ({@link getMiHost}) at the dev server `req` came to,
+ * in its scheme. A relative one, or one to another host, is left as it is.
  */
 export function rewriteLocationHeader(location: string, miHost: string, req: IncomingMessage): string {
   const devHost = req.headers.host;
+  let target: URL;
 
-  return devHost
-    ? location.replace(getOriginRegExp(miHost), `${isSecureRequest(req) ? 'https' : 'http'}://${devHost}`)
-    : location;
+  try {
+    target = new URL(location);
+  } catch {
+    return location;
+  }
+
+  // Compared as URL hosts: a default port written out on either side (`mi.url` with `:443`, or MI
+  // redirecting to `https://mi.example.com:443/…`) is still MI's own host.
+  if (!devHost || !/^https?:$/.test(target.protocol) || target.host !== miHost.toLowerCase()) {
+    return location;
+  }
+
+  return location.replace(/^https?:\/\/[^/?#]*/i, `${isSecureRequest(req) ? 'https' : 'http'}://${devHost}`);
 }
 
 /** The personal access token each proxied request was sent to MI with. */
@@ -143,6 +169,8 @@ const TEXTUAL_MEDIA_TYPE_REGEXPS = [
   /^text\//,
   /^application\/(?:[\w.-]+\+)?(?:json|xml)$/,
   /^application\/(?:x-)?(?:java|ecma)script$/,
+  // SVG and the like: XML or JSON under another top-level type.
+  /^[\w.-]+\/[\w.-]+\+(?:json|xml)$/,
 ];
 
 function isTextualContentType(contentType: string): boolean {
@@ -157,6 +185,20 @@ function isTextualContentType(contentType: string): boolean {
  * receiving data and memory stays bounded.
  */
 const MAX_PENDING_STREAM_CHUNK = 64 * 1024;
+
+/** What a URL origin as `urlReplacer` matches it is made of: `!!https:\/\/host:port`. */
+const ORIGIN_CHAR_REGEXP = /[\w.:/\\!-]/;
+
+/** Index of the last character in `text` that can't be part of a URL origin, or -1. */
+function lastNonOriginCharIndex(text: string): number {
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    if (!ORIGIN_CHAR_REGEXP.test(text[index])) {
+      return index;
+    }
+  }
+
+  return -1;
+}
 
 /**
  * Streamed bodies are only rewritten when they are plain text we can decode: a
@@ -173,6 +215,44 @@ function isRewritableStream(headers: IncomingMessage['headers']): boolean {
   const contentType = headers['content-type'];
 
   return typeof contentType === 'string' && isTextualContentType(contentType);
+}
+
+/** An HTML page: the buffered rewrite adds scripts to some of them (the return from MI's login, the token login form). */
+function isHtmlContentType(contentType: string | string[] | undefined): boolean {
+  const mediaType = typeof contentType === 'string' ? contentType.split(';', 1)[0].trim().toLowerCase() : '';
+
+  return mediaType === 'text/html' || mediaType === 'application/xhtml+xml';
+}
+
+/** From this size on, a text response is rewritten as it arrives instead of as a whole. */
+const MAX_BUFFERED_BODY_SIZE = 10 * 1024 * 1024;
+
+/**
+ * How a proxied response that isn't an event stream goes to the browser. `responseInterceptor` holds
+ * the whole body in memory before the first byte goes out, so only what needs it goes that way:
+ *
+ * - `pipe`: a binary file (a declared content type that isn't text, JSON, XML or script), untouched.
+ *   It went through the text rewrite too, which corrupted one `file-type` didn't recognise.
+ * - `stream`: uncompressed text other than HTML, of at least {@link MAX_BUFFERED_BODY_SIZE}, rewritten
+ *   as it arrives.
+ * - `buffer`: everything else, rewritten as a whole: MI's pages get scripts added, and compressed text
+ *   has to be decoded first.
+ */
+export function getResponseHandling(headers: IncomingMessage['headers']): 'pipe' | 'stream' | 'buffer' {
+  const contentType = headers['content-type'];
+
+  if (typeof contentType === 'string' && contentType.trim() && !isTextualContentType(contentType)) {
+    return 'pipe';
+  }
+
+  const contentLength = Number(headers['content-length']);
+
+  return Number.isFinite(contentLength) &&
+    contentLength >= MAX_BUFFERED_BODY_SIZE &&
+    isRewritableStream(headers) &&
+    !isHtmlContentType(contentType)
+    ? 'stream'
+    : 'buffer';
 }
 
 /**
@@ -248,8 +328,12 @@ export function streamResponseInterceptor(interceptor?: (data: Buffer, encoding:
       }
 
       if (pending.length >= MAX_PENDING_STREAM_CHUNK) {
-        flush(pending);
-        pending = '';
+        // Cut after the last character no URL origin can contain, so one split by the cut (in
+        // minified JSON or JS, with no line breaks) is still rewritten whole with what follows.
+        const cut = lastNonOriginCharIndex(pending) + 1 || pending.length;
+
+        flush(pending.slice(0, cut));
+        pending = pending.slice(cut);
       }
     });
 
@@ -280,7 +364,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
     throw new Error('Base url is required');
   }
 
-  const host = baseURL.replace(hostOriginRegExp, '$2');
+  const host = getMiHost(baseURL);
   const origin = baseURL.replace(hostOriginRegExp, '$1$2');
 
   const fileType = import('file-type');
@@ -544,6 +628,17 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         delete serverRes.headers['expires'];
         delete serverRes.headers['pragma'];
 
+        // The same rewrite as the buffered one below, minus the scripts it adds to pages.
+        const rewriteUrls = (data: Buffer, encoding: BufferEncoding) =>
+          Buffer.from(
+            urlPathReplacer(
+              SAML_LOGIN_PATH,
+              '/login',
+              urlReplacer(host, req.headers.host ?? '', data.toString(encoding)),
+            ),
+            encoding,
+          );
+
         if (
           serverRes.headers['content-type']?.includes('text/event-stream') ||
           (serverRes.headers['transfer-encoding']?.includes('chunked') &&
@@ -551,11 +646,19 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         ) {
           logger.info(`${colors.blue('Start streaming for request:')} ${colors.green(req.method)} ${req.url}`);
 
-          const streamInterceptor = streamResponseInterceptor((data, encoding) => {
-            return Buffer.from(urlReplacer(host, req.headers.host ?? '', data.toString(encoding)), encoding);
-          });
+          return streamResponseInterceptor(rewriteUrls)(serverRes, req, res);
+        }
 
-          return streamInterceptor(serverRes, req, res);
+        const handling = getResponseHandling(serverRes.headers);
+
+        if (handling === 'stream') {
+          // Rewriting drops the Content-Length, by which the proxy cache in front tells a body too
+          // large to keep: without it, the cache held the first 10 MB before sending any on.
+          serverRes.headers['x-accel-buffering'] = 'no';
+        }
+
+        if (handling !== 'buffer') {
+          return streamResponseInterceptor(handling === 'stream' ? rewriteUrls : undefined)(serverRes, req, res);
         }
 
         const rewriteInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
@@ -635,7 +738,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
             const reqHost = req.headers.host ?? '';
 
             // manipulate response and return the result
-            return urlPathReplacer('/auth/saml/login', '/login', urlReplacer(host, reqHost, response));
+            return urlPathReplacer(SAML_LOGIN_PATH, '/login', urlReplacer(host, reqHost, response));
           }
         });
 

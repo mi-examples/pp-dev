@@ -142,6 +142,39 @@ describe('proxy cache — responses it does not keep', () => {
     expect(cache.getItemCount()).toBe(0);
   });
 
+  // The proxy rewrites a large text body as it arrives, which drops its Content-Length: the cache
+  // then saw no size and held the first 10 MB before sending anything on.
+  it('sends a large rewritten text body on as it arrives', async () => {
+    const total = 10 * 1024 * 1024 + 1;
+    const firstLine = '{"page":1}\n';
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'content-length': total });
+      res.write(firstLine);
+      void finished.then(() => res.end('a'.repeat(total - firstLine.length)));
+    };
+
+    const res = await get('/data/page/pp/assets/big.json');
+    const first = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no data before the upstream ended')), 2000);
+
+      res.once('data', (chunk: Buffer) => {
+        clearTimeout(timer);
+        resolve(chunk.toString());
+      });
+    });
+
+    expect(first).toBe(firstLine);
+
+    const rest = readAll(res);
+
+    finish();
+    expect((await rest).length + first.length).toBe(total);
+    expect(cache.getItemCount()).toBe(0);
+  });
+
   it('streams a body over the cache limit through, whole, without keeping it', async () => {
     const chunk = Buffer.alloc(1024 * 1024, 'x');
     const chunks = 11;

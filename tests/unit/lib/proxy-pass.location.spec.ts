@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import http from 'node:http';
+import http, { type IncomingMessage } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
-import { initProxy } from '../../../src/lib/proxy-pass.middleware.js';
+import { getMiHost, initProxy, rewriteLocationHeader } from '../../../src/lib/proxy-pass.middleware.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /**
@@ -135,6 +135,45 @@ describe('proxy-pass middleware — redirects and keep-alive', () => {
       expect(socket.listenerCount('close')).toBe(listeners);
     } finally {
       agent.destroy();
+    }
+  });
+});
+
+// The MI host was taken from `mi.url` as written: with `https://mi.example.com:443` in the config,
+// MI's own `Location: https://mi.example.com/…` wasn't recognised and sent the browser to MI.
+describe('rewriteLocationHeader — default ports', () => {
+  const req = (host = 'localhost:3000') => ({ headers: { host }, socket: {} }) as unknown as IncomingMessage;
+
+  it('takes the MI host without its default port', () => {
+    expect(getMiHost('https://mi.example.com:443')).toBe('mi.example.com');
+    expect(getMiHost('http://mi.example.com:80/')).toBe('mi.example.com');
+    expect(getMiHost('https://MI.Example.com:8443/path')).toBe('mi.example.com:8443');
+  });
+
+  it('rewrites a redirect to MI whether or not either side writes the default port', () => {
+    const miHost = getMiHost('https://mi.example.com:443');
+
+    expect(rewriteLocationHeader('https://mi.example.com/home?x=1', miHost, req())).toBe(
+      'http://localhost:3000/home?x=1',
+    );
+    expect(rewriteLocationHeader('https://mi.example.com:443/home', getMiHost('https://mi.example.com'), req())).toBe(
+      'http://localhost:3000/home',
+    );
+    expect(rewriteLocationHeader('HTTPS://MI.EXAMPLE.COM', miHost, req())).toBe('http://localhost:3000');
+  });
+
+  it('leaves another port, another scheme or another host alone', () => {
+    const miHost = getMiHost('https://mi.example.com');
+
+    for (const location of [
+      'https://mi.example.com:8443/home',
+      'http://mi.example.com:443/home',
+      'https://mi.example.com.evil.test/home',
+      'ftp://mi.example.com/file',
+      '/home',
+      '//mi.example.com/home',
+    ]) {
+      expect(rewriteLocationHeader(location, miHost, req())).toBe(location);
     }
   });
 });

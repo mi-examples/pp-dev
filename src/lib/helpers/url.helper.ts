@@ -21,20 +21,38 @@ export function getOriginRegExp(host: string): RegExp {
   return regExp;
 }
 
+type UrlReplaceGroups = { keep?: string; url: string; secure?: string; slashes: string; port?: string };
+
+/**
+ * Points the absolute URLs on `originalHost` in `content` (either scheme, and JSON's `\/` slashes) at
+ * `destinationHost`, over http. `!!` before a URL keeps it as it is, without the marker.
+ *
+ * A port written after a host that has none belongs to the URL's origin: the scheme's default
+ * (`https://mi.example.com:443`) is the same origin and is replaced with it, and any other is
+ * another origin, left alone. Both became `http://<destination>:<port>`, which no server answers.
+ */
 export const urlReplacer = (originalHost: string, destinationHost: string, content: string) => {
   let urlReplaceRegExp = urlReplaceRegExps.get(originalHost);
 
   if (!urlReplaceRegExp) {
-    urlReplaceRegExp = new RegExp(`(!!)?(https?(:(\\\\)?/(\\\\)?/)${escapeRegExp(originalHost)})`, 'gi');
+    // A port ends the host; an IPv6 host (`[2001:db8::1]`) has colons of its own and ends with `]`.
+    const port = /:\d+$/.test(originalHost) ? '' : '(?::(?<port>\\d+))?';
+
+    urlReplaceRegExp = new RegExp(
+      `(?<keep>!!)?(?<url>http(?<secure>s)?(?<slashes>:(?:\\\\)?/(?:\\\\)?/)${escapeRegExp(originalHost)}${port})`,
+      'gi',
+    );
     urlReplaceRegExps.set(originalHost, urlReplaceRegExp);
   }
 
-  return content.replace(urlReplaceRegExp, (substring, ...args) => {
-    if (substring.startsWith('!!')) {
-      return args[1];
+  return content.replace(urlReplaceRegExp, (...args) => {
+    const { keep, url, secure, slashes, port } = args.at(-1) as UrlReplaceGroups;
+
+    if (keep || (port && port !== (secure ? '443' : '80'))) {
+      return url;
     }
 
-    return `http${args[2]}${destinationHost}`;
+    return `http${slashes}${destinationHost}`;
   });
 };
 
