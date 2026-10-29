@@ -69,7 +69,8 @@ src/client/
 |---|---|---|---|---|
 | Unit | `vitest.config.ts` | threads, not isolated (specs that `vi.mock` modules run isolated) | 10 s | `tests/unit/**/*.spec.ts` |
 | Integration | `vitest.integration.config.ts` | forks | 30 s | `tests/integration/**/*.spec.ts` |
-| E2E | `playwright.config.ts` | browser | — | `e2e/` |
+| Server E2E (`npm run test:e2e`) | `vitest.e2e.config.ts` | forks, one file at a time (the files patch the same fixture configs and share mock-mi's port) | 60 s | `tests/e2e/**/*.spec.ts` |
+| Browser E2E (`npm run test:e2e:browser`) | `playwright.config.ts` | browser | — | `e2e/` |
 
 Test fixtures (real apps installed with the local .tgz):
 - `tests/test-nextjs/` — ESM Next.js app

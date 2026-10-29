@@ -254,7 +254,7 @@ describe('backupNamePattern', () => {
     '{pageName}-{pageName}-{date}.zip',
     '{date}/{pageName}-{date}.zip',
     'backup.zip',
-  ])('matches the names backupName() gives with template %s, and nothing shorter', (template) => {
+  ])('matches the names backupName() gives with template %s, and nothing shorter', async (template) => {
     const service = new DistService('p', { root, metaDir: '.pp-dev-meta', backupNameTemplate: template });
     const dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, '');
     const pattern = backupNamePattern(template, 'p', dateFormat(new Date('2026-10-27T10:00:00Z')));
@@ -262,6 +262,10 @@ describe('backupNamePattern', () => {
 
     expect(pattern.test(name)).toBe(true);
     expect(pattern.test(name.slice(0, -4))).toBe(false);
+
+    // The constructor reads the meta (and creates its folders) in the background: done before
+    // afterAll removes the root, or a late mkdir recreates it, or rmSync meets a folder being made.
+    await service.getLatestSavedBackup();
   });
 
   it("doesn't take a repeated placeholder for a second one", () => {
