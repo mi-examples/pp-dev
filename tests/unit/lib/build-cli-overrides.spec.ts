@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyDistZipOverride,
   applyVersionManifestOverride,
@@ -39,6 +39,19 @@ describe('build output CLI overrides', () => {
 // CLI flag > `PP_DEV_*` env var > pp-dev config (`build.zip` / `build.versionFile`).
 describe('build output override precedence', () => {
   const zipConfig = { outFileName: 'config.zip', outDir: 'config-zip' };
+
+  // Each test starts without the overrides, whatever the shell running the tests has set.
+  beforeEach(() => {
+    for (const name of [
+      'PP_DEV_DIST_ZIP',
+      'PP_DEV_DIST_ZIP_DIR',
+      'PP_DEV_DIST_ZIP_FILENAME',
+      'PP_DEV_VERSION_MANIFEST',
+      'PP_DEV_VERSION_FILE_TEMPLATE',
+    ]) {
+      vi.stubEnv(name, undefined);
+    }
+  });
 
   afterEach(() => {
     vi.unstubAllEnvs();

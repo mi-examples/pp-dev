@@ -158,11 +158,13 @@ describe('createPPDevHotContext reconnect and outbox', () => {
 
       let waited = 0;
 
-      while (FakeWebSocket.instances.length === count) {
+      // Bounded: a reconnect that never comes must fail the test, not spin the worker forever.
+      while (FakeWebSocket.instances.length === count && waited < 20_000) {
         vi.advanceTimersByTime(500);
         waited += 500;
       }
 
+      expect(FakeWebSocket.instances, `no reconnect after attempt ${attempt + 1}`).toHaveLength(count + 1);
       waits.push(waited);
     }
 

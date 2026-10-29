@@ -147,7 +147,8 @@ describe.skipIf(process.platform === 'win32')('graceful shutdown on a signal', {
         // Drops the "exited before it started" listener first.
         proc!.removeAllListeners('exit');
 
-        const exited = new Promise<number | null>((resolve) => proc!.once('exit', (code) => resolve(code)));
+        // `close`, not `exit`: it comes once stdout and stderr have ended too, so the last log lines are in.
+        const exited = new Promise<number | null>((resolve) => proc!.once('close', (code) => resolve(code)));
 
         proc!.kill(fixture.signal);
 
