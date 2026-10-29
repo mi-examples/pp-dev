@@ -78,8 +78,9 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   });
 
   it('loads page data from mock-mi cassette', async () => {
+    // The first request compiles the page in Next.js dev: 9-10 s on a cold `.next` cache.
     const res = await fetch('http://localhost:3000/pl/pp-dev-test-template/', {
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(30_000),
     });
 
     expect(res.status).toBeLessThan(500);
