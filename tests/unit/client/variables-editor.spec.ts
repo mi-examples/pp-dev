@@ -7,8 +7,9 @@ import { startVariablesEditor } from '../../../src/client/variables-editor/edito
 
 /**
  * The Variables Editor page, driven the way a browser tab would: the page's markup, its script
- * started by startVariablesEditor(), `fetch` stubbed. These ran the script cut out of the
- * server's template literal with `eval` in a JSDOM before it moved to src/client.
+ * started by startVariablesEditor(), `fetch` stubbed, and the user's clicks and typing dispatched
+ * on the page's own controls. These ran the script cut out of the server's template literal with
+ * `eval` in a JSDOM before it moved to src/client.
  */
 
 const PAGE_HTML = fs.readFileSync(
@@ -40,6 +41,47 @@ function openEditorPage(url: string, { templateLess = false } = {}) {
   };
 }
 
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function find<T extends HTMLElement = HTMLElement>(selector: string): T {
+  const el = document.querySelector<T>(selector);
+
+  if (!el) {
+    throw new Error(`Nothing matches ${selector}`);
+  }
+
+  return el;
+}
+
+/** A click on the control (bubbling, as a user's). */
+const click = (target: string | HTMLElement) => (typeof target === 'string' ? find(target) : target).click();
+
+/** What typing (`input`) or picking (`change`) does to a field: its new value, and the event. */
+function enter(
+  target: string | HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  value: string,
+  type: 'input' | 'change' = 'input',
+) {
+  const el = typeof target === 'string' ? find<HTMLInputElement>(target) : target;
+
+  el.value = value;
+  el.dispatchEvent(new Event(type, { bubbles: true }));
+}
+
+/** A drag event as the browser fires it, with the `dataTransfer` the handlers write to. */
+function drag(el: Element, type: string, relatedTarget: Element | null = null) {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, relatedTarget });
+
+  Object.defineProperty(event, 'dataTransfer', {
+    value: { effectAllowed: '', dropEffect: '', setData: vi.fn() },
+  });
+  el.dispatchEvent(event);
+
+  return event;
+}
+
+const banner = () => document.querySelector('#content > .banner')?.textContent ?? '';
+
 describe('Variables Editor page', () => {
   it('keeps the newest values response when overlapping loads resolve out of order', async () => {
     const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
@@ -56,20 +98,20 @@ describe('Variables Editor page', () => {
     dom.start();
     expect(fetch).toHaveBeenCalledTimes(1);
 
-    (dom.window as unknown as { refresh: () => void }).refresh();
+    click('[data-action="refresh"]');
     expect(fetch).toHaveBeenCalledTimes(2);
 
     pending[1]!({
       ok: true,
       json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'newer' }] }),
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     pending[0]!({
       ok: true,
       json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'older' }] }),
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
 
@@ -85,7 +127,7 @@ describe('Variables Editor page', () => {
     vi.stubGlobal('fetch', fetch);
 
     dom.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
       'Failed to load values: network down',
@@ -129,7 +171,7 @@ describe('Variables Editor page', () => {
     vi.stubGlobal('fetch', fetch);
 
     dom.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
 
@@ -138,8 +180,8 @@ describe('Variables Editor page', () => {
     expect(button.title).toContain('Region: US → EMEA');
     expect(button.title).not.toContain('Limit');
 
-    // Inline handlers don't run under runScripts: 'outside-only'; this is what the button's onclick calls.
-    await (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
+    click(button);
+    await flush();
 
     expect(fetch).toHaveBeenLastCalledWith('/@api/variables/values/local', { method: 'POST' });
     expect(button.hidden).toBe(true);
@@ -159,12 +201,15 @@ describe('Variables Editor page', () => {
     vi.stubGlobal('fetch', fetch);
 
     dom.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
-    const update = () => (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
+    const update = async () => {
+      click(button);
+      await flush();
+    };
 
-    return { dom, button, update };
+    return { dom, fetch, button, update };
   }
 
   it("renders a variable's description as markdown", async () => {
@@ -250,6 +295,27 @@ describe('Variables Editor page', () => {
     dom.close();
   });
 
+  it('switches the theme from the toolbar, also on a page without a template', () => {
+    const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}`, { templateLess: true });
+
+    vi.stubGlobal('fetch', vi.fn());
+    dom.start();
+
+    click('[data-theme-choice="dark"]');
+
+    expect(document.documentElement.getAttribute('data-pp-dev-theme')).toBe('dark');
+    expect(localStorage.getItem('pp-dev-info-theme')).toBe('dark');
+    expect(find('[data-theme-choice="dark"]').getAttribute('aria-pressed')).toBe('true');
+    expect(find('[data-theme-choice="auto"]').getAttribute('aria-pressed')).toBe('false');
+
+    click('[data-theme-choice="auto"]');
+
+    expect(document.documentElement.hasAttribute('data-pp-dev-theme')).toBe(false);
+
+    dom.close();
+    localStorage.clear();
+  });
+
   // The name pattern lived in the template literal, where `\s` had to be written `\\s`: a single
   // backslash turned it into a plain `s`, and every name with a space got the warning.
   it('accepts whitespace in variable names, but not other characters MI rejects', async () => {
@@ -268,7 +334,7 @@ describe('Variables Editor page', () => {
       }),
     );
     dom.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     const warnings = document.body.textContent!.match(/Contains a character MI's own editor doesn't allow/g) ?? [];
 
@@ -293,9 +359,9 @@ describe('Variables Editor page', () => {
       }),
     );
     dom.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
-    (dom.window as unknown as { showAdditionalOptionsHelp: (i: number) => void }).showAdditionalOptionsHelp(0);
+    click('[data-action="show-additional-options-help"][data-index="0"]');
 
     expect(document.querySelector('.ve-modal-title')!.textContent).toBe('additional_options — a&b / <src>');
 
@@ -318,16 +384,11 @@ describe('Variables Editor page', () => {
     vi.stubGlobal('fetch', fetch);
 
     dom.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
-    const editorWindow = dom.window as unknown as {
-      save: () => void;
-      updateSchemaAdditionalOptions: (index: number, value: string) => void;
-    };
-
-    editorWindow.updateSchemaAdditionalOptions(0, 'not valid JSON');
-    editorWindow.save();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    enter('#ao-raw-0', 'not valid JSON');
+    click('#save-btn');
+    await flush();
 
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
@@ -354,35 +415,28 @@ describe('Variables Editor page', () => {
       ok: true,
       json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'initial' }] }),
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
-    const editorWindow = dom.window as unknown as {
-      refresh: () => void;
-      save: () => void;
-      updateValueField: (index: number, value: string) => void;
-    };
     const valueInputBeforeSave = dom.window.document.querySelector<HTMLInputElement>(
       '#content .ve-values-detail input',
     )!;
 
-    valueInputBeforeSave.value = 'submitted';
-    editorWindow.updateValueField(0, 'submitted');
-    editorWindow.save();
-    // save() now opens a confirmation diff modal instead of saving immediately — confirm it.
-    dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
+    enter(valueInputBeforeSave, 'submitted');
+    click('#save-btn');
+    // Save opens a confirmation diff modal instead of saving immediately — confirm it.
+    click('.ve-modal-ok');
     expect(fetch).toHaveBeenCalledTimes(2);
 
-    valueInputBeforeSave.value = 'newer unsaved edit';
-    editorWindow.updateValueField(0, 'newer unsaved edit');
+    enter(valueInputBeforeSave, 'newer unsaved edit');
     pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     if (pending[2]) {
       pending[2]({
         ok: true,
         json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'submitted' }] }),
       });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     }
 
     const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
@@ -393,16 +447,38 @@ describe('Variables Editor page', () => {
       'Newer edits remain unsaved.',
     );
 
-    editorWindow.refresh();
+    click('[data-action="refresh"]');
     expect(dom.window.document.querySelector('.ve-modal-title')?.textContent).toBe('Discard unsaved changes?');
+
+    dom.close();
+  });
+
+  it('handles each event once after being stopped and started again in the same document', async () => {
+    const first = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+    const valuesResponse = { ok: true, json: async () => ({ schema: null, live: [], combined: [] }) };
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(valuesResponse));
+    first.start();
+    await flush();
+    first.close();
+
+    const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+    const fetch = vi.fn().mockResolvedValue(valuesResponse);
+
+    vi.stubGlobal('fetch', fetch);
+    dom.start();
+    await flush();
+
+    click('[data-action="refresh"]');
+    await flush();
+
+    expect(fetch).toHaveBeenCalledTimes(2);
 
     dom.close();
   });
 
   describe('client: failed loads and saves', () => {
     type FetchResponse = { ok: boolean; status?: number; statusText?: string; json: () => Promise<unknown> };
-
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
     const htmlErrorPage = (status: number, statusText: string): FetchResponse => ({
       ok: false,
@@ -421,23 +497,13 @@ describe('Variables Editor page', () => {
       dom.start();
       await flush();
 
-      const editor = dom.window as unknown as {
-        save: () => void;
-        refresh: () => void;
-        setDirty: (value: boolean) => void;
-        toggleRawMode: () => void;
-        toggleValuesRawMode: () => void;
-        onValuesRawInput: () => void;
-        updateValueField: (index: number, value: string) => void;
-      };
-      const banner = () => dom.window.document.querySelector('#content > .banner')?.textContent ?? '';
       const confirmSave = async () => {
-        editor.save();
-        dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
+        click('#save-btn');
+        click('.ve-modal-ok');
         await flush();
       };
       const asksToDiscard = () => {
-        editor.refresh();
+        click('[data-action="refresh"]');
 
         const asked = dom.window.document.querySelector('.ve-modal-title')?.textContent === 'Discard unsaved changes?';
 
@@ -446,7 +512,7 @@ describe('Variables Editor page', () => {
         return asked;
       };
 
-      return { dom, editor, banner, confirmSave, asksToDiscard };
+      return { dom, confirmSave, asksToDiscard };
     }
 
     const schemaResponse: FetchResponse = {
@@ -464,12 +530,11 @@ describe('Variables Editor page', () => {
         .fn()
         .mockResolvedValueOnce(schemaResponse)
         .mockResolvedValueOnce(htmlErrorPage(500, 'Internal Server Error'));
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('schema', fetch);
+      const { dom, confirmSave, asksToDiscard } = await openEditor('schema', fetch);
       const draft = '{"tags":[{"name":"title"},{"name":"subtitle"}]}';
 
-      editor.toggleRawMode();
-      dom.window.document.querySelector<HTMLTextAreaElement>('#raw-editor')!.value = draft;
-      editor.setDirty(true);
+      click('[data-action="toggle-raw-mode"]');
+      enter('#raw-editor', draft);
       await confirmSave();
 
       expect(fetch).toHaveBeenCalledTimes(2);
@@ -490,15 +555,11 @@ describe('Variables Editor page', () => {
           statusText: 'Payload Too Large',
           json: async () => ({ error: 'The request body is larger than the dev server accepts (10mb).' }),
         });
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+      const { dom, confirmSave, asksToDiscard } = await openEditor('values', fetch);
       const draft = '[{"name":"title","value":"edited"}]';
 
-      editor.toggleValuesRawMode();
-
-      const rawEditor = dom.window.document.querySelector<HTMLTextAreaElement>('#values-raw-editor')!;
-
-      rawEditor.value = draft;
-      editor.onValuesRawInput();
+      click('[data-action="toggle-values-raw-mode"]');
+      enter('#values-raw-editor', draft);
       await confirmSave();
 
       expect(banner()).toContain('Save failed: The request body is larger than the dev server accepts (10mb).');
@@ -521,9 +582,9 @@ describe('Variables Editor page', () => {
             details: 'Request failed with status 500',
           }),
         });
-      const { dom, editor, banner, confirmSave } = await openEditor('values', fetch);
+      const { dom, confirmSave } = await openEditor('values', fetch);
 
-      editor.updateValueField(0, 'edited');
+      enter('#content .ve-values-detail input', 'edited');
       await confirmSave();
 
       expect(banner()).toContain('Save failed: Failed to save live page variables. Request failed with status 500');
@@ -536,9 +597,9 @@ describe('Variables Editor page', () => {
         .fn()
         .mockResolvedValueOnce(valuesResponse)
         .mockRejectedValueOnce(new TypeError('Failed to fetch'));
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+      const { dom, confirmSave, asksToDiscard } = await openEditor('values', fetch);
 
-      editor.updateValueField(0, 'edited');
+      enter('#content .ve-values-detail input', 'edited');
       await confirmSave();
 
       expect(banner()).toContain('Save failed: Failed to fetch');
@@ -552,9 +613,9 @@ describe('Variables Editor page', () => {
         .fn()
         .mockResolvedValueOnce(valuesResponse)
         .mockResolvedValueOnce({ ...htmlErrorPage(200, 'OK'), ok: true });
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+      const { dom, confirmSave, asksToDiscard } = await openEditor('values', fetch);
 
-      editor.updateValueField(0, 'edited');
+      enter('#content .ve-values-detail input', 'edited');
       await confirmSave();
 
       expect(banner()).toContain('Save failed: the dev server sent an answer that is not JSON');
@@ -570,18 +631,378 @@ describe('Variables Editor page', () => {
         statusText: 'Service Unavailable',
         json: async () => ({ error: 'Dist service or MiAPI is not defined' }),
       });
-      const { dom, editor, banner } = await openEditor('schema', fetch);
+      const { dom } = await openEditor('schema', fetch);
 
       expect(banner()).toContain('Failed to load the schema: Dist service or MiAPI is not defined');
       expect(dom.window.document.querySelector('#content')?.textContent).not.toContain(
         'No local __template_variables.json found',
       );
 
-      editor.save();
+      click('#save-btn');
       await flush();
 
       expect(banner()).toContain('Cannot save the schema until it has loaded successfully.');
       expect(fetch).toHaveBeenCalledTimes(1);
+
+      dom.close();
+    });
+  });
+
+  describe('client: schema tab controls', () => {
+    const tag = (name: string, extra: Record<string, unknown> = {}) => ({
+      name,
+      uid: 'uid-' + name,
+      tag_type: 'text',
+      tag_source: 'static',
+      additional_options: '',
+      ...extra,
+    });
+
+    async function openSchemaTab(tags: unknown[]) {
+      const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`);
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ exists: true, raw: JSON.stringify({ tags }), schema: { tags } }),
+      });
+
+      vi.stubGlobal('fetch', fetch);
+      dom.start();
+      await flush();
+
+      return dom;
+    }
+
+    const names = () =>
+      Array.from(document.querySelectorAll<HTMLInputElement>('tr.schema-row .col-name input')).map((i) => i.value);
+
+    /** The tags the editor would save, read from its raw JSON view. */
+    const rawTags = () => {
+      click('[data-action="toggle-raw-mode"]');
+
+      return (JSON.parse(find<HTMLTextAreaElement>('#raw-editor').value) as { tags: Record<string, unknown>[] }).tags;
+    };
+
+    it('reorders variables by dragging a row onto another', async () => {
+      const dom = await openSchemaTab([tag('a'), tag('b'), tag('c')]);
+
+      drag(find('tr.schema-row[data-row-index="0"] .ve-schema-row-handle'), 'dragstart');
+
+      expect(find('tr.schema-row[data-row-index="0"]').classList.contains('is-dragging')).toBe(true);
+      expect(drag(find('tr.schema-row[data-row-index="2"] .col-type'), 'dragover').defaultPrevented).toBe(true);
+      expect(find('tr.schema-row[data-row-index="2"]').classList.contains('is-drop-target')).toBe(true);
+
+      drag(find('tr.schema-row[data-row-index="2"] .col-type'), 'drop');
+
+      expect(names()).toEqual(['b', 'c', 'a']);
+      expect(document.querySelector('.is-drop-target')).toBeNull();
+
+      drag(find('tr.schema-row[data-row-index="2"] .ve-schema-row-handle'), 'dragend');
+      click('[data-action="refresh"]');
+
+      expect(document.querySelector('.ve-modal-title')?.textContent).toBe('Discard unsaved changes?');
+
+      dom.close();
+    });
+
+    it("drops a dragged row on a list column card of another row's open details", async () => {
+      const dom = await openSchemaTab([
+        tag('a'),
+        tag('items', { tag_type: 'list', additional_options: [{ name: 'x', type: 'textarea' }] }),
+      ]);
+
+      click('[data-action="toggle-schema-advanced"][data-index="1"]');
+
+      expect(find('#advanced-1').style.display).toBe('');
+
+      drag(find('tr.schema-row[data-row-index="0"] .ve-schema-row-handle'), 'dragstart');
+
+      const card = find('#advanced-1 .ve-ao-column');
+
+      expect(drag(card.querySelector('input')!, 'dragover').defaultPrevented).toBe(true);
+      expect(find('#advanced-1').classList.contains('is-drop-target')).toBe(true);
+
+      drag(card.querySelector('input')!, 'drop');
+
+      expect(names()).toEqual(['items', 'a']);
+      // The moved row's details stay open, now under its new index.
+      expect(find('#advanced-0').style.display).toBe('');
+      expect(find('#advanced-1').style.display).toBe('none');
+
+      dom.close();
+    });
+
+    it('edits, adds, reorders and removes the columns of a list variable', async () => {
+      const dom = await openSchemaTab([
+        tag('items', {
+          tag_type: 'list',
+          additional_options: [
+            { name: 'x', type: 'textarea' },
+            { name: 'y', type: 'color' },
+          ],
+        }),
+      ]);
+
+      click('[data-action="add-list-column"][data-index="0"]');
+      enter('[data-action="list-column-name"][data-col="2"]', 'z');
+      enter('[data-action="list-column-field"][data-col="2"][data-field="type"]', 'select', 'change');
+      enter('[data-action="list-column-options"][data-col="2"]', 'one, two');
+
+      const columns = () => find<HTMLElement>('#advanced-0').querySelectorAll<HTMLElement>('.ve-ao-column');
+
+      drag(columns()[2].querySelector('.ve-ao-column-handle')!, 'dragstart');
+      drag(columns()[0], 'dragover');
+      drag(columns()[0], 'drop');
+      click('[data-action="remove-list-column"][data-col="2"]');
+
+      expect(rawTags()[0].additional_options).toEqual([
+        { name: 'z', type: 'select', options: ['one', 'two'] },
+        { name: 'x', type: 'textarea' },
+      ]);
+
+      dom.close();
+    });
+
+    it('applies a type picked from the select and the editor flags, keeping the details open', async () => {
+      const dom = await openSchemaTab([tag('a')]);
+
+      click('[data-action="toggle-schema-advanced"][data-index="0"]');
+      enter('[data-action="schema-field"][data-field="description"]', 'About a');
+
+      const flag = find<HTMLInputElement>('[data-action="editor-flag"][data-field="use_hmtl_editor_ind"]');
+
+      flag.checked = true;
+      flag.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(find('#advanced-0').style.display).toBe('');
+      // WYSIWYG hides the Raw HTML and JSON Editor flags, as MI's own form does.
+      expect(document.querySelector('[data-action="editor-flag"][data-field="use_raw_html_ind"]')).toBeNull();
+
+      enter('[data-action="custom-select"][data-field="tag_type"]', 'color', 'change');
+
+      expect(find('#advanced-0').style.display).toBe('');
+      expect(find<HTMLSelectElement>('[data-action="custom-select"][data-field="tag_type"]').value).toBe('color');
+      expect(rawTags()[0]).toMatchObject({
+        tag_type: 'color',
+        description: 'About a',
+        use_hmtl_editor_ind: 'Y',
+        use_raw_html_ind: 'N',
+        use_json_editor_ind: 'N',
+      });
+
+      dom.close();
+    });
+
+    it('adds a variable, and removes one once confirmed', async () => {
+      const dom = await openSchemaTab([tag('a'), tag('b')]);
+
+      click('[data-action="add-schema-row"]');
+
+      expect(names()).toEqual(['a', 'b', 'new_variable_3']);
+
+      click('[data-action="remove-schema-row"][data-index="0"]');
+
+      expect(find('.ve-modal-title').textContent).toBe('Delete variable "a"? This only takes effect once you Save.');
+
+      click('.ve-modal-ok');
+
+      expect(names()).toEqual(['b', 'new_variable_3']);
+
+      dom.close();
+    });
+  });
+
+  describe('client: values tab controls', () => {
+    async function openValues(tags: unknown[], combined: { name: string; value: string }[]) {
+      const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ schema: { tags }, live: combined, combined, local: combined }),
+      });
+
+      vi.stubGlobal('fetch', fetch);
+      dom.start();
+      await flush();
+
+      return { dom, fetch };
+    }
+
+    /** The values the editor would save, read from its raw JSON view. */
+    const rawValues = () => {
+      click('[data-action="toggle-values-raw-mode"]');
+
+      return JSON.parse(find<HTMLTextAreaElement>('#values-raw-editor').value) as { name: string; value: unknown }[];
+    };
+
+    const options = [{ id: 'us', text: 'USA' }, 'Canada', { id: 'mx', text: 'Mexico' }];
+
+    it('picks an option of a select from its list, which shows while the input has the focus', async () => {
+      const { dom } = await openValues(
+        [{ name: 'Country', tag_type: 'select', tag_source: 'static', additional_options: options }],
+        [{ name: 'Country', value: '' }],
+      );
+      const input = find<HTMLInputElement>('.ve-combo-input');
+      const list = find('#combo-list-0');
+
+      expect(list.style.display).toBe('none');
+
+      input.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+
+      expect(list.style.display).toBe('');
+
+      enter(input, 'mex');
+
+      expect(Array.from(list.children).map((o) => (o as HTMLElement).style.display)).toEqual(['none', 'none', '']);
+
+      const pick = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+      list.children[2].dispatchEvent(pick);
+
+      // Picked on mousedown, its default prevented so the input keeps the focus until then.
+      expect(pick.defaultPrevented).toBe(true);
+      expect(input.value).toBe('mx');
+      expect(list.style.display).toBe('none');
+      expect(rawValues()).toEqual([{ name: 'Country', value: 'mx' }]);
+
+      dom.close();
+    });
+
+    it('adds and removes the chips of a multiselect', async () => {
+      const { dom } = await openValues(
+        [{ name: 'Countries', tag_type: 'multiselect', tag_source: 'static', additional_options: options }],
+        [{ name: 'Countries', value: 'us' }],
+      );
+      const pick = (text: string) =>
+        Array.from(document.querySelectorAll('.ve-combo-option'))
+          .find((o) => (o as HTMLElement).dataset.text === text)!
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+      pick('Canada');
+      pick('Mexico');
+      pick('Canada');
+
+      const chips = () => Array.from(document.querySelectorAll<HTMLElement>('.ve-chip')).map((c) => c.dataset.id);
+
+      expect(chips()).toEqual(['us', 'Canada', 'mx']);
+
+      const remove = find('.ve-chip[data-id="us"] button');
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+      remove.dispatchEvent(press);
+      click(remove);
+
+      expect(press.defaultPrevented).toBe(true);
+      expect(chips()).toEqual(['Canada', 'mx']);
+      expect(rawValues()).toEqual([{ name: 'Countries', value: 'Canada,mx' }]);
+
+      dom.close();
+    });
+
+    it('adds, edits and reorders the items of a list', async () => {
+      const columns = [
+        { name: 'label', type: 'textarea' },
+        { name: 'kind', type: 'select', options: ['a', 'b'] },
+      ];
+      const { dom } = await openValues(
+        [{ name: 'Rows', tag_type: 'list', tag_source: 'static', additional_options: columns }],
+        [{ name: 'Rows', value: '[{"label":"first","kind":"a"}]' }],
+      );
+
+      click('[data-action="add-list-item"][data-index="0"]');
+      enter('[data-action="list-item-field"][data-item="1"][data-column="label"]', 'second');
+      enter('[data-action="list-item-select"][data-item="1"][data-column="kind"]', 'b', 'change');
+
+      const items = () => document.querySelectorAll<HTMLElement>('.ve-values-list-item');
+
+      drag(items()[1].querySelector('.ve-values-list-item-handle')!, 'dragstart');
+      drag(items()[0], 'dragover');
+      drag(items()[0], 'drop');
+
+      expect(rawValues()).toEqual([
+        {
+          name: 'Rows',
+          value: [
+            { label: 'second', kind: 'b' },
+            { label: 'first', kind: 'a' },
+          ],
+        },
+      ]);
+
+      dom.close();
+    });
+
+    it('sets a boolean from its checkbox', async () => {
+      const { dom } = await openValues([{ name: 'On', tag_type: 'boolean' }], [{ name: 'On', value: 'false' }]);
+      const box = find<HTMLInputElement>('[data-action="value-boolean"]');
+
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(rawValues()).toEqual([{ name: 'On', value: 'true' }]);
+
+      dom.close();
+    });
+
+    it('imports the values picked from another page', async () => {
+      const { dom, fetch } = await openValues(
+        [{ name: 'Region' }, { name: 'Limit' }],
+        [
+          { name: 'Region', value: 'EMEA' },
+          { name: 'Limit', value: '50' },
+        ],
+      );
+
+      fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            pages: [
+              { id: 7, name: 'Sales "EU"', internal_name: 'sales-eu', sameTemplate: true },
+              { id: 8, name: 'Other', internal_name: 'other', sameTemplate: false },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            importable: [
+              { name: 'Region', sourceValue: 'US', tagType: 'text' },
+              { name: 'Limit', sourceValue: '10', tagType: 'text' },
+            ],
+            skipped: [],
+          }),
+        });
+
+      click('[data-action="open-import-modal"]');
+      await flush();
+
+      expect(fetch).toHaveBeenLastCalledWith('/@api/variables/pages');
+
+      enter('#ve-import-filter', 'sales');
+
+      expect(find('[data-page-id="8"]').style.display).toBe('none');
+
+      click('[data-page-id="7"]');
+      await flush();
+
+      expect(fetch).toHaveBeenLastCalledWith('/@api/variables/import-plan/7');
+      expect(find('#ve-import-overlay .ve-modal-title').textContent).toBe('Import values from "Sales "EU""');
+
+      const limit = find<HTMLInputElement>('.ve-import-check[data-index="1"]');
+
+      limit.checked = false;
+      limit.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(find('#ve-import-count').textContent).toBe('1 of 2 selected');
+      expect(find<HTMLInputElement>('#ve-import-select-all').checked).toBe(false);
+
+      click('#ve-import-apply-btn');
+
+      expect(document.getElementById('ve-import-overlay')).toBeNull();
+      expect(banner()).toContain('Imported 1 of 2 variable(s) from "Sales "EU"". Save to apply.');
+      expect(rawValues()).toEqual([
+        { name: 'Region', value: 'US' },
+        { name: 'Limit', value: '50' },
+      ]);
 
       dom.close();
     });

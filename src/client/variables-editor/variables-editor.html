@@ -24,21 +24,21 @@ try {
   <div class="toolbar">
     <span class="toolbar-title">🧩 Variables Editor</span>
     <div class="tabs ve-template-only">
-      <button class="tab" id="tab-schema" onclick="switchTab('schema')">Schema</button>
-      <button class="tab" id="tab-values" onclick="switchTab('values')">Values</button>
+      <button class="tab" id="tab-schema" data-action="switch-tab" data-tab="schema">Schema</button>
+      <button class="tab" id="tab-values" data-action="switch-tab" data-tab="values">Values</button>
     </div>
     <span class="ve-loading-indicator ve-template-only" id="loading-indicator" style="display:none"><span class="ve-loading-dot"></span>Refreshing…</span>
     <div class="toolbar-spacer"></div>
-    <button class="btn btn-sm ve-template-only" onclick="refresh()">↻ Refresh</button>
-    <button class="btn btn-sm btn-primary ve-template-only" id="save-btn" onclick="save()">Save</button>
+    <button class="btn btn-sm ve-template-only" data-action="refresh">↻ Refresh</button>
+    <button class="btn btn-sm btn-primary ve-template-only" id="save-btn" data-action="save">Save</button>
     <div class="theme-switch" id="theme-switch">
-      <button data-theme-choice="auto" aria-pressed="false" onclick="setTheme('auto')">Auto</button>
-      <button data-theme-choice="dark" aria-pressed="false" onclick="setTheme('dark')">Dark</button>
-      <button data-theme-choice="light" aria-pressed="false" onclick="setTheme('light')">Light</button>
+      <button data-theme-choice="auto" aria-pressed="false">Auto</button>
+      <button data-theme-choice="dark" aria-pressed="false">Dark</button>
+      <button data-theme-choice="light" aria-pressed="false">Light</button>
     </div>
   </div>
   <div class="content" id="content"></div>
 </div>
-<button class="btn btn-sm btn-primary local-update-btn ve-template-only" id="local-update-btn" hidden onclick="updateLocalValues()"></button>
+<button class="btn btn-sm btn-primary local-update-btn ve-template-only" id="local-update-btn" hidden data-action="update-local-values"></button>
 </body>
 </html>
