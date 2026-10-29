@@ -113,15 +113,38 @@ function getLoggedOutUser(req: IncomingMessage, users: UserRegistry): SavedUser 
 }
 
 /**
- * Points an absolute `Location` on the MI host at the dev server `req` came to, in its scheme. A
- * relative one, or one to another host, is left as it is.
+ * The host of `mi.url` as a URL has it: lower case, without its scheme's default port, so
+ * `https://mi.example.com:443` and `https://mi.example.com` are the same MI.
+ */
+export function getMiHost(baseURL: string): string {
+  try {
+    return new URL(baseURL).host;
+  } catch {
+    return baseURL.replace(hostOriginRegExp, '$2');
+  }
+}
+
+/**
+ * Points an absolute `Location` on the MI host ({@link getMiHost}) at the dev server `req` came to,
+ * in its scheme. A relative one, or one to another host, is left as it is.
  */
 export function rewriteLocationHeader(location: string, miHost: string, req: IncomingMessage): string {
   const devHost = req.headers.host;
+  let target: URL;
 
-  return devHost
-    ? location.replace(getOriginRegExp(miHost), `${isSecureRequest(req) ? 'https' : 'http'}://${devHost}`)
-    : location;
+  try {
+    target = new URL(location);
+  } catch {
+    return location;
+  }
+
+  // Compared as URL hosts: a default port written out on either side (`mi.url` with `:443`, or MI
+  // redirecting to `https://mi.example.com:443/…`) is still MI's own host.
+  if (!devHost || !/^https?:$/.test(target.protocol) || target.host !== miHost.toLowerCase()) {
+    return location;
+  }
+
+  return location.replace(/^https?:\/\/[^/?#]*/i, `${isSecureRequest(req) ? 'https' : 'http'}://${devHost}`);
 }
 
 /** The personal access token each proxied request was sent to MI with. */
@@ -280,7 +303,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
     throw new Error('Base url is required');
   }
 
-  const host = baseURL.replace(hostOriginRegExp, '$2');
+  const host = getMiHost(baseURL);
   const origin = baseURL.replace(hostOriginRegExp, '$1$2');
 
   const fileType = import('file-type');
