@@ -166,6 +166,8 @@ const TEXTUAL_MEDIA_TYPE_REGEXPS = [
   /^text\//,
   /^application\/(?:[\w.-]+\+)?(?:json|xml)$/,
   /^application\/(?:x-)?(?:java|ecma)script$/,
+  // SVG and the like: XML or JSON under another top-level type.
+  /^[\w.-]+\/[\w.-]+\+(?:json|xml)$/,
 ];
 
 function isTextualContentType(contentType: string): boolean {
@@ -196,6 +198,33 @@ function isRewritableStream(headers: IncomingMessage['headers']): boolean {
   const contentType = headers['content-type'];
 
   return typeof contentType === 'string' && isTextualContentType(contentType);
+}
+
+/** From this size on, a text response is rewritten as it arrives instead of as a whole. */
+const MAX_BUFFERED_BODY_SIZE = 10 * 1024 * 1024;
+
+/**
+ * How a proxied response that isn't an event stream goes to the browser. `responseInterceptor` holds
+ * the whole body in memory before the first byte goes out, so only what needs it goes that way:
+ *
+ * - `pipe`: a binary file (a declared content type that isn't text, JSON, XML or script), untouched.
+ *   It went through the text rewrite too, which corrupted one `file-type` didn't recognise.
+ * - `stream`: uncompressed text of at least {@link MAX_BUFFERED_BODY_SIZE}, rewritten as it arrives.
+ * - `buffer`: everything else, rewritten as a whole: MI's pages get scripts added, and compressed text
+ *   has to be decoded first.
+ */
+export function getResponseHandling(headers: IncomingMessage['headers']): 'pipe' | 'stream' | 'buffer' {
+  const contentType = headers['content-type'];
+
+  if (typeof contentType === 'string' && contentType.trim() && !isTextualContentType(contentType)) {
+    return 'pipe';
+  }
+
+  const contentLength = Number(headers['content-length']);
+
+  return Number.isFinite(contentLength) && contentLength >= MAX_BUFFERED_BODY_SIZE && isRewritableStream(headers)
+    ? 'stream'
+    : 'buffer';
 }
 
 /**
@@ -567,6 +596,9 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         delete serverRes.headers['expires'];
         delete serverRes.headers['pragma'];
 
+        const rewriteUrls = (data: Buffer, encoding: BufferEncoding) =>
+          Buffer.from(urlReplacer(host, req.headers.host ?? '', data.toString(encoding)), encoding);
+
         if (
           serverRes.headers['content-type']?.includes('text/event-stream') ||
           (serverRes.headers['transfer-encoding']?.includes('chunked') &&
@@ -574,11 +606,13 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         ) {
           logger.info(`${colors.blue('Start streaming for request:')} ${colors.green(req.method)} ${req.url}`);
 
-          const streamInterceptor = streamResponseInterceptor((data, encoding) => {
-            return Buffer.from(urlReplacer(host, req.headers.host ?? '', data.toString(encoding)), encoding);
-          });
+          return streamResponseInterceptor(rewriteUrls)(serverRes, req, res);
+        }
 
-          return streamInterceptor(serverRes, req, res);
+        const handling = getResponseHandling(serverRes.headers);
+
+        if (handling !== 'buffer') {
+          return streamResponseInterceptor(handling === 'stream' ? rewriteUrls : undefined)(serverRes, req, res);
         }
 
         const rewriteInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
