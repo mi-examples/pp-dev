@@ -90,6 +90,14 @@ export function respondToProxyError(
   response.end(summary);
 }
 
+/** MI's login page, where the token login form is added. */
+const LOGIN_PAGE_REGEXP = /^\/login(?:\/|$)/i;
+
+/** `value` as a JavaScript string literal that can sit in an inline `<script>` (no `</script>` in it). */
+function scriptString(value: string): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 /** MI's logout, e.g. `/auth/index/logout?proxyRedirect=%2F`. */
 const LOGOUT_PATH_REGEXP = /^\/auth\/(?:index\/)?logout(?:[/?#]|$)/i;
 
@@ -608,14 +616,17 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
               const slice = response.slice(0, 100);
 
               // The token login sets the original user's token, so a saved user's host goes without it.
+              // Only MI's login page gets it: on every other page it watched the whole DOM for a login
+              // form that never came, for as long as the page stayed open.
               if (
+                LOGIN_PAGE_REGEXP.test(reqUrl.pathname) &&
                 (slice.includes('<html') ||
                   slice.includes('<body') ||
                   slice.includes('<head') ||
                   slice.includes('html>')) &&
                 !getUserNameFromHost(req.headers.host)
               ) {
-                response += '<script>' + `const host = "${host}";\n(${tokenLoginFunction.toString()})()` + '</script>';
+                response += `<script>(${tokenLoginFunction.toString()})(${scriptString(host)})</script>`;
               }
             } catch {
               //

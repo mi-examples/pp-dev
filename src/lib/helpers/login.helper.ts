@@ -1,25 +1,16 @@
-declare const host: string;
-
-export const tokenLoginFunction = function () {
+/**
+ * The token login form added to MI's login page (only there: see `proxy-pass.middleware.ts`). It runs
+ * in the page as `(<this function>)(<MI host as JSON>)`: the host comes as a parameter, not as a
+ * global `const host` in a classic script, which clashed with any MI script declaring `host`.
+ */
+export const tokenLoginFunction = function (host: string) {
   // Types and interfaces (will be removed when converted to string)
   type TokenType = 'personal' | 'regular';
 
   // Constants
-  const TOKEN_TYPE_CONFIG = {
-    personal: {
-      placeholder: 'API Token',
-      caption: `You can get the API Token
-        <a href="https://${host}/api-token" target="_blank" 
-           style="color: #007bff; text-decoration: none;">here</a>`,
-      endpoint: '/@api/login',
-    },
-    regular: {
-      placeholder: 'Legacy Token',
-      caption: `You can get the Legacy Token
-        <a href="https://${host}/api/get_token" target="_blank" 
-           style="color: #007bff; text-decoration: none;">here</a>`,
-      endpoint: '/@api/login',
-    },
+  const TOKEN_TYPE_CONFIG: Record<TokenType, { placeholder: string; label: string; path: string }> = {
+    personal: { placeholder: 'API Token', label: 'API Token', path: '/api-token' },
+    regular: { placeholder: 'Legacy Token', label: 'Legacy Token', path: '/api/get_token' },
   };
 
   const CSS_STYLES = /** CSS */ `
@@ -176,10 +167,7 @@ export const tokenLoginFunction = function () {
       aria-label="Token input"
       aria-describedby="token-caption"
     >
-    <span class="caption" id="token-caption">
-      You can get the API Token
-      <a href="https://${host}/api-token" target="_blank" style="color: #007bff; text-decoration: none;">here</a>
-    </span>
+    <span class="caption" id="token-caption"></span>
   </div>
 
   <div class="error-message" id="error-message" role="alert" aria-live="polite"></div>
@@ -192,13 +180,19 @@ export const tokenLoginFunction = function () {
 </div>`;
   }
 
+  /** Built as elements: the link's address holds the MI host, which goes in as text, never as HTML. */
   function updateTokenUI(type: TokenType, tokenInput: HTMLInputElement, tokenCaption: HTMLSpanElement) {
     const info = TOKEN_TYPE_CONFIG[type];
+    const link = document.createElement('a');
 
-    if (info) {
-      tokenInput.placeholder = info.placeholder;
-      tokenCaption.innerHTML = info.caption;
-    }
+    link.href = `https://${host}${info.path}`;
+    link.target = '_blank';
+    link.style.color = '#007bff';
+    link.style.textDecoration = 'none';
+    link.textContent = 'here';
+
+    tokenInput.placeholder = info.placeholder;
+    tokenCaption.replaceChildren(`You can get the ${info.label} `, link);
   }
 
   function showError(message: string, errorElement: HTMLDivElement) {

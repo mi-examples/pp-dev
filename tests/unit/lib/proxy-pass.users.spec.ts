@@ -104,9 +104,9 @@ describe('proxy — saved users', () => {
         ]);
       }
 
-      if (req.url === '/login') {
+      if (req.url === '/login' || req.url === '/home') {
         res.setHeader('content-type', 'text/html');
-        res.end('<html><body>MI login</body></html>');
+        res.end(`<html><body>MI ${req.url.slice(1)}</body></html>`);
 
         return;
       }
@@ -496,6 +496,22 @@ describe('proxy — saved users', () => {
 
       expect(userHost.body).not.toContain('helper-login-wrapper');
       expect(mainHost.body).toContain('helper-login-wrapper');
+    });
+
+    // Every MI page got it, and watched the whole DOM for a login form that never came.
+    it('adds the token login form to the login page only', async () => {
+      const home = await request(port, '/home', 'localhost:3000');
+
+      expect(home.body).toContain('MI home');
+      expect(home.body).not.toContain('helper-login-wrapper');
+    });
+
+    // A global `const host` clashed with any MI script declaring `host`.
+    it('passes the MI host to the login form as a parameter, not a global', async () => {
+      const login = await request(port, '/login', 'localhost:3000');
+
+      expect(login.body).not.toMatch(/const host\s*=/);
+      expect(login.body).toMatch(/\}\)\("127\.0\.0\.1:\d+"\)<\/script>/);
     });
   });
 
