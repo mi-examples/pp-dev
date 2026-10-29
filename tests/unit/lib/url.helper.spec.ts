@@ -109,6 +109,18 @@ describe('URL Helper', () => {
       );
     });
 
+    // Any colon in the host turned the port matching off, and an IPv6 host has colons of its own.
+    it('treats the ports of an IPv6 host the same way', () => {
+      const content = 'https://[2001:db8::1]:443/home https://[2001:db8::1]:8443/x https://[2001:db8::1]/y';
+
+      expect(urlReplacer('[2001:db8::1]', 'localhost:3000', content)).toBe(
+        'http://localhost:3000/home https://[2001:db8::1]:8443/x http://localhost:3000/y',
+      );
+      expect(urlReplacer('[2001:db8::1]:8443', 'localhost:3000', 'https://[2001:db8::1]:8443/x')).toBe(
+        'http://localhost:3000/x',
+      );
+    });
+
     it('matches a host configured with its port as written', () => {
       expect(urlReplacer('mi.example.com:8443', 'localhost:3000', 'https://mi.example.com:8443/x')).toBe(
         'http://localhost:3000/x',

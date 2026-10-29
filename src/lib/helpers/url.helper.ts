@@ -35,7 +35,8 @@ export const urlReplacer = (originalHost: string, destinationHost: string, conte
   let urlReplaceRegExp = urlReplaceRegExps.get(originalHost);
 
   if (!urlReplaceRegExp) {
-    const port = originalHost.includes(':') ? '' : '(?::(?<port>\\d+))?';
+    // A port ends the host; an IPv6 host (`[2001:db8::1]`) has colons of its own and ends with `]`.
+    const port = /:\d+$/.test(originalHost) ? '' : '(?::(?<port>\\d+))?';
 
     urlReplaceRegExp = new RegExp(
       `(?<keep>!!)?(?<url>http(?<secure>s)?(?<slashes>:(?:\\\\)?/(?:\\\\)?/)${escapeRegExp(originalHost)}${port})`,
