@@ -64,8 +64,44 @@ describe('DistService — start-up and backups', () => {
     expect(fs.statSync(path.join(root, '.pp-dev', 'backups')).isDirectory()).toBe(true);
   });
 
-  // The default folder is next to the installed package; run from the repository, that is outside
-  // the checkout, shared by every test run and worker (and not writable from some clones in WSL).
+  // The meta was kept two folders above the package files: with pnpm that is the shared store, so
+  // every project on the same pp-dev version read and wrote one meta (and with `npm link`, the
+  // global prefix). It now lives with the project's backups.
+  it("keeps the sync meta in the project's backups folder by default", async () => {
+    const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-backups-other-'));
+
+    try {
+      const service = new DistService('page', { root, backupFolder: '.pp-dev/backups' });
+      const other = new DistService('page', { root: otherRoot, backupFolder: '.pp-dev/backups' });
+
+      await service.saveBackup(Buffer.from('zip'), analysis('mine'));
+      await other.syncMeta();
+
+      const metaFile = path.join(root, '.pp-dev', 'backups', '.pp-dev-meta', 'sync-service.meta.json');
+
+      expect(JSON.parse(fs.readFileSync(metaFile, 'utf-8'))).toMatchObject({
+        lastBackupName: service.getBackupMeta()!.lastBackupName,
+      });
+      expect(other.getBackupMeta()).toEqual({});
+      expect(fs.existsSync(path.join(otherRoot, '.pp-dev', 'backups', '.pp-dev-meta', 'sync-service.meta.json'))).toBe(
+        true,
+      );
+    } finally {
+      fs.rmSync(otherRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the meta folder alone when it prunes the backups next to it', async () => {
+    const service = new DistService('page', { root, backupFolder: 'backups', maxBackups: 1 });
+
+    await service.saveBackup(Buffer.from('one'), analysis('one'));
+    await service.saveBackup(Buffer.from('two'), analysis('two'));
+
+    expect(fs.readdirSync(path.join(root, 'backups')).sort()).toEqual(
+      ['.pp-dev-meta', service.getBackupMeta()!.lastBackupName].sort(),
+    );
+  });
+
   it('keeps the sync meta in the given folder, relative to the root or absolute', async () => {
     const relative = new DistService('page', { root, metaDir: 'state/meta', backupFolder: 'backups' });
 
