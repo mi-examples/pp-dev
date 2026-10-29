@@ -2,12 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { IncomingMessage } from 'node:http';
 import {
   SessionUserTracker,
-  createSessionCheck,
   withSessionCookie,
   withoutSessionCookie,
   withoutSessionSetCookie,
-  type SessionCheck,
 } from '../../../src/lib/session-users.js';
+import { createSessionCheck, type SessionCheck } from '../../../src/lib/mi-identity.js';
 import { UserRegistry, type SavedUser } from '../../../src/lib/user-registry.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 

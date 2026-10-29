@@ -1,7 +1,7 @@
 import type { Application, Request, Response } from 'express';
-import { MiAPI } from './pp.middleware.js';
+import type { MiAPI } from './pp.middleware.js';
 import { SavedUser, UserRegistry, getUserNameError, getUserOrigin, userRegistry } from './user-registry.js';
-import { getTokenErrorInfo } from './helpers/index.js';
+import { checkUserToken } from './mi-identity.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
@@ -42,35 +42,6 @@ function toPublicUser(user: SavedUser, req: Request): PublicUser {
     miUser: user.miUser,
     origin,
   };
-}
-
-export type TokenCheck =
-  | { ok: true; miUser: { id: number; username: string } }
-  /** `rejected`: MI turned the token down; otherwise MI couldn't be asked. */
-  | { ok: false; rejected: boolean; message: string };
-
-/** Asks MI who an API token belongs to. */
-export async function checkUserToken(miAPI: MiAPI, token: string): Promise<TokenCheck> {
-  try {
-    const response = await miAPI.get<{ user?: { user_id?: unknown; username?: unknown } }>(
-      '/data/page/index/auth/info',
-      { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
-      true,
-    );
-    const user = response.data?.user;
-
-    if (typeof user?.user_id !== 'number') {
-      return { ok: false, rejected: true, message: 'The API token is expired or invalid' };
-    }
-
-    return { ok: true, miUser: { id: user.user_id, username: typeof user.username === 'string' ? user.username : '' } };
-  } catch (error) {
-    const { status, userFriendlyMessage } = getTokenErrorInfo(error);
-
-    return status === 401 || status === 403 || status === 412
-      ? { ok: false, rejected: true, message: `The API token was rejected: ${userFriendlyMessage}` }
-      : { ok: false, rejected: false, message: `Could not check the API token with MI: ${userFriendlyMessage}` };
-  }
 }
 
 function sendError(res: Response, status: number, code: string, error: string) {

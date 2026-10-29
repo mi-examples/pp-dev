@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  getTokenErrorInfo,
-  isTokenError,
-  isSessionExpiredError,
-  logTokenError,
-} from '../../../src/lib/helpers/token.helper.js';
+import { getTokenErrorInfo, isTokenError, logTokenError } from '../../../src/lib/helpers/token.helper.js';
 
 describe('Token Helper', () => {
   describe('getTokenErrorInfo', () => {
@@ -157,54 +152,33 @@ describe('Token Helper', () => {
     });
   });
 
-  describe('isSessionExpiredError', () => {
-    it('should return true for 412 with session expired in message', () => {
-      const error = {
-        response: {
-          status: 412,
-          data: { message: 'Your session has expired' },
-        },
-      };
-      expect(isSessionExpiredError(error)).toBe(true);
+  // Every export took `error: any`, and a 412 lowercased whatever `message` was: `null` or an object
+  // there threw inside the error handling itself.
+  describe('getTokenErrorInfo with whatever was thrown', () => {
+    it.each([
+      ['null', null],
+      ['undefined', undefined],
+      ['a string', 'boom'],
+      ['an object message on a 412', { response: { status: 412, data: { message: { text: 'x' } } } }],
+      ['a null response', { response: null }],
+      ['a numeric message', { message: 42 }],
+    ])('does not throw on %s', (_name, error) => {
+      expect(() => getTokenErrorInfo(error)).not.toThrow();
+      expect(typeof getTokenErrorInfo(error).message).toBe('string');
     });
 
-    it('should return true when message has different casing', () => {
-      const error = {
-        response: {
-          status: 412,
-          data: { message: 'SESSION EXPIRED - please login' },
-        },
-      };
-      expect(isSessionExpiredError(error)).toBe(true);
+    it('reads a 412 with a non-string message as a failed authentication', () => {
+      expect(getTokenErrorInfo({ response: { status: 412, data: { message: { text: 'x' } } } }).code).toBe(
+        'AUTH_FAILED',
+      );
     });
 
-    it('should return false for 412 without session expired message', () => {
-      const error = {
-        response: {
-          status: 412,
-          data: { message: 'Precondition failed' },
-        },
-      };
-      expect(isSessionExpiredError(error)).toBe(false);
+    it('keeps a thrown string as the message', () => {
+      expect(getTokenErrorInfo('boom').message).toBe('boom');
     });
 
-    it('should return false for 401', () => {
-      const error = {
-        response: {
-          status: 401,
-          data: { message: 'Your session has expired' },
-        },
-      };
-      expect(isSessionExpiredError(error)).toBe(false);
-    });
-
-    it('should return false when response.data is missing', () => {
-      const error = { response: { status: 412 } };
-      expect(isSessionExpiredError(error)).toBe(false);
-    });
-
-    it('should return false when response is missing', () => {
-      expect(isSessionExpiredError({})).toBe(false);
+    it('does not take null for a token error', () => {
+      expect(isTokenError(null)).toBe(false);
     });
   });
 

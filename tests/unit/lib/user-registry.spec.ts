@@ -283,6 +283,21 @@ describe('createUserHostGuard', () => {
 });
 
 describe('UserRegistry.replace', () => {
+  // A replace is a remove and an add: whoever follows the list (the token store, which writes its
+  // file on each change) heard about it twice.
+  it('notifies one change, once the new user is in place', () => {
+    const users = new UserRegistry();
+
+    users.add({ name: 'viewer', kind: 'token', token: 't-old' });
+
+    const seen: (string | undefined)[] = [];
+
+    users.onChange(() => seen.push(users.get('viewer')?.token));
+    users.replace('viewer', { name: 'viewer', kind: 'token', token: 't-new' });
+
+    expect(seen).toEqual(['t-new']);
+  });
+
   it('puts a new registration in the place of the old one, keeping it the default', () => {
     const users = new UserRegistry();
     const removed = vi.fn();

@@ -51,35 +51,10 @@ export interface RequestUser {
   user?: SavedUser;
 }
 
-const USER_HOST_SUFFIX = '.localhost';
+// The name rules, shared with the dev panel (which checks them as you type).
+export { MAX_USER_NAME_LENGTH, getUserNameError } from '../shared/user-names.js';
+import { USER_HOST_SUFFIX, getUserNameError } from '../shared/user-names.js';
 
-/** Longest user name; well under the 63 characters a DNS label allows. */
-export const MAX_USER_NAME_LENGTH = 32;
-
-/** A DNS label: lowercase latin letters, digits and `-`, starting with a letter and not ending with `-`. */
-const USER_NAME_REGEXP = /^[a-z](?:[a-z0-9-]*[a-z0-9])?$/;
-
-/** Why `name` can't be a user name, or `undefined` if it can. */
-export function getUserNameError(name: string): string | undefined {
-  if (!name) {
-    return 'The name is required';
-  }
-
-  if (name.length > MAX_USER_NAME_LENGTH) {
-    return `The name must be at most ${MAX_USER_NAME_LENGTH} characters long`;
-  }
-
-  if (!USER_NAME_REGEXP.test(name)) {
-    return 'The name may contain only lowercase latin letters, digits and "-", must start with a letter and must not end with "-"';
-  }
-
-  return undefined;
-}
-
-/**
- * The user name in a `Host` header of a user's host (`u2.localhost:3000` → `u2`), or `undefined`
- * for any other host, the main `localhost` included.
- */
 /**
  * Whether `host` is the main host, `localhost`, the one the default user works on. An IP address
  * or a custom domain has no user hosts next to it and always goes as the original user.
@@ -88,6 +63,10 @@ export function isMainHost(host: string | undefined): boolean {
   return (host ?? '').toLowerCase().replace(/:\d+$/, '') === 'localhost';
 }
 
+/**
+ * The user name in a `Host` header of a user's host (`u2.localhost:3000` → `u2`), or `undefined`
+ * for any other host, the main `localhost` included.
+ */
 export function getUserNameFromHost(host: string | undefined): string | undefined {
   if (!host) {
     return undefined;
@@ -121,6 +100,9 @@ export class UserRegistry {
   readonly #removeListeners = new Set<(user: SavedUser) => void>();
 
   readonly #changeListeners = new Set<() => void>();
+
+  /** While set, `replace` is under way: its remove and add make one change, notified once at its end. */
+  #inReplace = false;
 
   readonly #sessionChangeListeners = new Set<(user: SavedUser) => void>();
 
@@ -180,7 +162,7 @@ export class UserRegistry {
     // A user of its own now, no longer an old name of another.
     this.#renamed.delete(saved.name);
     this.#users.set(saved.name, saved);
-    this.#changeListeners.forEach((listener) => listener());
+    this.#notifyChange();
 
     return saved;
   }
@@ -210,9 +192,23 @@ export class UserRegistry {
     // Older names of this user, which `remove` forgets.
     const olderNames = [...this.#renamed].filter(([, to]) => to === name).map(([from]) => from);
 
-    this.remove(name);
+    // One change for whoever follows the list (the token store writes its file on each).
+    this.#inReplace = true;
 
-    const saved = this.add(user);
+    let saved: SavedUser;
+
+    try {
+      this.remove(name);
+      saved = this.add(user);
+    } catch (error) {
+      // The old user is gone even so: that is a change too.
+      this.#inReplace = false;
+      this.#notifyChange();
+
+      throw error;
+    } finally {
+      this.#inReplace = false;
+    }
 
     for (const from of user.name === name ? olderNames : [...olderNames, name]) {
       this.#renamed.set(from, saved.name);
@@ -222,7 +218,15 @@ export class UserRegistry {
       this.#defaultUserName = saved.name;
     }
 
+    this.#notifyChange();
+
     return saved;
+  }
+
+  #notifyChange(): void {
+    if (!this.#inReplace) {
+      this.#changeListeners.forEach((listener) => listener());
+    }
   }
 
   /** The name the user once named `name` has now, if it was renamed and is still there. */
@@ -249,7 +253,7 @@ export class UserRegistry {
 
     this.#users.delete(name);
     this.#removeListeners.forEach((listener) => listener(user));
-    this.#changeListeners.forEach((listener) => listener());
+    this.#notifyChange();
 
     return true;
   }
