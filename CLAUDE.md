@@ -67,7 +67,7 @@ src/client/
 
 | Suite | Config | Pool | Timeout | Location |
 |---|---|---|---|---|
-| Unit | `vitest.config.ts` | threads | 10 s | `tests/unit/**/*.spec.ts` |
+| Unit | `vitest.config.ts` | threads, not isolated (specs that `vi.mock` modules run isolated) | 10 s | `tests/unit/**/*.spec.ts` |
 | Integration | `vitest.integration.config.ts` | forks | 30 s | `tests/integration/**/*.spec.ts` |
 | E2E | `playwright.config.ts` | browser | — | `e2e/` |
 
