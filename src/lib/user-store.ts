@@ -132,13 +132,14 @@ export async function keepTokenUsers(
 
   // Another dev server on this project and MI instance writes the same file: its users are kept,
   // merged in by name (this one's version of a user wins). Writing just this registry's users made
-  // the last server to write drop the users the other one had added.
+  // the last server to write drop the users the other one had added. A session user here takes its
+  // name too: the file's token user of that name isn't restored, so it isn't merged back either.
   const save = () => {
-    const tokenUsers = users
-      .list()
+    const registered = users.list();
+    const tokenUsers = registered
       .filter((user) => user.kind === 'token' && user.token)
       .map((user) => ({ name: user.name, token: user.token! }));
-    const names = new Set(tokenUsers.map((user) => user.name));
+    const names = new Set(registered.map((user) => user.name));
     const othersUsers = readStoredUsers(file).filter((user) => !names.has(user.name) && !removedHere.has(user.name));
 
     try {

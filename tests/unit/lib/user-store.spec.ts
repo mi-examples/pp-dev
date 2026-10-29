@@ -247,6 +247,18 @@ describe('keepTokenUsers', () => {
     expect(storedNames()).toEqual(['new-name']);
   });
 
+  // The saved token user wasn't restored over the session user, but each save merged it back from
+  // the file, so the next start restored the old token under that name.
+  it('does not merge back a saved token user whose name a session user took here', async () => {
+    writeStoredUsers(file, [{ name: 'viewer', token: 'old-token' }], { project: '/work/app', miUrl: MI_URL });
+    users.add({ name: 'viewer', kind: 'session' });
+    await keep();
+
+    users.add({ name: 'qa', kind: 'token', token: 'qa-token' });
+
+    expect(readStoredUsers(file)).toEqual([{ name: 'qa', token: 'qa-token' }]);
+  });
+
   // Each start for another file (another project or MI instance) added a pair of registry
   // listeners, and none was ever removed.
   it('removes its registry listeners when it starts keeping another file', async () => {
