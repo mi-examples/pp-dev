@@ -154,6 +154,29 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     expect(await res.json()).toMatchObject({ user: expect.any(Object) });
   });
 
+  // DNS rebinding: a page on evil.example:3000 whose name now points at 127.0.0.1 is same-origin
+  // with the dev server, so the Origin check let it use the API and the dev-panel WebSocket (a
+  // template sync uploads to MI with the developer's token). Its Host is still evil.example:3000.
+  it('refuses requests and WebSocket upgrades for a host it was not started for', async () => {
+    for (const urlPath of ['/', '/@api/users', '/@pp-dev/inspector']) {
+      const res = await getWithHost(3000, urlPath, 'evil.example:3000');
+
+      expect(res.status, urlPath).toBe(403);
+      expect(res.body).toContain('this host ("evil.example") is not allowed');
+    }
+
+    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
+    expect(await upgradeStatusWithHost(3000, '/_next/webpack-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
+  });
+
+  it('still answers localhost and IP addresses', async () => {
+    expect((await getWithHost(3000, '/@api/users', 'localhost:3000')).status).toBe(200);
+    expect((await getWithHost(3000, '/@api/users', '127.0.0.1:3000')).status).toBe(200);
+    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'localhost:3000')).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+  });
+
   // The pages carry no icon link, so the browser asks for /favicon.ico at the root, where Next serves
   // no icon (only under the base path): it got Next's 404. Under `pp-dev` MI answers it through the
   // proxy; the cassette has MI's icon.
@@ -183,29 +206,6 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
         true,
       );
     }
-  });
-
-  // DNS rebinding: a page on evil.example:3000 whose name now points at 127.0.0.1 is same-origin
-  // with the dev server, so the Origin check let it use the API and the dev-panel WebSocket (a
-  // template sync uploads to MI with the developer's token). Its Host is still evil.example:3000.
-  it('refuses requests and WebSocket upgrades for a host it was not started for', async () => {
-    for (const urlPath of ['/', '/@api/users', '/@pp-dev/inspector']) {
-      const res = await getWithHost(3000, urlPath, 'evil.example:3000');
-
-      expect(res.status, urlPath).toBe(403);
-      expect(res.body).toContain('this host ("evil.example") is not allowed');
-    }
-
-    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
-    expect(await upgradeStatusWithHost(3000, '/_next/webpack-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
-  });
-
-  it('still answers localhost and IP addresses', async () => {
-    expect((await getWithHost(3000, '/@api/users', 'localhost:3000')).status).toBe(200);
-    expect((await getWithHost(3000, '/@api/users', '127.0.0.1:3000')).status).toBe(200);
-    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'localhost:3000')).toBe(
-      'HTTP/1.1 101 Switching Protocols',
-    );
   });
 });
 
