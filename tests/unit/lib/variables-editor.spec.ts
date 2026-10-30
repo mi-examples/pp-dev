@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from '../../../src/lib/variables-editor.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
@@ -293,7 +296,9 @@ describe('registerVariablesEditorRoutes', () => {
     });
 
     it('sends what the local pages show along, to compare with MI', async () => {
-      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
       const miAPI = {
         getLivePageVariables: vi.fn().mockResolvedValue([{ name: 'Region', value: 'EMEA' }]),
         localPageVariables: [{ name: 'Region', value: 'US' }],
@@ -352,7 +357,9 @@ describe('registerVariablesEditorRoutes', () => {
 
     // Anything else an entry carried went to MI, which stores it.
     it('sends MI only the name and value of each entry', async () => {
-      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
       const applyPageVariables = vi.fn().mockResolvedValue(undefined);
       const miAPI = { applyPageVariables, reloadPageVariables: vi.fn().mockResolvedValue([]) } as unknown as MiAPI;
       const app = register({ distService, miAPI });
@@ -390,7 +397,9 @@ describe('registerVariablesEditorRoutes', () => {
     });
 
     it('updates what the local pages show after saving', async () => {
-      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
       const miAPI = {
         applyPageVariables: vi.fn().mockResolvedValue(undefined),
         reloadPageVariables: vi.fn().mockResolvedValue([]),
@@ -407,7 +416,9 @@ describe('registerVariablesEditorRoutes', () => {
     });
 
     it('still saves when the local pages cannot be updated, and says so', async () => {
-      const distService = { readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null) } as unknown as DistService;
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
       const miAPI = {
         applyPageVariables: vi.fn().mockResolvedValue(undefined),
         reloadPageVariables: vi.fn().mockRejectedValue(new Error('timeout')),
@@ -463,30 +474,16 @@ describe('registerVariablesEditorRoutes', () => {
     });
   });
 
-  describe('GET /@api/variables/new-uid', () => {
-    it('returns a 32-char lowercase hex md5-shaped uid', async () => {
-      const app = register({ miAPI: {} as unknown as MiAPI });
-      const res = makeRes();
-
-      await app.handlers.get('GET /@api/variables/new-uid')!({}, res);
-
-      expect(res.body.uid).toMatch(/^[0-9a-f]{32}$/);
-    });
-
-    it('returns a fresh uid on every call', async () => {
-      const app = register({ miAPI: {} as unknown as MiAPI });
-      const res1 = makeRes();
-      const res2 = makeRes();
-
-      await app.handlers.get('GET /@api/variables/new-uid')!({}, res1);
-      await app.handlers.get('GET /@api/variables/new-uid')!({}, res2);
-
-      expect(res1.body.uid).not.toBe(res2.body.uid);
-    });
-  });
-
   describe('GET /@api/variables/pages', () => {
-    function page(overrides: Partial<{ id: number; name: string; internal_name: string; template_id: number | null; template: string | null }>) {
+    function page(
+      overrides: Partial<{
+        id: number;
+        name: string;
+        internal_name: string;
+        template_id: number | null;
+        template: string | null;
+      }>,
+    ) {
       return {
         id: 1,
         name: 'Page',
@@ -502,11 +499,13 @@ describe('registerVariablesEditorRoutes', () => {
     it('excludes the current page and flags pages sharing its template first', async () => {
       const miAPI = {
         internalPageName: 'sales-q3',
-        listPages: vi.fn().mockResolvedValue([
-          page({ id: 1, name: 'Sales Dashboard (Q3)', internal_name: 'sales-q3', template_id: 313 }),
-          page({ id: 2, name: 'Sales Dashboard (Q1)', internal_name: 'sales-q1', template_id: 313 }),
-          page({ id: 3, name: 'Marketing Overview', internal_name: 'marketing', template_id: 99 }),
-        ]),
+        listPages: vi
+          .fn()
+          .mockResolvedValue([
+            page({ id: 1, name: 'Sales Dashboard (Q3)', internal_name: 'sales-q3', template_id: 313 }),
+            page({ id: 2, name: 'Sales Dashboard (Q1)', internal_name: 'sales-q1', template_id: 313 }),
+            page({ id: 3, name: 'Marketing Overview', internal_name: 'marketing', template_id: 99 }),
+          ]),
       } as unknown as MiAPI;
       const app = register({ miAPI });
       const res = makeRes();
@@ -523,10 +522,12 @@ describe('registerVariablesEditorRoutes', () => {
     it('falls back to comparing template internal_name when template_id is absent', async () => {
       const miAPI = {
         internalPageName: 'current',
-        listPages: vi.fn().mockResolvedValue([
-          page({ id: 1, internal_name: 'current', template_id: null, template: 'shared-template' }),
-          page({ id: 2, internal_name: 'other', template_id: null, template: 'shared-template' }),
-        ]),
+        listPages: vi
+          .fn()
+          .mockResolvedValue([
+            page({ id: 1, internal_name: 'current', template_id: null, template: 'shared-template' }),
+            page({ id: 2, internal_name: 'other', template_id: null, template: 'shared-template' }),
+          ]),
       } as unknown as MiAPI;
       const app = register({ miAPI });
       const res = makeRes();
@@ -598,619 +599,68 @@ describe('registerVariablesEditorRoutes', () => {
     });
   });
 
+  // The page was a template literal built on every request; it is now built from
+  // src/client/variables-editor into dist/client, and served from there.
   describe(`GET ${VARIABLES_EDITOR_PATH}`, () => {
-    it('serves an HTML page', async () => {
-      const app = register({ miAPI: {} as unknown as MiAPI });
-      const res = makeRes();
+    let clientDir: string;
 
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      expect(res.headers['Content-Type']).toContain('text/html');
-      expect(typeof res.body).toBe('string');
-      expect(res.body).toContain('Variables Editor');
-    });
-
-    it('shows an info message with no tabs/Save when the page is templateLess', async () => {
-      const app = register({ miAPI: { isTemplateLess: true } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      expect(res.body).toContain('no associated template');
-      expect(res.body).not.toContain('id="tab-schema"');
-      expect(res.body).not.toContain('id="save-btn"');
-    });
-
-    // Every `<script>` block is built via string concatenation inside one giant template
-    // literal — a backslash-escaping mistake there (e.g. a regex like /\\/) is invisible to
-    // `tsc`/eslint (it's just characters inside a string) and only breaks at runtime when the
-    // browser parses it, which none of the tests above would ever catch. `new Function` parses
-    // without executing, so this fails fast on any embedded-script SyntaxError.
-    it('embeds syntactically valid client-side JavaScript in every <script> block', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const html = res.body as string;
-      const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-
-      expect(scripts.length).toBeGreaterThan(0);
-
-      for (const script of scripts) {
-        expect(() => new Function(script)).not.toThrow();
-      }
-    });
-
-    // Same template-literal backslash pitfall as above, but silent rather than a SyntaxError:
-    // a bare \s in the source collapses to a literal "s", so the embedded regex still parses
-    // fine but silently stops matching whitespace — the "Contains a character..." hint would
-    // then fire on every name containing a space. Extract the actual embedded regex text so a
-    // future regression here fails a test instead of only showing up as a UI bug report.
-    it('embeds a client-side NAME_FORMAT_REGEX that still allows whitespace in names', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const html = res.body as string;
-      const match = html.match(/const NAME_FORMAT_REGEX = (\/.*\/);/);
-
-      expect(match).not.toBeNull();
-
-      const re = new Function(`return ${match![1]};`)();
-
-      expect(re.test('Connection Report Meta')).toBe(true);
-      expect(re.test('bad$name')).toBe(false);
-    });
-
-    it('keeps the newest values response when overlapping loads resolve out of order', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
-      });
-      const pending: Array<(response: { ok: boolean; json: () => Promise<unknown> }) => void> = [];
-      const fetch = vi.fn(
-        () =>
-          new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
-            pending.push(resolve);
-          }),
+    beforeEach(() => {
+      clientDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-editor-client-'));
+      fs.copyFileSync(
+        path.resolve(__dirname, '../../../src/client/variables-editor/variables-editor.html'),
+        path.join(clientDir, 'variables-editor.html'),
       );
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      expect(fetch).toHaveBeenCalledTimes(1);
-
-      (dom.window as unknown as { refresh: () => void }).refresh();
-      expect(fetch).toHaveBeenCalledTimes(2);
-
-      pending[1]!({
-        ok: true,
-        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'newer' }] }),
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      pending[0]!({
-        ok: true,
-        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'older' }] }),
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
-
-      expect(valueInput?.value).toBe('newer');
-
-      dom.window.close();
+      fs.writeFileSync(path.join(clientDir, 'variables-editor.css'), 'body{}');
     });
 
-    it('shows an error banner instead of hanging when the initial values fetch rejects', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+    afterEach(() => {
+      fs.rmSync(clientDir, { recursive: true, force: true });
+    });
+
+    const servePage = (isTemplateLess: boolean) => {
+      const app = makeApp();
       const res = makeRes();
 
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+      registerVariablesEditorRoutes(app, { miAPI: { isTemplateLess } as unknown as MiAPI }, clientDir);
 
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
+      return new Promise<typeof res>((resolve) => {
+        res.end = (payload?: unknown) => {
+          res.body = payload;
+          resolve(res);
+        };
+        app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
       });
-      const fetch = vi.fn().mockRejectedValue(new Error('network down'));
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
-        'Failed to load values: network down',
-      );
-
-      dom.window.close();
-    });
-
-    it('offers to update the local pages while they show other values than MI', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
-      });
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            schema: null,
-            live: [
-              { name: 'Region', value: 'EMEA' },
-              { name: 'Limit', value: '50' },
-            ],
-            combined: [
-              { name: 'Region', value: 'EMEA' },
-              { name: 'Limit', value: '50' },
-            ],
-            local: [
-              { name: 'Region', value: 'US' },
-              { name: 'Limit', value: '50' },
-            ],
-          }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            local: [
-              { name: 'Region', value: 'EMEA' },
-              { name: 'Limit', value: '50' },
-            ],
-          }),
-        });
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
-
-      expect(button.hidden).toBe(false);
-      expect(button.textContent).toBe('Update local pages · 1');
-      expect(button.title).toContain('Region: US → EMEA');
-      expect(button.title).not.toContain('Limit');
-
-      // Inline handlers don't run under runScripts: 'outside-only'; this is what the button's onclick calls.
-      await (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
-
-      expect(fetch).toHaveBeenLastCalledWith('/@api/variables/values/local', { method: 'POST' });
-      expect(button.hidden).toBe(true);
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain('Local pages updated');
-
-      dom.window.close();
-    });
-
-    async function openValuesTab(responses: unknown[], mode = '') {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values${mode}`,
-      });
-      const fetch = vi.fn();
-
-      for (const body of responses) {
-        fetch.mockResolvedValueOnce({ ok: true, json: async () => body });
-      }
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const button = dom.window.document.getElementById('local-update-btn') as HTMLButtonElement;
-      const update = () => (dom.window as unknown as { updateLocalValues: () => Promise<void> }).updateLocalValues();
-
-      return { dom, button, update };
-    }
-
-    it("renders a variable's description as markdown", async () => {
-      const { dom } = await openValuesTab([
-        {
-          schema: { tags: [{ name: 'Region', description: '**Pick** one of `EMEA`, <u>US</u>' }] },
-          live: [{ name: 'Region', value: 'EMEA' }],
-          combined: [{ name: 'Region', value: 'EMEA' }],
-          local: [{ name: 'Region', value: 'EMEA' }],
-        },
-      ]);
-      const hint = dom.window.document.querySelector('#content .ve-md');
-
-      expect(hint?.innerHTML).toBe('<p><strong>Pick</strong> one of <code>EMEA</code>, <u>US</u></p>');
-
-      dom.window.close();
-    });
-
-    it('tells a missing variable from an empty one', async () => {
-      const { dom, button } = await openValuesTab([
-        { schema: null, live: [{ name: 'Note', value: '' }], combined: [{ name: 'Note', value: '' }], local: [] },
-      ]);
-
-      expect(button.hidden).toBe(false);
-      expect(button.title).toContain('Note: (missing) → (empty)');
-
-      dom.window.close();
-    });
-
-    it("takes the reloaded values for MI's latest, so a change in MI meanwhile doesn't keep the button", async () => {
-      const { dom, button, update } = await openValuesTab([
-        {
-          schema: null,
-          live: [{ name: 'Region', value: 'EMEA' }],
-          combined: [{ name: 'Region', value: 'EMEA' }],
-          local: [{ name: 'Region', value: 'US' }],
-        },
-        // MI changed to APAC after the tab loaded.
-        { local: [{ name: 'Region', value: 'APAC' }] },
-      ]);
-
-      await update();
-
-      expect(button.hidden).toBe(true);
-
-      dom.window.close();
-    });
-
-    it('keeps an unsaved raw JSON draft when updating the local pages', async () => {
-      const { dom, update } = await openValuesTab(
-        [
-          {
-            schema: null,
-            live: [{ name: 'Region', value: 'EMEA' }],
-            combined: [{ name: 'Region', value: 'EMEA' }],
-            local: [{ name: 'Region', value: 'US' }],
-          },
-          { local: [{ name: 'Region', value: 'EMEA' }] },
-        ],
-        '&mode=json',
-      );
-      const editor = () => dom.window.document.getElementById('values-raw-editor') as HTMLTextAreaElement;
-
-      editor().value = '[{"name":"Region","value":"draft"}]';
-      await update();
-
-      expect(editor().value).toBe('[{"name":"Region","value":"draft"}]');
-
-      dom.window.close();
-    });
-
-    it('does not save malformed additional_options text as a string', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`,
-      });
-      const fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          exists: true,
-          raw: '{"tags":[]}',
-          schema: {
-            tags: [{ additional_options: [], name: 'choice', tag_source: 'static', tag_type: 'select' }],
-          },
-        }),
-      });
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const editorWindow = dom.window as unknown as {
-        save: () => void;
-        updateSchemaAdditionalOptions: (index: number, value: string) => void;
-      };
-
-      editorWindow.updateSchemaAdditionalOptions(0, 'not valid JSON');
-      editorWindow.save();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
-        'additional_options must be valid JSON',
-      );
-
-      dom.window.close();
-    });
-
-    it('preserves value edits made while a save request is pending', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
-      });
-      const pending: Array<(response: { ok: boolean; json: () => Promise<unknown> }) => void> = [];
-      const fetch = vi.fn(
-        () =>
-          new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
-            pending.push(resolve);
-          }),
-      );
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      pending[0]!({
-        ok: true,
-        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'initial' }] }),
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const editorWindow = dom.window as unknown as {
-        refresh: () => void;
-        save: () => void;
-        updateValueField: (index: number, value: string) => void;
-      };
-      const valueInputBeforeSave = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input')!;
-
-      valueInputBeforeSave.value = 'submitted';
-      editorWindow.updateValueField(0, 'submitted');
-      editorWindow.save();
-      // save() now opens a confirmation diff modal instead of saving immediately — confirm it.
-      dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
-      expect(fetch).toHaveBeenCalledTimes(2);
-
-      valueInputBeforeSave.value = 'newer unsaved edit';
-      editorWindow.updateValueField(0, 'newer unsaved edit');
-      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      if (pending[2]) {
-        pending[2]({
-          ok: true,
-          json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'submitted' }] }),
-        });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-
-      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(valueInput?.value).toBe('newer unsaved edit');
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
-        'Newer edits remain unsaved.',
-      );
-
-      editorWindow.refresh();
-      expect(dom.window.document.querySelector('.ve-modal-title')?.textContent).toBe('Discard unsaved changes?');
-
-      dom.window.close();
-    });
-  });
-
-  describe('client: failed loads and saves', () => {
-    type FetchResponse = { ok: boolean; status?: number; statusText?: string; json: () => Promise<unknown> };
-
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-    const htmlErrorPage = (status: number, statusText: string): FetchResponse => ({
-      ok: false,
-      status,
-      statusText,
-      json: async () => {
-        throw new SyntaxError("Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON");
-      },
-    });
-
-    async function openEditor(tab: 'schema' | 'values', fetch: ReturnType<typeof vi.fn>) {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=${tab}`,
-      });
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await flush();
-
-      const editor = dom.window as unknown as {
-        save: () => void;
-        refresh: () => void;
-        setDirty: (value: boolean) => void;
-        toggleRawMode: () => void;
-        toggleValuesRawMode: () => void;
-        onValuesRawInput: () => void;
-        updateValueField: (index: number, value: string) => void;
-      };
-      const banner = () => dom.window.document.querySelector('#content > .banner')?.textContent ?? '';
-      const confirmSave = async () => {
-        editor.save();
-        dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
-        await flush();
-      };
-      const asksToDiscard = () => {
-        editor.refresh();
-
-        const asked = dom.window.document.querySelector('.ve-modal-title')?.textContent === 'Discard unsaved changes?';
-
-        dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-cancel')?.click();
-
-        return asked;
-      };
-
-      return { dom, editor, banner, confirmSave, asksToDiscard };
-    }
-
-    const schemaResponse: FetchResponse = {
-      ok: true,
-      json: async () => ({ exists: true, raw: '{"tags":[{"name":"title"}]}', schema: { tags: [{ name: 'title' }] } }),
     };
 
-    const valuesResponse: FetchResponse = {
-      ok: true,
-      json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'initial' }] }),
-    };
+    it('serves the built page, saying whether it has a template', async () => {
+      const page = await servePage(false);
 
-    it('shows why a schema save failed on an HTML error page, keeping the raw draft and the unsaved state', async () => {
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce(schemaResponse)
-        .mockResolvedValueOnce(htmlErrorPage(500, 'Internal Server Error'));
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('schema', fetch);
-      const draft = '{"tags":[{"name":"title"},{"name":"subtitle"}]}';
-
-      editor.toggleRawMode();
-      dom.window.document.querySelector<HTMLTextAreaElement>('#raw-editor')!.value = draft;
-      editor.setDirty(true);
-      await confirmSave();
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(banner()).toContain('Save failed: the dev server answered HTTP 500 Internal Server Error');
-      expect(dom.window.document.querySelector<HTMLTextAreaElement>('#raw-editor')!.value).toBe(draft);
-      expect(asksToDiscard()).toBe(true);
-
-      dom.window.close();
+      expect(page.headers['Content-Type']).toBe('text/html; charset=utf-8');
+      expect(page.body).toContain('<body data-template-less="false">');
+      expect(page.body).toContain('<script type="module" src="/@pp-dev/variables-editor/variables-editor.js">');
+      expect((await servePage(true)).body).toContain('<body data-template-less="true">');
     });
 
-    it("shows the server's error for a values save over the body limit, keeping the raw draft", async () => {
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce(valuesResponse)
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 413,
-          statusText: 'Payload Too Large',
-          json: async () => ({ error: 'The request body is larger than the dev server accepts (10mb).' }),
+    it("serves the page's styles and nothing else from the folder", async () => {
+      const app = makeApp();
+
+      registerVariablesEditorRoutes(app, { miAPI: {} as unknown as MiAPI }, clientDir);
+
+      const get = (file: string) =>
+        new Promise<string | 'next'>((resolve) => {
+          const res = makeRes();
+
+          res.end = (payload?: unknown) => resolve(String(payload));
+          app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}/:file`)!({ params: { file } }, res, () => resolve('next'));
         });
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
-      const draft = '[{"name":"title","value":"edited"}]';
 
-      editor.toggleValuesRawMode();
-
-      const rawEditor = dom.window.document.querySelector<HTMLTextAreaElement>('#values-raw-editor')!;
-
-      rawEditor.value = draft;
-      editor.onValuesRawInput();
-      await confirmSave();
-
-      expect(banner()).toContain('Save failed: The request body is larger than the dev server accepts (10mb).');
-      expect(dom.window.document.querySelector<HTMLTextAreaElement>('#values-raw-editor')!.value).toBe(draft);
-      expect(asksToDiscard()).toBe(true);
-
-      dom.window.close();
+      expect(await get('variables-editor.css')).toBe('body{}');
+      expect(await get('variables-editor.html')).toBe('next');
+      expect(await get('../package.json')).toBe('next');
     });
 
-    it("shows the server's details when MI rejects a values save", async () => {
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce(valuesResponse)
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 502,
-          statusText: 'Bad Gateway',
-          json: async () => ({ error: 'Failed to save live page variables.', details: 'Request failed with status 500' }),
-        });
-      const { dom, editor, banner, confirmSave } = await openEditor('values', fetch);
-
-      editor.updateValueField(0, 'edited');
-      await confirmSave();
-
-      expect(banner()).toContain('Save failed: Failed to save live page variables. Request failed with status 500');
-
-      dom.window.close();
-    });
-
-    it('shows a network failure of a save instead of leaving it pending', async () => {
-      const fetch = vi.fn().mockResolvedValueOnce(valuesResponse).mockRejectedValueOnce(new TypeError('Failed to fetch'));
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
-
-      editor.updateValueField(0, 'edited');
-      await confirmSave();
-
-      expect(banner()).toContain('Save failed: Failed to fetch');
-      expect(asksToDiscard()).toBe(true);
-
-      dom.window.close();
-    });
-
-    it('treats a 2xx answer that is not JSON as a failed save', async () => {
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce(valuesResponse)
-        .mockResolvedValueOnce({ ...htmlErrorPage(200, 'OK'), ok: true });
-      const { dom, editor, banner, confirmSave, asksToDiscard } = await openEditor('values', fetch);
-
-      editor.updateValueField(0, 'edited');
-      await confirmSave();
-
-      expect(banner()).toContain('Save failed: the dev server sent an answer that is not JSON');
-      expect(asksToDiscard()).toBe(true);
-
-      dom.window.close();
-    });
-
-    it('shows a failed schema load as an error, not as a missing file', async () => {
-      const fetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: 'Service Unavailable',
-        json: async () => ({ error: 'Dist service or MiAPI is not defined' }),
-      });
-      const { dom, editor, banner } = await openEditor('schema', fetch);
-
-      expect(banner()).toContain('Failed to load the schema: Dist service or MiAPI is not defined');
-      expect(dom.window.document.querySelector('#content')?.textContent).not.toContain(
-        'No local __template_variables.json found',
-      );
-
-      editor.save();
-      await flush();
-
-      expect(banner()).toContain('Cannot save the schema until it has loaded successfully.');
-      expect(fetch).toHaveBeenCalledTimes(1);
-
-      dom.window.close();
+    it('no longer has the new-uid route: the page makes uids with the browser crypto', () => {
+      expect(register({ miAPI: {} as unknown as MiAPI }).handlers.has('GET /@api/variables/new-uid')).toBe(false);
     });
   });
 });

@@ -158,7 +158,7 @@ describe('the Request Inspector page', () => {
     const page = await request(app, INSPECTOR_PATH);
 
     expect(page.status).toBe(500);
-    expect(page.body).toContain('Request Inspector page not built');
+    expect(page.body).toContain('request-inspector page not built');
   });
 
   it("serves the page's own script and styles, and nothing else from the folder", async () => {

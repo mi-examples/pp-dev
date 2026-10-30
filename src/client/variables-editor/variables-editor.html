@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Variables Editor — pp-dev</title>
+<script>
+// Set the stored theme override before first paint, so switching pages/reloading doesn't
+// flash the OS-default theme before settling on the user's explicit choice (see setTheme()).
+try {
+  var ppDevStoredTheme = localStorage.getItem('pp-dev-info-theme');
+
+  if (ppDevStoredTheme === 'dark' || ppDevStoredTheme === 'light') {
+    document.documentElement.setAttribute('data-pp-dev-theme', ppDevStoredTheme);
+  }
+} catch (e) {}
+</script>
+<link rel="stylesheet" href="/@pp-dev/variables-editor/variables-editor.css">
+<script type="module" src="/@pp-dev/variables-editor/variables-editor.js"></script>
+</head>
+<!-- data-template-less: "true" when the page has no template; the CSS then hides .ve-template-only. -->
+<body data-template-less="{{templateLess}}">
+<div class="app">
+  <div class="toolbar">
+    <span class="toolbar-title">🧩 Variables Editor</span>
+    <div class="tabs ve-template-only">
+      <button class="tab" id="tab-schema" data-action="switch-tab" data-tab="schema">Schema</button>
+      <button class="tab" id="tab-values" data-action="switch-tab" data-tab="values">Values</button>
+    </div>
+    <span class="ve-loading-indicator ve-template-only" id="loading-indicator" style="display:none"><span class="ve-loading-dot"></span>Refreshing…</span>
+    <div class="toolbar-spacer"></div>
+    <button class="btn btn-sm ve-template-only" data-action="refresh">↻ Refresh</button>
+    <button class="btn btn-sm btn-primary ve-template-only" id="save-btn" data-action="save">Save</button>
+    <div class="theme-switch" id="theme-switch">
+      <button data-theme-choice="auto" aria-pressed="false">Auto</button>
+      <button data-theme-choice="dark" aria-pressed="false">Dark</button>
+      <button data-theme-choice="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+  <div class="content" id="content"></div>
+</div>
+<button class="btn btn-sm btn-primary local-update-btn ve-template-only" id="local-update-btn" hidden data-action="update-local-values"></button>
+</body>
+</html>

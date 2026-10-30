@@ -98,4 +98,6 @@ export default [
   clientBundle('index.ts', 'client', 'assets/css/client.scss'),
   // The Request Inspector page, /@pp-dev/inspector.
   clientBundle('request-inspector/main.ts', 'request-inspector', 'request-inspector/request-inspector.scss'),
+  // The Variables Editor page, /@pp-dev/variables-editor.
+  clientBundle('variables-editor/main.ts', 'variables-editor', 'variables-editor/variables-editor.scss'),
 ];
