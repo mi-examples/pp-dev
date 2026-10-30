@@ -65,6 +65,21 @@ export function initRewriteResponse(
 
       const buffers: Buffer[] = [];
 
+      // The headers, the page's Content-Length among them, are held back until end(): sent before
+      // it, they could no longer give the rewritten body's length, and the page was cut short.
+      // Next.js flushes them before it writes the first chunk (pipe-readable.js), and its
+      // compression middleware, wrapping end() over this one, writes them (writeHead) before it
+      // passes the page on when the client accepts no compression.
+      const writeHead = res.writeHead;
+      let heldHead: unknown[] | null = null;
+
+      res.flushHeaders = function () {};
+      res.writeHead = function (this: ServerResponse, ...args: unknown[]) {
+        heldHead = args;
+
+        return this;
+      };
+
       res.write = function (chunk: any, encoding?: any, cb?: any) {
         const buffer = toBuffer(chunk, asEncoding(encoding));
 
@@ -104,12 +119,28 @@ export function initRewriteResponse(
         // Next.js sets `Content-Length` for the page it rendered before calling `end`
         // (send-payload.js). The rewritten body is longer, and a stale length makes browsers
         // cut the page short and Node clients fail with HPE_INVALID_CONSTANT. Vite sets none.
-        if (res.getHeader('content-length') !== undefined) {
+        const headersObject = heldHead?.find(
+          (arg): arg is Record<string, unknown> => typeof arg === 'object' && arg !== null && !Array.isArray(arg),
+        );
+        const lengthInHead =
+          headersObject && Object.keys(headersObject).find((k) => k.toLowerCase() === 'content-length');
+
+        if (res.getHeader('content-length') !== undefined || lengthInHead) {
           if (res.headersSent) {
             logger.warn(`Rewrite response for ${req.url}: headers already sent, Content-Length left as is`);
           } else {
+            if (headersObject && lengthInHead) {
+              delete headersObject[lengthInHead];
+            }
+
             res.setHeader('content-length', output.length);
           }
+        }
+
+        res.writeHead = writeHead;
+
+        if (heldHead && !res.headersSent) {
+          (writeHead as (...args: unknown[]) => ServerResponse).apply(this, heldHead);
         }
 
         end.call(this, output, endCallback);

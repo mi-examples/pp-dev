@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { INSPECTOR_PATH, registerInspectorRoutes } from '../../../src/lib/request-inspector.js';
 import { RequestStore } from '../../../src/lib/request-store.js';
@@ -81,6 +82,67 @@ describe('GET /@api/requests', () => {
     app.handlers.get('GET /@api/requests')!({ query: { method: ['post', 'get'], search: ['/b', '/a'] } }, res);
 
     expect(res.body.requests.map((e: { url: string }) => e.url)).toEqual(['/b']);
+  });
+});
+
+// A body is captured as it went to the browser. Next.js compresses its chunks, and the page showed,
+// copied and saved those bytes as text.
+describe('GET /@api/requests/:id', () => {
+  const SCRIPT = 'console.log("hello from a chunk");'.repeat(20);
+
+  function detailsOf(body: Buffer, contentEncoding?: string) {
+    const app = makeApp();
+    const store = new RequestStore();
+    const res: any = { json: (value: unknown) => (res.body = value) };
+    const id = store.allocateId();
+
+    store.add({
+      id,
+      timestamp: 0,
+      method: 'GET',
+      url: '/_next/static/chunks/main.js',
+      statusCode: 200,
+      duration: 0,
+      source: 'local',
+      requestHeaders: {},
+      requestBody: null,
+      requestBodyTruncated: false,
+      responseHeaders: {
+        'content-type': 'application/javascript',
+        ...(contentEncoding ? { 'content-encoding': contentEncoding } : {}),
+      },
+      responseBody: body,
+      responseBodyTruncated: false,
+    });
+    registerInspectorRoutes(app, store);
+    app.handlers.get('GET /@api/requests/:id')!({ params: { id } }, res);
+
+    return res.body as { responseBody: string; responseBodySize: number };
+  }
+
+  const text = (b64: string) => Buffer.from(b64, 'base64').toString('utf8');
+
+  it.each([
+    ['gzip', gzipSync],
+    ['br', brotliCompressSync],
+    ['deflate', deflateSync],
+    ['GZIP', gzipSync],
+  ] as const)('gives a %s body unpacked, with the size it was sent in', (encoding, compress) => {
+    const sent = compress(Buffer.from(SCRIPT));
+    const details = detailsOf(sent, encoding);
+
+    expect(text(details.responseBody)).toBe(SCRIPT);
+    expect(details.responseBodySize).toBe(sent.length);
+  });
+
+  it('gives a body without Content-Encoding as captured', () => {
+    expect(text(detailsOf(Buffer.from(SCRIPT)).responseBody)).toBe(SCRIPT);
+  });
+
+  it('gives a body that does not unpack as captured, instead of failing', () => {
+    const broken = Buffer.from('not gzip at all');
+
+    expect(Buffer.from(detailsOf(broken, 'gzip').responseBody, 'base64')).toEqual(broken);
   });
 });
 
