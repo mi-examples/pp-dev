@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Request Inspector — pp-dev</title>
+<script>
+// Set the stored theme override before first paint, so switching pages/reloading doesn't
+// flash the OS-default theme before settling on the user's explicit choice.
+try {
+  var ppDevStoredTheme = localStorage.getItem('pp-dev-info-theme');
+
+  if (ppDevStoredTheme === 'dark' || ppDevStoredTheme === 'light') {
+    document.documentElement.setAttribute('data-pp-dev-theme', ppDevStoredTheme);
+  }
+} catch (e) {}
+</script>
+<link rel="stylesheet" href="/@pp-dev/inspector/request-inspector.css">
+<script type="module" src="/@pp-dev/inspector/request-inspector.js"></script>
+</head>
+<body data-capture-limit="{{captureLimit}}">
+<div class="app">
+  <div class="toolbar">
+    <span class="toolbar-title">🔍 Request Inspector</span>
+    <span class="live-dot" title="Live"></span>
+    <span class="toolbar-badge" id="req-count">0 requests</span>
+    <div class="mem-bar-wrap">
+      <div class="mem-bar"><div class="mem-bar-fill" id="mem-fill" style="width:0%"></div></div>
+      <span id="mem-text">0 B / 1 GB</span>
+    </div>
+    <div class="toolbar-spacer"></div>
+    <div class="theme-switch" id="theme-switch">
+      <button data-theme-choice="auto" aria-pressed="false">Auto</button>
+      <button data-theme-choice="dark" aria-pressed="false">Dark</button>
+      <button data-theme-choice="light" aria-pressed="false">Light</button>
+    </div>
+    <button class="btn btn-sm btn-danger" data-action="clear">Clear</button>
+  </div>
+  <div class="split">
+    <div class="pane-list">
+      <div class="filter-bar" id="filter-bar">
+        <input class="filter-input" id="search-input" placeholder="Filter by URL…" />
+        <div class="filter-selects">
+          <select class="filter-select" id="method-select">
+            <option value="">All</option>
+            <option>GET</option><option>POST</option><option>PUT</option>
+            <option>PATCH</option><option>DELETE</option><option>HEAD</option>
+          </select>
+          <select class="filter-select" id="status-select">
+            <option value="">All</option>
+            <option value="2">2xx</option><option value="3">3xx</option>
+            <option value="4">4xx</option><option value="5">5xx</option>
+          </select>
+          <select class="filter-select" id="source-select">
+            <option value="">All</option>
+            <option value="local">Local</option>
+            <option value="proxy">Proxy</option>
+            <option value="proxy-cache">Cached</option>
+          </select>
+          <select class="filter-select" id="user-select" title="The user whose tab made the request" style="display:none">
+            <option value="">All users</option>
+          </select>
+        </div>
+      </div>
+      <div class="req-list" id="req-list">
+        <div class="empty-state">
+          <div class="empty-icon">📡</div>
+          <div>No requests captured yet</div>
+          <div style="font-size:11px">Requests to the dev server will appear here</div>
+        </div>
+      </div>
+    </div>
+    <div class="pane-detail">
+      <div class="detail-empty" id="detail-empty">
+        <div style="font-size:32px;opacity:.3">←</div>
+        <div>Select a request to inspect</div>
+      </div>
+      <div id="detail-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+        <div class="detail-info-bar" id="detail-info"></div>
+        <div class="info-url" id="detail-url"></div>
+        <div class="detail-scroll" id="detail-scroll"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

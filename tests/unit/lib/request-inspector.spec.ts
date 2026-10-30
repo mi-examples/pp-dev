@@ -1,5 +1,7 @@
-import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { INSPECTOR_PATH, registerInspectorRoutes } from '../../../src/lib/request-inspector.js';
 import { RequestStore } from '../../../src/lib/request-store.js';
 
@@ -17,37 +19,6 @@ function makeApp() {
   };
 
   return app as unknown as import('express').Application & { handlers: typeof handlers };
-}
-
-function getInspectorHtml(): string {
-  const app = makeApp();
-  const res: any = {
-    body: '',
-    setHeader() {},
-    end(body: string) {
-      res.body = body;
-    },
-  };
-
-  registerInspectorRoutes(app, new RequestStore());
-  app.handlers.get(`GET ${INSPECTOR_PATH}`)!({}, res);
-
-  return res.body;
-}
-
-function highlightJsonFromGeneratedClient(html: string, input: string): string {
-  const start = html.indexOf('function syntaxHighlightJson');
-  const end = html.indexOf('function decodeTextBody', start);
-
-  expect(start).toBeGreaterThanOrEqual(0);
-  expect(end).toBeGreaterThan(start);
-
-  const context = { output: '' };
-  const helperSource = html.slice(start, end);
-
-  runInNewContext(`${helperSource}\noutput = syntaxHighlightJson(${JSON.stringify(input)});`, context);
-
-  return context.output;
 }
 
 describe('registerInspectorRoutes', () => {
@@ -113,13 +84,98 @@ describe('GET /@api/requests', () => {
   });
 });
 
-describe('request inspector JSON rendering', () => {
-  it('escapes invalid JSON before inserting it into the detail HTML', () => {
-    const payload = '</pre><img src=x onerror=alert(1)>';
-    const rendered = highlightJsonFromGeneratedClient(getInspectorHtml(), payload);
+// The page was a template literal built on every request; it is now built from
+// src/client/request-inspector into dist/client, and served from there.
+describe('the Request Inspector page', () => {
+  let clientDir: string;
 
-    expect(rendered).toBe('&lt;/pre&gt;&lt;img src=x onerror=alert(1)&gt;');
-    expect(rendered).not.toContain('<img');
-    expect(rendered).not.toContain('</pre>');
+  beforeEach(() => {
+    clientDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-inspector-client-'));
+    fs.copyFileSync(
+      path.resolve(__dirname, '../../../src/client/request-inspector/request-inspector.html'),
+      path.join(clientDir, 'request-inspector.html'),
+    );
+    fs.writeFileSync(path.join(clientDir, 'request-inspector.js'), 'console.log("inspector");');
+    fs.writeFileSync(path.join(clientDir, 'secret.txt'), 'not for the browser');
+  });
+
+  afterEach(() => {
+    fs.rmSync(clientDir, { recursive: true, force: true });
+  });
+
+  function request(app: ReturnType<typeof makeApp>, route: string, params: Record<string, string> = {}) {
+    return new Promise<{ status: number; headers: Record<string, string>; body: string; passed: boolean }>(
+      (resolve) => {
+        const res: any = {
+          statusCode: 200,
+          headers: {} as Record<string, string>,
+          setHeader(name: string, value: string) {
+            res.headers[name.toLowerCase()] = value;
+          },
+          status(code: number) {
+            res.statusCode = code;
+
+            return res;
+          },
+          type(value: string) {
+            res.headers['content-type'] = value;
+
+            return res;
+          },
+          end(body: string | Buffer) {
+            resolve({ status: res.statusCode, headers: res.headers, body: String(body), passed: false });
+          },
+        };
+
+        app.handlers.get(`GET ${route}`)!({ params }, res, () =>
+          resolve({ status: 0, headers: {}, body: '', passed: true }),
+        );
+      },
+    );
+  }
+
+  it('serves the built page with the capture limit filled in', async () => {
+    const app = makeApp();
+
+    registerInspectorRoutes(app, new RequestStore(), 5 * 1024 * 1024, clientDir);
+
+    const page = await request(app, INSPECTOR_PATH);
+
+    expect(page.status).toBe(200);
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(page.body).toContain('data-capture-limit="5242880"');
+    expect(page.body).toContain('<script type="module" src="/@pp-dev/inspector/request-inspector.js">');
+    // No inline handlers left: the page script handles every click.
+    expect(page.body).not.toMatch(/\son[a-z]+=/);
+  });
+
+  it('says so when the page is not built', async () => {
+    const app = makeApp();
+
+    fs.rmSync(path.join(clientDir, 'request-inspector.html'));
+    registerInspectorRoutes(app, new RequestStore(), undefined, clientDir);
+
+    const page = await request(app, INSPECTOR_PATH);
+
+    expect(page.status).toBe(500);
+    expect(page.body).toContain('Request Inspector page not built');
+  });
+
+  it("serves the page's own script and styles, and nothing else from the folder", async () => {
+    const app = makeApp();
+
+    registerInspectorRoutes(app, new RequestStore(), undefined, clientDir);
+
+    const script = await request(app, `${INSPECTOR_PATH}/:file`, { file: 'request-inspector.js' });
+
+    expect(script.headers['content-type']).toBe('text/javascript; charset=utf-8');
+    expect(script.body).toBe('console.log("inspector");');
+
+    for (const file of ['secret.txt', '../package.json', 'request-inspector.html']) {
+      expect((await request(app, `${INSPECTOR_PATH}/:file`, { file })).passed, file).toBe(true);
+    }
+
+    // Listed, but not built: left to the next handler too.
+    expect((await request(app, `${INSPECTOR_PATH}/:file`, { file: 'request-inspector.css' })).passed).toBe(true);
   });
 });
