@@ -5,8 +5,11 @@
  * VPN-only MI instance during startup.
  */
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
+import * as http from 'http';
+import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs';
+import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'url';
 import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
 import { pointConfigAt, startDevServer, type DevServerProcess } from './helpers/pp-dev-process.js';
@@ -23,6 +26,58 @@ function startPPDev(extraEnv?: Record<string, string>, args: string[] = []): Dev
     env: extraEnv,
     shell: true,
     echo: true,
+  });
+}
+
+/** A GET to the dev server with the given `Host` (fetch can't set it), as a rebinding page would send. */
+function getWithHost(port: number, urlPath: string, host: string) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const request = http.get({ host: 'localhost', port, path: urlPath, agent: false, headers: { host } }, (res) => {
+      const chunks: Buffer[] = [];
+
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+
+    request.setTimeout(30_000, () => request.destroy(new Error(`GET ${urlPath} timed out`)));
+    request.on('error', reject);
+  });
+}
+
+/**
+ * The status line the dev server answers a WebSocket upgrade to `urlPath` with, from a page on
+ * `host`; `'closed'` when it closes the connection without one. Rejects when it doesn't answer.
+ */
+function upgradeStatusWithHost(port: number, urlPath: string, host: string) {
+  return new Promise<string>((resolve, reject) => {
+    const socket = net.connect({ host: 'localhost', port });
+    let received = '';
+
+    socket.setTimeout(10_000, () => socket.destroy(new Error(`upgrade ${urlPath} timed out`)));
+    socket.on('data', (chunk: Buffer) => {
+      received += chunk.toString('latin1');
+
+      if (received.includes('\r\n')) {
+        socket.destroy();
+        resolve(received.split('\r\n')[0]);
+      }
+    });
+    socket.on('close', () => resolve(received ? received.split('\r\n')[0] : 'closed'));
+    socket.on('error', reject);
+    socket.write(
+      [
+        `GET ${urlPath} HTTP/1.1`,
+        `Host: ${host}`,
+        `Origin: http://${host}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        // Generated: a literal key reads like a credential to secret scanners.
+        `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+        'Sec-WebSocket-Version: 13',
+        '',
+        '',
+      ].join('\r\n'),
+    );
   });
 }
 
@@ -98,6 +153,29 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     // is only here to prove the proxy round-trips a real cassette response for this path.
     expect(await res.json()).toMatchObject({ user: expect.any(Object) });
   });
+
+  // DNS rebinding: a page on evil.example:3000 whose name now points at 127.0.0.1 is same-origin
+  // with the dev server, so the Origin check let it use the API and the dev-panel WebSocket (a
+  // template sync uploads to MI with the developer's token). Its Host is still evil.example:3000.
+  it('refuses requests and WebSocket upgrades for a host it was not started for', async () => {
+    for (const urlPath of ['/', '/@api/users', '/@pp-dev/inspector']) {
+      const res = await getWithHost(3000, urlPath, 'evil.example:3000');
+
+      expect(res.status, urlPath).toBe(403);
+      expect(res.body).toContain('this host ("evil.example") is not allowed');
+    }
+
+    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
+    expect(await upgradeStatusWithHost(3000, '/_next/webpack-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
+  });
+
+  it('still answers localhost and IP addresses', async () => {
+    expect((await getWithHost(3000, '/@api/users', 'localhost:3000')).status).toBe(200);
+    expect((await getWithHost(3000, '/@api/users', '127.0.0.1:3000')).status).toBe(200);
+    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'localhost:3000')).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+  });
 });
 
 // A standalone page with no backend: no `mi.url`, no `app.id`. `pp-dev next` used to make up a
@@ -116,7 +194,11 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
       [
         "import { defineConfig } from '@metricinsights/pp-dev';",
         '',
-        "export default defineConfig({ mi: { mode: 'standalone', apiVersion: 7 }, app: { type: 'page' } });",
+        'export default defineConfig({',
+        "  mi: { mode: 'standalone', apiVersion: 7 },",
+        "  app: { type: 'page' },",
+        "  server: { allowedHosts: ['my-app.tunnel.test'] },",
+        '});',
         '',
       ].join('\n'),
     );
@@ -141,6 +223,15 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
     expect(ppdev.lines.some((l) => /Backend URL/i.test(l))).toBe(false);
   });
 
+  // Before any request Next has no upgrade listener on the server yet, and the Host check has
+  // nowhere to pass an allowed upgrade on to: an open tab's HMR reconnecting after a restart hung.
+  // Runs before the first HTTP request of this suite.
+  it('closes an upgrade it cannot take yet, instead of leaving it hanging', async () => {
+    expect(await upgradeStatusWithHost(PORT, '/p/pp-dev-test-template/_next/webpack-hmr', `localhost:${PORT}`)).toBe(
+      'closed',
+    );
+  });
+
   it('serves the Request Inspector it advertises', async () => {
     expect(ppdev.lines.some((l) => /Request Inspector/i.test(l))).toBe(true);
 
@@ -153,5 +244,21 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
 
     expect(list.status).toBe(200);
     expect(await list.json()).toMatchObject({ requests: expect.any(Array) });
+  });
+
+  it('answers a host named in server.allowedHosts, and no other', async () => {
+    expect((await getWithHost(PORT, '/@api/requests', `my-app.tunnel.test:${PORT}`)).status).toBe(200);
+    expect((await getWithHost(PORT, '/@api/requests', `other.tunnel.test:${PORT}`)).status).toBe(403);
+  });
+
+  // Without a backend the only other upgrade listener is the one Next adds to the server on its
+  // first request: it answered with its own "Unauthorized", or not at all, instead of the 403.
+  it('refuses WebSocket upgrades for a host it was not started for', async () => {
+    // The fixture's page base path (app.type 'page', package name pp-dev-test-template).
+    for (const urlPath of ['/p/pp-dev-test-template/_next/webpack-hmr', '/_next/webpack-hmr']) {
+      expect(await upgradeStatusWithHost(PORT, urlPath, `evil.example:${PORT}`), urlPath).toBe(
+        'HTTP/1.1 403 Forbidden',
+      );
+    }
   });
 });

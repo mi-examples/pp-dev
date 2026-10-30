@@ -491,3 +491,34 @@ describe('validatePPDevConfig', () => {
     ).not.toThrow();
   });
 });
+
+describe('server.allowedHosts', () => {
+  const base: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 } };
+
+  it('defaults to no extra hosts', () => {
+    expect(normalizePPDevConfig(base, 'app').allowedHosts).toEqual([]);
+  });
+
+  it('keeps the names lowercased and trimmed, and true as is', () => {
+    expect(
+      normalizePPDevConfig({ ...base, server: { allowedHosts: [' My-App.Ngrok.App', '.TryCloudflare.com'] } }, 'app')
+        .allowedHosts,
+    ).toEqual(['my-app.ngrok.app', '.trycloudflare.com']);
+    expect(normalizePPDevConfig({ ...base, server: { allowedHosts: true } }, 'app').allowedHosts).toBe(true);
+  });
+
+  it.each([[[]], [['my-app.ngrok.app', '.trycloudflare.com']], [true]])('accepts %j', (allowedHosts) => {
+    expect(() => validatePPDevConfig({ ...base, server: { allowedHosts } }, 'app')).not.toThrow();
+  });
+
+  it.each([
+    ['a single name instead of a list', 'my-app.ngrok.app'],
+    ['false', false],
+    ['an empty name', ['']],
+    ['a number', [3000]],
+  ])('refuses %s', (_name, allowedHosts) => {
+    expect(() => validatePPDevConfig({ ...base, server: { allowedHosts: allowedHosts as never } }, 'app')).toThrow(
+      'server.allowedHosts must be a list of host names or true',
+    );
+  });
+});

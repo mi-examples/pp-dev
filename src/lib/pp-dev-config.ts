@@ -118,6 +118,18 @@ export interface UsersConfig {
   persist?: boolean;
 }
 
+export interface ServerConfig {
+  /**
+   * Host names the dev server answers besides `localhost`, `*.localhost` and IP addresses, as
+   * Vite's `server.allowedHosts`: `'my-app.ngrok.app'`, or `'.ngrok.app'` for that domain and its
+   * subdomains. Any other `Host` is refused (DNS rebinding). The value of `--host` is allowed too.
+   * Pages on the names listed without a leading dot may also call the dev server's API and
+   * WebSocket, for a tunnel that rewrites `Host` to `localhost`. `true` answers any host; avoid it.
+   * @default []
+   */
+  allowedHosts?: string[] | true;
+}
+
 export interface PPDevConfig {
   mi?: MiConfig;
   app?: AppConfig;
@@ -128,6 +140,8 @@ export interface PPDevConfig {
   devPanel?: DevPanelConfig;
   /** Working as other MI users (the dev panel's Users section). */
   users?: UsersConfig;
+  /** The dev server itself (`pp-dev` and `pp-dev next`). */
+  server?: ServerConfig;
 }
 
 // ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
@@ -172,6 +186,8 @@ export interface NormalizedVitePPDevOptions {
   devPanelHidden: boolean;
   devPanelAutoHide: boolean;
   persistUsers: boolean;
+  /** `server.allowedHosts`, lowercased. */
+  allowedHosts: string[] | true;
 }
 
 const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -244,6 +260,18 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
   if (config.devPanel?.position !== undefined && !DEV_PANEL_POSITIONS.includes(config.devPanel.position)) {
     throw new Error(`[pp-dev] devPanel.position must be one of: ${DEV_PANEL_POSITIONS.join(', ')}`);
   }
+
+  const allowedHosts: unknown = config.server?.allowedHosts;
+
+  if (
+    allowedHosts !== undefined &&
+    allowedHosts !== true &&
+    !(Array.isArray(allowedHosts) && allowedHosts.every((host) => typeof host === 'string' && host.trim() !== ''))
+  ) {
+    throw new Error(
+      `[pp-dev] server.allowedHosts must be a list of host names or true, got ${JSON.stringify(allowedHosts)}`,
+    );
+  }
 }
 
 // ─── Normalization ────────────────────────────────────────────────────────────
@@ -252,7 +280,17 @@ export function normalizePPDevConfig(
   config: PPDevConfig,
   templateName: string | undefined,
 ): NormalizedVitePPDevOptions {
-  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {}, users = {} } = config;
+  const {
+    mi = {},
+    app = {},
+    proxy = {},
+    build = {},
+    sync = {},
+    inspector = {},
+    devPanel = {},
+    users = {},
+    server = {},
+  } = config;
 
   const miMode = mi.mode ?? 'standalone';
   const appType = app.type ?? 'template';
@@ -350,5 +388,7 @@ export function normalizePPDevConfig(
     devPanelHidden: devPanel.hidden ?? false,
     devPanelAutoHide: devPanel.autoHide ?? false,
     persistUsers: users.persist ?? false,
+    allowedHosts:
+      server.allowedHosts === true ? true : (server.allowedHosts ?? []).map((host) => host.trim().toLowerCase()),
   };
 }

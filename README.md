@@ -219,6 +219,34 @@ section for the full feature description.
 
 See [Working as other users](#working-as-other-users).
 
+### `server` — The dev server
+
+| Field          | Type               | Default | Description |
+|----------------|--------------------|---------|-------------|
+| `allowedHosts` | `string[] \| true` | `[]`    | Host names the dev server answers besides `localhost`, `*.localhost` and IP addresses, as Vite's [`server.allowedHosts`](https://vite.dev/config/server-options#server-allowedhosts): `'my-app.ngrok.app'`, or `'.ngrok.app'` for the domain and its subdomains. `true` answers any host; avoid it |
+
+A request whose `Host` is any other name gets 403: that is how DNS rebinding reaches a local server
+(a page on `evil.example:3000` whose name is then pointed at `127.0.0.1`). `pp-dev` passes the list
+to Vite, which checks `Host` itself; `pp-dev next` checks it for every request and WebSocket. The
+`--host <name>` you start the server with is allowed too.
+
+**Tunnels** (ngrok, cloudflared, an nginx in front):
+
+- One that keeps the tunnel's name in `Host` (ngrok's default) needs that name in `allowedHosts`.
+- One that rewrites `Host` to `localhost` (`ngrok --host-header=rewrite`, cloudflared's
+  `httpHostHeader`, nginx `proxy_set_header Host localhost`) is answered already, but the pages it
+  serves send the tunnel's name as `Origin`, which the dev server's own API (`/@api/*`, and the dev
+  panel's WebSocket under `pp-dev next`) refuses from other sites. List the tunnel's exact name (`'my-app.ngrok.app'`, not `'.ngrok.app'`) to allow its pages:
+  a `.domain` entry would let any page on that domain, someone else's tunnel too, act with your MI
+  token. `X-Forwarded-Host` is not trusted for either check: a rebinding page can send it.
+
+```ts
+export default defineConfig({
+  // ...
+  server: { allowedHosts: ['my-app.ngrok.app'] },
+});
+```
+
 ### Validation
 
 pp-dev validates your config at startup and reports problems clearly:
@@ -232,6 +260,7 @@ pp-dev validates your config at startup and reports problems clearly:
 | `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id` | error |
 | `app.name` missing and no `package.json#name` | error |
 | `devPanel.position` not one of the four corners | error |
+| `server.allowedHosts` neither a list of host names nor `true` | error |
 
 ### Environment Variables
 

@@ -58,7 +58,17 @@ declare module 'next' {
   }
 }
 
-const PP_DEV_CONFIG_GROUPS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector', 'devPanel']);
+const PP_DEV_CONFIG_GROUPS = new Set([
+  'mi',
+  'app',
+  'proxy',
+  'build',
+  'sync',
+  'inspector',
+  'devPanel',
+  'users',
+  'server',
+]);
 
 function mergePPDevConfigs(...configs: Array<PPDevConfig | undefined>): PPDevConfig {
   const merged: PPDevConfig = {};
@@ -202,7 +212,8 @@ export async function getViteConfig(
 
   const plugins: InlineConfig['plugins'] = [vitePPDev(normalizedPPDevConfig), clientInjectionPlugin()];
 
-  const { outDir, distZip, versionPlugin, imageOptimizer, templateLess, integrateMiTopBar } = normalizedPPDevConfig;
+  const { outDir, distZip, versionPlugin, imageOptimizer, templateLess, integrateMiTopBar, allowedHosts } =
+    normalizedPPDevConfig;
 
   if (integrateMiTopBar) {
     plugins.push(miTopBarPlugin(integrateMiTopBar));
@@ -246,6 +257,9 @@ export async function getViteConfig(
     base: templateLess ? `${PATH_PAGE_PREFIX}/${templateName}` : `${PATH_TEMPLATE_PREFIX}/${templateName}`,
     server: {
       port: 3000,
+      // `server.allowedHosts` from the pp-dev config: Vite checks Host itself under `pp-dev`, before
+      // pp-dev's own middleware. Merged with the Vite config's own list (`true` wins).
+      ...(allowedHosts === true || allowedHosts.length > 0 ? { allowedHosts } : {}),
     },
     build: {
       minify: false,
