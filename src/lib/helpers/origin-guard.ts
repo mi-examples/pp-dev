@@ -7,14 +7,18 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** `server.allowedHosts`: lowercased host names, `.domain` for a domain and its subdomains, or `true`. */
 export type AllowedHosts = readonly string[] | true;
 
-/** The hostname of a `Host` header (lowercased), `'ip'` for an IP address, or `undefined` when unreadable. */
-function hostHeaderName(host: string): string | undefined {
+/**
+ * What a `Host` header names: an IP address, a hostname (lowercased), or `undefined` when
+ * unreadable. An IP address is its own kind, not a hostname: a name such as `ip` must not pass
+ * for one.
+ */
+function readHostHeader(host: string): { ip: true } | { hostname: string } | undefined {
   const trimmed = host.trim().toLowerCase();
 
   if (trimmed.startsWith('[')) {
     const end = trimmed.indexOf(']');
 
-    return end > 0 && isIP(trimmed.slice(1, end)) === 6 ? 'ip' : undefined;
+    return end > 0 && isIP(trimmed.slice(1, end)) === 6 ? { ip: true } : undefined;
   }
 
   const hostname = trimmed.replace(/:\d*$/, '');
@@ -23,7 +27,7 @@ function hostHeaderName(host: string): string | undefined {
     return undefined;
   }
 
-  return isIP(hostname) === 4 ? 'ip' : hostname;
+  return isIP(hostname) === 4 ? { ip: true } : { hostname };
 }
 
 function matchesAllowedHost(hostname: string, allowedHosts: readonly string[]): boolean {
@@ -47,18 +51,19 @@ export function isHostAllowed(host: string | undefined, allowedHosts: AllowedHos
     return true;
   }
 
-  const hostname = hostHeaderName(host);
+  const named = readHostHeader(host);
 
-  if (hostname === undefined) {
+  if (named === undefined) {
     return false;
   }
 
-  return (
-    hostname === 'ip' ||
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    matchesAllowedHost(hostname, allowedHosts)
-  );
+  if ('ip' in named) {
+    return true;
+  }
+
+  const { hostname } = named;
+
+  return hostname === 'localhost' || hostname.endsWith('.localhost') || matchesAllowedHost(hostname, allowedHosts);
 }
 
 /** The answer to a request {@link isHostAllowed} refuses. */

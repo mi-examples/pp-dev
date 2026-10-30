@@ -476,6 +476,22 @@ export function registerNextCommand(cli: CAC): void {
             }
           });
 
+          /** Where an allowed upgrade goes; set with a backend (the dev-panel WebSocket, then Next's HMR). */
+          let forwardUpgrade: ((req: IncomingMessage, socket: Socket, head: Buffer) => void) | null = null;
+
+          // Every upgrade, with or without a backend: the Host check first. On its first request Next
+          // adds an upgrade listener of its own to this server (setupWebSocketHandler), after this one;
+          // without a backend that listener takes every upgrade this check lets through.
+          httpServer.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
+            if (!isHostAllowed(req.headers.host, allowedHosts)) {
+              refuseUpgrade(socket);
+
+              return;
+            }
+
+            forwardUpgrade?.(req, socket, head);
+          });
+
           // Initialize pp-dev middlewares
           let mi: MiAPI | null = null;
           /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
@@ -753,13 +769,7 @@ export function registerNextCommand(cli: CAC): void {
             const nextUpgradeHandler =
               typeof (nextApp as any)?.getUpgradeHandler === 'function' ? (nextApp as any).getUpgradeHandler() : null;
 
-            httpServer.on('upgrade', (req: any, socket: any, head: any) => {
-              if (!isHostAllowed((req as IncomingMessage).headers.host, allowedHosts)) {
-                refuseUpgrade(socket as Socket);
-
-                return;
-              }
-
+            forwardUpgrade = (req, socket, head) => {
               if (hotServer?.handleUpgrade(req, socket, head)) {
                 return;
               }
@@ -769,7 +779,7 @@ export function registerNextCommand(cli: CAC): void {
               } else {
                 socket.destroy();
               }
-            });
+            };
 
             logger.info(colors.blue(`🔧 ${fullMiddlewareChain.length} pp-dev middlewares initialized`));
             logger.info(colors.blue(`🔧 ${essentialMiddlewareChain.length} essential middlewares for internal routes`));

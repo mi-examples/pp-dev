@@ -114,6 +114,8 @@ describe('isHostAllowed', () => {
     ['a name that only ends like localhost', 'evil-localhost:3000'],
     ['an IPv4 address with a name after it', '127.0.0.1.evil.example'],
     ['an unreadable IPv6 address', '[::1'],
+    // A name, not an address: a local DNS search domain could point `ip` at this machine.
+    ['the name "ip"', 'ip:3000'],
     ['an empty Host', ''],
   ])('refuses %s', (_name, host) => {
     expect(isHostAllowed(host, [])).toBe(false);

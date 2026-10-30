@@ -237,4 +237,15 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
     expect((await getWithHost(PORT, '/@api/requests', `my-app.tunnel.test:${PORT}`)).status).toBe(200);
     expect((await getWithHost(PORT, '/@api/requests', `other.tunnel.test:${PORT}`)).status).toBe(403);
   });
+
+  // Without a backend the only other upgrade listener is the one Next adds to the server on its
+  // first request: it answered with its own "Unauthorized", or not at all, instead of the 403.
+  it('refuses WebSocket upgrades for a host it was not started for', async () => {
+    // The fixture's page base path (app.type 'page', package name pp-dev-test-template).
+    for (const urlPath of ['/p/pp-dev-test-template/_next/webpack-hmr', '/_next/webpack-hmr']) {
+      expect(await upgradeStatusWithHost(PORT, urlPath, `evil.example:${PORT}`), urlPath).toBe(
+        'HTTP/1.1 403 Forbidden',
+      );
+    }
+  });
 });
