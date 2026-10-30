@@ -372,11 +372,11 @@ export function registerNextCommand(cli: CAC): void {
 
               // Apply pp-dev middleware chain if available
               if (fullMiddlewareChain.length > 0) {
-                // Check if this is an internal Next.js route that should skip most middlewares
+                // Check if this is an internal Next.js route that should skip most middlewares.
+                // `/favicon.ico` is not: the browser asks for it at the root, where Next serves no
+                // icon (only under the base path), so it goes to MI through the proxy, as under `pp-dev`.
                 const isInternalNextRoute =
-                  originalPathname.startsWith('/_next/') ||
-                  originalPathname === '/favicon.ico' ||
-                  originalPathname.startsWith('/__nextjs_');
+                  originalPathname.startsWith('/_next/') || originalPathname.startsWith('/__nextjs_');
 
                 if (isInternalNextRoute) {
                   // For internal routes, only apply essential middlewares (skip proxy, cache, etc.)
@@ -449,11 +449,7 @@ export function registerNextCommand(cli: CAC): void {
                   res.end();
 
                   return;
-                } else if (
-                  originalPathname.startsWith('/_next/') ||
-                  originalPathname === '/favicon.ico' ||
-                  originalPathname.startsWith('/__nextjs_')
-                ) {
+                } else if (originalPathname.startsWith('/_next/') || originalPathname.startsWith('/__nextjs_')) {
                   // Next.js internal routes - pass through as-is
                 } else if (originalPathname === '/') {
                   // Root path - this should redirect to base path
@@ -506,7 +502,7 @@ export function registerNextCommand(cli: CAC): void {
           let mi: MiAPI | null = null;
           /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
           const fullMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
-          /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
+          /** Essential middlewares for internal Next.js routes (e.g. /_next/). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
           const essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
 
           // Request inspector: register routes on internalServer and add capture middleware
@@ -644,7 +640,6 @@ export function registerNextCommand(cli: CAC): void {
                 ...getProxyIgnore(base),
                 // Next.js internal routes that should not be proxied
                 '/_next',
-                '/favicon.ico',
                 '/__nextjs_',
                 '/installHook.js.map',
               ],
@@ -672,7 +667,13 @@ export function registerNextCommand(cli: CAC): void {
                 // not at index.html. Match page requests under base, excluding /_next/ static assets.
                 return pathname.startsWith(base) && !pathname.includes('/_next/');
               },
-              (response, req) => {
+              (response, req, res) => {
+                // Pages only: the check above goes by path, and the app's own files under the base
+                // path (its icon, public/ images and JSON) were read as text, a binary one corrupted.
+                if (!String(res.getHeader('content-type') ?? '').includes('text/html')) {
+                  return response;
+                }
+
                 const page = mi!.buildPage(response, miHudLess);
                 // Inject the dev panel before host-rewriting so its `!!`-prefixed backend
                 // links are handled by urlReplacer like the rest of the page.
