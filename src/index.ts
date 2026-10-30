@@ -25,6 +25,7 @@ import {
   ResolvedBuildCliOverrides,
 } from './lib/build-cli-overrides.js';
 import { createDefaultZipFileName } from './lib/output-path.js';
+import { exactAllowedHosts } from './lib/helpers/origin-guard.js';
 
 export type { ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
 
@@ -411,6 +412,16 @@ export function withPPDev(
       // validation (which enumerates keys) doesn't flag it, while getPPDevConfigFromNextConfig()
       // and the CLI's config?.ppDev lookup can still read it directly.
       const result = Object.assign({}, baseConfig, nextConfiguration);
+
+      // Next refuses its dev resources, HMR among them, to pages on any other host unless
+      // allowedDevOrigins names it: a page through a tunnel named in server.allowedHosts is one.
+      // Exact names only, as for pp-dev's own API (see exactAllowedHosts). Next reads them from
+      // this config, not from the one `pp-dev next` passes it.
+      const tunnelOrigins = exactAllowedHosts(normalized.allowedHosts);
+
+      if (isDevelopment && tunnelOrigins.length > 0) {
+        result.allowedDevOrigins = [...(result.allowedDevOrigins ?? []), ...tunnelOrigins];
+      }
 
       Object.defineProperty(result, 'ppDev', {
         value: mergedConfig,

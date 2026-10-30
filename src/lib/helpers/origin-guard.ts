@@ -73,6 +73,14 @@ export function hostNotAllowedMessage(host: string | undefined): string {
   return `Blocked by pp-dev: this host (${hostname}) is not allowed. To allow it, add ${hostname} to server.allowedHosts in the pp-dev config.`;
 }
 
+/**
+ * The names in `allowedHosts` without a leading dot: the hosts whose pages may call the dev server
+ * (see {@link crossOriginReason}). `true` names none.
+ */
+export function exactAllowedHosts(allowedHosts: AllowedHosts): string[] {
+  return allowedHosts === true ? [] : allowedHosts.filter((host) => !host.startsWith('.'));
+}
+
 /** `host[:port]` as URL normalizes it (lowercased, default port dropped), or `undefined`. */
 function normalizeHost(scheme: string, host: string): string | undefined {
   try {
@@ -128,8 +136,7 @@ export function crossOriginReason(req: IncomingMessage, allowedHosts: AllowedHos
       return `unreadable Origin "${origin}"`;
     }
 
-    // An exact match only: a `.domain` entry never equals a hostname.
-    if (isLocalHostname(originUrl.hostname) || (allowedHosts !== true && allowedHosts.includes(originUrl.hostname))) {
+    if (isLocalHostname(originUrl.hostname) || exactAllowedHosts(allowedHosts).includes(originUrl.hostname)) {
       return null;
     }
 

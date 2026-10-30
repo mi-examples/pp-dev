@@ -46,9 +46,10 @@ function getWithHost(port: number, urlPath: string, host: string) {
 
 /**
  * The status line the dev server answers a WebSocket upgrade to `urlPath` with, from a page on
- * `host`; `'closed'` when it closes the connection without one. Rejects when it doesn't answer.
+ * `host` (or on `origin`, through a tunnel that rewrites Host); `'closed'` when it closes the
+ * connection without one. Rejects when it doesn't answer.
  */
-function upgradeStatusWithHost(port: number, urlPath: string, host: string) {
+function upgradeStatusWithHost(port: number, urlPath: string, host: string, origin = `http://${host}`) {
   return new Promise<string>((resolve, reject) => {
     const socket = net.connect({ host: 'localhost', port });
     let received = '';
@@ -68,7 +69,7 @@ function upgradeStatusWithHost(port: number, urlPath: string, host: string) {
       [
         `GET ${urlPath} HTTP/1.1`,
         `Host: ${host}`,
-        `Origin: http://${host}`,
+        `Origin: ${origin}`,
         'Upgrade: websocket',
         'Connection: Upgrade',
         // Generated: a literal key reads like a credential to secret scanners.
@@ -166,7 +167,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     }
 
     expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
-    expect(await upgradeStatusWithHost(3000, '/_next/webpack-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
+    expect(await upgradeStatusWithHost(3000, '/_next/hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
   });
 
   it('still answers localhost and IP addresses', async () => {
@@ -227,9 +228,7 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
   // nowhere to pass an allowed upgrade on to: an open tab's HMR reconnecting after a restart hung.
   // Runs before the first HTTP request of this suite.
   it('closes an upgrade it cannot take yet, instead of leaving it hanging', async () => {
-    expect(await upgradeStatusWithHost(PORT, '/p/pp-dev-test-template/_next/webpack-hmr', `localhost:${PORT}`)).toBe(
-      'closed',
-    );
+    expect(await upgradeStatusWithHost(PORT, '/p/pp-dev-test-template/_next/hmr', `localhost:${PORT}`)).toBe('closed');
   });
 
   it('serves the Request Inspector it advertises', async () => {
@@ -255,10 +254,32 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
   // first request: it answered with its own "Unauthorized", or not at all, instead of the 403.
   it('refuses WebSocket upgrades for a host it was not started for', async () => {
     // The fixture's page base path (app.type 'page', package name pp-dev-test-template).
-    for (const urlPath of ['/p/pp-dev-test-template/_next/webpack-hmr', '/_next/webpack-hmr']) {
+    for (const urlPath of ['/p/pp-dev-test-template/_next/hmr', '/_next/hmr']) {
       expect(await upgradeStatusWithHost(PORT, urlPath, `evil.example:${PORT}`), urlPath).toBe(
         'HTTP/1.1 403 Forbidden',
       );
     }
+  });
+
+  // Next refuses its dev resources to a page on another host unless allowedDevOrigins names it: HMR
+  // through a tunnel in server.allowedHosts got Next's "Unauthorized", the Host check passing it.
+  it("opens Next's HMR to a page on a host named in server.allowedHosts, through any tunnel", async () => {
+    const hmr = '/p/pp-dev-test-template/_next/hmr';
+    const tunnelPage = 'https://my-app.tunnel.test';
+
+    // The page first, as a browser loads it before HMR: Next adds its upgrade listener then.
+    expect((await getWithHost(PORT, '/p/pp-dev-test-template/', `localhost:${PORT}`)).status).toBe(200);
+
+    // A tunnel that keeps its name in Host, and one that rewrites Host to localhost.
+    expect(await upgradeStatusWithHost(PORT, hmr, `my-app.tunnel.test:${PORT}`, tunnelPage)).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+    expect(await upgradeStatusWithHost(PORT, hmr, `localhost:${PORT}`, tunnelPage)).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+    // Another site's page still gets Next's own refusal.
+    expect(await upgradeStatusWithHost(PORT, hmr, `localhost:${PORT}`, 'https://other.tunnel.test')).toBe(
+      'Unauthorized',
+    );
   });
 });

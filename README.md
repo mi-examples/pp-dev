@@ -230,15 +230,21 @@ A request whose `Host` is any other name gets 403: that is how DNS rebinding rea
 to Vite, which checks `Host` itself; `pp-dev next` checks it for every request and WebSocket. The
 `--host <name>` you start the server with is allowed too.
 
-**Tunnels** (ngrok, cloudflared, an nginx in front):
+**Tunnels** (ngrok, cloudflared, an nginx in front): list the tunnel's exact name
+(`'my-app.ngrok.app'`). The dev server then answers that `Host`, and the pages served through the
+tunnel may use its own API (`/@api/*`), the dev panel's WebSocket and, under `pp-dev next`, Next's
+HMR: in development `withPPDev()` adds the exact names to Next's
+[`allowedDevOrigins`](https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins),
+next to the ones in your Next config. A `.domain` entry (`'.ngrok.app'`) only answers the `Host`:
+as a page's origin it would let any page on that domain, someone else's tunnel too, act with your MI
+token or read Next's dev resources.
 
-- One that keeps the tunnel's name in `Host` (ngrok's default) needs that name in `allowedHosts`.
-- One that rewrites `Host` to `localhost` (`ngrok --host-header=rewrite`, cloudflared's
-  `httpHostHeader`, nginx `proxy_set_header Host localhost`) is answered already, but the pages it
-  serves send the tunnel's name as `Origin`, which the dev server's own API (`/@api/*`, and the dev
-  panel's WebSocket under `pp-dev next`) refuses from other sites. List the tunnel's exact name (`'my-app.ngrok.app'`, not `'.ngrok.app'`) to allow its pages:
-  a `.domain` entry would let any page on that domain, someone else's tunnel too, act with your MI
-  token. `X-Forwarded-Host` is not trusted for either check: a rebinding page can send it.
+Use a tunnel that keeps its name in `Host` (ngrok's default). One that rewrites `Host` to
+`localhost` (`ngrok --host-header=rewrite`, cloudflared's `httpHostHeader`, nginx
+`proxy_set_header Host localhost`) serves the pages, but the dev server then knows itself only as
+`localhost`: MI's redirects and the MI links it rewrites in responses point the browser at
+`localhost`, out of the tunnel. `X-Forwarded-Host` is not trusted to fix that: a rebinding page
+can send it.
 
 ```ts
 export default defineConfig({

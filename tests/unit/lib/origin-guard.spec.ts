@@ -3,7 +3,12 @@ import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { WebSocket } from 'ws';
-import { crossOriginReason, hostNotAllowedMessage, isHostAllowed } from '../../../src/lib/helpers/origin-guard.js';
+import {
+  crossOriginReason,
+  exactAllowedHosts,
+  hostNotAllowedMessage,
+  isHostAllowed,
+} from '../../../src/lib/helpers/origin-guard.js';
 import { createInternalServer } from '../../../src/lib/internal.middleware.js';
 import { PPDevHotServer } from '../../../src/lib/pp-ws-server.js';
 import { PP_DEV_HMR_WS_PATH } from '../../../src/constants.js';
@@ -140,6 +145,20 @@ describe('isHostAllowed', () => {
     expect(hostNotAllowedMessage('evil.example:3000')).toBe(
       'Blocked by pp-dev: this host ("evil.example") is not allowed. To allow it, add "evil.example" to server.allowedHosts in the pp-dev config.',
     );
+  });
+});
+
+// The pages allowed to call the dev server, and Next's allowedDevOrigins under `pp-dev next`.
+describe('exactAllowedHosts', () => {
+  it('keeps the names without a leading dot', () => {
+    expect(exactAllowedHosts(['my-app.ngrok.app', '.trycloudflare.com', 'box.lan'])).toEqual([
+      'my-app.ngrok.app',
+      'box.lan',
+    ]);
+  });
+
+  it('names none for true, which only answers any Host', () => {
+    expect(exactAllowedHosts(true)).toEqual([]);
   });
 });
 
