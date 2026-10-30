@@ -1,8 +1,8 @@
-import { IndexHtmlTransformResult, Plugin } from 'vite';
+import { type IndexHtmlTransformResult, type Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
 import { redirect, urlReplacer } from './lib/helpers/url.helper.js';
-import { ClientService } from './lib/client.service.js';
+import { type ClientService } from './lib/client.service.js';
 import { initProxyCache, invalidateProxyCache } from './lib/proxy-cache.middleware.js';
 import { DistService } from './lib/dist.service.js';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
@@ -13,29 +13,21 @@ import { colors, getTokenErrorInfo, isSecureRequest, rewriteSetCookieHeader } fr
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
-import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
+import { VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
 import { createUserHostGuard, getUserNameFromHost } from './lib/user-registry.js';
-import { registerUserRoutes, USERS_API_PATH } from './lib/user-routes.js';
+import { USERS_API_PATH } from './lib/user-routes.js';
 import { startKeepingUsers } from './lib/user-store.js';
+import {
+  getIndexPageRegExp,
+  getMiAPIOptions,
+  getProxyIgnore,
+  resolveProxyCacheTtl,
+  startSyncAndUsers,
+} from './lib/dev-server-setup.js';
+import type { NormalizedVitePPDevOptions } from './lib/pp-dev-config.js';
 
 // Config types, validation and normalization live in a module without the server's dependencies.
 export * from './lib/pp-dev-config.js';
-import type { NormalizedVitePPDevOptions } from './lib/pp-dev-config.js';
-
-// ─── Internal MiAPI config ────────────────────────────────────────────────────
-
-interface MiAPIConfig {
-  headers: {
-    host: string;
-    referer: string;
-    origin: string;
-  };
-  appId?: number;
-  templateLess: boolean;
-  disableSSLValidation: boolean;
-  v7Features: boolean;
-  personalAccessToken?: string;
-}
 
 // ─── Vite plugin ──────────────────────────────────────────────────────────────
 
@@ -112,8 +104,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         base += '/';
       }
 
-      const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
-
       if (backendBaseURL) {
         // Before Vite's own middlewares: a user host with no saved user behind it gets nothing.
         server.middlewares.use(createUserHostGuard());
@@ -151,32 +141,21 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         const baseUrlHost = new URL(backendBaseURL).host;
 
-        const miConfig: MiAPIConfig = {
-          headers: {
-            host: baseUrlHost,
-            referer: backendBaseURL,
-            origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
-          },
+        const miConfig = getMiAPIOptions(backendBaseURL, {
           appId,
           templateLess,
           disableSSLValidation,
           v7Features,
-          personalAccessToken: personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
-        };
+          personalAccessToken,
+        });
 
         const mi = new MiAPI(backendBaseURL, miConfig);
 
         if (enableProxyCache) {
-          let ttl = +proxyCacheTTL;
-
-          if (!ttl || Number.isNaN(ttl) || ttl < 0) {
-            ttl = 10 * 60 * 1000;
-          }
-
-          server.middlewares.use(initProxyCache({ devServer: server, ttl }));
+          server.middlewares.use(initProxyCache({ devServer: server, ttl: resolveProxyCacheTtl(proxyCacheTTL) }));
         }
 
-        const isIndexRegExp = new RegExp(`^((${base})|/)$`);
+        const isIndexRegExp = getIndexPageRegExp(base);
 
         server.middlewares.use(initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, { appId, appBase: base })));
 
@@ -184,7 +163,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           proxyPassMiddleware({
             devServer: server,
             baseURL: backendBaseURL,
-            proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
+            proxyIgnore: getProxyIgnore(base),
             disableSSLValidation,
             miAPI: mi,
             templateName,
@@ -405,12 +384,12 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           ),
         );
 
-        clientService = new ClientService(server, { distService, miAPI: mi });
-        registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
-        registerUserRoutes(internalServer, { miAPI: mi });
-        startKeepingUsers({
-          persist: persistUsers,
+        clientService = startSyncAndUsers({
+          server,
+          internalServer,
+          distService,
           miAPI: mi,
+          persistUsers,
           projectRoot: server.config.root || process.cwd(),
           miUrl: backendBaseURL,
         });

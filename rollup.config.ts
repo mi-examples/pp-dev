@@ -49,9 +49,14 @@ const defaultConfig = {
   },
   logLevel: 'info', // Reduced from debug for cleaner output
   onwarn(warning, warn) {
-    // Import cycles in src are reported, not hidden; those inside dependencies are not ours to fix.
-    if (warning.code === 'CIRCULAR_DEPENDENCY' && warning.ids?.some((id) => id.includes('node_modules'))) {
-      return;
+    // An import cycle in src fails the build (tests/unit/lib/import-graph.spec.ts checks the same);
+    // those inside dependencies are not ours to fix.
+    if (warning.code === 'CIRCULAR_DEPENDENCY') {
+      if (warning.ids?.some((id) => id.includes('node_modules'))) {
+        return;
+      }
+
+      throw new Error(warning.message);
     }
 
     if (warning.code === 'UNUSED_EXTERNAL_IMPORT') {
