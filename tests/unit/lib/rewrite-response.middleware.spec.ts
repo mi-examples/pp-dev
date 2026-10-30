@@ -140,6 +140,40 @@ describe('initRewriteResponse', () => {
     expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
   });
 
+  // Held until end(), the headers given to writeHead were out of the rewrite's sight: a
+  // Content-Encoding there left a gzip body read as text and sent back garbled.
+  it('reads a Content-Encoding given to writeHead before rewriting the body', async () => {
+    const compressed = gzipSync(Buffer.from(ORIGINAL));
+
+    const served = await serve((res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip' });
+      res.end(compressed);
+    });
+
+    expect(served.headers['content-encoding']).toBe('gzip');
+    expect(gunzipSync(served.body).toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it("replaces a Content-Length in writeHead's raw header list, keeping a repeated header", async () => {
+    const served = await serve((res) => {
+      res.writeHead(200, [
+        'Content-Type',
+        'text/html',
+        'Content-Length',
+        String(Buffer.byteLength(ORIGINAL)),
+        'Set-Cookie',
+        'a=1',
+        'Set-Cookie',
+        'b=2',
+      ]);
+      res.end(ORIGINAL);
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(served.headers['set-cookie']).toEqual(['a=1', 'b=2']);
+  });
+
   it('sets the length of the re-encoded body when the response is compressed', async () => {
     const compressed = gzipSync(Buffer.from(ORIGINAL));
 

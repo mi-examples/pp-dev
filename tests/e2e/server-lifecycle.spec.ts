@@ -200,7 +200,8 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
           signal: AbortSignal.timeout(10_000),
         })
       ).json()) as { requests: { id: string; url: string }[] };
-      const captured = list.requests.find((entry) => entry.url === '/pl/pp-dev-test-template/');
+      // The list runs oldest first, and earlier tests loaded the page too: the request just made is last.
+      const captured = list.requests.findLast((entry) => entry.url === '/pl/pp-dev-test-template/');
 
       expect(captured).toBeDefined();
 

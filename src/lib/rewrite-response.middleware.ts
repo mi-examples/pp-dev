@@ -25,6 +25,39 @@ function toBuffer(chunk: unknown, encoding?: BufferEncoding): Buffer | null {
 }
 
 /**
+ * Sets the headers given to `writeHead()` on the response, as `writeHead()` would (over earlier
+ * `setHeader()` calls): an object, or Node's raw form, a flat list of names and values in which a
+ * name may repeat (Set-Cookie).
+ */
+function setHeadHeaders(res: ServerResponse, headers: unknown) {
+  if (Array.isArray(headers)) {
+    const byName = new Map<string, { name: string; values: string[] }>();
+
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      const name = String(headers[i]);
+      const entry = byName.get(name.toLowerCase()) ?? { name, values: [] };
+
+      entry.values.push(String(headers[i + 1]));
+      byName.set(name.toLowerCase(), entry);
+    }
+
+    for (const { name, values } of byName.values()) {
+      res.setHeader(name, values.length === 1 ? values[0] : values);
+    }
+
+    return;
+  }
+
+  if (headers && typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (value !== undefined) {
+        res.setHeader(name, value as number | string | readonly string[]);
+      }
+    }
+  }
+}
+
+/**
  * Rewrite response middleware
  *
  * @param predicate Check if need to rewrite response data
@@ -70,12 +103,18 @@ export function initRewriteResponse(
       // Next.js flushes them before it writes the first chunk (pipe-readable.js), and its
       // compression middleware, wrapping end() over this one, writes them (writeHead) before it
       // passes the page on when the client accepts no compression.
+      // Its headers are set now, so the rewrite reads them (Content-Encoding) and end() can give
+      // the length; only the status waits.
       const writeHead = res.writeHead;
-      let heldHead: unknown[] | null = null;
+      let heldHead: [number, string?] | null = null;
 
       res.flushHeaders = function () {};
-      res.writeHead = function (this: ServerResponse, ...args: unknown[]) {
-        heldHead = args;
+      res.writeHead = function (this: ServerResponse, statusCode: number, ...rest: unknown[]) {
+        const statusMessage = typeof rest[0] === 'string' ? rest[0] : undefined;
+
+        setHeadHeaders(this, statusMessage === undefined ? rest[0] : rest[1]);
+        this.statusCode = statusCode;
+        heldHead = statusMessage === undefined ? [statusCode] : [statusCode, statusMessage];
 
         return this;
       };
@@ -119,20 +158,10 @@ export function initRewriteResponse(
         // Next.js sets `Content-Length` for the page it rendered before calling `end`
         // (send-payload.js). The rewritten body is longer, and a stale length makes browsers
         // cut the page short and Node clients fail with HPE_INVALID_CONSTANT. Vite sets none.
-        const headersObject = heldHead?.find(
-          (arg): arg is Record<string, unknown> => typeof arg === 'object' && arg !== null && !Array.isArray(arg),
-        );
-        const lengthInHead =
-          headersObject && Object.keys(headersObject).find((k) => k.toLowerCase() === 'content-length');
-
-        if (res.getHeader('content-length') !== undefined || lengthInHead) {
+        if (res.getHeader('content-length') !== undefined) {
           if (res.headersSent) {
             logger.warn(`Rewrite response for ${req.url}: headers already sent, Content-Length left as is`);
           } else {
-            if (headersObject && lengthInHead) {
-              delete headersObject[lengthInHead];
-            }
-
             res.setHeader('content-length', output.length);
           }
         }

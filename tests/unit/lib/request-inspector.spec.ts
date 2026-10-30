@@ -90,7 +90,7 @@ describe('GET /@api/requests', () => {
 describe('GET /@api/requests/:id', () => {
   const SCRIPT = 'console.log("hello from a chunk");'.repeat(20);
 
-  function detailsOf(body: Buffer, contentEncoding?: string) {
+  function detailsOf(body: Buffer, contentEncoding?: string, captureLimit?: number) {
     const app = makeApp();
     const store = new RequestStore();
     const res: any = { json: (value: unknown) => (res.body = value) };
@@ -114,10 +114,10 @@ describe('GET /@api/requests/:id', () => {
       responseBody: body,
       responseBodyTruncated: false,
     });
-    registerInspectorRoutes(app, store);
+    registerInspectorRoutes(app, store, captureLimit);
     app.handlers.get('GET /@api/requests/:id')!({ params: { id } }, res);
 
-    return res.body as { responseBody: string; responseBodySize: number };
+    return res.body as { responseBody: string | null; responseBodySize: number; responseBodyTruncated: boolean };
   }
 
   const text = (b64: string) => Buffer.from(b64, 'base64').toString('utf8');
@@ -131,18 +131,30 @@ describe('GET /@api/requests/:id', () => {
     const sent = compress(Buffer.from(SCRIPT));
     const details = detailsOf(sent, encoding);
 
-    expect(text(details.responseBody)).toBe(SCRIPT);
+    expect(text(details.responseBody!)).toBe(SCRIPT);
     expect(details.responseBodySize).toBe(sent.length);
   });
 
   it('gives a body without Content-Encoding as captured', () => {
-    expect(text(detailsOf(Buffer.from(SCRIPT)).responseBody)).toBe(SCRIPT);
+    expect(text(detailsOf(Buffer.from(SCRIPT)).responseBody!)).toBe(SCRIPT);
   });
 
   it('gives a body that does not unpack as captured, instead of failing', () => {
     const broken = Buffer.from('not gzip at all');
 
-    expect(Buffer.from(detailsOf(broken, 'gzip').responseBody, 'base64')).toEqual(broken);
+    expect(Buffer.from(detailsOf(broken, 'gzip').responseBody!, 'base64')).toEqual(broken);
+  });
+
+  // The capture limit counts compressed bytes: a few KB of gzip can unpack to hundreds of MB, all
+  // at once in the dev server's memory.
+  it('says a body is too large instead of unpacking it past the capture limit', () => {
+    const sent = gzipSync(Buffer.alloc(4 * 1024 * 1024, 'a'));
+    const details = detailsOf(sent, 'gzip', 64 * 1024);
+
+    expect(sent.length).toBeLessThan(64 * 1024);
+    expect(details.responseBody).toBeNull();
+    expect(details.responseBodyTruncated).toBe(true);
+    expect(details.responseBodySize).toBe(sent.length);
   });
 });
 
