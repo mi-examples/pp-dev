@@ -1,13 +1,19 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearConfigCache } from '../../../src/config.js';
 import { getViteConfig } from '../../../src/index.js';
 
 describe('getViteConfig environment loading', () => {
   let projectRoot: string;
   let originalBackendUrl: string | undefined;
+
+  // getViteConfig() imports the whole dev server (plugin.js) on first use. Loaded here, outside the
+  // test's own timeout: under a full parallel run on Windows that import alone can take over 10 s.
+  beforeAll(async () => {
+    await import('../../../src/plugin.js');
+  }, 60_000);
 
   beforeEach(() => {
     projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-env-'));
