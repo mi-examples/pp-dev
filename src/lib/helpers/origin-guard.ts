@@ -1,7 +1,72 @@
 import type { IncomingMessage } from 'node:http';
+import { isIP } from 'node:net';
 import type { RequestHandler } from 'express';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** `server.allowedHosts`: lowercased host names, `.domain` for a domain and its subdomains, or `true`. */
+export type AllowedHosts = readonly string[] | true;
+
+/** The hostname of a `Host` header (lowercased), `'ip'` for an IP address, or `undefined` when unreadable. */
+function hostHeaderName(host: string): string | undefined {
+  const trimmed = host.trim().toLowerCase();
+
+  if (trimmed.startsWith('[')) {
+    const end = trimmed.indexOf(']');
+
+    return end > 0 && isIP(trimmed.slice(1, end)) === 6 ? 'ip' : undefined;
+  }
+
+  const hostname = trimmed.replace(/:\d*$/, '');
+
+  if (!hostname || hostname.includes(':')) {
+    return undefined;
+  }
+
+  return isIP(hostname) === 4 ? 'ip' : hostname;
+}
+
+function matchesAllowedHost(hostname: string, allowedHosts: readonly string[]): boolean {
+  return allowedHosts.some(
+    (allowed) =>
+      allowed === hostname ||
+      (allowed.startsWith('.') && (allowed.slice(1) === hostname || hostname.endsWith(allowed))),
+  );
+}
+
+/**
+ * Whether the dev server answers a request with this `Host`, as Vite's own check in `pp-dev`
+ * (`server.allowedHosts`): an IP address, `localhost`, a `*.localhost` name, or one of
+ * `allowedHosts`. Any other name is how DNS rebinding reaches it: a page on `evil.example:3000`,
+ * whose name the attacker then points at 127.0.0.1, is same-origin with the dev server, so the
+ * {@link crossOriginReason} check lets it through; the `Host` it sends is still `evil.example`.
+ * No `Host` (HTTP/1.0, scripts) is not from a browser and passes.
+ */
+export function isHostAllowed(host: string | undefined, allowedHosts: AllowedHosts): boolean {
+  if (host === undefined || allowedHosts === true) {
+    return true;
+  }
+
+  const hostname = hostHeaderName(host);
+
+  if (hostname === undefined) {
+    return false;
+  }
+
+  return (
+    hostname === 'ip' ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    matchesAllowedHost(hostname, allowedHosts)
+  );
+}
+
+/** The answer to a request {@link isHostAllowed} refuses. */
+export function hostNotAllowedMessage(host: string | undefined): string {
+  const hostname = JSON.stringify((host ?? '').replace(/:\d*$/, ''));
+
+  return `Blocked by pp-dev: this host (${hostname}) is not allowed. To allow it, add ${hostname} to server.allowedHosts in the pp-dev config.`;
+}
 
 /** `host[:port]` as URL normalizes it (lowercased, default port dropped), or `undefined`. */
 function normalizeHost(scheme: string, host: string): string | undefined {
@@ -32,13 +97,16 @@ function isLocalHostname(hostname: string): boolean {
  * `localhost:<port>`, with a plain form POST (no CORS preflight) or a WebSocket.
  *
  * Allowed callers are the dev server's own pages (`Origin` is the request's `Host`, also on a LAN
- * address) and pages served on this machine on any port: two pages run by separate local dev
- * servers may need to work together. Any other `Origin` is refused, whatever the method. A
- * state-changing request without `Origin` is refused when `Sec-Fetch-Site` says another site sent
- * it (`same-site` covers other localhost ports). Requests with neither header (curl, scripts) are
- * not from a browser page and pass.
+ * address), pages served on this machine on any port (two pages run by separate local dev servers
+ * may need to work together) and pages on a host named in `allowedHosts` without a leading dot: a
+ * tunnel that rewrites `Host` to `localhost` leaves its own name in `Origin`. A `.domain` entry
+ * doesn't count here: with `.ngrok.app`, any tunnel's page, someone else's too, could act with the
+ * developer's token. Any other `Origin` is refused, whatever the method. A state-changing request
+ * without `Origin` is refused when `Sec-Fetch-Site` says another site sent it (`same-site` covers
+ * other localhost ports). Requests with neither header (curl, scripts) are not from a browser page
+ * and pass.
  */
-export function crossOriginReason(req: IncomingMessage): string | null {
+export function crossOriginReason(req: IncomingMessage, allowedHosts: AllowedHosts = []): string | null {
   const origin = req.headers.origin;
   const host = req.headers.host;
 
@@ -55,7 +123,8 @@ export function crossOriginReason(req: IncomingMessage): string | null {
       return `unreadable Origin "${origin}"`;
     }
 
-    if (isLocalHostname(originUrl.hostname)) {
+    // An exact match only: a `.domain` entry never equals a hostname.
+    if (isLocalHostname(originUrl.hostname) || (allowedHosts !== true && allowedHosts.includes(originUrl.hostname))) {
       return null;
     }
 
@@ -78,14 +147,16 @@ export function crossOriginReason(req: IncomingMessage): string | null {
 }
 
 /** Express middleware: answers a cross-origin request with 403 before any route or body parser. */
-export const originGuard: RequestHandler = (req, res, next) => {
-  const reason = crossOriginReason(req);
+export function createOriginGuard(allowedHosts: AllowedHosts = []): RequestHandler {
+  return (req, res, next) => {
+    const reason = crossOriginReason(req, allowedHosts);
 
-  if (!reason) {
-    next();
+    if (!reason) {
+      next();
 
-    return;
-  }
+      return;
+    }
 
-  res.status(403).json({ error: `Blocked by pp-dev: ${reason}.` });
-};
+    res.status(403).json({ error: `Blocked by pp-dev: ${reason}.` });
+  };
+}

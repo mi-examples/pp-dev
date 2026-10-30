@@ -56,6 +56,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     devPanelHidden,
     devPanelAutoHide,
     persistUsers,
+    allowedHosts,
   } = options || {};
 
   let isFirstRequest = true;
@@ -116,7 +117,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
         server.middlewares.use(createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit));
 
-        const internalServer = createInternalServer();
+        const internalServer = createInternalServer({ allowedHosts });
 
         registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
 
@@ -239,7 +240,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           return null;
         };
 
-        const internalServer = createInternalServer();
+        const internalServer = createInternalServer({ allowedHosts });
 
         internalServer.post('/@api/login', async (req, res, next) => {
           const { token, tokenType } = req.body;

@@ -3,7 +3,17 @@ import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import { PP_DEV_HMR_WS_PATH } from '../constants.js';
 import { createLogger } from './logger.js';
-import { crossOriginReason } from './helpers/origin-guard.js';
+import { crossOriginReason, type AllowedHosts } from './helpers/origin-guard.js';
+
+/**
+ * Answers an HTTP upgrade with 403 and closes the socket. `end()` only closes our side: a peer that
+ * keeps its own open would hold the socket, which no WebSocket server tracks, with no timeout. It
+ * is destroyed once the 403 is out, or on any error while writing it.
+ */
+export function refuseUpgrade(socket: Duplex): void {
+  socket.once('error', () => socket.destroy());
+  socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
+}
 
 /**
  * Raw-WebSocket transport for the dev panel under the `pp-dev next` server, where
@@ -46,7 +56,11 @@ export class PPDevHotServer {
   /** Stable facade instance (ClientService reads `server.ws` and stores listeners on it). */
   readonly ws: ViteWsFacade;
 
-  constructor() {
+  /** `server.allowedHosts`, whose exact names may connect too (see {@link crossOriginReason}). */
+  private readonly allowedHosts: AllowedHosts;
+
+  constructor({ allowedHosts = [] }: { allowedHosts?: AllowedHosts } = {}) {
+    this.allowedHosts = allowedHosts;
     this.wss = new WebSocketServer({ noServer: true });
     this.wss.on('connection', (socket) => this.onConnection(socket));
     this.wss.on('error', (err) => this.fireLifecycle('error', err));
@@ -103,14 +117,8 @@ export class PPDevHotServer {
 
     // A browser always sends Origin with a WebSocket: another site's page must not drive the
     // panel's actions (a template sync uploads to MI with the developer's token).
-    const crossOrigin = crossOriginReason(req);
-
-    if (crossOrigin) {
-      // `end()` only closes our side: a peer that keeps its own open would hold the socket, which
-      // the WebSocket server doesn't track, with no timeout. Destroyed once the 403 is out, or on
-      // any error while writing it.
-      socket.once('error', () => socket.destroy());
-      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
+    if (crossOriginReason(req, this.allowedHosts)) {
+      refuseUpgrade(socket);
 
       return true;
     }

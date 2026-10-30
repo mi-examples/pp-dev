@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import type createNextApp from 'next';
 import type loadNextConfig from 'next/dist/server/config.js';
@@ -24,11 +25,12 @@ import {
 import { urlReplacer } from '../../lib/helpers/url.helper.js';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
-import internalServer from '../../lib/internal.middleware';
+import { createInternalServer } from '../../lib/internal.middleware.js';
+import { hostNotAllowedMessage, isHostAllowed, type AllowedHosts } from '../../lib/helpers/origin-guard.js';
 import { safeNextImport } from '../../lib/next-import.js';
 import { type ClientService } from '../../lib/client.service.js';
 import { DistService } from '../../lib/dist.service.js';
-import { PPDevHotServer } from '../../lib/pp-ws-server.js';
+import { PPDevHotServer, refuseUpgrade } from '../../lib/pp-ws-server.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../lib/next-process-listeners.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from '../../lib/dev-panel.js';
@@ -242,6 +244,13 @@ export function registerNextCommand(cli: CAC): void {
           // could point the dev server at the wrong page.
           const appId = _normalized.appId;
 
+          // The hosts this server answers, as Vite's own check does under `pp-dev`: IP addresses,
+          // localhost, `server.allowedHosts` and the `--host` name (see isHostAllowed).
+          const allowedHosts: AllowedHosts =
+            _normalized.allowedHosts === true ? true : [..._normalized.allowedHosts, listenHost.toLowerCase()];
+          // pp-dev's own routes, made again on each (re)start with that start's services.
+          const internalServer = createInternalServer({ allowedHosts: _normalized.allowedHosts });
+
           const configBasePath = config?.basePath;
           let base = '';
 
@@ -345,6 +354,16 @@ export function registerNextCommand(cli: CAC): void {
 
           // Create HTTP server with base path handling and pp-dev middlewares
           httpServer = createServer(async (req: any, res: any) => {
+            // Before anything else: a name pointed at 127.0.0.1 by another site (DNS rebinding).
+            const requestHost = (req as IncomingMessage).headers.host;
+
+            if (!isHostAllowed(requestHost, allowedHosts)) {
+              (res as ServerResponse).writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+              (res as ServerResponse).end(hostNotAllowedMessage(requestHost));
+
+              return;
+            }
+
             try {
               const originalUrl = req.url || '/';
               const originalPathname = originalUrl.split('?')[0];
@@ -464,7 +483,7 @@ export function registerNextCommand(cli: CAC): void {
           /** Essential middlewares for internal Next.js routes (e.g. /_next/, /favicon.ico). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
           const essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
 
-          // Request inspector: register routes on the shared internalServer and add capture middleware
+          // Request inspector: register routes on internalServer and add capture middleware
           if (inspectorEnabled !== false) {
             const reqStore = new RequestStore(inspectorMaxMemory);
 
@@ -653,7 +672,7 @@ export function registerNextCommand(cli: CAC): void {
             // Dev-panel transport: raw-WebSocket replacement for Vite HMR so the panel's
             // interactive features (template sync) work under Next.js. ClientService is
             // reused unchanged via a Vite-WS-compatible facade.
-            hotServer = new PPDevHotServer();
+            hotServer = new PPDevHotServer({ allowedHosts: _normalized.allowedHosts });
 
             // The sync `next build` runs in production mode, which writes the static export
             // to the base distDir. Next's dev phase reports distDir as `<distDir>/dev`, so
@@ -735,6 +754,12 @@ export function registerNextCommand(cli: CAC): void {
               typeof (nextApp as any)?.getUpgradeHandler === 'function' ? (nextApp as any).getUpgradeHandler() : null;
 
             httpServer.on('upgrade', (req: any, socket: any, head: any) => {
+              if (!isHostAllowed((req as IncomingMessage).headers.host, allowedHosts)) {
+                refuseUpgrade(socket as Socket);
+
+                return;
+              }
+
               if (hotServer?.handleUpgrade(req, socket, head)) {
                 return;
               }
