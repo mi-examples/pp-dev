@@ -61,4 +61,21 @@ describe('withPPDev config merge', () => {
     expect(ppDev.server).toEqual({ allowedHosts: ['other.ngrok.app'] });
     expect(ppDev.users).toEqual({ persist: false });
   });
+
+  // Next refuses its dev resources (HMR) to pages on other hosts unless allowedDevOrigins names
+  // them, and reads that from this config: a tunnel in server.allowedHosts got "Unauthorized".
+  it("adds the exact server.allowedHosts to Next's allowedDevOrigins in development", async () => {
+    const result = await withPPDev(
+      { allowedDevOrigins: ['other.lan'] },
+      { server: { allowedHosts: ['my-app.ngrok.app', '.trycloudflare.com'] } },
+    )('phase-development-server');
+
+    expect(result.allowedDevOrigins).toEqual(['other.lan', 'my-app.ngrok.app']);
+  });
+
+  it('leaves allowedDevOrigins alone outside development', async () => {
+    const result = await withPPDev({ allowedDevOrigins: ['other.lan'] })('phase-production-build');
+
+    expect(result.allowedDevOrigins).toEqual(['other.lan']);
+  });
 });

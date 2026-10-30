@@ -123,8 +123,9 @@ export interface ServerConfig {
    * Host names the dev server answers besides `localhost`, `*.localhost` and IP addresses, as
    * Vite's `server.allowedHosts`: `'my-app.ngrok.app'`, or `'.ngrok.app'` for that domain and its
    * subdomains. Any other `Host` is refused (DNS rebinding). The value of `--host` is allowed too.
-   * Pages on the names listed without a leading dot may also call the dev server's API and
-   * WebSocket, for a tunnel that rewrites `Host` to `localhost`. `true` answers any host; avoid it.
+   * Pages on the names listed without a leading dot may also use the dev server's API, its
+   * WebSocket and, under `pp-dev next`, Next's HMR (`withPPDev()` adds them to Next's
+   * `allowedDevOrigins` in development): a page through a tunnel. `true` answers any host; avoid it.
    * @default []
    */
   allowedHosts?: string[] | true;
