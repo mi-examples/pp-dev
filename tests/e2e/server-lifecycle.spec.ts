@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'url';
-import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
+import { MOCK_REQUESTS_PATH, startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
 import { pointConfigAt, startDevServer, type DevServerProcess } from './helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -175,6 +175,37 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'localhost:3000')).toBe(
       'HTTP/1.1 101 Switching Protocols',
     );
+  });
+
+  // The pages carry no icon link, so the browser asks for /favicon.ico at the root, where Next serves
+  // no icon (only under the base path): it got Next's 404. Under `pp-dev` MI answers it through the
+  // proxy; the cassette has MI's icon.
+  it('proxies /favicon.ico to MI, as under pp-dev', async () => {
+    const res = await fetch('http://localhost:3000/favicon.ico', { signal: AbortSignal.timeout(10_000) });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/x-icon');
+    expect(res.headers.get('x-pp-proxy')).toBe('1');
+
+    const received = (await (await fetch(`${mockMi.url}${MOCK_REQUESTS_PATH}`)).json()) as { path: string }[];
+
+    expect(received.map((request) => request.path)).toContain('/favicon.ico');
+  });
+
+  // The page rewrite went by path alone, so the app's own icon under the base path was read as text
+  // and sent corrupted (25 931 bytes became 30 079).
+  it("serves the app's own files under the base path byte for byte", async () => {
+    for (const [urlPath, file] of [
+      ['/pl/pp-dev-test-template/favicon.ico', 'src/app/favicon.ico'],
+      ['/pl/pp-dev-test-template/next.svg', 'public/next.svg'],
+    ]) {
+      const res = await fetch(`http://localhost:3000${urlPath}`, { signal: AbortSignal.timeout(30_000) });
+
+      expect(res.status, urlPath).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer()).equals(fs.readFileSync(path.join(TEST_APP_DIR, file))), urlPath).toBe(
+        true,
+      );
+    }
   });
 });
 
