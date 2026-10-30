@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import type createNextApp from 'next';
 import type loadNextConfig from 'next/dist/server/config.js';
@@ -481,16 +481,26 @@ export function registerNextCommand(cli: CAC): void {
 
           // Every upgrade, with or without a backend: the Host check first. On its first request Next
           // adds an upgrade listener of its own to this server (setupWebSocketHandler), after this one;
-          // without a backend that listener takes every upgrade this check lets through.
-          httpServer.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
+          // without a backend that listener takes every upgrade this check lets through. It also sees
+          // the refused ones, on a socket that already has its 403, and refuses another site's Origin
+          // itself (allowedDevOrigins).
+          const onUpgrade = (req: IncomingMessage, socket: Socket, head: Buffer) => {
             if (!isHostAllowed(req.headers.host, allowedHosts)) {
               refuseUpgrade(socket);
 
               return;
             }
 
-            forwardUpgrade?.(req, socket, head);
-          });
+            if (forwardUpgrade) {
+              forwardUpgrade(req, socket, head);
+            } else if ((httpServer as Server).listeners('upgrade').every((listener) => listener === onUpgrade)) {
+              // Nothing else can take it yet: before Next's first request (an open tab's HMR
+              // reconnecting after a restart), the socket would hang. Closed, the client retries.
+              socket.destroy();
+            }
+          };
+
+          httpServer.on('upgrade', onUpgrade);
 
           // Initialize pp-dev middlewares
           let mi: MiAPI | null = null;

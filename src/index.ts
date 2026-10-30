@@ -58,7 +58,17 @@ declare module 'next' {
   }
 }
 
-const PP_DEV_CONFIG_GROUPS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector', 'devPanel']);
+const PP_DEV_CONFIG_GROUPS = new Set([
+  'mi',
+  'app',
+  'proxy',
+  'build',
+  'sync',
+  'inspector',
+  'devPanel',
+  'users',
+  'server',
+]);
 
 function mergePPDevConfigs(...configs: Array<PPDevConfig | undefined>): PPDevConfig {
   const merged: PPDevConfig = {};

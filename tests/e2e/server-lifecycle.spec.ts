@@ -44,7 +44,10 @@ function getWithHost(port: number, urlPath: string, host: string) {
   });
 }
 
-/** The status line the dev server answers a WebSocket upgrade to `urlPath` with, from a page on `host`. */
+/**
+ * The status line the dev server answers a WebSocket upgrade to `urlPath` with, from a page on
+ * `host`; `'closed'` when it closes the connection without one. Rejects when it doesn't answer.
+ */
 function upgradeStatusWithHost(port: number, urlPath: string, host: string) {
   return new Promise<string>((resolve, reject) => {
     const socket = net.connect({ host: 'localhost', port });
@@ -59,6 +62,7 @@ function upgradeStatusWithHost(port: number, urlPath: string, host: string) {
         resolve(received.split('\r\n')[0]);
       }
     });
+    socket.on('close', () => resolve(received ? received.split('\r\n')[0] : 'closed'));
     socket.on('error', reject);
     socket.write(
       [
@@ -217,6 +221,15 @@ describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
     expect(errors, `Unexpected errors:\n${errors.join('\n')}`).toHaveLength(0);
     expect(ppdev.lines.some((l) => /pp-dev Next\.js server running/i.test(l))).toBe(true);
     expect(ppdev.lines.some((l) => /Backend URL/i.test(l))).toBe(false);
+  });
+
+  // Before any request Next has no upgrade listener on the server yet, and the Host check has
+  // nowhere to pass an allowed upgrade on to: an open tab's HMR reconnecting after a restart hung.
+  // Runs before the first HTTP request of this suite.
+  it('closes an upgrade it cannot take yet, instead of leaving it hanging', async () => {
+    expect(await upgradeStatusWithHost(PORT, '/p/pp-dev-test-template/_next/webpack-hmr', `localhost:${PORT}`)).toBe(
+      'closed',
+    );
   });
 
   it('serves the Request Inspector it advertises', async () => {
