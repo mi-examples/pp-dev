@@ -10,6 +10,7 @@ import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomBytes } from 'crypto';
+import { gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
 import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
 import { pointConfigAt, startDevServer, type DevServerProcess } from './helpers/pp-dev-process.js';
@@ -154,6 +155,64 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     // is only here to prove the proxy round-trips a real cassette response for this path.
     expect(await res.json()).toMatchObject({ user: expect.any(Object) });
   });
+
+  // Next.js 16 flushes the headers, the rendered page's Content-Length among them, before it writes
+  // the page: the rewritten page (template, dev panel) is longer and was cut short at that length.
+  // It was also captured gzip-compressed, and the Request Inspector showed those bytes as text.
+  // Without compression accepted (curl, Node clients), Next.js's compression middleware writes the
+  // stale length itself; with gzip it drops the header, so a browser never saw the cut.
+  it.each([
+    ['without compression', {}],
+    ['with gzip', { 'accept-encoding': 'gzip' }],
+  ])(
+    'serves the whole rewritten page %s, and the Request Inspector shows it unpacked',
+    async (_name, encodingHeaders: Record<string, string>) => {
+      const page = await new Promise<{ headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+        const request = http.get(
+          {
+            host: 'localhost',
+            port: 3000,
+            path: '/pl/pp-dev-test-template/',
+            agent: false,
+            headers: encodingHeaders,
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => resolve({ headers: res.headers, body: Buffer.concat(chunks) }));
+          },
+        );
+
+        request.setTimeout(30_000, () => request.destroy(new Error('page request timed out')));
+        request.on('error', reject);
+      });
+      const html = (page.headers['content-encoding'] === 'gzip' ? gunzipSync(page.body) : page.body).toString('utf8');
+
+      if (page.headers['content-length'] !== undefined) {
+        expect(Number(page.headers['content-length'])).toBe(page.body.length);
+      }
+
+      expect(html.trimEnd()).toMatch(/<\/html>$/);
+      expect(html).toContain('pp-dev-info');
+
+      const list = (await (
+        await fetch('http://localhost:3000/@api/requests?search=/pl/pp-dev-test-template/', {
+          signal: AbortSignal.timeout(10_000),
+        })
+      ).json()) as { requests: { id: string; url: string }[] };
+      // The list runs oldest first, and earlier tests loaded the page too: the request just made is last.
+      const captured = list.requests.findLast((entry) => entry.url === '/pl/pp-dev-test-template/');
+
+      expect(captured).toBeDefined();
+
+      const details = (await (
+        await fetch(`http://localhost:3000/@api/requests/${captured!.id}`, { signal: AbortSignal.timeout(10_000) })
+      ).json()) as { responseBody: string };
+
+      expect(Buffer.from(details.responseBody, 'base64').toString('utf8')).toContain('</html>');
+    },
+  );
 
   // DNS rebinding: a page on evil.example:3000 whose name now points at 127.0.0.1 is same-origin
   // with the dev server, so the Origin check let it use the API and the dev-panel WebSocket (a

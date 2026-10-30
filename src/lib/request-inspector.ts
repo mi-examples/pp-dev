@@ -1,6 +1,7 @@
 import type { Application } from 'express';
 import { RequestStore } from './request-store.js';
 import { CLIENT_DIST_DIR, serveClientPage } from './client-page.js';
+import { decodeContent } from './helpers/content-encoding.helper.js';
 
 export const INSPECTOR_PATH = '/@pp-dev/inspector';
 
@@ -12,6 +13,21 @@ interface InspectorRouteState {
 }
 
 const routeStates = new WeakMap<Application, InspectorRouteState>();
+
+/**
+ * A captured response body as the page shows, copies and saves it: unpacked when it went to the
+ * browser compressed (`Content-Encoding` gzip, br or deflate, as Next.js sends its chunks), as
+ * captured otherwise. One that doesn't unpack, or has several encodings, stays as captured. The
+ * capture limit counts the compressed bytes, so the unpacked ones are limited to it too: past it,
+ * `null` (too large to show), rather than unpacking it all into memory at once.
+ */
+function readableResponseBody(body: Buffer, contentEncoding: string, maxLength: number): Buffer | null {
+  try {
+    return decodeContent(body, contentEncoding.trim().toLowerCase(), { maxOutputLength: maxLength });
+  } catch (error) {
+    return error instanceof RangeError ? null : body;
+  }
+}
 
 /** A query parameter as one string: Express gives an array for `?search=a&search=b`. */
 function firstQueryValue(value: unknown): string | undefined {
@@ -92,6 +108,13 @@ export function registerInspectorRoutes(
 
     const requestContentType = normalizeHeaderValue(entry.requestHeaders['content-type']);
     const responseContentType = normalizeHeaderValue(entry.responseHeaders['content-type']);
+    const responseBody = entry.responseBody
+      ? readableResponseBody(
+          entry.responseBody,
+          normalizeHeaderValue(entry.responseHeaders['content-encoding']),
+          current.captureLimit,
+        )
+      : null;
 
     res.json({
       id: entry.id,
@@ -108,9 +131,10 @@ export function registerInspectorRoutes(
       requestBodyTruncated: entry.requestBodyTruncated,
       requestContentType,
       responseHeaders: entry.responseHeaders,
-      responseBody: entry.responseBody ? entry.responseBody.toString('base64') : null,
+      responseBody: responseBody ? responseBody.toString('base64') : null,
       responseBodySize: entry.responseBody?.byteLength ?? 0,
-      responseBodyTruncated: entry.responseBodyTruncated,
+      // Too large unpacked counts as too large to capture: the page says so instead of a body.
+      responseBodyTruncated: entry.responseBodyTruncated || (entry.responseBody !== null && responseBody === null),
       responseContentType,
     });
   });

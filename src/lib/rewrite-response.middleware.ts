@@ -25,6 +25,39 @@ function toBuffer(chunk: unknown, encoding?: BufferEncoding): Buffer | null {
 }
 
 /**
+ * Sets the headers given to `writeHead()` on the response, as `writeHead()` would (over earlier
+ * `setHeader()` calls): an object, or Node's raw form, a flat list of names and values in which a
+ * name may repeat (Set-Cookie).
+ */
+function setHeadHeaders(res: ServerResponse, headers: unknown) {
+  if (Array.isArray(headers)) {
+    const byName = new Map<string, { name: string; values: string[] }>();
+
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      const name = String(headers[i]);
+      const entry = byName.get(name.toLowerCase()) ?? { name, values: [] };
+
+      entry.values.push(String(headers[i + 1]));
+      byName.set(name.toLowerCase(), entry);
+    }
+
+    for (const { name, values } of byName.values()) {
+      res.setHeader(name, values.length === 1 ? values[0] : values);
+    }
+
+    return;
+  }
+
+  if (headers && typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (value !== undefined) {
+        res.setHeader(name, value as number | string | readonly string[]);
+      }
+    }
+  }
+}
+
+/**
  * Rewrite response middleware
  *
  * @param predicate Check if need to rewrite response data
@@ -64,6 +97,27 @@ export function initRewriteResponse(
       logger.info(`Rewrite response for ${req.url}`);
 
       const buffers: Buffer[] = [];
+
+      // The headers, the page's Content-Length among them, are held back until end(): sent before
+      // it, they could no longer give the rewritten body's length, and the page was cut short.
+      // Next.js flushes them before it writes the first chunk (pipe-readable.js), and its
+      // compression middleware, wrapping end() over this one, writes them (writeHead) before it
+      // passes the page on when the client accepts no compression.
+      // Its headers are set now, so the rewrite reads them (Content-Encoding) and end() can give
+      // the length; only the status waits.
+      const writeHead = res.writeHead;
+      let heldHead: [number, string?] | null = null;
+
+      res.flushHeaders = function () {};
+      res.writeHead = function (this: ServerResponse, statusCode: number, ...rest: unknown[]) {
+        const statusMessage = typeof rest[0] === 'string' ? rest[0] : undefined;
+
+        setHeadHeaders(this, statusMessage === undefined ? rest[0] : rest[1]);
+        this.statusCode = statusCode;
+        heldHead = statusMessage === undefined ? [statusCode] : [statusCode, statusMessage];
+
+        return this;
+      };
 
       res.write = function (chunk: any, encoding?: any, cb?: any) {
         const buffer = toBuffer(chunk, asEncoding(encoding));
@@ -110,6 +164,12 @@ export function initRewriteResponse(
           } else {
             res.setHeader('content-length', output.length);
           }
+        }
+
+        res.writeHead = writeHead;
+
+        if (heldHead && !res.headersSent) {
+          (writeHead as (...args: unknown[]) => ServerResponse).apply(this, heldHead);
         }
 
         end.call(this, output, endCallback);

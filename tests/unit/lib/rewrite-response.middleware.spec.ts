@@ -80,6 +80,100 @@ describe('initRewriteResponse', () => {
     expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
   });
 
+  // Next.js 16 (pipe-readable.js) flushes the headers before it writes the first chunk: the stale
+  // length went out with them, and the rewrite could only warn and send a body that was cut short.
+  it('keeps the headers back when the renderer flushes them before writing (Next.js pipe-readable)', async () => {
+    const warn = vi.spyOn(createLogger(), 'warn').mockImplementation(() => {});
+
+    const served = await serve((res) => {
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+      res.flushHeaders();
+      res.write(ORIGINAL);
+      res.end();
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  // Next.js wraps end() over the rewrite with its compression middleware. With no compression
+  // accepted, that wrapper writes the headers (_implicitHeader → writeHead) before it passes the
+  // page on, and the rewritten page went out cut short at the rendered length.
+  it('keeps the headers back when a wrapper over end() writes them first (Next.js compression)', async () => {
+    const warn = vi.spyOn(createLogger(), 'warn').mockImplementation(() => {});
+
+    const served = await serve((res) => {
+      const end = res.end;
+
+      res.end = function (this: http.ServerResponse, ...args: unknown[]) {
+        if (!this.headersSent) {
+          this.writeHead(this.statusCode);
+        }
+
+        return (end as (...a: unknown[]) => http.ServerResponse).apply(this, args);
+      } as typeof res.end;
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+      res.end(ORIGINAL);
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  it('replaces a Content-Length given to writeHead, and keeps its status and other headers', async () => {
+    const served = await serve((res) => {
+      res.writeHead(201, { 'Content-Type': 'text/html', 'Content-Length': Buffer.byteLength(ORIGINAL), 'X-Page': '1' });
+      res.end(ORIGINAL);
+    });
+
+    expect(served.status).toBe(201);
+    expect(served.headers['x-page']).toBe('1');
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+  });
+
+  // Held until end(), the headers given to writeHead were out of the rewrite's sight: a
+  // Content-Encoding there left a gzip body read as text and sent back garbled.
+  it('reads a Content-Encoding given to writeHead before rewriting the body', async () => {
+    const compressed = gzipSync(Buffer.from(ORIGINAL));
+
+    const served = await serve((res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip' });
+      res.end(compressed);
+    });
+
+    expect(served.headers['content-encoding']).toBe('gzip');
+    expect(gunzipSync(served.body).toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it("replaces a Content-Length in writeHead's raw header list, keeping a repeated header", async () => {
+    const served = await serve((res) => {
+      res.writeHead(200, [
+        'Content-Type',
+        'text/html',
+        'Content-Length',
+        String(Buffer.byteLength(ORIGINAL)),
+        'Set-Cookie',
+        'a=1',
+        'Set-Cookie',
+        'b=2',
+      ]);
+      res.end(ORIGINAL);
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(served.headers['set-cookie']).toEqual(['a=1', 'b=2']);
+  });
+
   it('sets the length of the re-encoded body when the response is compressed', async () => {
     const compressed = gzipSync(Buffer.from(ORIGINAL));
 
