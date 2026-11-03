@@ -29,8 +29,9 @@
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test:e2e:ui": "npx playwright test --ui",
     "test:all": "npm run test:unit && npm run test:integration",
-    "lint": "eslint src tests",
-    "lint:fix": "eslint src tests --fix",
+    "lint": "eslint src tests e2e",
+    "lint:fix": "eslint src tests e2e --fix",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tests/tsconfig.json && tsc -p e2e/tsconfig.json",
     "audit:all": "node scripts/audit-all.mjs",
     "prereinstall:all": "npm run build",
     "reinstall:all": "node scripts/reinstall-all.mjs"
@@ -155,17 +156,13 @@
     "dist",
     "package.json",
     "README.md",
-    "LICENSE.md",
+    "LICENSE",
     "pp-dev.d.ts",
-    "assets",
     "CHANGELOG.md",
     "TEMPLATE_VARIABLES.md",
     "docs/features.md",
     "docs/screenshots"
   ],
-  "directories": {
-    "test": "test"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mi-examples/pp-dev.git"
