@@ -423,7 +423,7 @@ function listColumnsEditorHtml(tag: SchemaTag, i: number): string {
 
   return (
     '<div class="box-style" style="grid-column:1/-1">' +
-    '<label>additional_options (UI version)<button type="button" class="btn btn-sm" style="text-transform:none;padding:0 6px;margin-left:4px"' +
+    '<label>additional_options (UI version)<button type="button" class="btn btn-sm" style="padding:0 6px;margin-left:4px"' +
     actionAttrs('show-list-columns-help') +
     ' title="What is additional_options for list?">?</button></label>' +
     '<div class="ve-ao-columns">' +
@@ -504,7 +504,7 @@ function schemaRowHtml(tag: SchemaTag, i: number): string {
             <div class="box-style" style="height:fit-content;">${editorFlagsRow(tag, i, vis)}</div>
           </div>
           <div class="box-style" style="grid-column:1/-1">
-            <label>additional_options (raw JSON) <button type="button" class="btn btn-sm" style="text-transform:none;padding:0 6px;margin-left:4px"${actionAttrs('show-additional-options-help', { index: i })} title="What goes here for this type/source?">?</button></label>
+            <label>additional_options (raw JSON) <button type="button" class="btn btn-sm" style="padding:0 6px;margin-left:4px"${actionAttrs('show-additional-options-help', { index: i })} title="What goes here for this type/source?">?</button></label>
             ${additionalOptionsCell}
             <div class="hint">${additionalOptionsHint(tag)}</div>
 

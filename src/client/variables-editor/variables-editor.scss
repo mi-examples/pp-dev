@@ -472,7 +472,7 @@ tr.details-row.is-drop-target td {
   display: block;
   font-size: 10px;
   color: var(--text3);
-  text-transform: uppercase;
+  font-family: var(--font-mono);
   margin-bottom: 6px;
 }
 .badge {
@@ -712,7 +712,7 @@ tr.details-row.is-drop-target td {
   gap: 4px;
   font-size: 11px;
   color: var(--text2);
-  text-transform: none;
+  font-family: var(--font-ui);
   margin-bottom: 0;
 }
 .checkbox-label input {
