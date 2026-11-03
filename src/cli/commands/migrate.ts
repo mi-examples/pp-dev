@@ -130,7 +130,8 @@ export function registerMigrateCommand(cli: CAC): void {
           logger.info(
             colors.green(`\n--- Migrated config (dry-run) → ${path.relative(projectRoot, outputFile)} ---\n`),
           );
-          console.log(outputContent);
+          // Straight to stdout, with no log prefix: the output is the config file to paste.
+          process.stdout.write(`${outputContent}\n`);
           process.exit(0);
         }
 
