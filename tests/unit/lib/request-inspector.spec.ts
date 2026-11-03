@@ -90,7 +90,7 @@ describe('GET /@api/requests', () => {
 describe('GET /@api/requests/:id', () => {
   const SCRIPT = 'console.log("hello from a chunk");'.repeat(20);
 
-  function detailsOf(body: Buffer, contentEncoding?: string, captureLimit?: number) {
+  function detailsOf(body: Buffer, contentEncoding?: string | string[], captureLimit?: number) {
     const app = makeApp();
     const store = new RequestStore();
     const res: any = { json: (value: unknown) => (res.body = value) };
@@ -143,6 +143,18 @@ describe('GET /@api/requests/:id', () => {
     const broken = Buffer.from('not gzip at all');
 
     expect(Buffer.from(detailsOf(broken, 'gzip').responseBody!, 'base64')).toEqual(broken);
+  });
+
+  // res.setHeader() takes an array; reading only its first value took one layer off a body packed
+  // twice and showed the rest as text.
+  it.each([['gzip, gzip'], [['gzip', 'gzip']]])('gives a body with several encodings (%j) as captured', (encoding) => {
+    const sent = gzipSync(gzipSync(Buffer.from(SCRIPT)));
+
+    expect(Buffer.from(detailsOf(sent, encoding).responseBody!, 'base64')).toEqual(sent);
+  });
+
+  it('unpacks a body whose single encoding was set as an array', () => {
+    expect(text(detailsOf(gzipSync(Buffer.from(SCRIPT)), ['gzip']).responseBody!)).toBe(SCRIPT);
   });
 
   // The capture limit counts compressed bytes: a few KB of gzip can unpack to hundreds of MB, all
