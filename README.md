@@ -31,10 +31,10 @@ npm install @metricinsights/pp-dev
 This package requires Next.js as a peer dependency for certain functionality:
 
 ```bash
-npm install next@^15
+npm install next@^16
 ```
 
-**Note**: pp-dev requires Next.js version 15 or higher (but less than 17) to be installed in your project. This is a peer dependency, meaning it won't be automatically installed with pp-dev.
+**Note**: pp-dev accepts Next.js 13 to 16 (`peerDependencies`: `>= 13 < 17`); the test apps run on Next.js 16. It is a peer dependency, so it isn't installed with pp-dev.
 
 ## Package Structure
 
@@ -42,7 +42,7 @@ The pp-dev package provides multiple entry points for different use cases:
 
 ```javascript
 // Main package (includes everything)
-import ppDev from '@metricinsights/pp-dev';
+import { withPPDev, defineConfig } from '@metricinsights/pp-dev';
 
 // Plugin only (for Vite integration)
 import { vitePPDev } from '@metricinsights/pp-dev/plugin';
@@ -51,7 +51,7 @@ import { vitePPDev } from '@metricinsights/pp-dev/plugin';
 import { defineConfig } from '@metricinsights/pp-dev/helpers';
 
 // Client assets (for development UI)
-import '@metricinsights/pp-dev/client/css/client.css';
+import '@metricinsights/pp-dev/client/client.css';
 ```
 
 ## Configuration
@@ -144,62 +144,62 @@ module.exports = defineConfig({
 
 ### `mi` — Metric Insights connection
 
-| Field        | Type                              | Default        | Description                                               |
-|--------------|-----------------------------------|----------------|-----------------------------------------------------------|
-| `url`        | `string`                          | —              | URL of the Metric Insights instance                       |
-| `token`      | `string`                          | `MI_ACCESS_TOKEN` env | Personal access token for authentication           |
-| `mode`       | `'standalone' \| 'embedding'`     | `'standalone'` | Standalone hides the MI navigation; embedding keeps it    |
-| `include`    | `'top-bar' \| 'shared-components'`| —              | Bundle MI top-bar assets into the build (requires `standalone`) |
-| `apiVersion` | `6 \| 7`                          | `7`            | MI API version to target                                  |
+| Field        | Type                               | Default               | Description                                                     |
+| ------------ | ---------------------------------- | --------------------- | --------------------------------------------------------------- |
+| `url`        | `string`                           | —                     | URL of the Metric Insights instance                             |
+| `token`      | `string`                           | `MI_ACCESS_TOKEN` env | Personal access token for authentication                        |
+| `mode`       | `'standalone' \| 'embedding'`      | `'standalone'`        | Standalone hides the MI navigation; embedding keeps it          |
+| `include`    | `'top-bar' \| 'shared-components'` | —                     | Bundle MI top-bar assets into the build (requires `standalone`) |
+| `apiVersion` | `6 \| 7`                           | `7`                   | MI API version to target                                        |
 
 ### `app` — Portal Page identity
 
-| Field  | Type                       | Default                  | Description                                                 |
-|--------|----------------------------|--------------------------|-------------------------------------------------------------|
-| `id`   | `number`                   | —                        | Portal Page ID used to fetch template variables             |
-| `type` | `'template' \| 'page'`     | `'template'`             | `template` syncs back to MI; `page` is standalone-only      |
-| `name` | `string`                   | `package.json#name`      | Template name on the MI instance (usually auto-resolved)    |
+| Field  | Type                   | Default             | Description                                              |
+| ------ | ---------------------- | ------------------- | -------------------------------------------------------- |
+| `id`   | `number`               | —                   | Portal Page ID used to fetch template variables          |
+| `type` | `'template' \| 'page'` | `'template'`        | `template` syncs back to MI; `page` is standalone-only   |
+| `name` | `string`               | `package.json#name` | Template name on the MI instance (usually auto-resolved) |
 
 ### `proxy` — Request proxying
 
-| Field               | Type      | Default  | Description                                          |
-|---------------------|-----------|----------|------------------------------------------------------|
-| `cache`             | `boolean` | `true`   | Enable caching of proxied requests                   |
-| `cacheTtl`          | `number`  | `600000` | Cache TTL in milliseconds (10 minutes)               |
-| `tls.allowSelfSigned` | `boolean` | `false` | Allow self-signed SSL certificates on the MI server |
+| Field                 | Type      | Default  | Description                                         |
+| --------------------- | --------- | -------- | --------------------------------------------------- |
+| `cache`               | `boolean` | `true`   | Enable caching of proxied requests                  |
+| `cacheTtl`            | `number`  | `600000` | Cache TTL in milliseconds (10 minutes)              |
+| `tls.allowSelfSigned` | `boolean` | `false`  | Allow self-signed SSL certificates on the MI server |
 
 ### `build` — Build output
 
-| Field               | Type                                                        | Default  | Description                                                                          |
-|---------------------|-------------------------------------------------------------|----------|--------------------------------------------------------------------------------------|
-| `outDir`            | `string`                                                    | `'dist'` | Output directory                                                                     |
-| `zip`               | `boolean \| { fileName?: string; outDir?: string; inDir?: string }` | `true` | Zip build output. Object form customizes filename and directories.        |
-| `versionFile`       | `boolean \| { enabled?: boolean; fileNameTemplate?: string }` | `true` | Write a VERSION file into the build                                                  |
-| `imageOptimisations`| `boolean \| Record<string, unknown>`                        | `true`   | Image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options |
+| Field                | Type                                                                | Default  | Description                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `outDir`             | `string`                                                            | `'dist'` | Output directory                                                                                                                                   |
+| `zip`                | `boolean \| { fileName?: string; outDir?: string; inDir?: string }` | `true`   | Zip build output. Object form customizes filename and directories.                                                                                 |
+| `versionFile`        | `boolean \| { enabled?: boolean; fileNameTemplate?: string }`       | `true`   | Write a VERSION file into the build                                                                                                                |
+| `imageOptimisations` | `boolean \| Record<string, unknown>`                                | `true`   | Image optimization. See [vite-plugin-image-optimizer](https://www.npmjs.com/package/vite-plugin-image-optimizer#plugin-options) for object options |
 
 ### `inspector` — Request Inspector
 
-| Field          | Type      | Default     | Description                                                    |
-|----------------|-----------|-------------|----------------------------------------------------------------|
-| `enabled`      | `boolean` | `true`      | Enable the request inspector                                   |
-| `maxMemory`    | `number`  | `104857600` | Max total body memory (bytes) before oldest entries are evicted (default 100 MB) |
+| Field          | Type      | Default     | Description                                                                                             |
+| -------------- | --------- | ----------- | ------------------------------------------------------------------------------------------------------- |
+| `enabled`      | `boolean` | `true`      | Enable the request inspector                                                                            |
+| `maxMemory`    | `number`  | `104857600` | Max total body memory (bytes) before oldest entries are evicted (default 100 MB)                        |
 | `captureLimit` | `number`  | `10485760`  | Max body size captured per request/response (bytes, default 10 MB). Larger bodies are stored truncated. |
 
 ### `sync` — Template sync
 
-| Field        | Type              | Default     | Description                                                                                         |
-|--------------|-------------------|-------------|-----------------------------------------------------------------------------------------------------|
-| `backupsDir` | `string`          | `'backups'` | Directory for backups from the MI server                                                            |
-| `maxBackups` | `number \| false` | `20`        | How many of this page's backups to keep; each new backup deletes the oldest beyond that. `false` or `0` keeps them all. |
-| `buildTimeoutMs` | `number`      | `600000`    | How long the build a sync starts (`pp-dev build`, `next build`) may run, in milliseconds, before it is stopped and the sync fails (default 10 minutes). |
+| Field            | Type              | Default     | Description                                                                                                                                             |
+| ---------------- | ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backupsDir`     | `string`          | `'backups'` | Directory for backups from the MI server                                                                                                                |
+| `maxBackups`     | `number \| false` | `20`        | How many of this page's backups to keep; each new backup deletes the oldest beyond that. `false` or `0` keeps them all.                                 |
+| `buildTimeoutMs` | `number`          | `600000`    | How long the build a sync starts (`pp-dev build`, `next build`) may run, in milliseconds, before it is stopped and the sync fails (default 10 minutes). |
 
 ### `devPanel` — Dev panel appearance
 
-| Field      | Type                                                            | Default          | Description                                                                 |
-|------------|-----------------------------------------------------------------|------------------|-----------------------------------------------------------------------------|
-| `position` | `'top-left' \| 'top-right' \| 'bottom-left' \| 'bottom-right'`  | `'bottom-right'` | Screen corner the dev panel is anchored to                                  |
-| `hidden`   | `boolean`                                                       | `false`          | Fully hide the panel. Restore in the browser with `?pp-dev-panel=show`      |
-| `autoHide` | `boolean`                                                       | `false`          | Panel slides behind the screen edge leaving a thin strip; hover reveals it  |
+| Field      | Type                                                           | Default          | Description                                                                |
+| ---------- | -------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------- |
+| `position` | `'top-left' \| 'top-right' \| 'bottom-left' \| 'bottom-right'` | `'bottom-right'` | Screen corner the dev panel is anchored to                                 |
+| `hidden`   | `boolean`                                                      | `false`          | Fully hide the panel. Restore in the browser with `?pp-dev-panel=show`     |
+| `autoHide` | `boolean`                                                      | `false`          | Panel slides behind the screen edge leaving a thin strip; hover reveals it |
 
 These values are **defaults**: the panel itself has a settings popover (gear icon) with a corner
 picker, an auto-hide toggle and a hide button, and the panel can be dragged by its grip handle and
@@ -213,16 +213,16 @@ section for the full feature description.
 
 ### `users` — Working as other users
 
-| Field     | Type      | Default | Description                                                                                                  |
-|-----------|-----------|---------|--------------------------------------------------------------------------------------------------------------|
+| Field     | Type      | Default | Description                                                                                                                                                         |
+| --------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `persist` | `boolean` | `false` | Keep the users added with an API token between dev server runs, in `~/.pp-dev/users/` (plain text, readable by you only; on Windows, by your profile's permissions) |
 
 See [Working as other users](#working-as-other-users).
 
 ### `server` — The dev server
 
-| Field          | Type               | Default | Description |
-|----------------|--------------------|---------|-------------|
+| Field          | Type               | Default | Description                                                                                                                                                                                                                                                                                        |
+| -------------- | ------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `allowedHosts` | `string[] \| true` | `[]`    | Host names the dev server answers besides `localhost`, `*.localhost` and IP addresses, as Vite's [`server.allowedHosts`](https://vite.dev/config/server-options#server-allowedhosts): `'my-app.ngrok.app'`, or `'.ngrok.app'` for the domain and its subdomains. `true` answers any host; avoid it |
 
 A request whose `Host` is any other name gets 403: that is how DNS rebinding reaches a local server
@@ -257,27 +257,27 @@ export default defineConfig({
 
 pp-dev validates your config at startup and reports problems clearly:
 
-| Condition | Behaviour |
-|---|---|
-| `mi.include` set + `mi.mode !== 'standalone'` | error |
-| `mi.url` missing + `mi.mode === 'embedding'` or `app.type === 'template'` | error |
-| `mi.url` missing + `mi.mode === 'standalone'` + `app.type === 'page'` | warning |
-| `app.type === 'template'` without `app.id` | error |
-| `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id` | error |
-| `app.name` missing and no `package.json#name` | error |
-| `devPanel.position` not one of the four corners | error |
-| `server.allowedHosts` neither a list of host names nor `true` | error |
+| Condition                                                                 | Behaviour |
+| ------------------------------------------------------------------------- | --------- |
+| `mi.include` set + `mi.mode !== 'standalone'`                             | error     |
+| `mi.url` missing + `mi.mode === 'embedding'` or `app.type === 'template'` | error     |
+| `mi.url` missing + `mi.mode === 'standalone'` + `app.type === 'page'`     | warning   |
+| `app.type === 'template'` without `app.id`                                | error     |
+| `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id`       | error     |
+| `app.name` missing and no `package.json#name`                             | error     |
+| `devPanel.position` not one of the four corners                           | error     |
+| `server.allowedHosts` neither a list of host names nor `true`             | error     |
 
 ### Environment Variables
 
-| Variable                        | Description                                                                        |
-|----------------------------------|-------------------------------------------------------------------------------------|
-| `MI_ACCESS_TOKEN`                | Default value for `mi.token` when not set in config                                 |
-| `PP_DEV_DIST_ZIP`                | `true`/`false` — override `build.zip` for `pp-dev build` / `pp-dev next-build`       |
-| `PP_DEV_DIST_ZIP_DIR`            | Override the ZIP output directory (`build.zip.outDir`)                              |
-| `PP_DEV_DIST_ZIP_FILENAME`       | Override the ZIP file name (`build.zip.fileName`)                                   |
-| `PP_DEV_VERSION_MANIFEST`        | `true`/`false` — override `build.versionFile` (VERSION/BUILD-MANIFEST generation)    |
-| `PP_DEV_VERSION_FILE_TEMPLATE`   | Override the VERSION file name template                                             |
+| Variable                       | Description                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `MI_ACCESS_TOKEN`              | Default value for `mi.token` when not set in config                               |
+| `PP_DEV_DIST_ZIP`              | `true`/`false` — override `build.zip` for `pp-dev build` / `pp-dev next-build`    |
+| `PP_DEV_DIST_ZIP_DIR`          | Override the ZIP output directory (`build.zip.outDir`)                            |
+| `PP_DEV_DIST_ZIP_FILENAME`     | Override the ZIP file name (`build.zip.fileName`)                                 |
+| `PP_DEV_VERSION_MANIFEST`      | `true`/`false` — override `build.versionFile` (VERSION/BUILD-MANIFEST generation) |
+| `PP_DEV_VERSION_FILE_TEMPLATE` | Override the VERSION file name template                                           |
 
 The `PP_DEV_DIST_ZIP*`/`PP_DEV_VERSION_*` variables are read by `pp-dev build` and
 `pp-dev next-build`; an equivalent CLI flag always takes precedence over its env var. See
@@ -298,40 +298,40 @@ npx @metricinsights/pp-dev migrate
 
 Options:
 
-| Option | Description |
-|---|---|
-| `[config]` | Path to config file (auto-detected if omitted) |
-| `--dry-run` | Preview the migrated output without writing |
-| `--format ts\|js\|json` | Override output format |
-| `--output <file>` | Write to a specific file instead of overwriting |
-| `--no-backup` | Skip creating a `.bak` backup of the original |
+| Option                  | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `[config]`              | Path to config file (auto-detected if omitted)  |
+| `--dry-run`             | Preview the migrated output without writing     |
+| `--format ts\|js\|json` | Override output format                          |
+| `--output <file>`       | Write to a specific file instead of overwriting |
+| `--no-backup`           | Skip creating a `.bak` backup of the original   |
 
 The command detects flat 0.x configs and legacy `pp-watch.config.*` files, converts them to the new grouped format, and writes a `.bak` backup before overwriting.
 
 **Field mapping** (0.x → 1.0):
 
-| 0.x | 1.0 |
-|---|---|
-| `backendBaseURL` | `mi.url` |
-| `personalAccessToken` | `mi.token` |
-| `miHudLess: true` | `mi.mode: 'standalone'` |
-| `miHudLess: false` | `mi.mode: 'embedding'` |
-| `integrateMiTopBar: true` | `mi.mode: 'standalone'`, `mi.include: 'top-bar'` |
-| `integrateMiTopBar: { addSharedComponentsScripts: true }` | `mi.include: 'shared-components'` |
-| `v7Features: true` | `mi.apiVersion: 7` |
-| `v7Features: false` | `mi.apiVersion: 6` |
-| `appId` / `portalPageId` | `app.id` |
-| `templateName` | `app.name` (usually omit — auto-resolved from `package.json#name`) |
-| `templateLess: true` | `app.type: 'page'` |
-| `templateLess: false` | `app.type: 'template'` |
-| `enableProxyCache` | `proxy.cache` |
-| `proxyCacheTTL` | `proxy.cacheTtl` |
-| `disableSSLValidation: true` | `proxy.tls.allowSelfSigned: true` |
-| `distZip` | `build.zip` |
-| `versionPlugin` | `build.versionFile` |
-| `imageOptimizer` | `build.imageOptimisations` |
-| `outDir` | `build.outDir` |
-| `syncBackupsDir` | `sync.backupsDir` |
+| 0.x                                                       | 1.0                                                                |
+| --------------------------------------------------------- | ------------------------------------------------------------------ |
+| `backendBaseURL`                                          | `mi.url`                                                           |
+| `personalAccessToken`                                     | `mi.token`                                                         |
+| `miHudLess: true`                                         | `mi.mode: 'standalone'`                                            |
+| `miHudLess: false`                                        | `mi.mode: 'embedding'`                                             |
+| `integrateMiTopBar: true`                                 | `mi.mode: 'standalone'`, `mi.include: 'top-bar'`                   |
+| `integrateMiTopBar: { addSharedComponentsScripts: true }` | `mi.include: 'shared-components'`                                  |
+| `v7Features: true`                                        | `mi.apiVersion: 7`                                                 |
+| `v7Features: false`                                       | `mi.apiVersion: 6`                                                 |
+| `appId` / `portalPageId`                                  | `app.id`                                                           |
+| `templateName`                                            | `app.name` (usually omit — auto-resolved from `package.json#name`) |
+| `templateLess: true`                                      | `app.type: 'page'`                                                 |
+| `templateLess: false`                                     | `app.type: 'template'`                                             |
+| `enableProxyCache`                                        | `proxy.cache`                                                      |
+| `proxyCacheTTL`                                           | `proxy.cacheTtl`                                                   |
+| `disableSSLValidation: true`                              | `proxy.tls.allowSelfSigned: true`                                  |
+| `distZip`                                                 | `build.zip`                                                        |
+| `versionPlugin`                                           | `build.versionFile`                                                |
+| `imageOptimizer`                                          | `build.imageOptimisations`                                         |
+| `outDir`                                                  | `build.outDir`                                                     |
+| `syncBackupsDir`                                          | `sync.backupsDir`                                                  |
 
 ## CLI Commands
 
@@ -374,13 +374,13 @@ pp-dev next [options]
 # Aliases: pp-dev next-server, pp-dev next-dev
 ```
 
-| Option          | Default     | Description                                                          |
-| --------------- | ----------- | -------------------------------------------------------------------- |
-| `[root]`        | `.`         | Root directory of the application                                    |
-| `--port <port>` | `3000`      | Server port                                                          |
-| `--host [host]` | `localhost` | Server hostname; `--host` without a value listens on all addresses   |
-| `--webpack`     | -           | Use Webpack for Next dev (when Turbopack/native SWC is unavailable)  |
-| `--turbopack`   | -           | Use Turbopack for Next dev                                           |
+| Option          | Default     | Description                                                         |
+| --------------- | ----------- | ------------------------------------------------------------------- |
+| `[root]`        | `.`         | Root directory of the application                                   |
+| `--port <port>` | `3000`      | Server port                                                         |
+| `--host [host]` | `localhost` | Server hostname; `--host` without a value listens on all addresses  |
+| `--webpack`     | -           | Use Webpack for Next dev (when Turbopack/native SWC is unavailable) |
+| `--turbopack`   | -           | Use Turbopack for Next dev                                          |
 
 `--https`, `--open`, `--cors`, `--strictPort` and `--force` are accepted for compatibility but have no effect with `pp-dev next` (a warning says so); they will be removed.
 
@@ -390,18 +390,18 @@ pp-dev next [options]
 pp-dev build [options]
 ```
 
-| Option                          | Default   | Description                                            |
-| ------------------------------- | --------- | ------------------------------------------------------ |
-| `[root]`                        | `.`       | Root directory of the application                      |
-| `--target <target>`             | `modules` | Transpile target                                       |
-| `--outDir <dir>`                | `dist`    | Output directory                                       |
-| `--assetsDir <dir>`             | `assets`  | Assets directory under outDir                          |
-| `--changelog [file]`            | `true`    | Create changelog file                                  |
-| `--distZip` / `--no-distZip`    | see below | Override `build.zip` — pack (or skip) the output ZIP   |
-| `--distZipDir <dir>`            | see below | Override the ZIP output directory (`build.zip.outDir`) |
-| `--distZipFilename <file>`      | see below | Override the ZIP file name (`build.zip.fileName`)      |
+| Option                                       | Default   | Description                                                          |
+| -------------------------------------------- | --------- | -------------------------------------------------------------------- |
+| `[root]`                                     | `.`       | Root directory of the application                                    |
+| `--target <target>`                          | `modules` | Transpile target                                                     |
+| `--outDir <dir>`                             | `dist`    | Output directory                                                     |
+| `--assetsDir <dir>`                          | `assets`  | Assets directory under outDir                                        |
+| `--changelog [file]`                         | `true`    | Create changelog file                                                |
+| `--distZip` / `--no-distZip`                 | see below | Override `build.zip` — pack (or skip) the output ZIP                 |
+| `--distZipDir <dir>`                         | see below | Override the ZIP output directory (`build.zip.outDir`)               |
+| `--distZipFilename <file>`                   | see below | Override the ZIP file name (`build.zip.fileName`)                    |
 | `--versionManifest` / `--no-versionManifest` | see below | Override `build.versionFile` — emit (or skip) VERSION/BUILD-MANIFEST |
-| `--versionFileTemplate <tpl>`   | see below | Override the VERSION file name template                |
+| `--versionFileTemplate <tpl>`                | see below | Override the VERSION file name template                              |
 
 The `--distZip*`/`--versionManifest*` flags (and their `PP_DEV_*` env var equivalents, see
 [Environment Variables](#environment-variables)) let CI or ad-hoc builds override the `build.zip`
@@ -437,15 +437,15 @@ Use it in place of `next build` in your `package.json`:
 }
 ```
 
-| Option                          | Default   | Description                                            |
-| ------------------------------- | --------- | ------------------------------------------------------ |
-| `[root]`                        | `.`       | Root directory of the application                      |
-| `--changelog [file]`            | `true`    | Create changelog file                                  |
-| `--distZip` / `--no-distZip`    | see below | Override `build.zip` — pack (or skip) the output ZIP   |
-| `--distZipDir <dir>`            | see below | Override the ZIP output directory (`build.zip.outDir`) |
-| `--distZipFilename <file>`      | see below | Override the ZIP file name (`build.zip.fileName`)      |
+| Option                                       | Default   | Description                                                          |
+| -------------------------------------------- | --------- | -------------------------------------------------------------------- |
+| `[root]`                                     | `.`       | Root directory of the application                                    |
+| `--changelog [file]`                         | `true`    | Create changelog file                                                |
+| `--distZip` / `--no-distZip`                 | see below | Override `build.zip` — pack (or skip) the output ZIP                 |
+| `--distZipDir <dir>`                         | see below | Override the ZIP output directory (`build.zip.outDir`)               |
+| `--distZipFilename <file>`                   | see below | Override the ZIP file name (`build.zip.fileName`)                    |
 | `--versionManifest` / `--no-versionManifest` | see below | Override `build.versionFile` — emit (or skip) VERSION/BUILD-MANIFEST |
-| `--versionFileTemplate <tpl>`   | see below | Override the VERSION file name template                |
+| `--versionFileTemplate <tpl>`                | see below | Override the VERSION file name template                              |
 
 ### Migration
 
@@ -453,13 +453,13 @@ Use it in place of `next build` in your `package.json`:
 pp-dev migrate [config] [options]
 ```
 
-| Option | Description |
-|---|---|
-| `[config]` | Config file to migrate (auto-detected if omitted) |
-| `--dry-run` | Preview output without writing |
-| `--format ts\|js\|json` | Output format |
-| `--output <file>` | Write to a specific path |
-| `--no-backup` | Skip `.bak` backup |
+| Option                  | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| `[config]`              | Config file to migrate (auto-detected if omitted) |
+| `--dry-run`             | Preview output without writing                    |
+| `--format ts\|js\|json` | Output format                                     |
+| `--output <file>`       | Write to a specific path                          |
+| `--no-backup`           | Skip `.bak` backup                                |
 
 ### Changelog Generation
 
@@ -558,8 +558,8 @@ Runtime choices are saved in the browser's `localStorage` (`pp-dev-info-position
 export default defineConfig({
   devPanel: {
     position: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
-    hidden: false,            // hide the panel entirely (restore with ?pp-dev-panel=show)
-    autoHide: false,          // slide behind the screen edge, reveal on hover
+    hidden: false, // hide the panel entirely (restore with ?pp-dev-panel=show)
+    autoHide: false, // slide behind the screen edge, reveal on hover
   },
 });
 ```
@@ -583,7 +583,7 @@ A standalone page at `/@pp-dev/variables-editor`, alongside the [Request Inspect
 
 ![Variables Editor — Schema tab](./docs/screenshots/06-editor-schema.png)
 
-- **Values** — edit the page's live variable values in place, with type-aware widgets (searchable select for `static` options, a per-item form for `list`, …). A JSON mode (`View/edit raw JSON`) shows/accepts the same values as plain JSON — list-type values as native arrays, not double-escaped strings — with **Save to JSON file…** / **Import from JSON file…** buttons, and flags values that don't match a declared option, changed since the last load, or aren't in the schema. Each variable's description is shown as markdown, the way MI renders it: **bold**, *italic*, `code` and fenced code blocks, lists, and `<u>` / `<s>` / `<del>` for underline and strikethrough.
+- **Values** — edit the page's live variable values in place, with type-aware widgets (searchable select for `static` options, a per-item form for `list`, …). A JSON mode (`View/edit raw JSON`) shows/accepts the same values as plain JSON — list-type values as native arrays, not double-escaped strings — with **Save to JSON file…** / **Import from JSON file…** buttons, and flags values that don't match a declared option, changed since the last load, or aren't in the schema. Each variable's description is shown as markdown, the way MI renders it: **bold**, _italic_, `code` and fenced code blocks, lists, and `<u>` / `<s>` / `<del>` for underline and strikethrough.
 
   The pages the dev server serves substitute `[VarName]` from its own copy of the values, loaded from MI with the page data. **Save** updates that copy too, so every tab (any user) shows the saved values on its next load. When the values in MI change some other way (edited in MI itself, or the update after a save failed), the Values tab shows **Update local pages · N** in its bottom-right corner; its tooltip lists the values that differ, and a click updates the copy.
 
@@ -617,7 +617,7 @@ Every saved user gets its own host: `<name>.localhost:<port>`. The browser sends
 ### Adding users
 
 - **API token**: the token is checked with MI before the user is added. SSO users can only be added this way.
-- **Username + password** (local MI users): pp-dev adds the user and opens MI's usual login page on the user's own host. You log in there as in MI — 2FA included — and pp-dev never sees the password. Until then the user is *not logged in yet*; once MI ends the session it is *session expired* and **Log in** opens the login page again.
+- **Username + password** (local MI users): pp-dev adds the user and opens MI's usual login page on the user's own host. You log in there as in MI — 2FA included — and pp-dev never sees the password. Until then the user is _not logged in yet_; once MI ends the session it is _session expired_ and **Log in** opens the login page again.
 
 The name becomes the user's host, so it may contain only lowercase latin letters, digits and `-`, must start with a letter and be at most 32 characters long.
 
@@ -629,7 +629,7 @@ Logging out on a user's host ends that user's MI session (or token) as it would 
 
 ### Keeping users between runs
 
-Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, outside the project so it never ends up in git or a build. The tokens are stored as plain text: on macOS and Linux the file is readable by you only (mode `0600`); Windows ignores file modes, so there it is as private as your user profile folder (by default readable by you, administrators and the system). Two dev servers on the same project and MI instance share the file: each keeps the users the other added. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as *API token turned down by MI*.
+Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, outside the project so it never ends up in git or a build. The tokens are stored as plain text: on macOS and Linux the file is readable by you only (mode `0600`); Windows ignores file modes, so there it is as private as your user profile folder (by default readable by you, administrators and the system). Two dev servers on the same project and MI instance share the file: each keeps the users the other added. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as _API token turned down by MI_.
 
 ```typescript
 // pp-dev.config.ts
@@ -644,13 +644,13 @@ export default defineConfig({
 
 The popover uses a small JSON API:
 
-| Method   | Path                    | Description                                                                                       |
-|----------|-------------------------|---------------------------------------------------------------------------------------------------|
-| `GET`    | `/@api/users`           | The users (name, kind, state, MI user, `origin`, `loginUrl`), the default user, and whether users are available |
-| `POST`   | `/@api/users`           | Add a user: `{ "name", "token" }`, or `{ "name", "kind": "session" }` to log in with a password    |
-| `PUT`    | `/@api/users/default`   | Make a user the default: `{ "name" }`, or `{ "name": null }` for you                              |
-| `PATCH`  | `/@api/users/:name`     | Edit a user added with an API token: `{ "name" }` to rename it, `{ "token" }` to replace its token |
-| `DELETE` | `/@api/users/:name`     | Remove a user                                                                                     |
+| Method   | Path                  | Description                                                                                                     |
+| -------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/@api/users`         | The users (name, kind, state, MI user, `origin`, `loginUrl`), the default user, and whether users are available |
+| `POST`   | `/@api/users`         | Add a user: `{ "name", "token" }`, or `{ "name", "kind": "session" }` to log in with a password                 |
+| `PUT`    | `/@api/users/default` | Make a user the default: `{ "name" }`, or `{ "name": null }` for you                                            |
+| `PATCH`  | `/@api/users/:name`   | Edit a user added with an API token: `{ "name" }` to rename it, `{ "token" }` to replace its token              |
+| `DELETE` | `/@api/users/:name`   | Remove a user                                                                                                   |
 
 Tokens and MI sessions are never sent back.
 
@@ -673,17 +673,18 @@ Open `http://localhost:3000/@pp-dev/inspector` (replace port as needed) in any b
 Selecting a request opens the detail pane with headers and a syntax-highlighted body:
 
 ![Request Inspector — request detail](./docs/screenshots/05-inspector-detail.png)
+
 - A **Clear** button in the top-right removes all stored entries
 
 ### Source badges
 
 Each request in the list displays a colored letter badge to the left of the HTTP status:
 
-| Badge | Color  | Meaning                                      |
-|-------|--------|----------------------------------------------|
+| Badge | Color  | Meaning                                                  |
+| ----- | ------ | -------------------------------------------------------- |
 | `P`   | Purple | Forwarded to the upstream Metric Insights server (proxy) |
-| `C`   | Amber  | Served from the local proxy cache             |
-| `L`   | Grey   | Served locally (static file, dev route, etc.) |
+| `C`   | Amber  | Served from the local proxy cache                        |
+| `L`   | Grey   | Served locally (static file, dev route, etc.)            |
 
 ### Console banner
 
@@ -699,12 +700,12 @@ The message persists in DevTools history so it is visible even when you open the
 
 The inspector also exposes a lightweight JSON API, useful for tooling and AI agents:
 
-| Method   | Path                    | Description                                 |
-|----------|-------------------------|---------------------------------------------|
-| `GET`    | `/@api/requests`        | Paginated list of captured requests (metadata only, no bodies) |
-| `GET`    | `/@api/requests/:id`    | Full entry including captured request/response bodies (base64-encoded) |
-| `GET`    | `/@api/requests/stats`  | Store stats: entry count, memory usage, limits |
-| `DELETE` | `/@api/requests`        | Clear all stored entries                    |
+| Method   | Path                   | Description                                                            |
+| -------- | ---------------------- | ---------------------------------------------------------------------- |
+| `GET`    | `/@api/requests`       | Paginated list of captured requests (metadata only, no bodies)         |
+| `GET`    | `/@api/requests/:id`   | Full entry including captured request/response bodies (base64-encoded) |
+| `GET`    | `/@api/requests/stats` | Store stats: entry count, memory usage, limits                         |
+| `DELETE` | `/@api/requests`       | Clear all stored entries                                               |
 
 `GET /@api/requests` accepts `?limit=` (default 50) and `?offset=` query parameters for pagination.
 
@@ -716,8 +717,8 @@ Bodies in `GET /@api/requests/:id` are returned as base64 strings in `requestBod
 // pp-dev.config.ts
 export default defineConfig({
   inspector: {
-    enabled: true,         // set to false to disable entirely
-    maxMemory: 100 * 1024 * 1024,   // evict oldest entries above 100 MB
+    enabled: true, // set to false to disable entirely
+    maxMemory: 100 * 1024 * 1024, // evict oldest entries above 100 MB
     captureLimit: 10 * 1024 * 1024, // capture at most 10 MB per body
   },
 });
@@ -754,7 +755,7 @@ If you encounter an error like "Next.js is required but not available":
 
 #### Version Compatibility
 
-- **pp-dev** requires Next.js version 15 or higher (but less than 17)
+- **pp-dev** accepts Next.js 13 to 16 (`>= 13 < 17`); the test apps run on Next.js 16
 - **Node.js** version 24 or higher is required
 - **TypeScript** version 5 or higher is recommended
 

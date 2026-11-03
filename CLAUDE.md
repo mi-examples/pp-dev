@@ -3,6 +3,7 @@
 ## What this project is
 
 `@metricinsights/pp-dev` is a Vite/Next.js-based **local development framework and build tool** for Metric Insights' Portal Pages. It:
+
 - Proxies API requests to a live MI instance
 - Injects a **dev panel** (minimize, template sync) into the served page
 - Synchronizes the built template back to MI via WebSocket-triggered `next build` / Vite build
@@ -20,9 +21,11 @@ npm run audit:all      # npm audit in root AND every tests/* package — always 
 ## After any dependency change
 
 Always verify with the **repo-wide audit**, not just root:
+
 ```bash
 npm run audit:all
 ```
+
 This runs `npm audit` in root + `tests/test-commonjs`, `tests/test-nextjs`, `tests/test-nextjs-cjs`. All must exit 0.
 
 If test-fixture lockfiles need patching, add/update `overrides` in their `package.json` and run `npm install` there.
@@ -43,36 +46,44 @@ npm run reinstall:all  # builds dist/ + .tgz, then reinstalls in all test fixtur
 ## Architecture overview
 
 ```
-src/cli.ts          — 8 CLI commands: serve (default), next, build, changelog, …
+src/cli.ts          — CLI entry: registers the commands below (cac)
+src/cli/commands/   — one file per command: serve (default), next, build, next-build, preview,
+                      changelog, migrate, optimize, generate-icon-font
+src/cli/            — config-watcher, vite-config, post-build-changelog, options, profiler
 src/index.ts        — withPPDev() Vite config builder; loads pp-dev.config.*
 src/plugin.ts       — Vite plugin interface (re-exported)
 src/lib/
+  dev-server-setup.ts — what the Vite plugin and `pp-dev next` share: MiAPI options, sync + users wiring
   client.service.ts — WebSocket event handler (info-data, template:sync, …)
   dist.service.ts   — Build artifact manager: backups, VERSION, BUILD-MANIFEST, zip
   dev-panel.ts      — EJS panel injection + static asset middleware
   pp-ws-server.ts   — Raw ws server for Next.js (Vite-WS-compatible facade)
   version-manifest.ts — VERSION file + BUILD-MANIFEST generation (shared)
-  middleware/       — Request pipeline: redirect → proxy cache → load-pp-data → proxy-pass → rewrite-response
+  *.middleware.ts   — Request pipeline: pp-redirect → proxy-cache → load-pp-data → proxy-pass → rewrite-response
+                      (+ request-capture, internal)
 src/plugins/
   client-injection-plugin.ts — Vite transformIndexHtml: injects panel markup
   version-plugin.ts — Vite build hook: writes VERSION into dist
 src/client/
   index.ts          — Browser-side dev panel (sync button, minimize)
   hot-context.ts    — import.meta.hot shim for Next.js WS transport
+  variables-editor/, request-inspector/ — the editor and inspector pages (own rollup entries)
+src/shared/         — Node- and DOM-free modules both sides import (WS messages, user-name rules)
 ```
 
 **WebSocket transport:** Vite dev server uses Vite HMR WS. Next.js uses `PPDevHotServer` (raw `ws`, path `/@pp-dev-hmr`). The client picks whichever is available: `import.meta.hot ?? createPPDevHotContext()`.
 
 ## Test structure
 
-| Suite | Config | Pool | Timeout | Location |
-|---|---|---|---|---|
-| Unit | `vitest.config.ts` | threads, not isolated (specs that `vi.mock` modules run isolated) | 10 s | `tests/unit/**/*.spec.ts` |
-| Integration | `vitest.integration.config.ts` | forks | 30 s | `tests/integration/**/*.spec.ts` |
-| Server E2E (`npm run test:e2e`) | `vitest.e2e.config.ts` | forks, one file at a time (the files patch the same fixture configs and share mock-mi's port) | 60 s | `tests/e2e/**/*.spec.ts` |
-| Browser E2E (`npm run test:e2e:browser`) | `playwright.config.ts` | browser | — | `e2e/` |
+| Suite                                    | Config                         | Pool                                                                                          | Timeout | Location                         |
+| ---------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------- | ------- | -------------------------------- |
+| Unit                                     | `vitest.config.ts`             | threads, not isolated (specs that `vi.mock` modules run isolated)                             | 10 s    | `tests/unit/**/*.spec.ts`        |
+| Integration                              | `vitest.integration.config.ts` | forks                                                                                         | 30 s    | `tests/integration/**/*.spec.ts` |
+| Server E2E (`npm run test:e2e`)          | `vitest.e2e.config.ts`         | forks, one file at a time (the files patch the same fixture configs and share mock-mi's port) | 60 s    | `tests/e2e/**/*.spec.ts`         |
+| Browser E2E (`npm run test:e2e:browser`) | `playwright.config.ts`         | browser                                                                                       | —       | `e2e/`                           |
 
 Test fixtures (real apps installed with the local .tgz):
+
 - `tests/test-nextjs/` — ESM Next.js app
 - `tests/test-nextjs-cjs/` — CJS Next.js app
 - `tests/test-commonjs/` — CommonJS Vite app
