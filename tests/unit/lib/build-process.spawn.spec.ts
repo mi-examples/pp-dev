@@ -43,7 +43,7 @@ describe('runBuildProcess — a build started from the terminal', () => {
 
   it('stays in the terminal’s process group, so Ctrl+C reaches it', async () => {
     const proc = fakeBuild();
-    const build = runBuildProcess('next build', 'node', ['build'], { cwd: '.', env: {} });
+    const build = runBuildProcess('next build', 'node', ['build'], { cwd: '.', env: {} as NodeJS.ProcessEnv });
 
     expect(spawnMock).toHaveBeenCalledWith('node', ['build'], expect.objectContaining({ detached: false }));
 
@@ -55,7 +55,7 @@ describe('runBuildProcess — a build started from the terminal', () => {
     vi.useFakeTimers();
 
     const proc = fakeBuild();
-    const build = runBuildProcess('next build', 'node', ['build'], { cwd: '.', env: {} });
+    const build = runBuildProcess('next build', 'node', ['build'], { cwd: '.', env: {} as NodeJS.ProcessEnv });
 
     vi.advanceTimersByTime(24 * 60 * 60 * 1000);
     expect(proc.kill).not.toHaveBeenCalled();
@@ -71,7 +71,7 @@ describe('runBuildProcess — a build started from the terminal', () => {
     const proc = fakeBuild();
     const build = runBuildProcess('pp-dev build', 'node', ['build'], {
       cwd: '.',
-      env: {},
+      env: {} as NodeJS.ProcessEnv,
       signal: new AbortController().signal,
     });
 

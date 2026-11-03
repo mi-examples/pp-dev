@@ -7,7 +7,7 @@ function makeMi(tags: { name: string; value: string }[]) {
   const mi = new MiAPI('http://mi.example.com', { templateLess: false, appId: 7 });
 
   vi.spyOn(mi, 'getPageTemplate').mockResolvedValue('<html></html>' as never);
-  vi.spyOn(mi.pageApi, 'get').mockResolvedValue({
+  vi.spyOn(mi['pageApi'], 'get').mockResolvedValue({
     name: 'Sales',
     template: 'tpl',
     tags: JSON.stringify(tags),
@@ -28,7 +28,7 @@ describe('MiAPI.localPageVariables', () => {
 
     expect(mi.localPageVariables).toEqual([{ name: 'Region', value: 'US' }]);
 
-    vi.spyOn(mi.pageApi, 'get').mockResolvedValue({
+    vi.spyOn(mi['pageApi'], 'get').mockResolvedValue({
       name: 'Sales',
       template: 'tpl',
       tags: JSON.stringify([{ name: 'Region', value: 'EMEA' }]),

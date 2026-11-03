@@ -21,7 +21,7 @@ describe('MiAPI — disableSSLValidation', () => {
   });
 
   it('relaxes TLS for its own client only', () => {
-    new MiAPI('https://self-signed-tls.example.com', { disableSSLValidation: true });
+    new MiAPI('https://self-signed-tls.example.com', { templateLess: false, disableSSLValidation: true });
 
     expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBe(tlsEnv);
     expect(axios.defaults.httpsAgent).toBe(defaultAgent);

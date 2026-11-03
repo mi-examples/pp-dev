@@ -15,7 +15,7 @@ async function makeMi(tags: { name: string; value: string }[], template = TEMPLA
   const mi = new MiAPI('http://mi.example.com', { templateLess: false, appId: 7 });
 
   vi.spyOn(mi, 'getPageTemplate').mockResolvedValue(template as never);
-  vi.spyOn(mi.pageApi, 'get').mockResolvedValue({
+  vi.spyOn(mi['pageApi'], 'get').mockResolvedValue({
     name: 'Sales',
     template: 'tpl',
     tags: JSON.stringify(tags),
@@ -49,7 +49,7 @@ describe('MiAPI.buildPage', () => {
     expect(mi.buildPage('[Region] [Region] [a.b] [aXb]')).toContain('US US dot [aXb]');
     expect(mi.buildPage('[Region]')).toContain('<p>nav</p>US<script>');
 
-    vi.spyOn(mi.pageApi, 'get').mockResolvedValue({
+    vi.spyOn(mi['pageApi'], 'get').mockResolvedValue({
       name: 'Sales',
       template: 'tpl',
       tags: JSON.stringify([{ name: 'Region', value: 'EMEA' }]),
@@ -74,7 +74,7 @@ describe('MiAPI.buildPage', () => {
 
     expect(getJSDOM).toHaveBeenCalledTimes(1);
 
-    vi.spyOn(mi.pageApi, 'get').mockResolvedValue({ name: 'Renamed', template: 'tpl', tags: '[]' } as never);
+    vi.spyOn(mi['pageApi'], 'get').mockResolvedValue({ name: 'Renamed', template: 'tpl', tags: '[]' } as never);
     await mi.reloadPageVariables();
 
     expect(mi.buildPage('three')).toContain('<title>Renamed</title>');
