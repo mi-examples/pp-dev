@@ -122,16 +122,19 @@ export function initRewriteResponse(
       const writeHead = res.writeHead;
       const flushHeaders = res.flushHeaders;
       let heldHead: [number, string?] | null = null;
+      /** The response is passed on as it comes: every override only forwards from now on. */
+      let passing = false;
 
       /**
-       * Gives the response back as it was: what was held or buffered goes out now, the rest is
-       * no longer seen. For a response the `contentType` option rules out.
+       * Lets the response through as it is: what was held or buffered goes out now, the rest is
+       * forwarded. For a response the `contentType` option rules out.
+       *
+       * The overrides stay in place and forward: Next.js wraps them in turn (its compression
+       * middleware's end(), and on-headers' writeHead that adds `Content-Encoding`), and putting the
+       * originals back would drop those wrappers, sending a gzipped body with no such header.
        */
       const passThrough = () => {
-        res.write = write;
-        res.end = end;
-        res.writeHead = writeHead;
-        res.flushHeaders = flushHeaders;
+        passing = true;
 
         if (heldHead && !res.headersSent) {
           (writeHead as (...args: unknown[]) => ServerResponse).apply(res, heldHead);
@@ -144,8 +147,12 @@ export function initRewriteResponse(
         }
       };
 
-      /** Whether the response, now that its Content-Type may be known, is one to pass through. */
+      /** Whether the response is passed through: already, or now that its Content-Type is known. */
       const passes = () => {
+        if (passing) {
+          return true;
+        }
+
         if (!options.contentType) {
           return false;
         }
@@ -168,6 +175,10 @@ export function initRewriteResponse(
       };
 
       res.writeHead = function (this: ServerResponse, statusCode: number, ...rest: unknown[]) {
+        if (passing) {
+          return (writeHead as (...args: unknown[]) => ServerResponse).call(this, statusCode, ...rest);
+        }
+
         const statusMessage = typeof rest[0] === 'string' ? rest[0] : undefined;
 
         setHeadHeaders(this, statusMessage === undefined ? rest[0] : rest[1]);

@@ -374,6 +374,62 @@ describe('initRewriteResponse — contentType', () => {
     expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
   });
 
+  // Next.js wraps the response again over the rewrite: its compression middleware (end/write, and
+  // on-headers' writeHead that sets Content-Encoding) and, for an app route's file, a flushHeaders()
+  // before the first chunk. Putting the original methods back on pass-through dropped those wrappers:
+  // the icon went out gzipped under its raw Content-Length and no Content-Encoding (e2e caught it).
+  it("keeps Next.js's compression in place when a file passes through", async () => {
+    const compression = (await import('next/dist/compiled/compression/index.js')).default as () => (
+      req: http.IncomingMessage,
+      res: http.ServerResponse,
+      next: () => void,
+    ) => void;
+    const icon = Buffer.from('ICON'.repeat(600));
+    const middleware = initRewriteResponse(() => true, injectPanel, pagesOnly);
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () =>
+        compression()(req, res, () => {
+          res.setHeader('Content-Type', 'image/x-icon');
+          res.setHeader('Content-Length', icon.length);
+          res.flushHeaders();
+          res.write(icon);
+          res.end();
+        }),
+      );
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            { host: '127.0.0.1', port, path: '/', agent: false, headers: { 'accept-encoding': 'gzip' } },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(served.headers['content-encoding']).toBe('gzip');
+      expect(served.headers['content-length']).toBeUndefined();
+      expect(gunzipSync(served.body).equals(icon)).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("delivers a stream's chunks as they are written, not once it ends", async () => {
     const middleware = initRewriteResponse(() => true, injectPanel, pagesOnly);
     let endNow!: () => void;
