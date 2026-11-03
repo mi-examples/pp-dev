@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { initRewriteResponse } from '../../../src/lib/rewrite-response.middleware.js';
+import { initRewriteResponse, type RewriteResponseOptions } from '../../../src/lib/rewrite-response.middleware.js';
 import { createLogger } from '../../../src/lib/logger.js';
 
 /**
@@ -30,9 +30,13 @@ type Served = { status: number; headers: http.IncomingHttpHeaders; body: Buffer 
 
 async function serve(
   respond: (res: http.ServerResponse) => void,
-  { method = 'GET', rewrite = injectPanel }: { method?: string; rewrite?: (body: Buffer) => Buffer } = {},
+  {
+    method = 'GET',
+    rewrite = injectPanel,
+    options,
+  }: { method?: string; rewrite?: (body: Buffer) => Buffer; options?: RewriteResponseOptions } = {},
 ) {
-  const middleware = initRewriteResponse(() => true, rewrite);
+  const middleware = initRewriteResponse(() => true, rewrite, options);
 
   const server = http.createServer((req, res) => {
     void middleware(req as any, res, () => respond(res));
@@ -318,5 +322,98 @@ describe('initRewriteResponse', () => {
     expect(end).toHaveBeenCalledTimes(1);
     expect((end.mock.calls[0] as unknown[])[0]).toEqual(Buffer.from(REWRITTEN));
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Under `pp-dev next` the predicate goes by path, so the app's own route handlers under the base
+ * path matched too. Their responses were held back whole until they ended: a stream (server-sent
+ * events, chunked JSON) delivered nothing meanwhile, a never-ending one never. With `contentType`,
+ * a response that isn't a page is passed on as it comes, as soon as its type is known.
+ */
+describe('initRewriteResponse — contentType', () => {
+  const pagesOnly: RewriteResponseOptions = { contentType: (type) => type.includes('text/html') };
+  const JSON_BODY = '{"ok":true}';
+
+  it('passes a response of another type through untouched, with its own Content-Length', async () => {
+    const served = await serve(
+      (res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(JSON_BODY) });
+        res.end(JSON_BODY);
+      },
+      { options: pagesOnly },
+    );
+
+    expect(served.body.toString('utf8')).toBe(JSON_BODY);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(JSON_BODY)));
+  });
+
+  it('passes a response through whose type is only set right before end()', async () => {
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON_BODY);
+      },
+      { options: pagesOnly },
+    );
+
+    expect(served.body.toString('utf8')).toBe(JSON_BODY);
+  });
+
+  it('still rewrites a page', async () => {
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+        res.end(ORIGINAL);
+      },
+      { options: pagesOnly },
+    );
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+  });
+
+  it("delivers a stream's chunks as they are written, not once it ends", async () => {
+    const middleware = initRewriteResponse(() => true, injectPanel, pagesOnly);
+    let endNow!: () => void;
+    const clientHasFirstChunk = new Promise<void>((resolve) => (endNow = resolve));
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: 1\n\n');
+        void clientHasFirstChunk.then(() => res.end('data: 2\n\n'));
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const chunks: string[] = [];
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        http.request({ host: '127.0.0.1', port, path: '/', agent: false }, resolve).on('error', reject).end();
+      });
+      const firstChunk = new Promise<string>((resolve) =>
+        response.once('data', (chunk: Buffer) => resolve(String(chunk))),
+      );
+
+      response.on('data', (chunk: Buffer) => chunks.push(String(chunk)));
+
+      // A held-back stream never gets here before the server ends it, which it only does afterwards.
+      await expect(
+        Promise.race([firstChunk, new Promise((_, reject) => setTimeout(() => reject(new Error('held back')), 2_000))]),
+      ).resolves.toBe('data: 1\n\n');
+
+      endNow();
+
+      await new Promise<void>((resolve) => response.on('end', resolve));
+
+      expect(chunks.join('')).toBe('data: 1\n\ndata: 2\n\n');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

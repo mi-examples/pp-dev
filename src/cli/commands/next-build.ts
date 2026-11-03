@@ -5,7 +5,7 @@ import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
 import { safeNextImport } from '../../lib/next-import.js';
 import { PP_DEV_NEXT_BUILD_ENV_VAR } from '../../constants.js';
-import { normalizePPDevConfig } from '../../lib/pp-dev-config.js';
+import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-config.js';
 import {
   resolveBuildCliOverrides,
   applyDistZipOverride,
@@ -88,7 +88,12 @@ export function registerNextBuildCommand(cli: CAC): void {
           }
 
           const { getPkg } = await import('../../config.js');
-          const normalized = normalizePPDevConfig(ppDevConfig, getPkg(projectRoot).name);
+          const packageName = getPkg(projectRoot).name;
+
+          // As `serve` and `next` do: a standalone config with a bad `app.id` or `sync.*` was built as is.
+          validatePPDevConfig(ppDevConfig, packageName);
+
+          const normalized = normalizePPDevConfig(ppDevConfig, packageName);
           const distZip = applyDistZipOverride(
             normalized.distZip,
             cliOverrides,

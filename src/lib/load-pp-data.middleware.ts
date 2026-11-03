@@ -116,11 +116,17 @@ function getPageDataHeaders(req: IncomingMessage): Headers {
 }
 
 /**
- * Whether the request path is served by this dev app (under its base path).
- * An empty/`/` base means the app is served from the root.
+ * Whether the request path is served by this dev app (under its base path). A `/` base means the
+ * app is served from the root. Without a base, nothing is: taken for "everything", a navigation to
+ * any proxied MI page (`/login` first of all) loaded the page data, and with an expired session the
+ * auth failure sent the browser back to MI, which sent it to `/login` again, without end.
  */
-function isUnderBase(requestPath: string, base?: string): boolean {
-  if (!base || base === '/') {
+export function isUnderBase(requestPath: string, base?: string): boolean {
+  if (!base) {
+    return false;
+  }
+
+  if (base === '/') {
     return true;
   }
 

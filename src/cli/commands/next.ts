@@ -16,10 +16,13 @@ import proxyPassMiddleware from '../../lib/proxy-pass.middleware.js';
 import { initLoadPPData } from '../../lib/load-pp-data.middleware.js';
 import { createUserHostGuard } from '../../lib/user-registry.js';
 import {
+  type ChainMiddleware,
+  endUnhandledInternalRequest,
   getIndexPageRegExp,
   getMiAPIOptions,
   getProxyIgnore,
   resolveProxyCacheTtl,
+  runMiddlewareChain,
   startSyncAndUsers,
 } from '../../lib/dev-server-setup.js';
 import { urlReplacer } from '../../lib/helpers/url.helper.js';
@@ -171,7 +174,6 @@ export function registerNextCommand(cli: CAC): void {
 
           clearConfigCache();
 
-          const { join } = await import('path');
           const { createServer } = await import('http');
 
           const importConfig = await import('next/dist/server/config.js');
@@ -181,7 +183,8 @@ export function registerNextCommand(cli: CAC): void {
             (importConfig as any)['module.exports'].default ||
             (importConfig as any).default;
 
-          const projectRoot = root ? join(process.cwd(), root) : process.cwd();
+          // As `serve` and `next-build` resolve it: `join` took an absolute root for a relative one.
+          const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
 
           loadPPDevEnv(options.mode || 'development', projectRoot);
 
@@ -378,57 +381,15 @@ export function registerNextCommand(cli: CAC): void {
                 const isInternalNextRoute =
                   originalPathname.startsWith('/_next/') || originalPathname.startsWith('/__nextjs_');
 
-                if (isInternalNextRoute) {
-                  // For internal routes, only apply essential middlewares (skip proxy, cache, etc.)
-
-                  if (essentialMiddlewareChain.length > 0) {
-                    let middlewareIndex = 0;
-
-                    const runEssentialMiddleware = () => {
-                      if (middlewareIndex >= essentialMiddlewareChain.length) {
-                        // Essential middlewares processed, continue with Next.js handling
-                        processNextJSRequest();
-
-                        return;
-                      }
-
-                      const middleware = essentialMiddlewareChain[middlewareIndex];
-
-                      middlewareIndex++;
-
-                      middleware(req, res, runEssentialMiddleware);
-                    };
-
-                    runEssentialMiddleware();
-
-                    return; // Exit early, middleware will handle the rest
-                  } else {
-                    // No essential middlewares, process normally
-                    processNextJSRequest();
-
-                    return;
-                  }
-                }
-
-                // For non-internal routes, apply full middleware chain
-                let middlewareIndex = 0;
-
-                const runMiddleware = () => {
-                  if (middlewareIndex >= fullMiddlewareChain.length) {
-                    // All middlewares processed, continue with Next.js handling
-                    processNextJSRequest();
-
-                    return;
-                  }
-
-                  const middleware = fullMiddlewareChain[middlewareIndex];
-
-                  middlewareIndex++;
-
-                  middleware(req, res, runMiddleware);
-                };
-
-                runMiddleware();
+                // Internal routes get the essential middlewares only (no proxy, cache, …). A
+                // middleware's `next(error)` ends the request with a 500, as under Vite, instead of
+                // going on to Next.js without the page's data.
+                runMiddlewareChain(
+                  isInternalNextRoute ? essentialMiddlewareChain : fullMiddlewareChain,
+                  req,
+                  res,
+                  () => void processNextJSRequest(),
+                );
 
                 return; // Exit early, middleware will handle the rest
               }
@@ -501,9 +462,9 @@ export function registerNextCommand(cli: CAC): void {
           // Initialize pp-dev middlewares
           let mi: MiAPI | null = null;
           /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
-          const fullMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
+          const fullMiddlewareChain: ChainMiddleware[] = [];
           /** Essential middlewares for internal Next.js routes (e.g. /_next/). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
-          const essentialMiddlewareChain: Array<(req: any, res: any, next: () => void) => void> = [];
+          const essentialMiddlewareChain: ChainMiddleware[] = [];
 
           // Request inspector: register routes on internalServer and add capture middleware
           if (inspectorEnabled !== false) {
@@ -524,9 +485,9 @@ export function registerNextCommand(cli: CAC): void {
               req.url?.startsWith(INSPECTOR_PATH) ||
               req.url?.startsWith(VARIABLES_EDITOR_PATH)
             ) {
-              const mockNext = () => {};
-
-              internalServer(req, res, mockNext);
+              // Express calls back when no route matched (404) or one failed (500); a callback
+              // that did nothing left such requests hanging.
+              internalServer(req, res, (error?: unknown) => endUnhandledInternalRequest(res, error));
 
               return; // Don't call next() for internal pp-dev requests
             }
@@ -612,10 +573,13 @@ export function registerNextCommand(cli: CAC): void {
 
             // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
             const isIndexRegExp = getIndexPageRegExp(base);
+            // `appBase`, as the Vite plugin passes it: without it every HTML navigation counted as
+            // one into the app, MI's own `/login` included, whose page data load failed and sent the
+            // browser back to the login, without end.
             const loadPPDataMiddleware = initLoadPPData(
               isIndexRegExp,
               mi,
-              Object.assign({ base }, miConfig, { miHudLess }),
+              Object.assign({ base, appBase: base }, miConfig, { miHudLess }),
             );
             const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
               loadPPDataMiddleware(req, res, next);
@@ -667,13 +631,7 @@ export function registerNextCommand(cli: CAC): void {
                 // not at index.html. Match page requests under base, excluding /_next/ static assets.
                 return pathname.startsWith(base) && !pathname.includes('/_next/');
               },
-              (response, req, res) => {
-                // Pages only: the check above goes by path, and the app's own files under the base
-                // path (its icon, public/ images and JSON) were read as text, a binary one corrupted.
-                if (!String(res.getHeader('content-type') ?? '').includes('text/html')) {
-                  return response;
-                }
-
+              (response, req) => {
                 const page = mi!.buildPage(response, miHudLess);
                 // Inject the dev panel before host-rewriting so its `!!`-prefixed backend
                 // links are handled by urlReplacer like the rest of the page.
@@ -688,6 +646,10 @@ export function registerNextCommand(cli: CAC): void {
 
                 return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', withPanel));
               },
+              // Pages only: the check above goes by path, and the app's own files under the base
+              // path (its icon, public/ images and JSON) were read as text, a binary one corrupted,
+              // and a route handler's stream was held back until it ended.
+              { contentType: (contentType) => contentType.includes('text/html') },
             );
 
             const rewriteResponseWrapper = (req: any, res: any, next: () => void) => {
