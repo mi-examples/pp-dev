@@ -49,7 +49,9 @@ npm run reinstall:all  # builds dist/ + .tgz, then reinstalls in all test fixtur
 src/cli.ts          — CLI entry: registers the commands below (cac)
 src/cli/commands/   — one file per command: serve (default), next, build, next-build, preview,
                       changelog, migrate, optimize, generate-icon-font
-src/cli/            — config-watcher, vite-config, post-build-changelog, options, profiler
+src/cli/            — config-watcher, next-supervisor (pp-dev next runs its server in a child
+                      process and restarts it on config changes), vite-config,
+                      post-build-changelog, options, profiler
 src/index.ts        — withPPDev() Vite config builder; loads pp-dev.config.*
 src/plugin.ts       — Vite plugin interface (re-exported)
 src/lib/

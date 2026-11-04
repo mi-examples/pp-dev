@@ -1,6 +1,23 @@
 import { colors } from './helpers/color.helper.js';
 
-type ProcessLike = Pick<NodeJS.Process, 'on' | 'off'> & { exit: (code?: number) => void };
+type ProcessLike = Pick<NodeJS.Process, 'on' | 'off'> & { exit: (code?: number) => void; send?: unknown };
+
+/** From the server process to `pp-dev next`'s supervisor: the server is listening. */
+export const SUPERVISOR_READY_MESSAGE = 'pp-dev:ready';
+/** From the supervisor to the server process: shut down (a signal it received, or a config change). */
+export const SUPERVISOR_SHUTDOWN_MESSAGE = 'pp-dev:shutdown';
+
+export type SupervisorMessage =
+  { type: typeof SUPERVISOR_READY_MESSAGE } | { type: typeof SUPERVISOR_SHUTDOWN_MESSAGE; reason: string };
+
+function isShutdownMessage(message: unknown): message is Extract<SupervisorMessage, { reason: string }> {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    (message as { type?: unknown }).type === SUPERVISOR_SHUTDOWN_MESSAGE &&
+    typeof (message as { reason?: unknown }).reason === 'string'
+  );
+}
 
 interface ProcessHandlersLogger {
   info: (message: string) => void;
@@ -45,6 +62,10 @@ function describe(error: unknown): string {
  * - An unhandled rejection is logged and the server keeps running, as Vite does: one rejected
  *   promise in a middleware must not take the whole dev server down.
  * - A shutdown that fails, or takes longer than `shutdownTimeoutMs`, exits with 1.
+ * - A process with an IPC channel (the server process of `pp-dev next`) also shuts down on its
+ *   supervisor's shutdown message and when the supervisor goes away (the channel disconnects). The
+ *   message may repeat a signal the terminal delivered to both processes: it never counts as the
+ *   second signal that exits at once.
  */
 export function registerProcessHandlers({
   logger,
@@ -62,13 +83,15 @@ export function registerProcessHandlers({
     exitCode = Math.max(exitCode, code);
   };
 
-  const shutdownAndExit = async (reason: string, code: number) => {
+  const shutdownAndExit = async (reason: string, code: number, { repeatable = true } = {}) => {
     escalate(code);
 
     if (shuttingDown) {
-      if (reason === 'SIGINT' || reason === 'SIGTERM' || reason === 'SIGHUP') {
-        logger.warn(colors.yellow(`
-⚠️  Received ${reason} again, exiting without waiting for the shutdown`));
+      if (repeatable && (reason === 'SIGINT' || reason === 'SIGTERM' || reason === 'SIGHUP')) {
+        logger.warn(
+          colors.yellow(`
+⚠️  Received ${reason} again, exiting without waiting for the shutdown`),
+        );
         processRef.exit(exitCode);
       }
 
@@ -77,8 +100,10 @@ export function registerProcessHandlers({
     }
 
     shuttingDown = true;
-    logger.info(colors.yellow(`
-🛑 Received ${reason}, shutting down gracefully...`));
+    logger.info(
+      colors.yellow(`
+🛑 Received ${reason}, shutting down gracefully...`),
+    );
 
     // Referenced on purpose: should the shutdown close the last handle and then hang, an unref'd
     // timer would let Node exit on its own, with 0, instead of reporting the failure.
@@ -118,11 +143,24 @@ export function registerProcessHandlers({
     logger.error(colors.red(`❌ Unhandled promise rejection (the server keeps running): ${describe(reason)}`));
   };
 
+  const onMessage = (message: unknown) => {
+    if (isShutdownMessage(message)) {
+      void shutdownAndExit(message.reason, 0, { repeatable: false });
+    }
+  };
+  const onDisconnect = () => void shutdownAndExit('the end of the pp-dev process', 0, { repeatable: false });
+  const supervised = typeof processRef.send === 'function';
+
   processRef.on('SIGINT', onSigint);
   processRef.on('SIGTERM', onSigterm);
   processRef.on('SIGHUP', onSighup);
   processRef.on('uncaughtException', onUncaughtException);
   processRef.on('unhandledRejection', onUnhandledRejection);
+
+  if (supervised) {
+    processRef.on('message', onMessage);
+    processRef.on('disconnect', onDisconnect);
+  }
 
   return () => {
     processRef.off('SIGINT', onSigint);
@@ -130,5 +168,10 @@ export function registerProcessHandlers({
     processRef.off('SIGHUP', onSighup);
     processRef.off('uncaughtException', onUncaughtException);
     processRef.off('unhandledRejection', onUnhandledRejection);
+
+    if (supervised) {
+      processRef.off('message', onMessage);
+      processRef.off('disconnect', onDisconnect);
+    }
   };
 }
