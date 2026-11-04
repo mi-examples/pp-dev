@@ -343,14 +343,27 @@ describe('ClientService — dialogs and builds when connections close', () => {
 
     socket.emit('close');
 
-    await expect(answer).resolves.toBe(false);
+    await expect(answer).resolves.toEqual({ approved: false, reason: 'disconnected' });
   });
 
   it('cancels a dialog for a connection that is already closed, without sending it', async () => {
     const client = { send: vi.fn(), socket: makeSocket(3) } as unknown as WebSocketClient;
 
-    await expect(service.requestSyncAction(dialog, client)).resolves.toBe(false);
+    await expect(service.requestSyncAction(dialog, client)).resolves.toEqual({
+      approved: false,
+      reason: 'disconnected',
+    });
     expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('cancels a dialog nobody answers in time, saying so', async () => {
+    const quick = new ClientService(
+      { ws: { on: vi.fn(), send: vi.fn() }, config: { clientInjectionPlugin: {} } } as unknown as ViteDevServer,
+      { syncActionTimeoutMs: 20 },
+    );
+    const client = { send: vi.fn(), socket: makeSocket() } as unknown as WebSocketClient;
+
+    await expect(quick.requestSyncAction(dialog, client)).resolves.toEqual({ approved: false, reason: 'timeout' });
   });
 
   it('stops listening to the connection once the dialog is answered', async () => {
@@ -363,7 +376,7 @@ describe('ClientService — dialogs and builds when connections close', () => {
 
     handlers.get('template:sync:action-response')!({ requestId, approved: true });
 
-    await expect(answer).resolves.toBe(true);
+    await expect(answer).resolves.toEqual({ approved: true });
     expect(socket.listenerCount('close')).toBe(0);
   });
 
@@ -374,7 +387,7 @@ describe('ClientService — dialogs and builds when connections close', () => {
     service.dispose();
 
     expect(stopBuilds).toHaveBeenCalledTimes(1);
-    await expect(answer).resolves.toBe(false);
+    await expect(answer).resolves.toEqual({ approved: false, reason: 'shutdown' });
   });
 
   // Vite takes `ws.on('close')` for a custom message any page can send, and never calls it on
@@ -416,7 +429,7 @@ describe('ClientService — a sync before any backup was saved', () => {
     const [event, payload] = (client.send as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
 
     expect(event).toBe('template:sync:response');
-    expect(payload).toEqual({ syncedAt: expect.any(String), currentHash: '', backupFilename: '' });
+    expect(payload).toEqual({ syncedAt: expect.any(String), backupFilename: '' });
     expect(Date.parse(payload.syncedAt)).toBeGreaterThanOrEqual(before - 1000);
   });
 });
@@ -465,7 +478,12 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     versionManifestHashMismatches: [],
   });
 
-  function setup(opts: { analysis?: () => Promise<BackupAnalysis>; answers?: boolean[]; build?: () => unknown }) {
+  function setup(opts: {
+    analysis?: () => Promise<BackupAnalysis>;
+    answers?: boolean[];
+    build?: () => unknown;
+    timeoutMs?: number;
+  }) {
     const handlers = new Map<string, (...args: any[]) => any>();
     const server = {
       ws: {
@@ -510,7 +528,7 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
       updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
     } as unknown as MiAPI;
 
-    new ClientService(server, { distService, miAPI, syncActionTimeoutMs: 5_000 });
+    new ClientService(server, { distService, miAPI, syncActionTimeoutMs: opts.timeoutMs ?? 5_000 });
 
     const sync = () => handlers.get('template:sync')!({}, client) as Promise<void>;
 
@@ -518,10 +536,11 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
   }
 
   const cancelled = { cancelled: true, message: 'Sync cancelled by user. Backup was saved.' };
-  const synced = { syncedAt: '2026-10-29T08:00:00.000Z', currentHash: 'h', backupFilename: 'b.zip' };
+  const synced = { syncedAt: expect.any(String), backupFilename: 'b.zip' };
 
   it('saves the backup and uploads without a dialog when the backup matches its manifests', async () => {
     const { sync, dialogs, responses, distService, miAPI } = setup({});
+    const before = Date.now();
 
     await sync();
 
@@ -529,6 +548,24 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     expect(dialogs).toEqual([]);
     expect(miAPI.updateAssets).toHaveBeenCalledWith(Buffer.from('zip'));
     expect(responses).toEqual([synced]);
+    // Dated now, not by the last backup (the meta's date): a backup the same as the last one is
+    // not saved again, and the panel then said "Synced at" that one's date.
+    expect(Date.parse((responses[0] as { syncedAt: string }).syncedAt)).toBeGreaterThanOrEqual(before);
+  });
+
+  it('tells the panel when its dialog was not answered in time, not that the user cancelled', async () => {
+    const { sync, dialogs, responses } = setup({
+      analysis: async () => ({ ...cleanAnalysis(), unknownFiles: ['extra.js'], allFilesInMeta: false }),
+      answers: [],
+      timeoutMs: 1_000,
+    });
+
+    await sync();
+
+    expect(dialogs).toHaveLength(1);
+    expect(responses).toEqual([
+      { cancelled: true, message: 'Sync cancelled: its dialog was not answered within 1 s. Backup was saved.' },
+    ]);
   });
 
   it('asks about files missing from VERSION, and stops there when the answer is cancel', async () => {

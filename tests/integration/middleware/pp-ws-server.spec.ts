@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createServer, type Server } from 'http';
 import { WebSocket } from 'ws';
 import type { ViteDevServer } from 'vite';
@@ -121,6 +121,34 @@ describe('PPDevHotServer transport', () => {
     } finally {
       ws.close();
     }
+  });
+
+  // `off` of a lifecycle listener also looked for a message listener of that name, and the other way
+  // round: harmless, but not what `on` does.
+  it('removes a listener from the list it was added to, and no other', async () => {
+    const onPing = vi.fn();
+    const onClose = vi.fn();
+
+    hotServer.ws.on('ping', onPing);
+    hotServer.ws.off('close', onPing);
+    hotServer.ws.on('close', onClose);
+    hotServer.ws.off('ping', onClose);
+
+    const ws = await connect();
+
+    send(ws, 'ping', 1);
+    await vi.waitFor(() => expect(onPing).toHaveBeenCalledWith(1, expect.anything()));
+
+    hotServer.ws.off('ping', onPing);
+    send(ws, 'ping', 2);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onPing).toHaveBeenCalledTimes(1);
+
+    ws.close();
+    await hotServer.close();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('rejects upgrades on non pp-dev paths', async () => {
