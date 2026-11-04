@@ -5,7 +5,7 @@
       "portal_page_template_id": 313,
       "name": "variable-list-objects",
       "uid": "b3b3b3b3c4c4c4c4d5d5d5d5e6e6e6e6",
-      "default_value": "[{\"id\":\"1\",\"label\":\"First\"},{\"id\":\"2\",\"label\":\"Second\"}\"]",
+      "default_value": "[{\"id\":\"1\",\"label\":\"First\"},{\"id\":\"2\",\"label\":\"Second\"}]",
       "additional_options": [
         {
           "name": "testItem1",
