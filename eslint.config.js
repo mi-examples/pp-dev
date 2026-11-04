@@ -41,7 +41,7 @@ const paddingRules = [
 export default tseslint.config(
   { ignores: ['dist/**', 'node_modules/**', 'scripts/**', 'tests/test-*/**'] },
   {
-    files: ['src/**/*.ts', 'tests/**/*.ts'],
+    files: ['src/**/*.ts', 'tests/**/*.ts', 'e2e/**/*.ts'],
     extends: recommendedAsWarnings,
     languageOptions: {
       parserOptions: {
@@ -65,7 +65,7 @@ export default tseslint.config(
   },
   {
     // Tests follow the same layout, reported as warnings until they are formatted
-    files: ['tests/**/*.ts'],
+    files: ['tests/**/*.ts', 'e2e/**/*.ts'],
     rules: {
       curly: ['warn', 'all'],
       'padding-line-between-statements': ['warn', ...paddingRules],

@@ -89,7 +89,6 @@ const configs = [
         compress: {
           drop_console: false, // Keep console logs for debugging
           drop_debugger: true,
-          pure_funcs: ['console.log'], // Remove console.log in production
         },
         mangle: {
           properties: false, // Don't mangle property names
@@ -135,7 +134,6 @@ const configs = [
         compress: {
           drop_console: false,
           drop_debugger: true,
-          pure_funcs: ['console.log'],
         },
         mangle: {
           properties: false,
@@ -164,7 +162,6 @@ const configs = [
     external: isExternal,
     preserveEntrySignatures: 'strict',
   }),
-
 ];
 
 export default configs;

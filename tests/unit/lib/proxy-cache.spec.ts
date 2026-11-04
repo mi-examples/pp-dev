@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ProxyCache } from '../../../src/lib/proxy-cache.middleware';
+import { ProxyCache, type CacheItem } from '../../../src/lib/proxy-cache.middleware';
 
-const item = (size: number) => ({ size });
+const item = (size: number): CacheItem => ({ size, headers: {}, content: Buffer.alloc(0), timestamp: Date.now() });
 
 describe('ProxyCache', () => {
   beforeEach(() => {

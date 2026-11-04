@@ -36,9 +36,9 @@ function invokeConfigResolved(plugin: Plugin, outDir: string) {
   const config = { build: { outDir } } as ResolvedConfig;
 
   if (typeof hook === 'function') {
-    hook(config);
+    hook.call(undefined as never, config);
   } else if (typeof hook === 'object' && hook !== null && 'handler' in hook) {
-    hook.handler(config);
+    hook.handler.call(undefined as never, config);
   }
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import JSZip from 'jszip';
+import { zipFromEntries } from '../helpers/zip.js';
 import {
   ChangelogGenerator,
   escapeHTMLSequence,
@@ -21,13 +21,7 @@ function writeTree(dir: string, files: Record<string, string | Buffer>): void {
 }
 
 async function writeZip(file: string, files: Record<string, string>): Promise<void> {
-  const zip = new JSZip();
-
-  for (const [name, content] of Object.entries(files)) {
-    zip.file(name, content);
-  }
-
-  fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
+  fs.writeFileSync(file, await zipFromEntries(files));
 }
 
 describe('escapeHTMLSequence', () => {

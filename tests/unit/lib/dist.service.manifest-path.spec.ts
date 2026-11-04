@@ -2,16 +2,15 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DistService } from '../../../src/lib/dist.service.js';
+import { zipFromEntries } from '../helpers/zip.js';
 
 function sha256(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
 }
 
-async function createBackup(manifestFiles: Record<string, string>, zipFiles: Record<string, string>): Promise<Buffer> {
-  const zip = new JSZip();
+function createBackup(manifestFiles: Record<string, string>, zipFiles: Record<string, string>): Promise<Buffer> {
   const checksum = sha256(
     Object.keys(manifestFiles)
       .sort()
@@ -19,21 +18,15 @@ async function createBackup(manifestFiles: Record<string, string>, zipFiles: Rec
       .join(''),
   );
 
-  for (const [filePath, content] of Object.entries(zipFiles)) {
-    zip.file(filePath, content);
-  }
-
-  zip.file(
-    'VERSION-v1.0.0-test.json',
-    JSON.stringify({
+  return zipFromEntries({
+    ...zipFiles,
+    'VERSION-v1.0.0-test.json': JSON.stringify({
       checksum,
       files: manifestFiles,
       schemaVersion: 1,
       version: 'v1.0.0',
     }),
-  );
-
-  return zip.generateAsync({ type: 'nodebuffer' });
+  });
 }
 
 describe('DistService VERSION manifest paths', () => {

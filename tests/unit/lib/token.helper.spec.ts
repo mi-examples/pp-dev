@@ -184,14 +184,14 @@ describe('Token Helper', () => {
 
   describe('logTokenError', () => {
     let mockLogger: {
-      error: ReturnType<typeof vi.fn>;
-      info: ReturnType<typeof vi.fn>;
+      error: ReturnType<typeof vi.fn<(message: string) => void>>;
+      info: ReturnType<typeof vi.fn<(message: string) => void>>;
     };
 
     beforeEach(() => {
       mockLogger = {
-        error: vi.fn(),
-        info: vi.fn(),
+        error: vi.fn<(message: string) => void>(),
+        info: vi.fn<(message: string) => void>(),
       };
     });
 

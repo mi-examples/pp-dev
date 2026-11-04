@@ -147,7 +147,7 @@ describe('load-pp-data middleware — proxy cache on login', () => {
     vi.advanceTimersByTime(4 * 60 * 1000);
     await middleware(makeReq('/'), makeRes() as unknown as ServerResponse, vi.fn());
 
-    const load = opts.appId ? mi.getPageInfo : mi.getPageTemplate;
+    const load = (opts as { appId?: number }).appId ? mi.getPageInfo : mi.getPageTemplate;
 
     expect(load).toHaveBeenCalledTimes(2);
     expect(proxyCache.get(CACHED_PATH)).not.toBeNull();

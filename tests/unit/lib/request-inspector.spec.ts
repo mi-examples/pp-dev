@@ -7,7 +7,7 @@ import { INSPECTOR_PATH, registerInspectorRoutes } from '../../../src/lib/reques
 import { RequestStore } from '../../../src/lib/request-store.js';
 
 function makeApp() {
-  const handlers = new Map<string, (req: any, res: any) => any>();
+  const handlers = new Map<string, (req: any, res: any, next?: () => void) => any>();
 
   const app = {
     handlers,

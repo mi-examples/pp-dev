@@ -345,7 +345,7 @@ describe('validatePPDevConfig', () => {
     expect(() => normalizePPDevConfig({}, undefined)).toThrow('app.name is required');
   });
 
-  it.each([0, 1, 20, false])('accepts sync.maxBackups %j', (maxBackups) => {
+  it.each<number | false>([0, 1, 20, false])('accepts sync.maxBackups %j', (maxBackups) => {
     const config: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 }, sync: { maxBackups } };
 
     expect(() => validatePPDevConfig(config, 'app')).not.toThrow();
@@ -507,9 +507,12 @@ describe('server.allowedHosts', () => {
     expect(normalizePPDevConfig({ ...base, server: { allowedHosts: true } }, 'app').allowedHosts).toBe(true);
   });
 
-  it.each([[[]], [['my-app.ngrok.app', '.trycloudflare.com']], [true]])('accepts %j', (allowedHosts) => {
-    expect(() => validatePPDevConfig({ ...base, server: { allowedHosts } }, 'app')).not.toThrow();
-  });
+  it.each<[true | string[]]>([[[]], [['my-app.ngrok.app', '.trycloudflare.com']], [true]])(
+    'accepts %j',
+    (allowedHosts) => {
+      expect(() => validatePPDevConfig({ ...base, server: { allowedHosts } }, 'app')).not.toThrow();
+    },
+  );
 
   it.each([
     ['a single name instead of a list', 'my-app.ngrok.app'],

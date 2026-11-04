@@ -10,11 +10,6 @@ updates:
       # have to be updated together with vitest in one pull request.
       vitest:
         patterns: ['vitest', '@vitest/*']
-  - package-ecosystem: 'docker'
-    directory: '/'
-    target-branch: 'develop'
-    schedule:
-      interval: 'daily'
   - package-ecosystem: 'github-actions'
     directory: '/'
     target-branch: 'develop'

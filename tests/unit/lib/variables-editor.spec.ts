@@ -7,7 +7,7 @@ import type { DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 function makeApp() {
-  const handlers = new Map<string, (req: any, res: any) => any>();
+  const handlers = new Map<string, (req: any, res: any, next?: () => void) => any>();
 
   const app = {
     handlers,
