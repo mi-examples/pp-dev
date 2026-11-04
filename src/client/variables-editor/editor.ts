@@ -228,7 +228,11 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   }
 
   // ── Data loading ─────────────────────────────────────────────────────────────
-  async function loadSchema(seq: number) {
+  // Both loaders resolve to whether the tab took the data. Edits made while a load ran (the tab
+  // paints what it has first, see scheduleAutoLoad) stay as they are: only what counts as saved
+  // takes the current content, and the caller leaves the tab unpainted, since a repaint would
+  // move the caret.
+  async function loadSchema(seq: number, editSeqAtStart: number): Promise<boolean> {
     let r: Response;
     let data: SchemaState & ErrorBody;
 
@@ -237,16 +241,16 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       data = (await r.json()) as SchemaState & ErrorBody;
     } catch (e) {
       if (seq !== schemaSeq) {
-        return;
+        return false;
       }
 
       showBanner('error', 'Failed to load the schema: ' + escapeHtml(errorMessage(e)));
 
-      return;
+      return false;
     }
 
     if (seq !== schemaSeq) {
-      return;
+      return false;
     }
 
     // An error answer (e.g. 503 with no dist service) is not a schema: kept as one, it rendered as
@@ -256,38 +260,50 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       schemaRows = [];
       showBanner('error', 'Failed to load the schema: ' + escapeHtml((data && data.error) || 'HTTP ' + r.status));
 
-      return;
+      return false;
     }
 
-    schemaState = data;
-    schemaRows =
+    const freshRows: SchemaTag[] =
       data.schema && Array.isArray(data.schema.tags) ? data.schema.tags.map((t) => Object.assign({}, t)) : [];
-    rawMode = data.exists && !data.schema;
-    jsonBaseline.schema = snapshotSchemaJson();
+    const freshRawMode = data.exists && !data.schema;
+    const edited = editSeq !== editSeqAtStart;
+
+    schemaState = data;
+
+    if (!edited) {
+      schemaRows = freshRows;
+      rawMode = freshRawMode;
+    }
+
+    // In raw mode the file's text, not the textarea's (which may hold edits): the diff shown
+    // before a save compares with it.
+    jsonBaseline.schema = freshRawMode ? data.raw || '' : schemaJsonOf(data, freshRows);
+
+    return !edited;
   }
 
-  async function loadValues(seq: number) {
+  async function loadValues(seq: number, editSeqAtStart: number): Promise<boolean> {
     let r: Response;
 
     try {
       r = await fetch('/@api/variables/values');
     } catch (e) {
       if (seq !== valuesSeq) {
-        return;
+        return false;
       }
 
       valuesState = null;
       valueRows = [];
       showBanner('error', 'Failed to load values: ' + escapeHtml(errorMessage(e)));
 
-      return;
+      return false;
     }
 
     if (!r.ok) {
       const err = (await r.json().catch(() => ({}))) as ErrorBody;
 
       if (seq !== valuesSeq) {
-        return;
+        return false;
       }
 
       // A save is a full replacement. Keep the state explicitly unavailable after a failed
@@ -296,7 +312,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       valueRows = [];
       showBanner('error', escapeHtml(err.error || 'Failed to load values.'));
 
-      return;
+      return false;
     }
 
     let data: ValuesState;
@@ -305,44 +321,44 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       data = (await r.json()) as ValuesState;
     } catch (e) {
       if (seq !== valuesSeq) {
-        return;
+        return false;
       }
 
       valuesState = null;
       valueRows = [];
       showBanner('error', 'Failed to parse the values response: ' + escapeHtml(errorMessage(e)));
 
-      return;
+      return false;
     }
 
     if (seq !== valuesSeq) {
-      return;
+      return false;
     }
+
+    const freshRows = (data.combined || []).map((e) => Object.assign({}, e));
+    const edited = editSeq !== editSeqAtStart;
 
     valuesState = data;
-    valueRows = (data.combined || []).map((e) => Object.assign({}, e));
-    jsonBaseline.values = snapshotValuesJson();
+
+    if (!edited) {
+      valueRows = freshRows;
+    }
+
+    jsonBaseline.values = snapshotValuesJson(freshRows);
+
+    return !edited;
   }
 
-  function snapshotSchemaJson(): string {
-    if (!schemaState) {
-      return '';
-    }
-
-    if (rawMode) {
-      const editorEl = byId<HTMLTextAreaElement>('raw-editor');
-
-      return editorEl ? editorEl.value : schemaState.raw || '';
-    }
-
-    if (schemaState.raw && (!schemaState.schema || !Array.isArray(schemaRows))) {
-      return schemaState.raw;
+  /** The schema as the file's JSON text would be with `rows` as its tags. */
+  function schemaJsonOf(state: SchemaState, rows: SchemaTag[]): string {
+    if (state.raw && !state.schema) {
+      return state.raw;
     }
 
     try {
-      return JSON.stringify(Object.assign({}, schemaState.schema || {}, { tags: schemaRows }), null, 2);
+      return JSON.stringify(Object.assign({}, state.schema || {}, { tags: rows }), null, 2);
     } catch {
-      return schemaState.raw || '';
+      return state.raw || '';
     }
   }
 
@@ -357,17 +373,22 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   // Fetches fresh data for one tab, tracking a per-tab "loading" flag and sequence number so a
   // response that's superseded by a newer load for the SAME tab (started before this one
   // resolved) gets dropped instead of clobbering fresher data. Toggles the tab's own loading
-  // flag but deliberately doesn't call render() itself — callers decide when to repaint.
-  function loadTabData(tab: Tab): Promise<void> {
+  // flag but deliberately doesn't call render() itself — callers decide when to repaint, which
+  // they do only when the tab took the data (see loadSchema).
+  function loadTabData(tab: Tab): Promise<boolean> {
+    const editSeqAtStart = editSeq;
+
     if (tab === 'schema') {
       const seq = ++schemaSeq;
 
       schemaLoading = true;
 
-      return loadSchema(seq).then(() => {
+      return loadSchema(seq, editSeqAtStart).then((taken) => {
         if (seq === schemaSeq) {
           schemaLoading = false;
         }
+
+        return taken;
       });
     }
 
@@ -375,11 +396,22 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     valuesLoading = true;
 
-    return loadValues(seq).then(() => {
+    return loadValues(seq, editSeqAtStart).then((taken) => {
       if (seq === valuesSeq) {
         valuesLoading = false;
       }
+
+      return taken;
     });
+  }
+
+  /** Repaints the tab once a load is over, or, with edits made meanwhile kept, only the "Refreshing…" dot. */
+  function paintLoaded(taken: boolean) {
+    if (taken) {
+      render();
+    } else {
+      updateLoadingIndicator();
+    }
   }
 
   // The manual "↻ Refresh" button — deliberately NOT debounced, so it's always the fast path
@@ -394,8 +426,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     const pending = loadTabData(activeTab);
 
     render();
-    await pending;
-    render();
+    paintLoaded(await pending);
   }
 
   function refresh() {
@@ -427,9 +458,9 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         render();
       }
 
-      void pending.then(() => {
+      void pending.then((taken) => {
         if (activeTab === tab) {
-          render();
+          paintLoaded(taken);
         }
       });
     }, AUTO_LOAD_DEBOUNCE_MS);
@@ -1072,6 +1103,27 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     return null;
   }
 
+  // The tab's reload after a save, which the save's own banner outlives: a reload that fails is
+  // not a failed save, and says so next to it.
+  async function reloadAfterSave(tab: Tab) {
+    const saved = banner;
+
+    await loadTabData(tab);
+
+    if (saved && banner !== saved && banner?.type === 'error') {
+      banner = {
+        type: 'warning',
+        html:
+          saved.html +
+          '<div>The save went through, but reloading afterwards did not: ' +
+          banner.html +
+          ' Use ↻ Refresh.</div>',
+      };
+    }
+
+    render();
+  }
+
   async function commitSchemaSave(raw: string) {
     const saveEditSeq = editSeq;
     const data = await putSave<SchemaSaveResponse>('/@api/variables/schema', { raw });
@@ -1096,8 +1148,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     showBanner(warnings.length ? 'warning' : 'success', message);
     jsonBaseline.schema = raw;
 
-    await loadTabData('schema');
-    render();
+    await reloadAfterSave('schema');
   }
 
   // ── Values tab ───────────────────────────────────────────────────────────────
@@ -1805,8 +1856,17 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   }
 
   function addValueRow() {
-    showCustomValueModal('Variable name', '', (name) => {
+    showCustomValueModal('Variable name', '', (entered) => {
+      const name = (entered || '').trim();
+
       if (!name) {
+        return;
+      }
+
+      // MI keeps one value per name: a second row of that name would lose one of the two on save.
+      if (valueRows.some((row) => row.name === name)) {
+        showBanner('error', 'A variable named "' + escapeHtml(name) + '" is in the list already.');
+
         return;
       }
 
@@ -1909,8 +1969,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     showBanner(warnings.length ? 'warning' : 'success', message);
     jsonBaseline.values = afterText;
 
-    await loadTabData('values');
-    render();
+    await reloadAfterSave('values');
   }
 
   function save() {
@@ -2034,16 +2093,22 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       refreshValuesJsonIssues();
     }
 
+    updateLoadingIndicator();
+  }
+
+  // The "Refreshing…" dot, shown only over cached content already on screen underneath it —
+  // when there is none (state is still null), renderSkeleton() is the loading signal.
+  function updateLoadingIndicator() {
     const loadingEl = byId('loading-indicator');
 
-    if (loadingEl) {
-      // Only surface the indicator when there's cached content already on screen underneath it —
-      // when there isn't (state is still null), renderSkeleton() above is the loading signal.
-      const stateForTab = activeTab === 'schema' ? schemaState : valuesState;
-      const isLoading = activeTab === 'schema' ? schemaLoading : valuesLoading;
-
-      loadingEl.style.display = isLoading && stateForTab ? '' : 'none';
+    if (!loadingEl) {
+      return;
     }
+
+    const stateForTab = activeTab === 'schema' ? schemaState : valuesState;
+    const isLoading = activeTab === 'schema' ? schemaLoading : valuesLoading;
+
+    loadingEl.style.display = isLoading && stateForTab ? '' : 'none';
   }
 
   // ── Events ───────────────────────────────────────────────────────────────────

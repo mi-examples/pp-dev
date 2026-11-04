@@ -131,7 +131,8 @@ export interface LocalValuesResponse extends ErrorBody {
 /** A page of `GET /@api/variables/pages`. */
 export interface ImportPage {
   id: number;
-  name: string;
+  /** MI may leave it unset; the editor shows `internal_name` then. */
+  name: string | null;
   internal_name: string;
   /** Uses the same template as the page being edited. */
   sameTemplate: boolean;

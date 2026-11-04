@@ -872,6 +872,110 @@ describe('Variables Editor page', () => {
     });
   });
 
+  describe('client: a reload while editing, and after a save', () => {
+    type Resolver = (response: { ok: boolean; json: () => Promise<unknown> }) => void;
+
+    /** The page with every fetch left pending, to answer in the test's own order. */
+    function openWithPendingFetches(url: string) {
+      const dom = openEditorPage(url);
+      const pending: Resolver[] = [];
+      const fetch = vi.fn(
+        () =>
+          new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
+            pending.push(resolve);
+          }),
+      );
+
+      vi.stubGlobal('fetch', fetch);
+      dom.start();
+
+      return { dom, pending, fetch };
+    }
+
+    const valuesResponse = (value: string) => ({
+      ok: true,
+      json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value }] }),
+    });
+
+    // The tab paints what it has and loads in the background; the response then replaced the
+    // rows, and what was typed meanwhile was gone (with the tab still dirty).
+    it('keeps the edits made while a reload was in flight, and only takes the baseline from it', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      click('[data-action="refresh"]');
+      expect(pending).toHaveLength(2);
+
+      enter('#content .ve-values-detail input', 'typed meanwhile');
+      pending[1]!(valuesResponse('changed in MI'));
+      await flush();
+
+      expect(find<HTMLInputElement>('#content .ve-values-detail input').value).toBe('typed meanwhile');
+      expect(find('#loading-indicator').style.display).toBe('none');
+
+      // Still unsaved: a refresh asks first.
+      click('[data-action="refresh"]');
+      expect(find('.ve-modal-title').textContent).toBe('Discard unsaved changes?');
+
+      dom.close();
+    });
+
+    // "Saved." was replaced by "Failed to load …", and the state zeroed: it read as a failed save.
+    it('keeps saying the values were saved when the reload afterwards fails', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      enter('#content .ve-values-detail input', 'edited');
+      click('#save-btn');
+      click('.ve-modal-ok');
+      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
+      await flush();
+
+      pending[2]!({ ok: false, json: async () => ({ error: 'MI is not reachable.' }) });
+      await flush();
+
+      expect(banner()).toContain('Values saved.');
+      expect(banner()).toContain('reloading afterwards did not: MI is not reachable.');
+
+      dom.close();
+    });
+
+    // The baseline was read from the textarea when a reload ended, so the diff shown before a
+    // save compared with whatever the textarea held then, not with the file.
+    it("compares a raw-mode save with the file's text, not with what the textarea held at the reload", async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`);
+      const broken = {
+        ok: true,
+        json: async () => ({ exists: true, raw: '{"tags": [', schema: null, parseError: 'x' }),
+      };
+
+      pending[0]!(broken);
+      await flush();
+
+      enter('#raw-editor', '{"tags": [ "typed"');
+      click('[data-action="refresh"]');
+      click('.ve-modal-ok');
+      pending[1]!(broken);
+      await flush();
+
+      expect(find<HTMLTextAreaElement>('#raw-editor').value).toBe('{"tags": [');
+
+      enter('#raw-editor', '{"tags": []}');
+      click('#save-btn');
+
+      const removed = Array.from(document.querySelectorAll('.ve-diff-line.is-remove')).map((el) => el.textContent);
+
+      expect(removed.join('\n')).toContain('{"tags": [');
+      expect(removed.join('\n')).not.toContain('typed');
+
+      dom.close();
+    });
+  });
+
   describe('client: values tab controls', () => {
     async function openValues(tags: unknown[], combined: { name: string; value: string }[]) {
       const dom = openEditorPage(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
@@ -1031,6 +1135,82 @@ describe('Variables Editor page', () => {
       box.dispatchEvent(new Event('change', { bubbles: true }));
 
       expect(rawValues()).toEqual([{ name: 'On', value: 'true' }]);
+
+      dom.close();
+    });
+
+    // Any Enter on the dialog confirmed it: with the focus on Cancel (Shift+Tab from OK), Enter
+    // deleted the row, or saved in the diff dialog.
+    it('leaves Enter on a focused button to that button', async () => {
+      const { dom } = await openValues(
+        [{ name: 'a' }, { name: 'b' }],
+        [
+          { name: 'a', value: '1' },
+          { name: 'b', value: '2' },
+        ],
+      );
+
+      click('[data-action="remove-value-row"][data-index="0"]');
+
+      const cancel = find('.ve-modal-cancel');
+
+      cancel.focus();
+      cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+      expect(document.querySelector('.ve-modal-overlay')).not.toBeNull();
+
+      find('.ve-modal-overlay').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+      expect(document.querySelector('.ve-modal-overlay')).toBeNull();
+      expect(rawValues()).toEqual([{ name: 'b', value: '2' }]);
+
+      dom.close();
+    });
+
+    // A second row of a name MI already holds a value for: one of the two was lost on save.
+    it('refuses a variable name that is in the list already, trimmed', async () => {
+      const { dom } = await openValues([{ name: 'a' }], [{ name: 'a', value: '1' }]);
+
+      click('[data-action="add-value-row"]');
+      enter('.ve-modal-input', ' a ');
+      click('.ve-modal-ok');
+
+      expect(banner()).toContain('A variable named "a" is in the list already.');
+
+      click('[data-action="add-value-row"]');
+      enter('.ve-modal-input', ' b ');
+      click('.ve-modal-ok');
+
+      expect(rawValues()).toEqual([
+        { name: 'a', value: '1' },
+        { name: 'b', value: '' },
+      ]);
+
+      dom.close();
+    });
+
+    it('names a page without a name on MI by its internal name', async () => {
+      const { dom, fetch } = await openValues([{ name: 'Region' }], [{ name: 'Region', value: 'EMEA' }]);
+
+      fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ pages: [{ id: 7, name: null, internal_name: 'sales-eu', sameTemplate: true }] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ importable: [{ name: 'Region', sourceValue: 'US', tagType: 'text' }], skipped: [] }),
+        });
+
+      click('[data-action="open-import-modal"]');
+      await flush();
+
+      expect(find('[data-page-id="7"] .ve-import-page-name').textContent).toBe('sales-eu');
+
+      click('[data-page-id="7"]');
+      await flush();
+
+      expect(find('#ve-import-overlay .ve-modal-title').textContent).toBe('Import values from "sales-eu"');
 
       dom.close();
     });

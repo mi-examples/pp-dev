@@ -70,21 +70,26 @@ function importPageGroupHtml(title: string, pages: ImportPage[]): string {
   }
 
   const rows = pages
-    .map(
-      (p) =>
+    .map((p) => {
+      // A page without a name on MI goes by its internal name (as an attribute, `null` was
+      // dropped, and the review step named the page "undefined").
+      const name = p.name || p.internal_name;
+
+      return (
         '<button type="button" class="ve-import-page-row" data-search="' +
-        escapeHtml((p.name + ' ' + p.internal_name).toLowerCase()) +
+        escapeHtml((name + ' ' + p.internal_name).toLowerCase()) +
         '"' +
-        actionAttrs('select-import-page', { pageId: p.id, pageName: p.name }) +
+        actionAttrs('select-import-page', { pageId: p.id, pageName: name }) +
         '>' +
         '<span class="ve-import-page-name">' +
-        escapeHtml(p.name) +
+        escapeHtml(name) +
         '</span>' +
         '<span class="ve-import-page-slug">' +
         escapeHtml(p.internal_name) +
         '</span>' +
-        '</button>',
-    )
+        '</button>'
+      );
+    })
     .join('');
 
   return (
