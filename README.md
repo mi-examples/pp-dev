@@ -41,8 +41,8 @@ npm install next@^16
 The pp-dev package provides multiple entry points for different use cases:
 
 ```javascript
-// Main package (includes everything)
-import { withPPDev, defineConfig } from '@metricinsights/pp-dev';
+// Main package (includes everything, defineConfig too)
+import { withPPDev } from '@metricinsights/pp-dev';
 
 // Plugin only (for Vite integration)
 import { vitePPDev } from '@metricinsights/pp-dev/plugin';
