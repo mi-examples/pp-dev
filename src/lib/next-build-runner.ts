@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as child_process from 'child_process';
 import { createRequire } from 'module';
-import { PP_DEV_NEXT_BUILD_ENV_VAR } from '../constants.js';
+import { PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, PP_DEV_NEXT_BUILD_ENV_VAR } from '../constants.js';
 
 /**
  * Remove dev-server route types that `next build` would otherwise type-check as a duplicate.
@@ -70,7 +70,10 @@ function signalBuild(proc: child_process.ChildProcess, signal: 'SIGTERM' | 'SIGK
 
   if (process.platform === 'win32') {
     if (proc.exitCode === null && proc.signalCode === null) {
-      child_process.spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+      // Not spawnSync: that held the dev server's event loop for as long as taskkill took (over a second).
+      child_process.spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' }).on('error', () => {
+        // No taskkill: the build's own `close` still settles the promise.
+      });
     }
 
     return;
@@ -190,8 +193,22 @@ export function runBuildProcess(
   });
 }
 
+/**
+ * Where a template sync's `next build` writes: Next's default `distDir`, so the build goes to
+ * `.next` and its static export to `out`, apart from the dev server's `<distDir>/dev`. `withPPDev()`
+ * applies it from {@link PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR}.
+ */
+export const SYNC_BUILD_DIST_DIR = '.next';
+/** The static export of a build with {@link SYNC_BUILD_DIST_DIR}. */
+export const SYNC_BUILD_EXPORT_DIR = 'out';
+
+export interface NextBuildProcessOptions extends BuildProcessOptions {
+  /** A `distDir` for this build alone, applied by `withPPDev()` (see {@link PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR}). */
+  distDir?: string;
+}
+
 /** Run `next build` in `projectRoot`, resolving the `next` binary from the app itself. */
-export async function runNextBuildProcess(projectRoot: string, options: BuildProcessOptions = {}): Promise<void> {
+export async function runNextBuildProcess(projectRoot: string, options: NextBuildProcessOptions = {}): Promise<void> {
   let nextBin: string;
 
   try {
@@ -203,9 +220,19 @@ export async function runNextBuildProcess(projectRoot: string, options: BuildPro
     throw new Error(`Unable to resolve the "next" binary from ${projectRoot}. Is Next.js installed?`);
   }
 
+  const { distDir, ...processOptions } = options;
+  const env = Object.assign({}, process.env, { NODE_ENV: 'production', [PP_DEV_NEXT_BUILD_ENV_VAR]: '1' });
+
+  // This build's alone: one in the environment pp-dev was started in must not reach a build that didn't ask.
+  if (distDir) {
+    env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR] = distDir;
+  } else {
+    delete env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR];
+  }
+
   await runBuildProcess('next build', process.execPath, [nextBin, 'build'], {
-    ...options,
+    ...processOptions,
     cwd: projectRoot,
-    env: Object.assign({}, process.env, { NODE_ENV: 'production', [PP_DEV_NEXT_BUILD_ENV_VAR]: '1' }),
+    env,
   });
 }

@@ -40,6 +40,13 @@ export const PATH_TEMPLATE_LOCAL_PREFIX = '/pl';
  */
 export const PP_DEV_NEXT_BUILD_ENV_VAR = 'PP_DEV_NEXT_BUILD';
 
+/**
+ * The `distDir` a `next build` started by pp-dev is to use, applied by `withPPDev()` during the
+ * production build phase. A template sync sets it so that its build, exported apart, leaves the
+ * running dev server's `<distDir>/dev` alone (see `DistService.buildNextAssets`).
+ */
+export const PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR = 'PP_DEV_NEXT_BUILD_DIST_DIR';
+
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',
   '.pp-dev.config.cjs',

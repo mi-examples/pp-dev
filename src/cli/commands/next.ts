@@ -37,12 +37,7 @@ import { PPDevHotServer, refuseUpgrade } from '../../lib/pp-ws-server.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../lib/next-process-listeners.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from '../../lib/dev-panel.js';
-import {
-  PATH_PAGE_PREFIX,
-  PATH_TEMPLATE_PREFIX,
-  PATH_TEMPLATE_LOCAL_PREFIX,
-  PP_DEV_NEXT_BUILD_ENV_VAR,
-} from '../../constants.js';
+import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from '../../constants.js';
 import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-config.js';
 import { RequestStore } from '../../lib/request-store.js';
 import { createRequestCaptureMiddleware } from '../../lib/request-capture.middleware.js';
@@ -663,37 +658,16 @@ export function registerNextCommand(cli: CAC): void {
             // reused unchanged via a Vite-WS-compatible facade.
             hotServer = new PPDevHotServer({ allowedHosts: _normalized.allowedHosts });
 
-            // The sync `next build` runs in production mode, which writes the static export
-            // to the base distDir. Next's dev phase reports distDir as `<distDir>/dev`, so
-            // resolve it from the production config and defensively strip a trailing `/dev`.
-            // With output:'export', the export lands in distDir (or `out` for the default).
-            let exportDistDir: string | undefined = config?.distDir;
-
-            // Not a real `next build` — just peeking at the prod config for distDir. Suppress
-            // withPPDev()'s "use pp-dev next-build" nudge for this internal lookup only.
-            const previousNextBuildFlag = process.env[PP_DEV_NEXT_BUILD_ENV_VAR];
-
-            process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
-
-            try {
-              const prodConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
-
-              exportDistDir = prodConfig?.distDir ?? exportDistDir;
-            } catch {
-              // Fall back to the dev config's distDir (normalized below).
-            } finally {
-              if (previousNextBuildFlag === undefined) {
-                delete process.env[PP_DEV_NEXT_BUILD_ENV_VAR];
-              } else {
-                process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = previousNextBuildFlag;
-              }
-            }
-
-            const normalizedDistDir = (exportDistDir ?? '')
-              .replace(/\\/g, '/')
-              .replace(/\/+$/, '')
-              .replace(/\/dev$/, '');
-            const nextExportDir = !normalizedDistDir || normalizedDistDir === '.next' ? 'out' : normalizedDistDir;
+            // What the sync's build needs of the app's Next config: its distDir (the dev phase
+            // reports `<distDir>/dev`, `distDirRoot` the configured one), its output, and whether
+            // `withPPDev()` wraps the config, which is what gives that build a distDir of its own.
+            const nextDistDir =
+              config?.distDirRoot ||
+              (config?.distDir || '.next')
+                .replace(/\\/g, '/')
+                .replace(/\/+$/, '')
+                .replace(/\/dev$/, '');
+            const nextConfigWrapped = config !== undefined && 'ppDev' in config;
 
             let nextPackageVersion = '0.0.0';
             let nextPackageRepositoryUrl: string | undefined;
@@ -715,7 +689,9 @@ export function registerNextCommand(cli: CAC): void {
               buildTimeoutMs: _normalized.syncBuildTimeoutMs,
               nextBuild: {
                 projectRoot,
-                distDir: nextExportDir,
+                distDir: nextDistDir,
+                output: config?.output,
+                configWrapped: nextConfigWrapped,
                 packageVersion: nextPackageVersion,
                 packageRepositoryUrl: nextPackageRepositoryUrl,
               },

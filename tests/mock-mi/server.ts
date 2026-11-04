@@ -318,12 +318,15 @@ export async function startMockMiServer(opts: {
   port?: number;
   cassetteName?: string;
   realMiUrl?: string;
+  /** Replay only: a test's own answers, served over the cassette's (same key: method and path). */
+  interactions?: Interaction[];
 }): Promise<MockMiServer> {
   const {
     mode,
     port = DEFAULT_PORT,
     cassetteName = 'startup',
     realMiUrl = process.env.REAL_MI_URL,
+    interactions = [],
   } = opts;
 
   const app = express();
@@ -335,7 +338,7 @@ export async function startMockMiServer(opts: {
     const map = new Map<string, Interaction>();
 
     // Last-response-wins: the final state after any auth/login sequence
-    for (const interaction of cassette.interactions) {
+    for (const interaction of [...cassette.interactions, ...interactions]) {
       map.set(cassetteKey(interaction.request.method, interaction.request.pathname), interaction);
     }
 

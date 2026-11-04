@@ -15,6 +15,7 @@ import {
   PATH_PAGE_PREFIX,
   PATH_TEMPLATE_PREFIX,
   PATH_TEMPLATE_LOCAL_PREFIX,
+  PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR,
   PP_DEV_NEXT_BUILD_ENV_VAR,
 } from './constants.js';
 import { createLogger } from './lib/logger.js';
@@ -421,6 +422,14 @@ export function withPPDev(
 
       if (isDevelopment && tunnelOrigins.length > 0) {
         result.allowedDevOrigins = [...(result.allowedDevOrigins ?? []), ...tunnelOrigins];
+      }
+
+      // A build pp-dev started for a template sync asks for a distDir of its own, so that its
+      // static export does not replace the running dev server's files (DistService.buildNextAssets).
+      const buildDistDir = process.env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR];
+
+      if (phase === PHASE_PRODUCTION_BUILD && buildDistDir) {
+        result.distDir = buildDistDir;
       }
 
       Object.defineProperty(result, 'ppDev', {
