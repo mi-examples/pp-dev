@@ -4,6 +4,7 @@ import {
   createDefaultZipFileName,
   normalizeRelativeOutputPath,
   resolveOutputFilePath,
+  resolveZipSourceDir,
 } from '../../../src/lib/output-path.js';
 
 describe('output path validation', () => {
@@ -44,5 +45,15 @@ describe('output path validation', () => {
 
   it('creates a safe default ZIP name for a scoped package', () => {
     expect(createDefaultZipFileName('@metricinsights/portal-page')).toBe('metricinsights-portal-page.zip');
+  });
+
+  // `pp-dev next-build` resolved `build.zip.inDir` against the export directory, so an `inDir` that
+  // works for `pp-dev build` and the sync (both read it from the project root) gave `out/out/...`.
+  it('packs build.zip.inDir from the project root, as the Vite build and the sync read it', () => {
+    const root = path.resolve('project');
+
+    expect(resolveZipSourceDir(root, 'out', undefined)).toBe(path.join(root, 'out'));
+    expect(resolveZipSourceDir(root, 'out', 'out/portal')).toBe(path.join(root, 'out', 'portal'));
+    expect(resolveZipSourceDir(root, 'out', path.join(root, 'elsewhere'))).toBe(path.join(root, 'elsewhere'));
   });
 });
