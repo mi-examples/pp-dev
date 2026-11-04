@@ -660,14 +660,28 @@ export function registerNextCommand(cli: CAC): void {
 
             // What the sync's build needs of the app's Next config: its distDir (the dev phase
             // reports `<distDir>/dev`, `distDirRoot` the configured one), its output, and whether
-            // `withPPDev()` wraps the config, which is what gives that build a distDir of its own.
+            // `withPPDev()` wraps the config (its marker; a plain config may carry `ppDev` too),
+            // which is what gives that build a distDir of its own.
             const nextDistDir =
               config?.distDirRoot ||
               (config?.distDir || '.next')
                 .replace(/\\/g, '/')
                 .replace(/\/+$/, '')
                 .replace(/\/dev$/, '');
-            const nextConfigWrapped = config !== undefined && 'ppDev' in config;
+            const nextConfigWrapped = config?.ppDevWrapped === true;
+            // A build without the override exports where the production phase's config says, which
+            // a config function may set apart from the development phase's.
+            let nextBuildDistDir = nextDistDir;
+
+            if (!nextConfigWrapped) {
+              try {
+                const productionConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
+
+                nextBuildDistDir = productionConfig?.distDir || nextDistDir;
+              } catch {
+                // The development phase's distDir stands.
+              }
+            }
 
             let nextPackageVersion = '0.0.0';
             let nextPackageRepositoryUrl: string | undefined;
@@ -690,6 +704,7 @@ export function registerNextCommand(cli: CAC): void {
               nextBuild: {
                 projectRoot,
                 distDir: nextDistDir,
+                buildDistDir: nextBuildDistDir,
                 output: config?.output,
                 configWrapped: nextConfigWrapped,
                 packageVersion: nextPackageVersion,

@@ -90,6 +90,15 @@ describe('withPPDev config merge', () => {
     expect(result.distDir).toBe('.next');
   });
 
+  // `pp-dev next` reads `ppDev` from a plain config too, so that key alone does not say the config
+  // is wrapped; only a wrapped one takes the build-directory override.
+  it('marks the config it returns as wrapped, out of sight of Next', async () => {
+    const result = await withPPDev({ output: 'export', distDir: 'dist' })('phase-development-server');
+
+    expect(result.ppDevWrapped).toBe(true);
+    expect(Object.keys(result)).not.toContain('ppDevWrapped');
+  });
+
   it('keeps the configured distDir in development, whatever the environment says', async () => {
     vi.stubEnv(PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, '.next');
 

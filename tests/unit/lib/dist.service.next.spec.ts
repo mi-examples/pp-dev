@@ -34,14 +34,14 @@ afterAll(() => {
  * server writes under `dist/dev` (its manifests, its route types). The sync's build runner resolves
  * `next` from the app; the build itself is the spawn mock's.
  */
-function makeProject(): string {
+function makeProject(devDistDir = 'dist'): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-next-project-'));
 
   fs.mkdirSync(path.join(root, 'node_modules', 'next'), { recursive: true });
   fs.writeFileSync(path.join(root, 'node_modules', 'next', 'package.json'), '{"name":"next","version":"0.0.0"}');
-  fs.mkdirSync(path.join(root, 'dist', 'dev', 'types'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'dist', 'dev', 'app-paths-manifest.json'), '{}');
-  fs.writeFileSync(path.join(root, 'dist', 'dev', 'types', 'validator.ts'), 'type PagesPageConfig = {};');
+  fs.mkdirSync(path.join(root, devDistDir, 'dev', 'types'), { recursive: true });
+  fs.writeFileSync(path.join(root, devDistDir, 'dev', 'app-paths-manifest.json'), '{}');
+  fs.writeFileSync(path.join(root, devDistDir, 'dev', 'types', 'validator.ts'), 'type PagesPageConfig = {};');
 
   return root;
 }
@@ -66,13 +66,22 @@ interface BuildSeen {
 
 /**
  * Simulates `next build` as Next.js runs it for a static export: the export goes to the configured
- * distDir (`out` for the default `.next`), which is emptied first. The distDir is the app's `dist`,
- * unless the build is given another one through the environment, as `withPPDev()` applies it.
+ * distDir (`out` for the default `.next`), which is emptied first. The distDir is the app's
+ * (`dist`, or `configured`), unless the build is given another one through the environment, as
+ * `withPPDev()` applies it.
  */
-function simulateBuild(root: string, seen: BuildSeen[], { exitCode = 0, exports = true } = {}) {
+function simulateBuild(
+  root: string,
+  seen: BuildSeen[],
+  {
+    exitCode = 0,
+    exports = true,
+    configured = 'dist',
+  }: { exitCode?: number; exports?: boolean; configured?: string } = {},
+) {
   spawnMock.mockImplementation((_command: string, _args: string[], options: { env: NodeJS.ProcessEnv }) => {
     const proc: any = new EventEmitter();
-    const distDir = options.env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR] ?? 'dist';
+    const distDir = options.env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR] ?? configured;
     const exportDir = path.join(root, distDir === '.next' ? 'out' : distDir);
 
     seen.push({ env: options.env, devTypesPresent: fs.existsSync(path.join(root, 'dist', 'dev', 'types')) });
@@ -171,6 +180,28 @@ describe('DistService — Next.js build strategy', () => {
     expect(builds[0].env).not.toHaveProperty(PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR);
     expect(fs.existsSync(path.join(root, 'out'))).toBe(false);
     expect(warn.mock.calls.map(String).join('\n')).toContain('not wrapped with withPPDev()');
+
+    const zip = await JSZip.loadAsync(buf);
+
+    expect(zip.file('index.html')).toBeTruthy();
+  });
+
+  // A config function may give the production phase another distDir than the development one:
+  // the route types are the development directory's, the export the production directory's.
+  it("builds in place where the production phase's distDir says, not the dev server's", async () => {
+    fs.rmSync(root, { recursive: true, force: true });
+    root = makeProject('dev-cache');
+    simulateBuild(root, builds, { configured: 'release' });
+
+    const buf = await createService({
+      configWrapped: false,
+      distDir: 'dev-cache',
+      buildDistDir: 'release',
+    }).buildNewAssets();
+
+    expect(builds[0].devTypesPresent).toBe(false);
+    expect(fs.existsSync(path.join(root, 'dev-cache', 'dev', 'types'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'release', 'index.html'))).toBe(true);
 
     const zip = await JSZip.loadAsync(buf);
 

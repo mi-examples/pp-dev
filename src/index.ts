@@ -57,6 +57,12 @@ declare module 'next' {
   interface NextConfig {
     /** PP-Dev config. Prefer pp-dev.config.js to avoid Next.js validation warnings. */
     ppDev?: PPDevConfig;
+    /**
+     * Set by `withPPDev()` on the config it returns (non-enumerable, as `ppDev`): `pp-dev next`
+     * reads it to tell a wrapped config from a plain one that carries `ppDev` itself, since only a
+     * wrapped one takes the build-directory override of a template sync.
+     */
+    ppDevWrapped?: true;
   }
 }
 
@@ -437,6 +443,7 @@ export function withPPDev(
         enumerable: false,
         configurable: true,
       });
+      Object.defineProperty(result, 'ppDevWrapped', { value: true, enumerable: false, configurable: true });
 
       return result;
     } catch (error) {

@@ -34,6 +34,11 @@ export interface NextBuildOptions {
   projectRoot: string;
   /** The app's Next.js `distDir` (`.next` by default), relative to `projectRoot`: the dev server writes under `<distDir>/dev`. */
   distDir: string;
+  /**
+   * The `distDir` of the production build phase, where a build without `withPPDev()` exports: a
+   * config function may set it apart from the development phase's. @default distDir
+   */
+  buildDistDir?: string;
   /** The app's Next.js `output`; a static export (`'export'`) is what a sync uploads. */
   output?: string;
   /**
@@ -901,7 +906,7 @@ export class DistService {
    * builds in place, as a plain `next build` would.
    */
   private async buildNextAssets(): Promise<Buffer> {
-    const { projectRoot, distDir, output, configWrapped } = this.nextBuild!;
+    const { projectRoot, distDir, buildDistDir = distDir, output, configWrapped } = this.nextBuild!;
 
     // The dev server's route types: under a custom distDir, `next build` type-checks them next to
     // its own, which declare the same globals (the step `pp-dev next-build` takes too). The dev
@@ -914,7 +919,7 @@ export class DistService {
       );
     }
 
-    const exportDirName = configWrapped || distDir === SYNC_BUILD_DIST_DIR ? SYNC_BUILD_EXPORT_DIR : distDir;
+    const exportDirName = configWrapped || buildDistDir === SYNC_BUILD_DIST_DIR ? SYNC_BUILD_EXPORT_DIR : buildDistDir;
 
     if (!configWrapped && exportDirName === distDir) {
       this.logger.warn(
