@@ -39,13 +39,9 @@ export function reportNextServerReady(proc: NodeJS.Process = process): void {
     return;
   }
 
-  const send = () => {
-    try {
-      proc.send!({ type: SUPERVISOR_READY_MESSAGE } satisfies SupervisorMessage);
-    } catch {
-      // The supervisor is gone; its disconnect ends this process.
-    }
-  };
+  // With a callback: a message the closed channel cannot take is reported to it, instead of as an
+  // `error` event nobody listens for. The supervisor is gone then; its disconnect ends this process.
+  const send = () => proc.send!({ type: SUPERVISOR_READY_MESSAGE } satisfies SupervisorMessage, () => {});
 
   proc.stdout.write('', send);
 }
@@ -62,7 +58,9 @@ export interface NextSupervisorLogger {
 export interface NextSupervisorOptions {
   projectRoot: string;
   logger: NextSupervisorLogger;
-  /** Loads the pp-dev config afresh and throws when it can't be loaded. @default clearConfigCache + getConfig */
+  /** The mode whose `.env` files the server loads (`--mode`). @default 'development' */
+  mode?: string;
+  /** Loads the pp-dev config afresh and throws when it can't be loaded. @default {@link loadPPDevConfigAfresh} */
   checkConfig?: () => Promise<void>;
   /** Starts a server process. @default {@link forkNextServer} */
   startServerProcess?: () => NextServerProcess;
@@ -89,9 +87,19 @@ export function forkNextServer(): ChildProcess {
   });
 }
 
-async function loadPPDevConfigAfresh(projectRoot: string): Promise<void> {
-  const { clearConfigCache, getConfig } = await import('../config.js');
+/**
+ * Loads the pp-dev config as the server process does, `.env` files of `mode` first: a config that
+ * reads `process.env` (set from `.env`) is valid there, and must be here too, or no change to it
+ * would ever pass this check. The values stay in this process, so a server process started after
+ * this check inherits the current ones, which its own load keeps.
+ */
+export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'development'): Promise<void> {
+  const [{ loadPPDevEnv }, { clearConfigCache, getConfig }] = await Promise.all([
+    import('../lib/env.js'),
+    import('../config.js'),
+  ]);
 
+  loadPPDevEnv(mode, projectRoot);
   clearConfigCache();
   await getConfig(projectRoot);
 }
@@ -108,7 +116,8 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
   const {
     projectRoot,
     logger,
-    checkConfig = () => loadPPDevConfigAfresh(projectRoot),
+    mode = 'development',
+    checkConfig = () => loadPPDevConfigAfresh(projectRoot, mode),
     startServerProcess = forkNextServer,
     createWatcher = createConfigWatcher,
     stopTimeoutMs = 10_000,
@@ -165,11 +174,9 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
           resolve(code);
         });
 
-        try {
-          proc.send({ type: SUPERVISOR_SHUTDOWN_MESSAGE, reason } satisfies SupervisorMessage);
-        } catch {
-          // The IPC channel is closed: the process is exiting already.
-        }
+        // With a callback: a message the closed channel cannot take (the process is exiting, its
+        // `exit` still to come) is reported to it, instead of as an `error` event nobody listens for.
+        proc.send({ type: SUPERVISOR_SHUTDOWN_MESSAGE, reason } satisfies SupervisorMessage, () => {});
       }).finally(() => {
         stopping = null;
       });

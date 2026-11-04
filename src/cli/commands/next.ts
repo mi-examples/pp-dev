@@ -85,6 +85,7 @@ export function registerNextCommand(cli: CAC): void {
         await superviseNextServer({
           projectRoot: root ? path.resolve(process.cwd(), root) : process.cwd(),
           logger: createLogger(options.logLevel),
+          mode: options.mode || 'development',
         });
 
         return;

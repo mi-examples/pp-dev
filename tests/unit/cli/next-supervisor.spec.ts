@@ -1,8 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   NEXT_SERVER_PROCESS_ENV,
   isNextServerProcess,
+  loadPPDevConfigAfresh,
   reportNextServerReady,
   superviseNextServer,
   type NextServerProcess,
@@ -139,7 +143,10 @@ describe('superviseNextServer', () => {
     await flush();
 
     expect(checkConfig).toHaveBeenCalledTimes(1);
-    expect(servers[0].send).toHaveBeenCalledWith({ type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a config change' });
+    expect(servers[0].send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a config change' },
+      expect.any(Function),
+    );
     expect(servers).toHaveLength(1);
 
     servers[0].exit(0);
@@ -167,6 +174,32 @@ describe('superviseNextServer', () => {
     expect(servers[0].send).not.toHaveBeenCalled();
     expect(servers).toHaveLength(1);
     expect(output()).toContain('could not be loaded, the dev server keeps running: Unexpected "}"');
+  });
+
+  // `send()` on a channel that closed before the process's `exit` reports ERR_IPC_CHANNEL_CLOSED
+  // through an `error` event when it gets no callback, and nothing listened for it.
+  it('takes a shutdown message the closed channel cannot deliver as sent', async () => {
+    const { servers, restart } = setup();
+
+    servers[0].ready();
+    servers[0].send.mockImplementation((_message: unknown, callback: (error: Error) => void) => {
+      callback(new Error('Channel closed'));
+
+      return false;
+    });
+
+    const restarted = restart();
+
+    await flush();
+
+    expect(servers[0].send).toHaveBeenCalledTimes(1);
+
+    servers[0].exit(0);
+    await flush();
+    servers[1].ready();
+    await restarted;
+
+    expect(servers).toHaveLength(2);
   });
 
   it('kills a server that does not stop in time, and starts the new one', async () => {
@@ -231,7 +264,10 @@ describe('superviseNextServer', () => {
       processRef.emit(signal);
       await flush();
 
-      expect(servers[0].send).toHaveBeenCalledWith({ type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: signal });
+      expect(servers[0].send).toHaveBeenCalledWith(
+        { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: signal },
+        expect.any(Function),
+      );
       expect(processRef.exit).not.toHaveBeenCalled();
 
       servers[0].exit(0);
@@ -296,10 +332,40 @@ describe('the server process side', () => {
     reportNextServerReady({ send, stdout: { write } } as never);
 
     expect(write).toHaveBeenCalledWith('', expect.any(Function));
-    expect(send).toHaveBeenCalledWith({ type: SUPERVISOR_READY_MESSAGE });
+    // With a callback: a message the closed channel cannot take must not become an `error` event.
+    expect(send).toHaveBeenCalledWith({ type: SUPERVISOR_READY_MESSAGE }, expect.any(Function));
 
     reportNextServerReady({ stdout: { write } } as never);
 
     expect(write).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The server process loads the `.env` files before the config, so a config that reads a value from
+// them is valid there. The supervisor's check loaded the config alone: such a config failed it on
+// every save, and no change to it was ever applied.
+describe("the supervisor's config check", () => {
+  let root: string;
+
+  afterEach(() => {
+    delete process.env.MI_SUPERVISOR_URL;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('loads the .env files of the mode first, as the server process does', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-env-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"env-app"}');
+    fs.writeFileSync(path.join(root, '.env'), 'MI_SUPERVISOR_URL=https://mi.example.com\n');
+    fs.writeFileSync(
+      path.join(root, 'pp-dev.config.mjs'),
+      [
+        'const url = process.env.MI_SUPERVISOR_URL;',
+        "if (!url) throw new Error('MI_SUPERVISOR_URL is not set');",
+        "export default { mi: { url }, app: { id: 1, type: 'template' } };",
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
   });
 });
