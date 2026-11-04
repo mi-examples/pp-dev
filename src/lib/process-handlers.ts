@@ -64,8 +64,8 @@ function describe(error: unknown): string {
  * - A shutdown that fails, or takes longer than `shutdownTimeoutMs`, exits with 1.
  * - A process with an IPC channel (the server process of `pp-dev next`) also shuts down on its
  *   supervisor's shutdown message and when the supervisor goes away (the channel disconnects). The
- *   message may repeat a signal the terminal delivered to both processes: it never counts as the
- *   second signal that exits at once.
+ *   message may repeat a signal the terminal delivered to both processes, in either order: neither
+ *   counts as the second signal that exits at once; the next signal after both does.
  */
 export function registerProcessHandlers({
   logger,
@@ -75,6 +75,10 @@ export function registerProcessHandlers({
   processRef = process,
 }: ProcessHandlersOptions): () => void {
   let shuttingDown = false;
+  // The running shutdown was started by the supervisor's message (or its going away), and no
+  // signal has been delivered directly yet: the first one is the terminal's, which the message
+  // repeated, not a second signal.
+  let signalDue = false;
   // The code the process exits with. Only ever escalates: a crash during a signal's shutdown, or a
   // failed shutdown, must not end in 0.
   let exitCode = 0;
@@ -83,11 +87,19 @@ export function registerProcessHandlers({
     exitCode = Math.max(exitCode, code);
   };
 
+  const isSignal = (reason: string) => reason === 'SIGINT' || reason === 'SIGTERM' || reason === 'SIGHUP';
+
   const shutdownAndExit = async (reason: string, code: number, { repeatable = true } = {}) => {
     escalate(code);
 
     if (shuttingDown) {
-      if (repeatable && (reason === 'SIGINT' || reason === 'SIGTERM' || reason === 'SIGHUP')) {
+      if (repeatable && isSignal(reason)) {
+        if (signalDue) {
+          signalDue = false;
+
+          return;
+        }
+
         logger.warn(
           colors.yellow(`
 ⚠️  Received ${reason} again, exiting without waiting for the shutdown`),
@@ -100,6 +112,7 @@ export function registerProcessHandlers({
     }
 
     shuttingDown = true;
+    signalDue = !repeatable;
     logger.info(
       colors.yellow(`
 🛑 Received ${reason}, shutting down gracefully...`),

@@ -243,6 +243,29 @@ describe('registerProcessHandlers', () => {
       expect(proc.exit).toHaveBeenCalledWith(0);
     });
 
+    // The terminal's signal reaches both processes, and the supervisor's message may arrive first:
+    // the signal then came as the "second" one and exited at once, leaving the shutdown undone.
+    it('takes the signal that follows the message repeating it as the one shutdown, the next one as the second', async () => {
+      let finish!: () => void;
+      const shutdown = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+      const { proc, logger } = setup({ shutdown, supervised: true });
+
+      proc.emit('message', shutdownMessage('SIGINT'));
+      proc.emit('SIGINT');
+
+      expect(shutdown).toHaveBeenCalledTimes(1);
+      expect(proc.exit).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+
+      proc.emit('SIGINT');
+
+      expect(proc.exit).toHaveBeenCalledWith(0);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Received SIGINT again'));
+
+      finish();
+      await flush();
+    });
+
     it('shuts down when the supervisor goes away', async () => {
       const { proc, shutdown, logger } = setup({ supervised: true });
 

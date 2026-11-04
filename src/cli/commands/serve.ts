@@ -63,6 +63,14 @@ export function registerServeCommand(cli: CAC): void {
             logLevel: options.logLevel,
           });
 
+          // Before the new server exists: creating it starts its services (the users registry among
+          // them, shared with the running server), which a config refused here must not touch.
+          const base = options.base ?? config.base;
+
+          if (!base || base === '/') {
+            throw new Error('base cannot be equal to "/" or empty string');
+          }
+
           nextServer = await createServer(
             mergeConfig(
               config,
@@ -80,10 +88,6 @@ export function registerServeCommand(cli: CAC): void {
               true,
             ),
           );
-
-          if (!nextServer.config.base || nextServer.config.base === '/') {
-            throw new Error('base cannot be equal to "/" or empty string');
-          }
 
           if (!nextServer.httpServer) {
             throw new Error('HTTP server not available');
