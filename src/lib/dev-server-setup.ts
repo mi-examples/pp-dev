@@ -3,13 +3,17 @@
  * kept a copy, and the copies had started to differ (the index page regexp was escaped in one only).
  */
 import type { Application } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ViteDevServer } from 'vite';
 import type { MiAPI, MiAPIOptions } from './pp.middleware.js';
 import { ClientService } from './client.service.js';
 import type { DistService } from './dist.service.js';
 import { registerVariablesEditorRoutes } from './variables-editor.js';
 import { registerUserRoutes } from './user-routes.js';
+import { registerLoginRoute } from './login-route.js';
 import { startKeepingUsers } from './user-store.js';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -64,17 +68,107 @@ export interface SyncAndUsersOptions {
 }
 
 /**
- * Template sync over the WebSocket, the Variables Editor and users routes, and the saved users of
- * this project and MI instance. Returns the ClientService, which the dev server disposes of when it
- * stops or restarts.
+ * Template sync over the WebSocket, the token login, Variables Editor and users routes, and the
+ * saved users of this project and MI instance. Returns the ClientService, which the dev server
+ * disposes of when it stops or restarts.
  */
 export function startSyncAndUsers(opts: SyncAndUsersOptions): ClientService {
-  const { distService, miAPI } = opts;
+  const { distService, miAPI, persistUsers, projectRoot, miUrl } = opts;
   const clientService = new ClientService(opts.server, { distService, miAPI });
 
+  registerLoginRoute(opts.internalServer, { miAPI, persistUsers, projectRoot, miUrl });
   registerVariablesEditorRoutes(opts.internalServer, { distService, miAPI });
   registerUserRoutes(opts.internalServer, { miAPI });
-  startKeepingUsers({ persist: opts.persistUsers, miAPI, projectRoot: opts.projectRoot, miUrl: opts.miUrl });
+  startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl });
 
   return clientService;
+}
+
+/** A middleware of the raw http server's chain, Connect-style: `next(error)` reports a failure. */
+export type ChainMiddleware = (req: IncomingMessage, res: ServerResponse, next: (error?: unknown) => void) => void;
+
+/**
+ * Answers a request whose middleware failed, the way Vite's error middleware does for its server:
+ * a 500 with the message. Without it, `pp-dev next` carried on to Next.js after an error (MI down,
+ * a wrong `app.id`), rendering the page without its data and showing the error in the terminal only.
+ */
+export function respondToMiddlewareError(res: ServerResponse, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+
+  createLogger().error(colors.red(`Request failed: ${message}`));
+
+  if (res.writableEnded || res.destroyed) {
+    return;
+  }
+
+  if (res.headersSent) {
+    res.destroy();
+
+    return;
+  }
+
+  res.statusCode = 500;
+  res.setHeader('content-type', 'text/plain; charset=utf-8');
+  res.end(message);
+}
+
+/**
+ * Runs `chain` on a request of the raw http server, as Connect would: each middleware calls `next()`
+ * for the following one, `done` runs after the last, and `next(error)` (or a throw) ends the request
+ * with {@link respondToMiddlewareError} instead of being ignored.
+ */
+export function runMiddlewareChain(
+  chain: readonly ChainMiddleware[],
+  req: IncomingMessage,
+  res: ServerResponse,
+  done: () => void,
+): void {
+  let index = 0;
+
+  const next = (error?: unknown) => {
+    if (error) {
+      respondToMiddlewareError(res, error);
+
+      return;
+    }
+
+    if (index >= chain.length) {
+      done();
+
+      return;
+    }
+
+    const middleware = chain[index];
+
+    index += 1;
+
+    try {
+      middleware(req, res, next);
+    } catch (thrown) {
+      respondToMiddlewareError(res, thrown);
+    }
+  };
+
+  next();
+}
+
+/**
+ * Ends a request to pp-dev's own routes (`/@api/*`, the inspector and editor pages) that none of
+ * them answered: Express calls this when no route matches, or with the error a route failed with.
+ * Under `pp-dev next` such requests used to hang, as the callback did nothing.
+ */
+export function endUnhandledInternalRequest(res: ServerResponse, error?: unknown): void {
+  if (error) {
+    respondToMiddlewareError(res, error);
+
+    return;
+  }
+
+  if (res.headersSent || res.writableEnded) {
+    return;
+  }
+
+  res.statusCode = 404;
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ error: 'Not found' }));
 }

@@ -1,22 +1,21 @@
 import { type IndexHtmlTransformResult, type Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
-import { redirect, urlReplacer } from './lib/helpers/url.helper.js';
+import { urlReplacer } from './lib/helpers/url.helper.js';
 import { type ClientService } from './lib/client.service.js';
-import { initProxyCache, invalidateProxyCache } from './lib/proxy-cache.middleware.js';
+import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import { DistService } from './lib/dist.service.js';
 import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
 import { initPPRedirect } from './lib/pp-redirect.middleware.js';
 import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import { createInternalServer } from './lib/internal.middleware.js';
-import { colors, getTokenErrorInfo, isSecureRequest, rewriteSetCookieHeader } from './lib/helpers/index.js';
+import { colors } from './lib/helpers/index.js';
 import { RequestStore } from './lib/request-store.js';
 import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
 import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
 import { VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
-import { createUserHostGuard, getUserNameFromHost } from './lib/user-registry.js';
+import { createUserHostGuard } from './lib/user-registry.js';
 import { USERS_API_PATH } from './lib/user-routes.js';
-import { startKeepingUsers } from './lib/user-store.js';
 import {
   getIndexPageRegExp,
   getMiAPIOptions,
@@ -171,195 +170,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           }),
         );
 
-        const sendErrorResponse = (res: any, status: number, error: string, details?: string, code?: string) => {
-          const response: any = { error };
-
-          if (details) {
-            response.details = details;
-          }
-
-          if (code) {
-            response.code = code;
-          }
-
-          res.status(status).json(response).end();
-        };
-
-        const handleTokenValidationError = (res: any, error: any, tokenType: string) => {
-          server.config.logger.error(`${tokenType} token validation error:`, error);
-
-          const errorInfo = getTokenErrorInfo(error);
-
-          if (error.tokenErrorInfo) {
-            const enhancedErrorInfo = error.tokenErrorInfo;
-
-            sendErrorResponse(
-              res,
-              enhancedErrorInfo.status || 500,
-              enhancedErrorInfo.userFriendlyMessage,
-              enhancedErrorInfo.message,
-              enhancedErrorInfo.code,
-            );
-          } else {
-            let status: number;
-            let errorMessage: string;
-            let errorCode: string;
-
-            switch (errorInfo.code) {
-              case 'SESSION_EXPIRED':
-                status = 412;
-                errorMessage = tokenType === 'personal' ? 'Personal access token expired' : 'Session expired';
-                errorCode = tokenType === 'personal' ? 'PAT_EXPIRED' : 'SESSION_EXPIRED';
-                break;
-              case 'UNAUTHORIZED':
-                status = 401;
-                errorMessage = 'Unauthorized';
-                errorCode = 'UNAUTHORIZED';
-                break;
-              case 'FORBIDDEN':
-                status = 403;
-                errorMessage = 'Access forbidden';
-                errorCode = 'FORBIDDEN';
-                break;
-              default:
-                status = 500;
-                errorMessage = 'Internal server error';
-                errorCode = errorInfo.code;
-            }
-
-            const details =
-              tokenType === 'personal' && errorCode === 'PAT_EXPIRED'
-                ? 'Your personal access token has expired. Please generate a new token from the portal.'
-                : tokenType === 'regular' && errorCode === 'SESSION_EXPIRED'
-                  ? 'Your portal session has expired. Please refresh your token or re-authenticate.'
-                  : errorInfo.userFriendlyMessage;
-
-            sendErrorResponse(res, status, errorMessage, details, errorCode);
-          }
-
-          return null;
-        };
-
         const internalServer = createInternalServer({ allowedHosts });
-
-        internalServer.post('/@api/login', async (req, res, next) => {
-          const { token, tokenType } = req.body;
-
-          // This login sets the original user's token, which a saved user's tab must not change.
-          if (getUserNameFromHost(req.headers.host)) {
-            sendErrorResponse(
-              res,
-              409,
-              'Token login is only available on the main host',
-              'This tab belongs to a saved pp-dev user. Log in with a token on the main host (localhost).',
-              'USER_HOST',
-            );
-
-            return;
-          }
-
-          if (!token) {
-            sendErrorResponse(res, 400, 'Token is required');
-
-            return;
-          }
-
-          server.config.logger.info(`Attempting to validate ${tokenType} token...`);
-
-          if (tokenType === 'personal') {
-            const testRequest = await mi
-              .get<{ user: { user_id: number; username: string } }>(
-                '/data/page/index/auth/info',
-                {
-                  'Content-Type': 'application/json',
-                  Accept: 'application/json',
-                  Authorization: `Bearer ${token}`,
-                },
-                true,
-              )
-              .then(async (response) => {
-                if (typeof response.data?.user?.user_id === 'number') {
-                  mi.personalAccessToken = token;
-
-                  server.config.logger.info(
-                    `Personal access token validated successfully for user ${response.data.user.user_id}`,
-                  );
-
-                  return response;
-                }
-
-                sendErrorResponse(res, 400, 'Token expired or invalid');
-
-                return null;
-              })
-              .catch((error: any) => handleTokenValidationError(res, error, 'personal'));
-
-            if (!testRequest) {
-              return;
-            }
-
-            invalidateProxyCache('logged in with a personal access token');
-
-            // Users need your own token: with users.persist on but no token at start, keeping them
-            // starts now.
-            startKeepingUsers({
-              persist: persistUsers,
-              miAPI: mi,
-              projectRoot: server.config.root || process.cwd(),
-              miUrl: backendBaseURL,
-            });
-
-            redirect(res, '/', 302);
-          } else if (tokenType === 'regular') {
-            const testRequest = await mi
-              .get<{ users: { user_id: number; username: string }[] }>(
-                '/api/user',
-                {
-                  'Content-Type': 'application/json',
-                  Accept: 'application/json',
-                  Token: token,
-                },
-                true,
-              )
-              .then((response) => {
-                if (response.data?.users?.length) {
-                  mi.personalAccessToken = undefined;
-
-                  server.config.logger.info(
-                    `Regular token validated successfully for ${response.data.users.length} user(s)`,
-                  );
-
-                  res.setHeader(
-                    'set-cookie',
-                    rewriteSetCookieHeader(response.headers['set-cookie'], isSecureRequest(req)) ?? '',
-                  );
-
-                  return response;
-                }
-
-                sendErrorResponse(res, 400, 'Token expired or invalid');
-
-                return null;
-              })
-              .catch((error: any) => handleTokenValidationError(res, error, 'regular'));
-
-            if (!testRequest) {
-              return;
-            }
-
-            invalidateProxyCache('logged in with a token');
-
-            redirect(res, '/', 302);
-          } else {
-            sendErrorResponse(
-              res,
-              400,
-              'Invalid tokenType',
-              'tokenType must be "personal" or "regular".',
-              'INVALID_TOKEN_TYPE',
-            );
-          }
-        });
 
         const distService = new DistService(
           templateName,

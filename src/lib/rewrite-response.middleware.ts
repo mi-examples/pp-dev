@@ -6,6 +6,17 @@ import { createLogger } from './logger.js';
 type NextHandleFunction = Connect.NextHandleFunction;
 type IncomingMessage = Connect.IncomingMessage;
 
+export interface RewriteResponseOptions {
+  /**
+   * Which of the matched responses to rewrite, by their `Content-Type`, as soon as it is known (at
+   * `writeHead`, the first `write`, `flushHeaders` or `end`). The others are passed on as they come,
+   * neither held nor buffered: a route handler's stream under the page's path (server-sent events,
+   * chunked JSON) used to be kept back whole until it ended, which a never-ending one never did.
+   * Without this option every matched response is rewritten.
+   */
+  contentType?: (contentType: string) => boolean;
+}
+
 function asEncoding(value: unknown): BufferEncoding | undefined {
   return typeof value === 'string' ? (value as BufferEncoding) : undefined;
 }
@@ -62,10 +73,12 @@ function setHeadHeaders(res: ServerResponse, headers: unknown) {
  *
  * @param predicate Check if need to rewrite response data
  * @param rewrite Rewrite response content handler
+ * @param options See {@link RewriteResponseOptions}
  */
 export function initRewriteResponse(
   predicate: (url: string, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Promise<boolean> | boolean,
   rewrite: (response: Buffer, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Buffer,
+  options: RewriteResponseOptions = {},
 ): NextHandleFunction {
   return async (req, res, next) => {
     if (await predicate(req.url ?? '', req, res)) {
@@ -105,21 +118,83 @@ export function initRewriteResponse(
       // passes the page on when the client accepts no compression.
       // Its headers are set now, so the rewrite reads them (Content-Encoding) and end() can give
       // the length; only the status waits.
+      const write = res.write;
       const writeHead = res.writeHead;
+      const flushHeaders = res.flushHeaders;
       let heldHead: [number, string?] | null = null;
+      /** The response is passed on as it comes: every override only forwards from now on. */
+      let passing = false;
 
-      res.flushHeaders = function () {};
+      /**
+       * Lets the response through as it is: what was held or buffered goes out now, the rest is
+       * forwarded. For a response the `contentType` option rules out.
+       *
+       * The overrides stay in place and forward: Next.js wraps them in turn (its compression
+       * middleware's end(), and on-headers' writeHead that adds `Content-Encoding`), and putting the
+       * originals back would drop those wrappers, sending a gzipped body with no such header.
+       */
+      const passThrough = () => {
+        passing = true;
+
+        if (heldHead && !res.headersSent) {
+          (writeHead as (...args: unknown[]) => ServerResponse).apply(res, heldHead);
+        }
+
+        heldHead = null;
+
+        for (const buffer of buffers.splice(0)) {
+          (write as (this: ServerResponse, chunk: Buffer) => boolean).call(res, buffer);
+        }
+      };
+
+      /** Whether the response is passed through: already, or now that its Content-Type is known. */
+      const passes = () => {
+        if (passing) {
+          return true;
+        }
+
+        if (!options.contentType) {
+          return false;
+        }
+
+        const contentType = res.getHeader('content-type');
+
+        if (contentType === undefined || options.contentType(String(contentType))) {
+          return false;
+        }
+
+        passThrough();
+
+        return true;
+      };
+
+      res.flushHeaders = function () {
+        if (passes()) {
+          flushHeaders.call(this);
+        }
+      };
+
       res.writeHead = function (this: ServerResponse, statusCode: number, ...rest: unknown[]) {
+        if (passing) {
+          return (writeHead as (...args: unknown[]) => ServerResponse).call(this, statusCode, ...rest);
+        }
+
         const statusMessage = typeof rest[0] === 'string' ? rest[0] : undefined;
 
         setHeadHeaders(this, statusMessage === undefined ? rest[0] : rest[1]);
         this.statusCode = statusCode;
         heldHead = statusMessage === undefined ? [statusCode] : [statusCode, statusMessage];
 
+        passes();
+
         return this;
       };
 
       res.write = function (chunk: any, encoding?: any, cb?: any) {
+        if (passes()) {
+          return (write as (...args: unknown[]) => boolean).call(this, chunk, encoding, cb);
+        }
+
         const buffer = toBuffer(chunk, asEncoding(encoding));
 
         if (buffer) {
@@ -138,6 +213,10 @@ export function initRewriteResponse(
       };
 
       res.end = function (chunk?: any, encoding?: any, cb?: any) {
+        if (passes()) {
+          return (end as (...args: unknown[]) => ServerResponse).call(this, chunk, encoding, cb);
+        }
+
         if (typeof chunk === 'function') {
           cb = chunk;
           chunk = undefined;
