@@ -19,11 +19,18 @@ const routeStates = new WeakMap<Application, InspectorRouteState>();
  * browser compressed (`Content-Encoding` gzip, br or deflate, as Next.js sends its chunks), as
  * captured otherwise. One that doesn't unpack, or has several encodings, stays as captured. The
  * capture limit counts the compressed bytes, so the unpacked ones are limited to it too: past it,
- * `null` (too large to show), rather than unpacking it all into memory at once.
+ * `null` (too large to show), rather than unpacking it all into memory at once. A header set as an
+ * array (`['gzip', 'gzip']`) counts every value, not only the first.
  */
-function readableResponseBody(body: Buffer, contentEncoding: string, maxLength: number): Buffer | null {
+function readableResponseBody(
+  body: Buffer,
+  contentEncoding: string | string[] | number | undefined,
+  maxLength: number,
+): Buffer | null {
+  const encoding = Array.isArray(contentEncoding) ? contentEncoding.join(', ') : String(contentEncoding ?? '');
+
   try {
-    return decodeContent(body, contentEncoding.trim().toLowerCase(), { maxOutputLength: maxLength });
+    return decodeContent(body, encoding.trim().toLowerCase(), { maxOutputLength: maxLength });
   } catch (error) {
     return error instanceof RangeError ? null : body;
   }
@@ -109,11 +116,7 @@ export function registerInspectorRoutes(
     const requestContentType = normalizeHeaderValue(entry.requestHeaders['content-type']);
     const responseContentType = normalizeHeaderValue(entry.responseHeaders['content-type']);
     const responseBody = entry.responseBody
-      ? readableResponseBody(
-          entry.responseBody,
-          normalizeHeaderValue(entry.responseHeaders['content-encoding']),
-          current.captureLimit,
-        )
+      ? readableResponseBody(entry.responseBody, entry.responseHeaders['content-encoding'], current.captureLimit)
       : null;
 
     res.json({
