@@ -295,6 +295,22 @@ describe('registerVariablesEditorRoutes', () => {
       );
     });
 
+    it('leaves out a schema tag without a name, which no value can be saved for', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi
+          .fn()
+          .mockResolvedValue(Buffer.from(JSON.stringify({ tags: [{ default_value: 'x' }, { name: 'named' }] }))),
+      } as unknown as DistService;
+      const miAPI = { getLivePageVariables: vi.fn().mockResolvedValue([]) } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/values')!({}, res);
+
+      expect(res.body.schema).toEqual({ tags: [{ name: 'named' }] });
+      expect(res.body.combined).toEqual([{ name: 'named', value: '' }]);
+    });
+
     it('sends what the local pages show along, to compare with MI', async () => {
       const distService = {
         readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
@@ -352,6 +368,30 @@ describe('registerVariablesEditorRoutes', () => {
       await app.handlers.get('PUT /@api/variables/values')!({ body }, res);
 
       expect(res.statusCode).toBe(400);
+      expect(applyPageVariables).not.toHaveBeenCalled();
+    });
+
+    // MI keeps one value per name: the replacement went through, and one of the two was gone.
+    it('400s on a name listed twice, without saving', async () => {
+      const applyPageVariables = vi.fn();
+      const app = register({ miAPI: { applyPageVariables } as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!(
+        {
+          body: {
+            tags: [
+              { name: 'a', value: '1' },
+              { name: 'b', value: '2' },
+              { name: 'a', value: '3' },
+            ],
+          },
+        },
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Variable "a" is listed more than once.' });
       expect(applyPageVariables).not.toHaveBeenCalled();
     });
 
