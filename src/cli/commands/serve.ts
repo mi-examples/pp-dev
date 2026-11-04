@@ -32,26 +32,20 @@ export function registerServeCommand(cli: CAC): void {
 
       let server: ViteDevServer | null = null;
       let configWatcher: ConfigWatcher | null = null;
-      let isRestarting = false;
 
       const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
       const logger = createLogger(options.logLevel);
 
-      const startServer = async () => {
-        if (isRestarting) {
-          return;
-        }
-
-        isRestarting = true;
+      /**
+       * Starts the dev server. On a restart the new server is created, its config loaded and
+       * checked, before the running one is stopped: a config that can't be loaded (half-written, a
+       * typo in `app.id`, a broken `.env` line) leaves the running server, with its session, as it
+       * is, instead of ending the process with it.
+       */
+      const startServer = async ({ restart = false } = {}) => {
+        let nextServer: ViteDevServer | null = null;
 
         try {
-          // Clean up existing server if any
-          if (server) {
-            logger.info(colors.yellow('🛑 Stopping existing dev server...'));
-            await server.close();
-            server = null;
-          }
-
           // Clear config cache
           const { clearConfigCache, getConfig } = await import('../../config.js');
 
@@ -69,7 +63,7 @@ export function registerServeCommand(cli: CAC): void {
             logLevel: options.logLevel,
           });
 
-          server = await createServer(
+          nextServer = await createServer(
             mergeConfig(
               config,
               {
@@ -87,15 +81,25 @@ export function registerServeCommand(cli: CAC): void {
             ),
           );
 
-          if (!server.config.base || server.config.base === '/') {
+          if (!nextServer.config.base || nextServer.config.base === '/') {
             throw new Error('base cannot be equal to "/" or empty string');
           }
 
-          if (!server.httpServer) {
+          if (!nextServer.httpServer) {
             throw new Error('HTTP server not available');
           }
 
-          await server.listen();
+          // Stop the running server, if any, now that the new one is ready to listen
+          if (server) {
+            const previous = server;
+
+            server = null;
+            logger.info(colors.yellow('🛑 Stopping existing dev server...'));
+            await previous.close();
+          }
+
+          await nextServer.listen();
+          server = nextServer;
 
           const ppDevStartTime = (global as any).__pp_dev_start_time ?? false;
           const startupDurationString = ppDevStartTime
@@ -139,18 +143,32 @@ export function registerServeCommand(cli: CAC): void {
 
           // Set up config watcher
           if (!configWatcher) {
-            configWatcher = createConfigWatcher(projectRoot, startServer, logger.info);
-            logger.info(colors.blue('🔧 Config file watcher started'));
+            configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info);
+          }
+        } catch (e: any) {
+          if (!restart) {
+            logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
+              error: e,
+            });
+            stopProfiler(logger.info);
+            process.exit(1);
+
+            return;
           }
 
-          isRestarting = false;
-        } catch (e: any) {
-          isRestarting = false;
-          logger.error(colors.red(`error when starting dev server:\n${e.stack}`), {
-            error: e,
-          });
-          stopProfiler(logger.info);
-          process.exit(1);
+          // Created but never listened: let go of what it opened.
+          if (nextServer && nextServer !== server) {
+            await nextServer.close().catch(() => undefined);
+          }
+
+          logger.error(colors.red(`❌ Failed to restart dev server:\n${e.stack}`), { error: e });
+          logger.warn(
+            colors.yellow(
+              server
+                ? '⚠️  The running dev server is kept, with its config, until the next config change'
+                : '⚠️  No dev server is running; it starts again on the next config change',
+            ),
+          );
         }
       };
 
@@ -158,7 +176,7 @@ export function registerServeCommand(cli: CAC): void {
         logger,
         shutdown: async () => {
           if (configWatcher) {
-            cleanupConfigWatcher(configWatcher);
+            await cleanupConfigWatcher(configWatcher);
             configWatcher = null;
           }
 
