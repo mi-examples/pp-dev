@@ -15,7 +15,7 @@ import {
 import { writeBuildVersionManifest } from '../../lib/version-manifest.js';
 import { zipDirectoryToBuffer } from '../../lib/helpers/zip.helper.js';
 import { runNextBuildProcess, removeStaleDevTypes } from '../../lib/next-build-runner.js';
-import { createDefaultZipFileName, resolveOutputFilePath } from '../../lib/output-path.js';
+import { createDefaultZipFileName, resolveOutputFilePath, resolveZipSourceDir } from '../../lib/output-path.js';
 import { loadPPDevEnv } from '../../lib/env.js';
 import type { CAC } from 'cac';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
@@ -143,7 +143,7 @@ export function registerNextBuildCommand(cli: CAC): void {
 
           if (distZip !== false) {
             const zipOutDir = path.resolve(projectRoot, distZip.outDir);
-            const zipSourceDir = distZip.inDir ? path.resolve(outDir, distZip.inDir) : outDir;
+            const zipSourceDir = resolveZipSourceDir(projectRoot, outDir, distZip.inDir);
             const zipFile = resolveOutputFilePath(zipOutDir, distZip.outFileName, 'ZIP output file name');
 
             fs.mkdirSync(path.dirname(zipFile), { recursive: true });
