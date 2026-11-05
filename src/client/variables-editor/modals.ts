@@ -18,6 +18,10 @@ function openOverlay(html: string): HTMLDivElement {
 const find = <T extends HTMLElement = HTMLButtonElement>(root: ParentNode, selector: string) =>
   root.querySelector(selector) as T;
 
+// Enter on a focused button is that button's own click (Cancel, ✕, the diff's ←/→), not the
+// dialog's confirmation: as the latter, it saved or discarded on a Cancel reached by Shift+Tab.
+const isButton = (target: EventTarget | null) => target instanceof HTMLButtonElement;
+
 // Asks for a value (in place of window.prompt()); `onDone` gets `null` when the user cancels.
 export function showCustomValueModal(title: string, initialValue: string, onDone: (value: string | null) => void) {
   const overlay = openOverlay(
@@ -95,7 +99,7 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
     }
   });
   overlay.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') {
+    if (ev.key === 'Enter' && !isButton(ev.target)) {
       ev.preventDefault();
       close(true);
     } else if (ev.key === 'Escape') {
@@ -366,7 +370,7 @@ export function showJsonDiffModal(beforeText: string, afterText: string, onConfi
       return;
     }
 
-    if (ev.key === 'Enter') {
+    if (ev.key === 'Enter' && !isButton(ev.target)) {
       ev.preventDefault();
       close(true);
     } else if (ev.key === 'Escape') {

@@ -166,7 +166,9 @@ function validateListItemFieldValue(
           ];
 
     case 'select': {
-      if (!field.options?.length) {
+      // A hand-edited `"options": "USA,Canada"` is no list to check against (it threw, and the
+      // catch around the value called a valid array "not valid JSON").
+      if (!Array.isArray(field.options) || !field.options.length) {
         return [];
       }
 
@@ -184,7 +186,7 @@ function validateListItemFieldValue(
     }
 
     case 'multi-select': {
-      if (!field.options?.length) {
+      if (!Array.isArray(field.options) || !field.options.length) {
         return [];
       }
 
@@ -345,7 +347,9 @@ export function buildPageVariablesExport(
   schema: TemplateVariablesSchema | null,
   live: PageVariableEntry[],
 ): PageVariableEntry[] {
-  const schemaMap = new Map<string, TemplateVariableTag>((schema?.tags ?? []).map((tag) => [tag.name, tag]));
+  // A tag without a name (a hand-edited file; a save refuses it) has no value to show or set.
+  const namedTags = (schema?.tags ?? []).filter((tag) => typeof tag?.name === 'string' && tag.name !== '');
+  const schemaMap = new Map<string, TemplateVariableTag>(namedTags.map((tag) => [tag.name, tag]));
   const liveMap = new Map<string, string>(live.map((entry) => [entry.name, entry.value]));
   const knownNames = new Set<string>([...schemaMap.keys(), ...liveMap.keys()]);
 
@@ -381,9 +385,7 @@ export interface PageVariablesImportPlan {
 function typeCompatibilityIssue(tag: TemplateVariableTag, value: string): string | null {
   switch (tag.tag_type) {
     case 'boolean':
-      return BOOLEAN_ALLOWED_VALUES.includes(value)
-        ? null
-        : `Not a recognized boolean value ("${value}").`;
+      return BOOLEAN_ALLOWED_VALUES.includes(value) ? null : `Not a recognized boolean value ("${value}").`;
 
     case 'color':
       return value === '' || COLOR_PATTERN.test(value) ? null : `Not a recognized color value ("${value}").`;
@@ -447,4 +449,3 @@ export function planPageVariablesImport(
 
   return { importable, skipped };
 }
-

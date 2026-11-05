@@ -44,9 +44,7 @@ describe('validateValueAgainstTag', () => {
     };
 
     it('accepts well-formed items with no warnings', () => {
-      const value = JSON.stringify([
-        { id: '1', shade: '#075b7e', kind: 'a', tags: 'x,y', 'plain-string-field': 'hi' },
-      ]);
+      const value = JSON.stringify([{ id: '1', shade: '#075b7e', kind: 'a', tags: 'x,y', 'plain-string-field': 'hi' }]);
 
       expect(validateValueAgainstTag(rowsTag, value)).toEqual([]);
     });
@@ -88,9 +86,7 @@ describe('validateValueAgainstTag', () => {
     });
 
     it('warns on a select field value outside the declared options', () => {
-      const value = JSON.stringify([
-        { id: '1', shade: '#000', kind: 'nope', tags: 'x', 'plain-string-field': 'hi' },
-      ]);
+      const value = JSON.stringify([{ id: '1', shade: '#000', kind: 'nope', tags: 'x', 'plain-string-field': 'hi' }]);
 
       expect(validateValueAgainstTag(rowsTag, value)).toContainEqual(
         expect.objectContaining({ message: expect.stringContaining('field "kind"') }),
@@ -98,9 +94,7 @@ describe('validateValueAgainstTag', () => {
     });
 
     it('warns on a multi-select field with a token outside the declared options', () => {
-      const value = JSON.stringify([
-        { id: '1', shade: '#000', kind: 'a', tags: 'x,nope', 'plain-string-field': 'hi' },
-      ]);
+      const value = JSON.stringify([{ id: '1', shade: '#000', kind: 'a', tags: 'x,nope', 'plain-string-field': 'hi' }]);
 
       expect(validateValueAgainstTag(rowsTag, value)).toContainEqual(
         expect.objectContaining({ message: expect.stringContaining('field "tags"') }),
@@ -114,38 +108,44 @@ describe('validateValueAgainstTag', () => {
         additional_options: [
           { name: 'id', type: 'textarea' },
           { name: 'shade', type: 'color' },
-          { name: 'kind', type: 'select', options: [{ id: '1', text: 'One' }, { id: '2', text: 'Two' }] },
-          { name: 'tags', type: 'multi-select', options: [{ id: '1', text: 'One' }, { id: '2', text: 'Two' }] },
+          {
+            name: 'kind',
+            type: 'select',
+            options: [
+              { id: '1', text: 'One' },
+              { id: '2', text: 'Two' },
+            ],
+          },
+          {
+            name: 'tags',
+            type: 'multi-select',
+            options: [
+              { id: '1', text: 'One' },
+              { id: '2', text: 'Two' },
+            ],
+          },
           'plain-string-field',
         ],
       };
 
       it('accepts a select value matching a declared option id', () => {
-        const value = JSON.stringify([
-          { id: '1', shade: '#000', kind: '1', tags: '1', 'plain-string-field': 'hi' },
-        ]);
+        const value = JSON.stringify([{ id: '1', shade: '#000', kind: '1', tags: '1', 'plain-string-field': 'hi' }]);
 
         expect(validateValueAgainstTag(objectOptionsTag, value)).toEqual([]);
       });
 
       it('accepts a select value matching a declared option text', () => {
-        const value = JSON.stringify([
-          { id: '1', shade: '#000', kind: 'Two', tags: '1', 'plain-string-field': 'hi' },
-        ]);
+        const value = JSON.stringify([{ id: '1', shade: '#000', kind: 'Two', tags: '1', 'plain-string-field': 'hi' }]);
 
         expect(validateValueAgainstTag(objectOptionsTag, value)).toEqual([]);
       });
 
       it('warns on a select value outside the declared options, rendering readable text, not [object Object]', () => {
-        const value = JSON.stringify([
-          { id: '1', shade: '#000', kind: 'nope', tags: '1', 'plain-string-field': 'hi' },
-        ]);
+        const value = JSON.stringify([{ id: '1', shade: '#000', kind: 'nope', tags: '1', 'plain-string-field': 'hi' }]);
 
         const issues = validateValueAgainstTag(objectOptionsTag, value);
 
-        expect(issues).toContainEqual(
-          expect.objectContaining({ message: expect.stringContaining('field "kind"') }),
-        );
+        expect(issues).toContainEqual(expect.objectContaining({ message: expect.stringContaining('field "kind"') }));
 
         const kindIssue = issues.find((issue) => issue.message.includes('field "kind"'));
 
@@ -240,6 +240,21 @@ describe('validateValueAgainstTag', () => {
           expect.objectContaining({ message: expect.stringContaining('is not one of the declared options') }),
         );
       });
+    });
+
+    // A hand-edited `"options": "USA,Canada"` threw in the check, and the catch around the whole
+    // value then called a valid array "not valid JSON".
+    it('skips the option check of a select column whose options are no list', () => {
+      const tag: TemplateVariableTag = {
+        name: 'rows',
+        tag_type: 'list',
+        additional_options: [
+          { name: 'country', type: 'select', options: 'USA,Canada' as never },
+          { name: 'tags', type: 'multi-select', options: 'x,y' as never },
+        ],
+      };
+
+      expect(validateValueAgainstTag(tag, JSON.stringify([{ country: 'USA', tags: 'x' }]))).toEqual([]);
     });
 
     it('skips per-item validation for a flat list (empty additional_options)', () => {
@@ -355,6 +370,13 @@ describe('buildPageVariablesExport', () => {
     ]);
   });
 
+  // A tag without a name gave a `{ value }` entry, shown as "(unnamed)" and refused by every save.
+  it('leaves out a schema tag without a name', () => {
+    const schema = { tags: [{ default_value: 'x' } as TemplateVariableTag, { name: 'named', default_value: 'y' }] };
+
+    expect(buildPageVariablesExport(schema, [])).toEqual([{ name: 'named', value: 'y' }]);
+  });
+
   it('degraded mode (schema === null) exports the live values as-is', () => {
     expect(buildPageVariablesExport(null, [{ name: 'title', value: 'Live' }])).toEqual([
       { name: 'title', value: 'Live' },
@@ -367,9 +389,7 @@ describe('planPageVariablesImport', () => {
     const plan = planPageVariablesImport({ tags: [{ name: 'title' }] }, [{ name: 'legacy', value: 'x' }]);
 
     expect(plan.importable).toEqual([]);
-    expect(plan.skipped).toEqual([
-      { name: 'legacy', sourceValue: 'x', reason: "Not in the current page's schema." },
-    ]);
+    expect(plan.skipped).toEqual([{ name: 'legacy', sourceValue: 'x', reason: "Not in the current page's schema." }]);
   });
 
   it('imports a matched text variable regardless of content', () => {
@@ -465,9 +485,7 @@ describe('planPageVariablesImport', () => {
     it('skips a value that is not valid JSON', () => {
       const plan = planPageVariablesImport(schema, [{ name: 'regions', value: 'not-json' }]);
 
-      expect(plan.skipped).toEqual([
-        { name: 'regions', sourceValue: 'not-json', reason: 'Value is not valid JSON.' },
-      ]);
+      expect(plan.skipped).toEqual([{ name: 'regions', sourceValue: 'not-json', reason: 'Value is not valid JSON.' }]);
     });
   });
 

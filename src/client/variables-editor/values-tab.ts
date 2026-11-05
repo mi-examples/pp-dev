@@ -663,6 +663,7 @@ export function renderValuesTabHtml(
     <div class="ve-values-layout">
       <div class="ve-values-nav">
         <div class="ve-values-nav-list">${navHtml}</div>
+        <button type="button" class="ve-values-nav-item ve-values-nav-add"${actionAttrs('add-value-row')}>+ Add item</button>
       </div>
       <div class="ve-values-detail">${detailHtml}</div>
     </div>

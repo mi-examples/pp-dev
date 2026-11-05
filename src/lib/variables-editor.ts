@@ -65,9 +65,22 @@ async function readSchemaFile(distService: DistService): Promise<SchemaFile | nu
   return { raw, schema: parsed as TemplateVariablesSchema };
 }
 
-/** `null` when the file is missing, unreadable, or not valid `{tags: [...]}`. */
+/**
+ * `null` when the file is missing, unreadable, or not valid `{tags: [...]}`. A tag without a name
+ * (a hand-edited file; a save of the schema refuses it) is left out: it has no value to show, and
+ * the values tab showed it as "(unnamed)", whose every save failed with a 400.
+ */
 async function readSchema(distService: DistService | undefined): Promise<TemplateVariablesSchema | null> {
-  return distService ? ((await readSchemaFile(distService))?.schema ?? null) : null;
+  const schema = distService ? ((await readSchemaFile(distService))?.schema ?? null) : null;
+
+  return (
+    schema && {
+      ...schema,
+      tags: schema.tags.filter(
+        (tag) => typeof tag === 'object' && tag !== null && typeof tag.name === 'string' && tag.name !== '',
+      ),
+    }
+  );
 }
 
 /**
@@ -257,6 +270,15 @@ export function registerVariablesEditorRoutes(
       return;
     }
 
+    // MI keeps one value per name: of two entries with one name, one would be lost without a word.
+    const duplicate = tags.map((entry) => entry.name).find((name, index, names) => names.indexOf(name) !== index);
+
+    if (duplicate !== undefined) {
+      res.status(400).json({ error: `Variable "${duplicate}" is listed more than once.` });
+
+      return;
+    }
+
     try {
       const schema = await readSchema(distService);
       const schemaMap = new Map<string, TemplateVariableTag>((schema?.tags ?? []).map((tag) => [tag.name, tag]));
@@ -308,7 +330,6 @@ export function registerVariablesEditorRoutes(
     }
   });
 
-  // ── API: generate a uid for a new schema row (Node's crypto has real MD5; browsers don't) ──
   // ── API: candidate pages to import values from — every other page, pages sharing the
   // current template flagged so the UI can list them first ──────────────────────────────
   app.get('/@api/variables/pages', async (_req, res) => {
