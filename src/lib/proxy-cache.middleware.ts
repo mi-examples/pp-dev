@@ -303,9 +303,10 @@ function hasVerifiedSession(req: Connect.IncomingMessage, requestUser: RequestUs
 
 /**
  * Generates an optimized cache key from URL and query parameters. A saved user's entries are
- * prefixed with its `userKey`, so one user is never served what MI answered another, and with the
- * host they were requested on: the proxy rewrites absolute URLs in a body to that host, and a
- * default user is served on both `localhost` and its own host.
+ * prefixed with its `userKey`, so one user is never served what MI answered another. Every entry
+ * is keyed by the host it was requested on, too: the proxy rewrites absolute URLs in a body to that
+ * host, and a user is served on more than one (a default user on `localhost` and its own host, the
+ * original user on `localhost`, `127.0.0.1` and the `--host` name).
  */
 function generateCacheKey(url: string, userKey: string, host: string): string {
   // Only files with extensions are cached (judged by the path); the key keeps the query.
@@ -319,7 +320,7 @@ function generateCacheKey(url: string, userKey: string, host: string): string {
     return '';
   }
 
-  return userKey ? `@${userKey}@${host}:${url}` : url;
+  return userKey ? `@${userKey}@${host}:${url}` : `${host}:${url}`;
 }
 
 /**

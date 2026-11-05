@@ -534,6 +534,11 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         return proxyReq;
       },
       proxyRes: (serverRes, req, res) => {
+        // Whatever leaves here came from MI: the inspector files it as proxied, and the proxy cache
+        // looks at it for a session change. The buffered path's interceptor ends a HEAD, 204 or 304
+        // on its own, before it would set the header.
+        res.setHeader(PROXY_HEADER, 1);
+
         // `selfHandleResponse` skips http-proxy's own cookie rewriting, and both response paths below
         // copy headers from `serverRes`, so the cookies are fixed here once.
         if (serverRes.headers['set-cookie']) {

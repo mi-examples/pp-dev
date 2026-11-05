@@ -243,7 +243,10 @@ describe('proxy — saved users', () => {
     expect(original.body).toBe('as Bearer original-token');
     expect(viewer.body).toBe('as Bearer viewer-token');
     expect(viewer.headers['x-pp-cache']).toBeUndefined();
-    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer@viewer.localhost:3000:/assets/logo.png']);
+    expect(cache.keys().sort()).toEqual([
+      '@viewer@viewer.localhost:3000:/assets/logo.png',
+      'localhost:3000:/assets/logo.png',
+    ]);
 
     const viewerAgain = await request(port, '/assets/logo.png', 'viewer.localhost:3000');
     const originalAgain = await request(port, '/assets/logo.png', 'localhost:3000');
@@ -260,8 +263,8 @@ describe('proxy — saved users', () => {
     await tick();
 
     expect(res.body).toBe('as Bearer original-token');
-    expect(cache.keys()).toEqual(['/assets/logo.png']);
-    expect(cache.get('/assets/logo.png')!.content.toString()).toBe('as Bearer original-token');
+    expect(cache.keys()).toEqual(['localhost:3000:/assets/logo.png']);
+    expect(cache.get('localhost:3000:/assets/logo.png')!.content.toString()).toBe('as Bearer original-token');
   });
 
   it('keeps the cache while requests of different token users interleave', async () => {
@@ -290,7 +293,10 @@ describe('proxy — saved users', () => {
     await request(port, '/auth/login', 'qa.localhost:3000', 'metric_insights_session=QA');
     await tick();
 
-    expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@viewer@viewer.localhost:3000:/assets/logo.png']);
+    expect(cache.keys().sort()).toEqual([
+      '@viewer@viewer.localhost:3000:/assets/logo.png',
+      'localhost:3000:/assets/logo.png',
+    ]);
   });
 
   describe('logout (PP-4599)', () => {
@@ -318,7 +324,10 @@ describe('proxy — saved users', () => {
       expect(res.headers.location).toBe('http://localhost:3000/');
       expect(res.headers['set-cookie']).toEqual([expect.stringMatching(/^metric_insights_session=deleted;/)]);
       expect(users.get('viewer')).toBeUndefined();
-      expect(cache.keys().sort()).toEqual(['/assets/logo.png', '@qa@qa.localhost:3000:/assets/logo.png']);
+      expect(cache.keys().sort()).toEqual([
+        '@qa@qa.localhost:3000:/assets/logo.png',
+        'localhost:3000:/assets/logo.png',
+      ]);
     });
 
     it('answers a logout made by a script with no content', async () => {
@@ -515,6 +524,23 @@ describe('proxy — saved users', () => {
     });
   });
 
+  // The original user's entries were keyed by the bare URL: an asset cached from a `localhost` tab,
+  // its absolute URLs rewritten to that host, was served to a `127.0.0.1` (or `--host` name) tab.
+  it("keeps the original user's entries apart by the host they were requested on", async () => {
+    const onLocalhost = await request(port, '/assets/app.js', 'localhost:3000');
+    const onLoopback = await request(port, '/assets/app.js', '127.0.0.1:3000');
+    await tick();
+
+    expect(onLocalhost.body).toContain('http://localhost:3000/api/user');
+    expect(onLoopback.headers['x-pp-cache']).toBeUndefined();
+    expect(onLoopback.body).toContain('http://127.0.0.1:3000/api/user');
+
+    const onLoopbackAgain = await request(port, '/assets/app.js', '127.0.0.1:3000');
+
+    expect(onLoopbackAgain.headers['x-pp-cache']).toBe('hit');
+    expect(onLoopbackAgain.body).toContain('http://127.0.0.1:3000/api/user');
+  });
+
   it("keeps a default user's entries for localhost apart from its own host's", async () => {
     users.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
     users.setDefaultUser('viewer');
@@ -575,7 +601,7 @@ describe('proxy — saved users', () => {
 
     users.remove('viewer');
 
-    expect(cache.keys()).toEqual(['/assets/logo.png']);
+    expect(cache.keys()).toEqual(['localhost:3000:/assets/logo.png']);
   });
 
   it('does not cache a user host with no saved user', async () => {
