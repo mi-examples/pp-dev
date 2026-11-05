@@ -679,6 +679,24 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
       expect(responses).toEqual([synced]);
     });
 
+    // A dialog nobody answered (the tab closed, the timeout) counted as "Keep local": the sync
+    // went on to build and upload the local variables.
+    it('stops the sync when its dialog is not answered, instead of keeping the local copy', async () => {
+      const { sync, responses, distService } = setup({
+        analysis: onlyTemplateVariables,
+        answers: [],
+        timeoutMs: 1_000,
+      });
+
+      await sync();
+
+      expect(distService.saveTemplateVariablesFile).not.toHaveBeenCalled();
+      expect(distService.buildNewAssets).not.toHaveBeenCalled();
+      expect(responses).toEqual([
+        { cancelled: true, message: 'Sync cancelled: its dialog was not answered within 1 s. Backup was saved.' },
+      ]);
+    });
+
     it('does not ask when the local copy already matches the server one', async () => {
       const { sync, dialogs, distService } = setup({ analysis: onlyTemplateVariables });
 

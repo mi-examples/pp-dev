@@ -31,6 +31,7 @@ import { colors } from '../../lib/helpers/color.helper.js';
 import { createInternalServer } from '../../lib/internal.middleware.js';
 import { hostNotAllowedMessage, isHostAllowed, type AllowedHosts } from '../../lib/helpers/origin-guard.js';
 import { safeNextImport } from '../../lib/next-import.js';
+import { clearWithPPDevHandoff, readWithPPDevHandoff } from '../../lib/next-config-handoff.js';
 import { type ClientService } from '../../lib/client.service.js';
 import { DistService } from '../../lib/dist.service.js';
 import { PPDevHotServer, refuseUpgrade } from '../../lib/pp-ws-server.js';
@@ -173,11 +174,15 @@ export function registerNextCommand(cli: CAC): void {
 
           loadPPDevEnv(options.mode || 'development', projectRoot);
 
-          // Get pp-dev config from Next.js app config
+          // Get pp-dev config from Next.js app config. `withPPDev()` also hands its result over out
+          // of band: Next 13 and 14 drop the non-enumerable `ppDev` and `ppDevWrapped` from the config.
+          clearWithPPDevHandoff();
+
           const config = await loadConfig(PHASE_DEVELOPMENT_SERVER, projectRoot);
+          const handoff = readWithPPDevHandoff();
 
           // Extract pp-dev configuration from Next.js config
-          let ppDevConfig = config?.ppDev || {};
+          let ppDevConfig = config?.ppDev || handoff?.ppDev || {};
 
           // If no pp-dev config found in Next.js config, try to load from standalone config file
           if (Object.keys(ppDevConfig).length === 0) {
@@ -658,7 +663,7 @@ export function registerNextCommand(cli: CAC): void {
                 .replace(/\\/g, '/')
                 .replace(/\/+$/, '')
                 .replace(/\/dev$/, '');
-            const nextConfigWrapped = config?.ppDevWrapped === true;
+            const nextConfigWrapped = config?.ppDevWrapped === true || handoff?.wrapped === true;
             // A build without the override exports where the production phase's config says, which
             // a config function may set apart from the development phase's.
             let nextBuildDistDir = nextDistDir;

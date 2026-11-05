@@ -9,6 +9,7 @@ import header from './banner/header.js';
 import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
 import { loadPPDevEnv } from './lib/env.js';
+import { recordWithPPDevHandoff } from './lib/next-config-handoff.js';
 import { getConfig, getPkg } from './config.js';
 import type { PPDevConfig } from './lib/pp-dev-config.js';
 import {
@@ -444,6 +445,8 @@ export function withPPDev(
         configurable: true,
       });
       Object.defineProperty(result, 'ppDevWrapped', { value: true, enumerable: false, configurable: true });
+      // Out of band too: Next 13 and 14 rebuild the config from its enumerable keys and drop both.
+      recordWithPPDevHandoff({ ppDev: mergedConfig, wrapped: true });
 
       return result;
     } catch (error) {

@@ -230,6 +230,42 @@ describe('DistService — Next.js build strategy', () => {
     expect(analysis.buildManifestMismatch).toBeNull();
   });
 
+  // `next build` empties the export directory: with the app's distDir in it, the dev server's
+  // manifests and cache went with it.
+  it("rejects before building when the app's distDir is inside the sync's export directory", async () => {
+    fs.rmSync(root, { recursive: true, force: true });
+    root = makeProject('out');
+    simulateBuild(root, builds, { configured: 'out' });
+
+    await expect(createService({ distDir: 'out' }).buildNewAssets()).rejects.toThrow(
+      /distDir \(out\) is inside the sync's export directory \(out\)/,
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(root, 'out', 'dev', 'app-paths-manifest.json'))).toBe(true);
+  });
+
+  // `..cache` is a directory below `out`, not a step above it (review note).
+  it('rejects a distDir whose name starts with two dots below the export directory, too', async () => {
+    fs.rmSync(root, { recursive: true, force: true });
+    root = makeProject(path.join('out', '..cache'));
+    simulateBuild(root, builds, { configured: 'out/..cache' });
+
+    await expect(createService({ distDir: 'out/..cache' }).buildNewAssets()).rejects.toThrow(
+      /distDir \(out\/\.\.cache\) is inside the sync's export directory \(out\)/,
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(root, 'out', '..cache', 'dev', 'app-paths-manifest.json'))).toBe(true);
+  });
+
+  // A previous sync's `out/` was uploaded again after `output: 'export'` was dropped from next.config.
+  it("does not upload a previous sync's export when this build leaves none", async () => {
+    writeExport(path.join(root, 'out'));
+    simulateBuild(root, builds, { exports: false });
+
+    await expect(createService().buildNewAssets()).rejects.toThrow(/output directory not found/);
+    expect(fs.existsSync(path.join(root, 'out'))).toBe(false);
+  });
+
   it('rejects when `next build` exits non-zero', async () => {
     simulateBuild(root, builds, { exitCode: 1 });
 

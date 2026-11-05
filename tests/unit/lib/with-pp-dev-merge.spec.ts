@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { clearConfigCache } from '../../../src/config.js';
 import { withPPDev, type PPDevConfig } from '../../../src/index.js';
 import { PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR } from '../../../src/constants.js';
+import { clearWithPPDevHandoff, readWithPPDevHandoff } from '../../../src/lib/next-config-handoff.js';
 
 /**
  * withPPDev() merges the file config, the Next config's `ppDev` and its own argument group by
@@ -97,6 +98,20 @@ describe('withPPDev config merge', () => {
 
     expect(result.ppDevWrapped).toBe(true);
     expect(Object.keys(result)).not.toContain('ppDevWrapped');
+  });
+
+  // Next 13 and 14 rebuild the config from its enumerable keys: the CLI saw neither `ppDev` nor
+  // the marker there.
+  it('hands its config and the marker over out of band, for a Next that copies only enumerable keys', async () => {
+    clearWithPPDevHandoff();
+
+    expect(readWithPPDevHandoff()).toBeUndefined();
+
+    const result = await withPPDev({ output: 'export', distDir: 'dist' })('phase-development-server');
+    const handoff = readWithPPDevHandoff();
+
+    expect(handoff?.wrapped).toBe(true);
+    expect(handoff?.ppDev).toBe((result as { ppDev: PPDevConfig }).ppDev);
   });
 
   it('keeps the configured distDir in development, whatever the environment says', async () => {
