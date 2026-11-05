@@ -84,6 +84,16 @@ describe('Request Inspector rendering', () => {
     expect(html).toContain('data-action="copy-body"');
   });
 
+  // The Office types name XML too (`application/vnd.openxmlformats-…`), and are ZIP archives.
+  it('keeps an Office document binary', () => {
+    const type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const html = renderBodySectionHtml('Response Body', b64('PK\u0003\u0004'), type, false, 4, 'response', 1024);
+
+    expect(html).toContain('Binary data');
+    expect(html).not.toContain('data-action="copy-body"');
+    expect(html).toContain('data-action="save-body"');
+  });
+
   it('shows an SVG as an image, and offers its text', () => {
     const html = renderBodySectionHtml('Response Body', b64('<svg/>'), 'image/svg+xml', false, 6, 'response', 1024);
 

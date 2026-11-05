@@ -323,15 +323,24 @@ describe('initRewriteResponse', () => {
     try {
       const served = await new Promise<Served>((resolve, reject) => {
         http
-          .request({ host: '127.0.0.1', port, path: '/', agent: false, headers: { 'if-none-match': etag } }, (res) => {
-            const chunks: Buffer[] = [];
+          .request(
+            {
+              host: '127.0.0.1',
+              port,
+              path: '/',
+              agent: false,
+              headers: { accept: 'text/html,*/*;q=0.8', 'if-none-match': etag },
+            },
+            (res) => {
+              const chunks: Buffer[] = [];
 
-            res.on('data', (chunk: Buffer) => chunks.push(chunk));
-            res.on('end', () =>
-              resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
-            );
-            res.on('error', reject);
-          })
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
           .on('error', reject)
           .end();
       });
@@ -340,6 +349,59 @@ describe('initRewriteResponse', () => {
       expect(served.status).toBe(200);
       expect(served.body.toString('utf8')).toBe(REWRITTEN);
       expect(served.headers.etag).toBeUndefined();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  // Under `pp-dev next` the path predicate also matches the app's files under its base, which pass
+  // through: a script's fetch of one keeps its validator, and the 304 reaches it.
+  it('leaves the If-None-Match of a request that asks for no page to the handler', async () => {
+    const etag = '"file-v1"';
+    const middleware = initRewriteResponse(() => true, injectPanel, {
+      contentType: (type) => type.includes('text/html'),
+    });
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        if (req.headers['if-none-match'] === etag) {
+          res.statusCode = 304;
+          res.end();
+
+          return;
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Etag', etag);
+        res.end('{"ok":true}');
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            { host: '127.0.0.1', port, path: '/', agent: false, headers: { accept: '*/*', 'if-none-match': etag } },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(served.status).toBe(304);
+      expect(served.body).toHaveLength(0);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

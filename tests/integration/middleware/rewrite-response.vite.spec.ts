@@ -20,17 +20,21 @@ describe('rewrite response under Vite', () => {
   let port: number;
   let value = 'one';
 
+  /** As a browser navigation asks: it accepts HTML. */
   function get(path: string, headers: http.OutgoingHttpHeaders = {}) {
     return new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
       http
-        .request({ host: '127.0.0.1', port, path, headers, agent: false }, (res) => {
-          const chunks: Buffer[] = [];
+        .request(
+          { host: '127.0.0.1', port, path, headers: { accept: 'text/html', ...headers }, agent: false },
+          (res) => {
+            const chunks: Buffer[] = [];
 
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () =>
-            resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString() }),
-          );
-        })
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () =>
+              resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString() }),
+            );
+          },
+        )
         .on('error', reject)
         .end();
     });

@@ -119,13 +119,18 @@ export function renderHeadersSectionHtml(title: string, headers: Headers | undef
   );
 }
 
-/** A body shown and copied as text: JSON, script, XML (an SVG among them) and text/* types. */
+/**
+ * A body shown and copied as text: JSON, script, XML (an SVG among them) and text/* types. XML
+ * is `application/xml` or a `+xml` suffix: the Office types (`application/vnd.openxmlformats-…`)
+ * name XML too, and are ZIP archives.
+ */
 function isTextType(ct: string): boolean {
   return (
     ct.includes('json') ||
     ct.startsWith('text/') ||
     ct.includes('/javascript') ||
-    ct.includes('xml') ||
+    ct === 'application/xml' ||
+    ct.endsWith('+xml') ||
     ct === 'application/x-www-form-urlencoded'
   );
 }

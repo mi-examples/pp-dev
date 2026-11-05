@@ -87,8 +87,13 @@ export function initRewriteResponse(
       // The renderer answers an If-None-Match that matches its ETag with a 304 and no body (Vite's
       // send(), Next's sendRenderResult), and that ETag is of the page before the rewrite: the
       // browser then kept the rewritten page it held, with the variable values of that time, through
-      // "Reload variables" and a reload. The page is always sent whole, and without that ETag.
-      delete req.headers['if-none-match'];
+      // "Reload variables" and a reload. A page is always sent whole, and without that ETag.
+      // Only for a request that asks for a page (a navigation accepts HTML): under `pp-dev next` the
+      // path predicate also matches the app's files and routes under its base, which pass through
+      // as they are and keep their validators and preconditions.
+      if ((req.method === 'GET' || req.method === 'HEAD') && (req.headers.accept ?? '').includes('text/html')) {
+        delete req.headers['if-none-match'];
+      }
 
       const end = res.end;
 
