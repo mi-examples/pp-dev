@@ -29,7 +29,8 @@ export interface ProxyOpts {
 
   proxyIgnore?: (string | RegExp)[];
 
-  devServer: ViteDevServer | Express;
+  /** Kept for callers that pass it; the proxy itself has no use for it. */
+  devServer?: ViteDevServer | Express;
 
   disableSSLValidation?: boolean;
 
@@ -353,7 +354,6 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
   const {
     rewritePath = /^\/(?!p[tl]).*/i,
     baseURL = '',
-    devServer,
     disableSSLValidation = false,
     miAPI,
     templateName,

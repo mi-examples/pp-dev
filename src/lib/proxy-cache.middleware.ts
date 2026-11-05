@@ -19,7 +19,8 @@ export interface CacheItem {
 }
 
 export interface ProxyCacheOpts {
-  devServer: ViteDevServer | Express;
+  /** Gets the cache as `cache`, where a server is there to take it. */
+  devServer?: ViteDevServer | Express;
   ttl?: number;
   maxSize?: number; // Maximum cache size in bytes
   maxItems?: number; // Maximum number of cache items
@@ -375,7 +376,9 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     cache.maxItems = maxItems;
   }
 
-  devServer.cache = cache;
+  if (devServer) {
+    devServer.cache = cache;
+  }
 
   if (!watchedRegistries.has(users)) {
     watchedRegistries.add(users);
