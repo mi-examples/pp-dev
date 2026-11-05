@@ -164,7 +164,7 @@ describe('proxy cache — MI session', () => {
     await request(port, '/api/user', { cookie: 'metric_insights_session=A' });
     await tick();
 
-    expect(cache.keys()).toEqual(['/assets/logo.png']);
+    expect(cache.keys()).toEqual([`127.0.0.1:${port}:/assets/logo.png`]);
   });
 
   describe('with a personal access token', () => {
@@ -193,7 +193,7 @@ describe('proxy cache — MI session', () => {
       ]);
       await tick();
 
-      expect(cache.keys()).toEqual(['/assets/logo.png']);
+      expect(cache.keys()).toEqual([`127.0.0.1:${port}:/assets/logo.png`]);
 
       const again = await request(port, '/assets/logo.png', { cookie: 'metric_insights_session=S1' });
 
@@ -220,7 +220,7 @@ describe('proxy cache — MI session', () => {
       await request(port, '/assets/logo.png');
       await tick();
 
-      expect(cache.keys()).toEqual(['/assets/logo.png']);
+      expect(cache.keys()).toEqual([`127.0.0.1:${port}:/assets/logo.png`]);
 
       miAPI.personalAccessToken = 'token-2';
       await request(port, '/api/user');

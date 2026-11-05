@@ -155,18 +155,32 @@ export function startInspector({ pollIntervalMs = 2000 }: InspectorOptions = {})
     try {
       const response = await fetch('/@api/requests/' + encodeURIComponent(id));
 
+      // Another row was clicked meanwhile: this answer, arriving last, was shown under the other
+      // row's highlight, and Copy/Save acted on it.
+      if (selectedId !== id) {
+        return;
+      }
+
       if (!response.ok) {
         showDetailEmpty();
 
         return;
       }
 
-      currentEntry = (await response.json()) as RequestEntry;
+      const loaded = (await response.json()) as RequestEntry;
+
+      if (selectedId !== id) {
+        return;
+      }
+
+      currentEntry = loaded;
       detailInfo.innerHTML = renderDetailInfoHtml(currentEntry);
       detailUrl.innerHTML = renderDetailUrlHtml(currentEntry);
       detailScroll.innerHTML = renderDetailSectionsHtml(currentEntry, captureLimit);
     } catch {
-      showDetailEmpty();
+      if (selectedId === id) {
+        showDetailEmpty();
+      }
     }
   };
 

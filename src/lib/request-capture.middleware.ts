@@ -263,21 +263,21 @@ export function createRequestCaptureMiddleware(
       });
     }
 
-    (res as any).write = function (chunk: any, ...args: any[]): boolean {
+    res.write = ((chunk: unknown, ...args: unknown[]): boolean => {
       captureChunk(chunk, getWriteEncoding(args));
 
-      return (origWrite as any)(chunk, ...args);
-    };
+      return (origWrite as (...args: unknown[]) => boolean)(chunk, ...args);
+    }) as typeof res.write;
 
-    (res as any).end = function (chunk?: any, ...args: any[]): any {
+    res.end = ((chunk?: unknown, ...args: unknown[]): typeof res => {
       if (typeof chunk !== 'function') {
         captureChunk(chunk, getWriteEncoding(args));
       }
 
       finalize();
 
-      return (origEnd as any)(chunk, ...args);
-    };
+      return (origEnd as (...args: unknown[]) => typeof res)(chunk, ...args);
+    }) as typeof res.end;
 
     next();
   };

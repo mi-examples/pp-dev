@@ -324,6 +324,50 @@ describe('initUsersPanel', () => {
     );
   });
 
+  // Two quick switches sent two PUTs and two refreshes; the first refresh's answer, arriving last,
+  // drew the default of the first switch (until the 3-second refresh put it right).
+  it('shows the default of the later of two quick switches, whichever answer comes first', async () => {
+    const $panel = await openPopover();
+    let answerFirst: (() => void) | undefined;
+    let refreshes = 0;
+
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        return json(200, { ok: true });
+      }
+
+      if (++refreshes === 1) {
+        await new Promise<void>((resolve) => {
+          answerFirst = resolve;
+        });
+
+        return json(200, { ...usersResponse, defaultUser: 'qa' });
+      }
+
+      return json(200, { ...usersResponse, defaultUser: null });
+    });
+
+    const $qa = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default[value="qa"]')!;
+    const $you = $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default[value=""]')!;
+
+    $qa.checked = true;
+    $qa.dispatchEvent(new Event('change'));
+    $you.checked = true;
+    $you.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    expect(refreshes).toBe(2);
+    expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default[value=""]')!.checked).toBe(true);
+
+    answerFirst!();
+    await flush();
+    await flush();
+
+    expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default[value=""]')!.checked).toBe(true);
+    expect($panel.querySelector<HTMLInputElement>('.pp-dev-info__users-default[value="qa"]')!.checked).toBe(false);
+  });
+
   describe('refreshing while open', () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });

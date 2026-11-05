@@ -84,6 +84,17 @@ export function initRewriteResponse(
     if (await predicate(req.url ?? '', req, res)) {
       const logger = createLogger();
 
+      // The renderer answers an If-None-Match that matches its ETag with a 304 and no body (Vite's
+      // send(), Next's sendRenderResult), and that ETag is of the page before the rewrite: the
+      // browser then kept the rewritten page it held, with the variable values of that time, through
+      // "Reload variables" and a reload. A page is always sent whole, and without that ETag.
+      // Only for a request that asks for a page (a navigation accepts HTML): under `pp-dev next` the
+      // path predicate also matches the app's files and routes under its base, which pass through
+      // as they are and keep their validators and preconditions.
+      if ((req.method === 'GET' || req.method === 'HEAD') && (req.headers.accept ?? '').includes('text/html')) {
+        delete req.headers['if-none-match'];
+      }
+
       const end = res.end;
 
       // A HEAD response has no body to rewrite: the renderer sends the GET page's Content-Length
@@ -147,8 +158,12 @@ export function initRewriteResponse(
         }
       };
 
-      /** Whether the response is passed through: already, or now that its Content-Type is known. */
-      const passes = () => {
+      /**
+       * Whether the response is passed through: already, or now that its Content-Type is known. At
+       * `end()` a type still absent is final and goes to the filter as `''`: a file from `public/`
+       * without an extension has none (`send` sets no type for it), and was rewritten as a page.
+       */
+      const passes = (atEnd = false) => {
         if (passing) {
           return true;
         }
@@ -159,7 +174,11 @@ export function initRewriteResponse(
 
         const contentType = res.getHeader('content-type');
 
-        if (contentType === undefined || options.contentType(String(contentType))) {
+        if (contentType === undefined && !atEnd) {
+          return false;
+        }
+
+        if (options.contentType(contentType === undefined ? '' : String(contentType))) {
           return false;
         }
 
@@ -213,7 +232,7 @@ export function initRewriteResponse(
       };
 
       res.end = function (chunk?: any, encoding?: any, cb?: any) {
-        if (passes()) {
+        if (passes(true)) {
           return (end as (...args: unknown[]) => ServerResponse).call(this, chunk, encoding, cb);
         }
 
@@ -243,6 +262,10 @@ export function initRewriteResponse(
           } else {
             res.setHeader('content-length', output.length);
           }
+        }
+
+        if (!res.headersSent) {
+          res.removeHeader('etag');
         }
 
         res.writeHead = writeHead;

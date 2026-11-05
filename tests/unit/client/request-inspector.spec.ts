@@ -75,6 +75,32 @@ describe('Request Inspector rendering', () => {
     expect(html).toContain('data-action="toggle-section"');
   });
 
+  // XML was offered for copying as text and shown as "Binary data"; an SVG is shown as an image
+  // and offered as text, like any XML.
+  it.each(['application/xml', 'application/rss+xml', 'text/xml'])('shows an %s body as text', (type) => {
+    const html = renderBodySectionHtml('Response Body', b64('<a/>'), type, false, 4, 'response', 1024);
+
+    expect(html).toContain('<pre class="body-content">&lt;a/&gt;</pre>');
+    expect(html).toContain('data-action="copy-body"');
+  });
+
+  // The Office types name XML too (`application/vnd.openxmlformats-…`), and are ZIP archives.
+  it('keeps an Office document binary', () => {
+    const type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const html = renderBodySectionHtml('Response Body', b64('PK\u0003\u0004'), type, false, 4, 'response', 1024);
+
+    expect(html).toContain('Binary data');
+    expect(html).not.toContain('data-action="copy-body"');
+    expect(html).toContain('data-action="save-body"');
+  });
+
+  it('shows an SVG as an image, and offers its text', () => {
+    const html = renderBodySectionHtml('Response Body', b64('<svg/>'), 'image/svg+xml', false, 6, 'response', 1024);
+
+    expect(html).toContain('<img class="body-image"');
+    expect(html).toContain('data-action="copy-body"');
+  });
+
   it('notes a body over the capture limit', () => {
     expect(renderBodySectionHtml('Request Body', null, 'text/plain', true, 99, 'request', 10 * 1024 * 1024)).toContain(
       'larger than the capture limit (10.0 MB)',
@@ -167,6 +193,45 @@ describe('Request Inspector page', () => {
     expect($('#detail-url')!.textContent).toContain('/data/page/1');
     expect($('#detail-scroll .body-json-key')!.textContent).toBe('"ok":');
     expect($('.req-item[data-id="1"]')!.classList.contains('selected')).toBe(true);
+  });
+
+  // Click A, then B, with A's answer arriving last: A was shown under B's highlight, and Copy/Save
+  // acted on A.
+  it('shows the request clicked last, whichever answer comes first', async () => {
+    let answerFirst: (() => void) | undefined;
+    const second: RequestEntry = { ...entry, ...summaries[1]!, responseBody: b64('{"second":true}') };
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/@api/requests') {
+        return new Response(JSON.stringify({ requests: summaries, total: 2, memoryUsage: 512, maxMemory: 1024 }));
+      }
+
+      if (url === '/@api/requests/1') {
+        await new Promise<void>((resolve) => {
+          answerFirst = resolve;
+        });
+
+        return new Response(JSON.stringify(entry));
+      }
+
+      return new Response(JSON.stringify(second));
+    });
+
+    click($('.req-item[data-id="1"]'));
+    click($('.req-item[data-id="2"]'));
+    await flush();
+
+    expect($('#detail-url')!.textContent).toContain('/@api/users');
+
+    answerFirst!();
+    await flush();
+
+    expect($('#detail-url')!.textContent).toContain('/@api/users');
+    expect($('.req-item.selected')!.getAttribute('data-id')).toBe('2');
+
+    click($('[data-action="copy-body"][data-type="response"]'));
+
+    expect(writeText).toHaveBeenCalledWith('{"second":true}');
   });
 
   it("collapses a section from its header, but not from the header's buttons", async () => {

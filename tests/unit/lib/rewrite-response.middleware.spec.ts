@@ -291,6 +291,122 @@ describe('initRewriteResponse', () => {
     expect(callback).toHaveBeenCalledTimes(1);
   });
 
+  // Vite's send() and Next's sendRenderResult answer a matching If-None-Match with a 304 and no
+  // body, by an ETag of the page before the rewrite: a reload after "Reload variables" kept the
+  // page with the old values.
+  it('asks the renderer for the whole page, never a 304 by the ETag of the page before the rewrite', async () => {
+    const etag = 'W/"page-v1"';
+    let seenIfNoneMatch: string | undefined;
+    const middleware = initRewriteResponse(() => true, injectPanel);
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        seenIfNoneMatch = req.headers['if-none-match'];
+
+        if (seenIfNoneMatch === etag) {
+          res.statusCode = 304;
+          res.end();
+
+          return;
+        }
+
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Etag', etag);
+        res.end(ORIGINAL);
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            {
+              host: '127.0.0.1',
+              port,
+              path: '/',
+              agent: false,
+              headers: { accept: 'text/html,*/*;q=0.8', 'if-none-match': etag },
+            },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(seenIfNoneMatch).toBeUndefined();
+      expect(served.status).toBe(200);
+      expect(served.body.toString('utf8')).toBe(REWRITTEN);
+      expect(served.headers.etag).toBeUndefined();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  // Under `pp-dev next` the path predicate also matches the app's files under its base, which pass
+  // through: a script's fetch of one keeps its validator, and the 304 reaches it.
+  it('leaves the If-None-Match of a request that asks for no page to the handler', async () => {
+    const etag = '"file-v1"';
+    const middleware = initRewriteResponse(() => true, injectPanel, {
+      contentType: (type) => type.includes('text/html'),
+    });
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        if (req.headers['if-none-match'] === etag) {
+          res.statusCode = 304;
+          res.end();
+
+          return;
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Etag', etag);
+        res.end('{"ok":true}');
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            { host: '127.0.0.1', port, path: '/', agent: false, headers: { accept: '*/*', 'if-none-match': etag } },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(served.status).toBe(304);
+      expect(served.body).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('runs the callback passed to end()', async () => {
     const callback = vi.fn();
 
@@ -316,7 +432,7 @@ describe('initRewriteResponse', () => {
       end,
     };
 
-    await middleware({ url: '/' } as any, res as any, () => res.end(ORIGINAL));
+    await middleware({ url: '/', headers: {} } as any, res as any, () => res.end(ORIGINAL));
 
     expect(setHeader).not.toHaveBeenCalled();
     expect(end).toHaveBeenCalledTimes(1);
@@ -372,6 +488,36 @@ describe('initRewriteResponse — contentType', () => {
 
     expect(served.body.toString('utf8')).toBe(REWRITTEN);
     expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+  });
+
+  // A file from `public/` without an extension gets no Content-Type from `send`: with none at end()
+  // the filter never ran, and the bytes went through the page rewrite (#374's review).
+  it('passes an untyped response through, as one the filter rejects', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x3c, 0x2f, 0x62, 0x6f, 0x64, 0x79, 0x3e]);
+    const rewrite = vi.fn(injectPanel);
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Length', bytes.length);
+        res.end(bytes);
+      },
+      { options: pagesOnly, rewrite },
+    );
+
+    expect(served.body.equals(bytes)).toBe(true);
+    expect(served.headers['content-type']).toBeUndefined();
+    expect(served.headers['content-length']).toBe(String(bytes.length));
+    expect(rewrite).not.toHaveBeenCalled();
+  });
+
+  it('rewrites an untyped response when the filter takes an empty type', async () => {
+    const served = await serve(
+      (res) => {
+        res.end(ORIGINAL);
+      },
+      { options: { contentType: (type) => type === '' || type.includes('text/html') } },
+    );
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
   });
 
   // Next.js wraps the response again over the rewrite: its compression middleware (end/write, and

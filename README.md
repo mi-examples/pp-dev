@@ -384,6 +384,8 @@ pp-dev next [options]
 
 `--https`, `--open`, `--cors`, `--strictPort` and `--force` are accepted for compatibility but have no effect with `pp-dev next` (a warning says so); they will be removed.
 
+`--host` without a value listens on all addresses, as `next dev -H 0.0.0.0` does, and Next.js then needs the address another device opens the page from in its [`allowedDevOrigins`](https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins) for HMR and its other dev resources: the host name alone, without scheme or port (`allowedDevOrigins: ['192.168.1.20']` for a page opened at `http://192.168.1.20:3000`). The pages and pp-dev's own routes work either way, since an IP address is always an allowed host.
+
 **Template sync.** The panel's Sync builds the app with `next build` next to the running dev
 server. That build is given Next's default `distDir`, so it goes to `.next` and its static export to
 `out`, and the dev server's `<distDir>/dev` (its manifests and cache) is left alone. Before the build,

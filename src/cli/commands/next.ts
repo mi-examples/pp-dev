@@ -98,7 +98,15 @@ export function registerNextCommand(cli: CAC): void {
 
       // `--host` alone (cac gives `true`) listens on all addresses, as with `pp-dev`; Next.js gets the
       // same value it is listened on.
-      const { host: listenHost, port: listenPort } = resolveNextListenAddress(options.host, options.port);
+      let listenHost: string;
+      let listenPort: number;
+
+      try {
+        ({ host: listenHost, port: listenPort } = resolveNextListenAddress(options.host, options.port));
+      } catch (error) {
+        createLogger(options.logLevel).error(colors.red(`❌ ${(error as Error).message}`));
+        process.exit(1);
+      }
 
       let nextApp: ReturnType<typeof createNextApp> | null = null;
       let httpServer: any = null;
@@ -734,11 +742,23 @@ export function registerNextCommand(cli: CAC): void {
           }
 
           httpServer.listen(port, host, () => {
-            logger.info(colors.green(`✅ pp-dev Next.js server running at http://${host}:${port}`));
-            logger.info(colors.blue(`📱 Next.js app accessible at http://${host}:${port}${base}`));
+            // Listening on every address: the URLs are for the one a browser on this machine opens.
+            const allAddresses = host === '0.0.0.0' || host === '::';
+            const origin = `http://${allAddresses ? 'localhost' : host}:${port}`;
+
+            logger.info(colors.green(`✅ pp-dev Next.js server running at ${origin}`));
+            logger.info(colors.blue(`📱 Next.js app accessible at ${origin}${base}`));
+
+            if (allAddresses) {
+              logger.info(
+                colors.blue(
+                  `🌐 Listening on all addresses. A page opened from another device needs this machine's address in allowedDevOrigins (next.config) for Next's HMR, as with next dev -H 0.0.0.0.`,
+                ),
+              );
+            }
 
             if (inspectorEnabled !== false) {
-              logger.info(colors.cyan(`🔍 Request Inspector: http://${host}:${port}${INSPECTOR_PATH}`));
+              logger.info(colors.cyan(`🔍 Request Inspector: ${origin}${INSPECTOR_PATH}`));
             }
 
             logger.info(colors.blue(`🔧 Base path handling active`));
