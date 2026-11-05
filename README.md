@@ -384,6 +384,8 @@ pp-dev next [options]
 
 `--https`, `--open`, `--cors`, `--strictPort` and `--force` are accepted for compatibility but have no effect with `pp-dev next` (a warning says so); they will be removed.
 
+**Config changes.** Both commands watch `pp-dev.config.*`, `next.config.*` / `vite.config.*`, `package.json` and the `.env*` files of the project root and restart the dev server when one changes, appears or is removed. A `pp-dev.config.*` that can't be loaded (half-written, a syntax error) is reported and the running server is kept; the next save tries again. `pp-dev next` runs its server in a process of its own and starts that process again on a change, as `next dev` does: Next.js caches its config for the life of a process, so a restart in place could not pick up a changed `withPPDev()` config or `next.config.*`.
+
 ### Build
 
 ```bash

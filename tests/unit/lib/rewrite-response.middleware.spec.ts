@@ -379,11 +379,7 @@ describe('initRewriteResponse — contentType', () => {
   // before the first chunk. Putting the original methods back on pass-through dropped those wrappers:
   // the icon went out gzipped under its raw Content-Length and no Content-Encoding (e2e caught it).
   it("keeps Next.js's compression in place when a file passes through", async () => {
-    const compression = (await import('next/dist/compiled/compression/index.js')).default as () => (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      next: () => void,
-    ) => void;
+    const compression = (await import('next/dist/compiled/compression/index.js')).default;
     const icon = Buffer.from('ICON'.repeat(600));
     const middleware = initRewriteResponse(() => true, injectPanel, pagesOnly);
 

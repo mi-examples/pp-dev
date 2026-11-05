@@ -51,7 +51,7 @@ import { VARIABLES_EDITOR_PATH } from '../../lib/variables-editor.js';
 import { loadPPDevEnv } from '../../lib/env.js';
 import { NEXT_IGNORED_FLAGS, resolveNextListenAddress } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
-import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
+import { isNextServerProcess, reportNextServerReady, superviseNextServer } from '../next-supervisor.js';
 import {
   type NextCommandCLIOptions,
   type NextBundlerChoice,
@@ -78,6 +78,19 @@ export function registerNextCommand(cli: CAC): void {
     .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
       filterDuplicateOptions(options);
 
+      // The process the user started supervises: it watches the config files and runs the server in
+      // a process of its own, started again on a change (see next-supervisor.ts for why). Everything
+      // below is the server process.
+      if (!isNextServerProcess()) {
+        await superviseNextServer({
+          projectRoot: root ? path.resolve(process.cwd(), root) : process.cwd(),
+          logger: createLogger(options.logLevel),
+          mode: options.mode || 'development',
+        });
+
+        return;
+      }
+
       const ignoredFlags = NEXT_IGNORED_FLAGS.filter((flag) => options[flag as keyof typeof options] !== undefined);
 
       if (ignoredFlags.length > 0) {
@@ -97,10 +110,8 @@ export function registerNextCommand(cli: CAC): void {
       let hotServer: PPDevHotServer | null = null;
       /** The dev panel service on {@link hotServer}; disposed before it closes, to stop a sync's build. */
       let clientService: ClientService | null = null;
-      let configWatcher: ConfigWatcher | null = null;
-      let isRestarting = false;
 
-      // Connections to the current HTTP server, so a restart or shutdown can end them.
+      // Connections to the HTTP server, so the shutdown can end them.
       const openSockets = new Set<Socket>();
 
       const logger = createLogger(options.logLevel);
@@ -140,39 +151,10 @@ export function registerNextCommand(cli: CAC): void {
       };
 
       const startNextServer = async () => {
-        if (isRestarting) {
-          return;
-        }
-
-        isRestarting = true;
-
         try {
           // Import Next.js first – with logger available for error reporting
           const { next, constants } = await safeNextImport();
           const { PHASE_DEVELOPMENT_SERVER } = constants;
-
-          // Clean up existing dev-panel WebSocket server if any
-          clientService?.dispose();
-          clientService = null;
-
-          if (hotServer) {
-            await hotServer.close();
-            hotServer = null;
-          }
-
-          // Clean up existing server if any
-          if (httpServer) {
-            logger.info(colors.yellow('🛑 Stopping existing Next.js server...'));
-            await closeHttpServer();
-          }
-
-          // Clean up existing Next.js app if any
-          await closeNextApp();
-
-          // Clear config cache
-          const { clearConfigCache } = await import('../../config.js');
-
-          clearConfigCache();
 
           const { createServer } = await import('http');
 
@@ -770,22 +752,16 @@ export function registerNextCommand(cli: CAC): void {
 
             logger.info(colors.blue(`🔧 Base path handling active`));
 
-            // Set up config watcher
-            if (!configWatcher) {
-              configWatcher = createConfigWatcher(projectRoot, startNextServer, logger.info);
-              logger.info(colors.blue('🔧 Config file watcher started'));
-            }
-
             // Track open sockets for proper cleanup
             httpServer.on('connection', (socket: any) => {
               openSockets.add(socket);
               socket.on('close', () => openSockets.delete(socket));
             });
-          });
 
-          isRestarting = false;
+            // The supervisor starts the config watcher once the first server is up.
+            reportNextServerReady();
+          });
         } catch (error: any) {
-          isRestarting = false;
           logger.error(colors.red(`❌ Failed to start Next.js server: ${error?.message}. Stack: ${error?.stack}`));
 
           // Special handling for Next.js peer dependency errors
@@ -811,11 +787,6 @@ export function registerNextCommand(cli: CAC): void {
         logger,
         knownRejections: [NEXT_WORKER_SCHEDULER_REJECTION],
         shutdown: async () => {
-          if (configWatcher) {
-            cleanupConfigWatcher(configWatcher);
-            configWatcher = null;
-          }
-
           clientService?.dispose();
           clientService = null;
 
