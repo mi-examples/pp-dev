@@ -112,6 +112,9 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
   let data: UsersResponse | null = null;
   // What the list shows now, so a refresh with the same data leaves it (and the focus) alone.
   let renderedData = '';
+  // Only the latest refresh paints: two quick default switches sent two, and the first one's
+  // answer, arriving last, drew the state before the second.
+  let refreshSeq = 0;
   // The token user being edited, whose row shows the edit form instead.
   let editing: string | null = null;
 
@@ -418,6 +421,8 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
   };
 
   const refresh = async () => {
+    const seq = ++refreshSeq;
+
     try {
       const response = await fetch(USERS_API);
 
@@ -425,7 +430,13 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         return;
       }
 
-      data = (await response.json()) as UsersResponse;
+      const loaded = (await response.json()) as UsersResponse;
+
+      if (seq !== refreshSeq) {
+        return;
+      }
+
+      data = loaded;
       renderList();
       renderAvailability();
     } catch {

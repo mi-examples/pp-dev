@@ -119,6 +119,17 @@ export function renderHeadersSectionHtml(title: string, headers: Headers | undef
   );
 }
 
+/** A body shown and copied as text: JSON, script, XML (an SVG among them) and text/* types. */
+function isTextType(ct: string): boolean {
+  return (
+    ct.includes('json') ||
+    ct.startsWith('text/') ||
+    ct.includes('/javascript') ||
+    ct.includes('xml') ||
+    ct === 'application/x-www-form-urlencoded'
+  );
+}
+
 function bodyContentHtml(b64: string | null, ct: string, truncated: boolean, size: number): string {
   if (!b64 && !truncated) {
     return '<div class="body-binary">No body</div>';
@@ -136,10 +147,6 @@ function bodyContentHtml(b64: string | null, ct: string, truncated: boolean, siz
       : `<pre class="body-content">${esc(text)}</pre>`;
   }
 
-  if (ct.startsWith('text/')) {
-    return `<pre class="body-content">${esc(decodeTextBody(b64!))}</pre>`;
-  }
-
   if (ct.startsWith('image/') && size < 1024 * 1024) {
     return `<img class="body-image" src="data:${esc(ct)};base64,${b64}" alt="image"/>`;
   }
@@ -149,6 +156,11 @@ function bodyContentHtml(b64: string | null, ct: string, truncated: boolean, siz
     const rows = [...params.entries()].map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
 
     return `<table class="kv-table">${rows}</table>`;
+  }
+
+  // XML was offered for copying as text, and shown as "Binary data".
+  if (isTextType(ct)) {
+    return `<pre class="body-content">${esc(decodeTextBody(b64!))}</pre>`;
   }
 
   return `<div class="body-binary">Binary data — ${formatBytes(size)} (${esc(ct || 'unknown type')})</div>`;
@@ -164,14 +176,10 @@ export function renderBodySectionHtml(
   captureLimit: number,
 ): string {
   const ct = (contentType || '').toLowerCase().split(';')[0].trim();
-  const isText =
-    ct.includes('json') ||
-    ct.startsWith('text/') ||
-    ct.includes('/javascript') ||
-    ct === 'application/xml' ||
-    ct === 'application/x-www-form-urlencoded';
   const copy =
-    b64 && isText ? `<button class="section-btn" data-action="copy-body" data-type="${type}">Copy</button>` : '';
+    b64 && isTextType(ct)
+      ? `<button class="section-btn" data-action="copy-body" data-type="${type}">Copy</button>`
+      : '';
   const save = b64 ? `<button class="section-btn" data-action="save-body" data-type="${type}">Save</button>` : '';
   const note = truncated
     ? `<div class="truncated-note">⚠ Body was larger than the capture limit (${formatBytes(captureLimit)})</div>`
