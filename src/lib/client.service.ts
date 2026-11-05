@@ -367,9 +367,10 @@ export class ClientService {
               ? []
               : otherManifestMismatches.map((m) => m.relativePath);
 
-            const promptReplaceTemplateVariables = async () => {
+            /** Whether the sync goes on: a dialog nobody answered stops it, as the other dialogs do. */
+            const promptReplaceTemplateVariables = async (): Promise<boolean> => {
               if (!backupAnalysis.templateVariables || !distService) {
-                return;
+                return true;
               }
 
               const { templateVariables } = backupAnalysis;
@@ -390,8 +391,16 @@ export class ClientService {
 
                 if (replaceFromServer.approved) {
                   await distService.saveTemplateVariablesFile(templateVariables.content);
+                } else if (replaceFromServer.reason !== 'cancelled') {
+                  // A timeout, a closed tab, a stopping server: not "Keep local", which went on to
+                  // build and upload the local variables with nobody having answered.
+                  this.cancelSync(client, replaceFromServer.reason);
+
+                  return false;
                 }
               }
+
+              return true;
             };
 
             if (backupAnalysis.unknownFiles.length > 0) {
@@ -412,8 +421,8 @@ export class ClientService {
               }
             }
 
-            if (mixedTemplateAndOthers) {
-              await promptReplaceTemplateVariables();
+            if (mixedTemplateAndOthers && !(await promptReplaceTemplateVariables())) {
+              return;
             }
 
             if (!onlyTemplateVariablesMismatch && pathsForVersionModal.length > 0) {
@@ -466,8 +475,8 @@ export class ClientService {
               }
             }
 
-            if (!mixedTemplateAndOthers) {
-              await promptReplaceTemplateVariables();
+            if (!mixedTemplateAndOthers && !(await promptReplaceTemplateVariables())) {
+              return;
             }
 
             newAssets = await distService?.buildNewAssets();

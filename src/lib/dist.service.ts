@@ -181,6 +181,13 @@ const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
 /** Listed in VERSION; basename match for sync UI decisions */
 export const TEMPLATE_VARIABLES_FILE_NAME = '__template_variables.json';
 
+/** Whether `dir` is `parent` or below it. */
+function isSameOrInside(dir: string, parent: string): boolean {
+  const relative = path.relative(parent, dir);
+
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 export class DistService {
   private readonly root: string;
   private readonly backupFolder: string;
@@ -907,6 +914,15 @@ export class DistService {
    */
   private async buildNextAssets(): Promise<Buffer> {
     const { projectRoot, distDir, buildDistDir = distDir, output, configWrapped } = this.nextBuild!;
+    const exportDirName = configWrapped || buildDistDir === SYNC_BUILD_DIST_DIR ? SYNC_BUILD_EXPORT_DIR : buildDistDir;
+    const outDir = path.resolve(projectRoot, exportDirName);
+
+    // `next build` empties the export directory: the dev server's own files must not be in it.
+    if (configWrapped && isSameOrInside(path.resolve(projectRoot, distDir), outDir)) {
+      throw new Error(
+        `The app's distDir (${distDir}) is inside the sync's export directory (${exportDirName}), which next build empties: set another distDir in next.config.`,
+      );
+    }
 
     // The dev server's route types: under a custom distDir, `next build` type-checks them next to
     // its own, which declare the same globals (the step `pp-dev next-build` takes too). The dev
@@ -919,14 +935,18 @@ export class DistService {
       );
     }
 
-    const exportDirName = configWrapped || buildDistDir === SYNC_BUILD_DIST_DIR ? SYNC_BUILD_EXPORT_DIR : buildDistDir;
-
     if (!configWrapped && exportDirName === distDir) {
       this.logger.warn(
         colors.yellow(
           `⚠️  next.config is not wrapped with withPPDev(): the sync's build exports into ${distDir} and removes the dev server's ${path.join(distDir, 'dev')}; restart pp-dev next after the sync`,
         ),
       );
+    }
+
+    // What a previous sync exported: a build that exports nothing (`output: 'export'` dropped from
+    // next.config since) left it there, and the sync uploaded it again as this build's.
+    if (configWrapped) {
+      await fs.rm(outDir, { recursive: true, force: true });
     }
 
     this.logger.info(colors.cyan('[DistService] Next.js build started'));
@@ -939,8 +959,6 @@ export class DistService {
         distDir: configWrapped ? SYNC_BUILD_DIST_DIR : undefined,
       }),
     );
-
-    const outDir = path.resolve(projectRoot, exportDirName);
 
     if (!(await this.isDirectory(outDir))) {
       throw new Error(
