@@ -85,8 +85,8 @@ const asChain = (middleware: Connect.NextHandleFunction): ChainMiddleware => mid
 
 /**
  * Builds the chain. In order: the user-host guard (a user host with no saved user behind it gets
- * nothing), the Request Inspector's capture, pp-dev's redirects, the dev panel's assets, the proxy
- * cache, the page-data load, the proxy to MI, pp-dev's own routes; the rewrite apart, as the last
+ * nothing), the Request Inspector's capture, pp-dev's redirects, the dev panel's assets, pp-dev's
+ * own routes, the proxy cache, the page-data load, the proxy to MI; the rewrite apart, as the last
  * one. The parts without a backend: the capture, the redirects and pp-dev's own routes.
  */
 export function createMiddlewareChain(options: MiddlewareChainOptions): MiddlewareChain {
@@ -118,6 +118,30 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
 
     main.push(devPanelAssets);
     essential.push(devPanelAssets);
+  }
+
+  // pp-dev's own routes, before the page-data load and the proxy: with a base of `/` the inspector
+  // page counted as a navigation into the app, and MI being down kept it from opening. Only their
+  // paths go to the Express app: mounted for every path, its body parsers would read a request's
+  // body before the proxy could pipe it to MI (which then waited for one and answered 408). And
+  // through a wrapper, not the app itself: Vite sets a `.route` string on what it mounts, which
+  // overwrote Express's `app.route()`, and a route registered after that crashed. Express calls
+  // back when no route matched or one failed; the callback ends the request.
+  if (inspector.enabled || backendBaseURL) {
+    const internal: ChainMiddleware = (req, res, next) => {
+      const url = req.url ?? '';
+
+      if (url.startsWith('/@api/') || url.startsWith(INSPECTOR_PATH) || url.startsWith(VARIABLES_EDITOR_PATH)) {
+        internalServer(req as never, res as never, (error?: unknown) => endUnhandledInternalRequest(res, error));
+
+        return;
+      }
+
+      next();
+    };
+
+    main.push(internal);
+    essential.push(internal);
   }
 
   let mi: MiAPI | null = null;
@@ -169,29 +193,6 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
         page.contentType ? { contentType: page.contentType } : {},
       ),
     );
-  }
-
-  // pp-dev's own routes, after the proxy (which leaves `/@…` alone) and before the rewrite. Only
-  // their paths go to the Express app: mounted for every path, its body parsers would read a
-  // request's body before the proxy could pipe it to MI (which then waited for one and answered
-  // 408). And through a wrapper, not the app itself: Vite sets a `.route` string on what it
-  // mounts, which overwrote Express's `app.route()`, and a route registered after that crashed.
-  // Express calls back when no route matched or one failed; the callback ends the request.
-  if (inspector.enabled || backendBaseURL) {
-    const internal: ChainMiddleware = (req, res, next) => {
-      const url = req.url ?? '';
-
-      if (url.startsWith('/@api/') || url.startsWith(INSPECTOR_PATH) || url.startsWith(VARIABLES_EDITOR_PATH)) {
-        internalServer(req as never, res as never, (error?: unknown) => endUnhandledInternalRequest(res, error));
-
-        return;
-      }
-
-      next();
-    };
-
-    main.push(internal);
-    essential.push(internal);
   }
 
   return { main, essential, rewrite, mi, proxyCacheTtl };

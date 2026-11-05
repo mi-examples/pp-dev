@@ -87,9 +87,9 @@ describe('the middleware chain', () => {
     clearAPICache();
   });
 
-  function build(backend: boolean, inspector = true) {
+  function build(backend: boolean, inspector = true, base = BASE) {
     return createMiddlewareChain({
-      base: BASE,
+      base,
       templateName: 'chain-app',
       internalServer: createInternalServer(),
       backendBaseURL: backend ? upstreamUrl : undefined,
@@ -233,6 +233,24 @@ describe('the middleware chain', () => {
 
       expect(res.status).toBe(200);
     });
+  });
+
+  // With a base of `/` every HTML navigation is one into the app: the inspector page reached the
+  // page-data load first, and MI being down kept it from opening (review note).
+  it('opens the inspector page before the page-data load, whatever the base', async () => {
+    const chain = build(true, true, '/');
+    const server = serveChain(chain);
+    const port = await listen(server);
+
+    try {
+      const res = await get(port, '/@pp-dev/inspector', { accept: 'text/html' });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/html');
+      expect(upstreamHits).toEqual([]);
+    } finally {
+      await close(server);
+    }
   });
 
   it('mounts nothing of its own when there is neither a backend nor the inspector', () => {
