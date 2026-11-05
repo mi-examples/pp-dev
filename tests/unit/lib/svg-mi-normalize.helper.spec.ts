@@ -119,7 +119,8 @@ describe('normalizeSvgFilesInDir', () => {
     const testDir = mkdtempSync(path.join(tmpdir(), 'pp-dev-svg-normalize-'));
 
     try {
-      const already = '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg">\n  <rect width="1" height="1"></rect>\n</svg>\n';
+      const already =
+        '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg">\n  <rect width="1" height="1"></rect>\n</svg>\n';
 
       writeFileSync(path.join(testDir, 'icon.svg'), already);
 

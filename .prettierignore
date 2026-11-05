@@ -4,3 +4,10 @@ dist-zip
 coverage
 *.tgz
 tests/test-nextjs/.next
+# Written by tools in their own style: the shared workflows, the release bot, the mock-mi recorder,
+# Next.js (the fixtures' tsconfig) and the Variables Editor (the fixtures' variables file).
+.github/workflows
+CHANGELOG.md
+tests/mock-mi/cassettes
+tests/test-*/tsconfig.json
+tests/test-*/public/__template_variables.json

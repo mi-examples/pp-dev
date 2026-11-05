@@ -326,10 +326,7 @@ describe('Config Loader', () => {
           `export const file = import.meta.filename;`,
         ].join('\n'),
       );
-      writeFileSync(
-        join(testDir, 'settings', 'legacy.cjs'),
-        `module.exports = { dir: __dirname, file: __filename };`,
-      );
+      writeFileSync(join(testDir, 'settings', 'legacy.cjs'), `module.exports = { dir: __dirname, file: __filename };`);
       writeFileSync(
         join(testDir, 'pp-dev.config.mjs'),
         [
@@ -387,7 +384,10 @@ describe('Config Loader', () => {
 
     it('loads a config and a helper that start with a hashbang', async () => {
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
-      writeFileSync(join(testDir, 'helper.mjs'), `#!/usr/bin/env node\nexport const url = 'https://helper.example.com';`);
+      writeFileSync(
+        join(testDir, 'helper.mjs'),
+        `#!/usr/bin/env node\nexport const url = 'https://helper.example.com';`,
+      );
       writeFileSync(
         join(testDir, 'pp-dev.config.js'),
         `#!/usr/bin/env node\nimport { url } from './helper.mjs';\nexport default { mi: { url }, dir: import.meta.dirname };`,
@@ -404,10 +404,7 @@ describe('Config Loader', () => {
       writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
       mkdirSync(join(testDir, 'ui'));
       writeFileSync(join(testDir, 'ui', 'a.jsx'), `export const a = { dir: import.meta.dirname, file: __filename };`);
-      writeFileSync(
-        join(testDir, 'ui', 'b.tsx'),
-        `export const b: { url: string } = { url: import.meta.url };`,
-      );
+      writeFileSync(join(testDir, 'ui', 'b.tsx'), `export const b: { url: string } = { url: import.meta.url };`);
       writeFileSync(
         join(testDir, 'pp-dev.config.ts'),
         `import { a } from './ui/a.jsx';\nimport { b } from './ui/b.tsx';\nexport default { a, b };`,

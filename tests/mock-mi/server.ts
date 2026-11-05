@@ -425,7 +425,9 @@ export async function startMockMiServer(opts: {
               const url = new URL(req.url ?? '/', `http://localhost:${port}`);
               const key = cassetteKey(req.method ?? 'GET', requestPath(url));
               const encodingHeader = proxyRes.headers['content-encoding'];
-              const encoding = String(Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader ?? '').toLowerCase();
+              const encoding = String(
+                Array.isArray(encodingHeader) ? encodingHeader[0] : (encodingHeader ?? ''),
+              ).toLowerCase();
 
               // Decompress so cassette bodies are plain text/JSON
               let bodyBuffer = rawBuffer;
@@ -507,8 +509,7 @@ export async function startMockMiServer(opts: {
       resolve({
         url,
         save: cassetteSave,
-        close: () =>
-          new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res()))),
+        close: () => new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res()))),
       });
     });
     server.once('error', reject);

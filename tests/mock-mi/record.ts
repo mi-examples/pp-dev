@@ -47,10 +47,7 @@ const mockMi = await startMockMiServer({
 
 // Temporarily rewrite pp-dev.config.ts to point at the mock server
 const originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
-const patchedConfig = originalConfig.replace(
-  /url:\s*['"]https?:\/\/[^'"]+['"]/,
-  `url: '${mockMi.url}'`,
-);
+const patchedConfig = originalConfig.replace(/url:\s*['"]https?:\/\/[^'"]+['"]/, `url: '${mockMi.url}'`);
 if (patchedConfig === originalConfig) {
   throw new Error('Could not patch mi.url in pp-dev.config.ts');
 }

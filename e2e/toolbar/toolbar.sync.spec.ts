@@ -141,5 +141,4 @@ test.describe('Toolbar Sync Functionality', () => {
     await expect(syncButton).not.toHaveClass(/\bsyncing\b/, { timeout: 15_000 });
     expect(syncRequests).toBe(1);
   });
-
 });

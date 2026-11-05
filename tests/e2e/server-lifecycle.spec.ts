@@ -108,9 +108,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   // ── 1: Clean startup ──────────────────────────────────────────────────
 
   it('starts cleanly without errors', () => {
-    const errors = ppdev.lines.filter((l) =>
-      /\[ERROR\]|esbuild error|unhandled exception/i.test(l),
-    );
+    const errors = ppdev.lines.filter((l) => /\[ERROR\]|esbuild error|unhandled exception/i.test(l));
     expect(errors, `Unexpected errors:\n${errors.join('\n')}`).toHaveLength(0);
     // Verify server reached the ready state
     expect(ppdev.lines.some((l) => /pp-dev Next\.js server running/i.test(l))).toBe(true);

@@ -2,7 +2,15 @@ import axios, { Axios } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
 import { getJSDOM } from './helpers/jsdom.helper.js';
-import { AssetsAPI, Page, PageAPI, AssetsV7API, PageTemplateAPI, PageVariableAPI, PageVariableTagEntry } from '../api/index.js';
+import {
+  AssetsAPI,
+  Page,
+  PageAPI,
+  AssetsV7API,
+  PageTemplateAPI,
+  PageVariableAPI,
+  PageVariableTagEntry,
+} from '../api/index.js';
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { createLogger } from './logger.js';
 import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
@@ -418,7 +426,9 @@ export class MiAPI {
     const tags = await this.pageVariableApi.getById(pageId, this.#clearHeaders(headers));
 
     this.logger.info(
-      colors.green(`[page-variables] Fetched ${tags.length} live variable(s) for page ID ${pageId} in ${Date.now() - start}ms`),
+      colors.green(
+        `[page-variables] Fetched ${tags.length} live variable(s) for page ID ${pageId} in ${Date.now() - start}ms`,
+      ),
     );
 
     return tags;
