@@ -67,7 +67,8 @@ export const NEXT_IGNORED_FLAGS = ['https', 'open', 'cors', 'strictPort', 'force
 /**
  * Where `pp-dev next` listens, which is also the hostname Next.js is told. Like `pp-dev`: no
  * `--host` is `localhost`, `--host` alone (cac gives `true`) is every address, `--host <name>` is
- * that name.
+ * that name. A `--port` that is no port number is refused, as `pp-dev` (Vite) refuses it; it fell
+ * back to 3000 without a word.
  */
 export function resolveNextListenAddress(host: unknown, port: unknown): { host: string; port: number } {
   let resolvedHost = 'localhost';
@@ -81,7 +82,18 @@ export function resolveNextListenAddress(host: unknown, port: unknown): { host: 
     resolvedHost = String(host);
   }
 
-  const parsedPort = typeof port === 'number' ? port : typeof port === 'string' ? Number.parseInt(port, 10) : NaN;
+  const parsedPort =
+    port === undefined
+      ? 3000
+      : typeof port === 'number'
+        ? port
+        : typeof port === 'string' && port.trim()
+          ? Number(port)
+          : NaN;
 
-  return { host: resolvedHost, port: Number.isInteger(parsedPort) && parsedPort >= 0 ? parsedPort : 3000 };
+  if (!Number.isInteger(parsedPort) || parsedPort < 0 || parsedPort > 65535) {
+    throw new Error(`--port must be a port number (0-65535), got ${JSON.stringify(port)}`);
+  }
+
+  return { host: resolvedHost, port: parsedPort };
 }

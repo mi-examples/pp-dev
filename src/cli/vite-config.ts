@@ -8,8 +8,10 @@ export interface CommandViteConfigOptions {
   /** The `[root]` argument of the command. */
   root: string | undefined;
   mode: string;
-  /** Which `vite.config.*` variant to load. */
+  /** Which `vite.config.*` variant to load: what a config function sees as `command`. */
   command: 'build' | 'serve';
+  /** `preview`: `serve` with `isPreview`, as Vite resolves it. */
+  isPreview?: boolean;
   /** `--config`. */
   configFile: string | undefined;
   logLevel: LogLevel | undefined;
@@ -24,12 +26,17 @@ export interface CommandViteConfigOptions {
 export async function loadCommandViteConfig(
   opts: CommandViteConfigOptions,
 ): Promise<{ config: InlineConfig; envDir: string }> {
-  const { root, mode, command } = opts;
+  const { root, mode, command, isPreview } = opts;
   const envDir = path.resolve(process.cwd(), root ?? '.');
 
   loadPPDevEnv(mode, envDir);
 
-  const configFromFile = await loadConfigFromFile({ mode, command }, opts.configFile, root, opts.logLevel);
+  const configFromFile = await loadConfigFromFile(
+    { mode, command, ...(isPreview ? { isPreview } : {}) },
+    opts.configFile,
+    root,
+    opts.logLevel,
+  );
 
   let config = await getViteConfig(opts.buildOverrides, { mode, root: envDir });
 

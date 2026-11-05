@@ -384,6 +384,8 @@ pp-dev next [options]
 
 `--https`, `--open`, `--cors`, `--strictPort` and `--force` are accepted for compatibility but have no effect with `pp-dev next` (a warning says so); they will be removed.
 
+`--host` without a value listens on all addresses, as `next dev -H 0.0.0.0` does, and Next.js then needs the address another device opens the page from (`http://192.168.1.20:3000`, say) in its [`allowedDevOrigins`](https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins) for HMR and its other dev resources; the pages and pp-dev's own routes work either way, since an IP address is always an allowed host.
+
 ### Build
 
 ```bash

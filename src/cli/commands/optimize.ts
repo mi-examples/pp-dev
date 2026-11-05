@@ -13,10 +13,11 @@ export function registerOptimizeCommand(cli: CAC): void {
       filterDuplicateOptions(options);
       try {
         const mode = options.mode || 'production';
+        // As Vite's own `optimize` resolves it: a config function that goes by `command` saw `build`.
         const { config } = await loadCommandViteConfig({
           root,
           mode,
-          command: 'build',
+          command: 'serve',
           configFile: options.config,
           logLevel: options.logLevel,
         });

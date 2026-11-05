@@ -66,9 +66,12 @@ describe('resolveNextListenAddress', () => {
     [4123, 4123],
     ['4123', 4123],
     [undefined, 3000],
-    ['not a port', 3000],
-    [-1, 3000],
   ])('reads port %j as %j', (port, expected) => {
     expect(resolveNextListenAddress(undefined, port).port).toBe(expected);
+  });
+
+  // `--port abc` listened on 3000 without a word; `pp-dev` (Vite) refuses the value.
+  it.each([['not a port'], ['80abc'], [''], [-1], [65536], [3000.5]])('refuses port %j', (port) => {
+    expect(() => resolveNextListenAddress(undefined, port)).toThrow(/--port must be a port number/);
   });
 });
