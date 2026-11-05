@@ -8,23 +8,8 @@ import { EventEmitter } from 'node:events';
 import { type ServerOptions } from 'vite';
 import { type ViteDevServer } from 'vite';
 import { parse } from 'url';
-import { initRewriteResponse } from '../../lib/rewrite-response.middleware.js';
-import { initPPRedirect } from '../../lib/pp-redirect.middleware.js';
-import { MiAPI } from '../../lib/pp.middleware.js';
-import { initProxyCache } from '../../lib/proxy-cache.middleware.js';
-import proxyPassMiddleware from '../../lib/proxy-pass.middleware.js';
-import { initLoadPPData } from '../../lib/load-pp-data.middleware.js';
-import { createUserHostGuard } from '../../lib/user-registry.js';
-import {
-  type ChainMiddleware,
-  endUnhandledInternalRequest,
-  getIndexPageRegExp,
-  getMiAPIOptions,
-  getProxyIgnore,
-  resolveProxyCacheTtl,
-  runMiddlewareChain,
-  startSyncAndUsers,
-} from '../../lib/dev-server-setup.js';
+import { createMiddlewareChain } from '../../lib/middleware-chain.js';
+import { type ChainMiddleware, runMiddlewareChain, startSyncAndUsers } from '../../lib/dev-server-setup.js';
 import { urlReplacer } from '../../lib/helpers/url.helper.js';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
@@ -36,13 +21,10 @@ import { DistService } from '../../lib/dist.service.js';
 import { PPDevHotServer, refuseUpgrade } from '../../lib/pp-ws-server.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../lib/next-process-listeners.js';
-import { injectDevPanel, createDevPanelAssetMiddleware } from '../../lib/dev-panel.js';
+import { injectDevPanel } from '../../lib/dev-panel.js';
 import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from '../../constants.js';
 import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-config.js';
-import { RequestStore } from '../../lib/request-store.js';
-import { createRequestCaptureMiddleware } from '../../lib/request-capture.middleware.js';
-import { registerInspectorRoutes, INSPECTOR_PATH } from '../../lib/request-inspector.js';
-import { VARIABLES_EDITOR_PATH } from '../../lib/variables-editor.js';
+import { INSPECTOR_PATH } from '../../lib/request-inspector.js';
 import { loadPPDevEnv } from '../../lib/env.js';
 import { NEXT_IGNORED_FLAGS, resolveNextListenAddress } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
@@ -444,180 +426,41 @@ export function registerNextCommand(cli: CAC): void {
 
           httpServer.on('upgrade', onUpgrade);
 
-          // Initialize pp-dev middlewares
-          let mi: MiAPI | null = null;
-          /** All pp-dev middlewares for non-internal routes (app pages). Includes redirect, proxy cache, proxy pass, load PP data, internal server, rewrite response. */
-          const fullMiddlewareChain: ChainMiddleware[] = [];
-          /** Essential middlewares for internal Next.js routes (e.g. /_next/). Only redirect and internal server; skips proxy/cache for faster static asset handling. */
-          const essentialMiddlewareChain: ChainMiddleware[] = [];
-
-          // Request inspector: register routes on internalServer and add capture middleware
-          if (inspectorEnabled !== false) {
-            const reqStore = new RequestStore(inspectorMaxMemory);
-
-            registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
-
-            const captureMiddleware = createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit);
-
-            fullMiddlewareChain.push(captureMiddleware);
+          // pp-dev's middlewares: the chain `pp-dev` builds too (middleware-chain.ts), run here on the
+          // raw http server before Next.js.
+          if (backendBaseURL?.startsWith('https://')) {
+            EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 20);
           }
 
-          /** Serves pp-dev's own routes (API, inspector and editor UI) from `internalServer`. */
-          const internalServerWrapper = (req: any, res: any, next: () => void) => {
-            // Check if this is an internal pp-dev request (API or inspector/editor UI)
-            if (
-              req.url?.startsWith('/@api/') ||
-              req.url?.startsWith(INSPECTOR_PATH) ||
-              req.url?.startsWith(VARIABLES_EDITOR_PATH)
-            ) {
-              // Express calls back when no route matched (404) or one failed (500); a callback
-              // that did nothing left such requests hanging.
-              internalServer(req, res, (error?: unknown) => endUnhandledInternalRequest(res, error));
-
-              return; // Don't call next() for internal pp-dev requests
-            }
-
-            next();
-          };
-
-          // Without a backend there is no MI middleware, but the Request Inspector still works, as under
-          // `pp-dev`: its routes are served on their own.
-          if (!backendBaseURL && inspectorEnabled !== false) {
-            essentialMiddlewareChain.push(internalServerWrapper);
-            fullMiddlewareChain.push(internalServerWrapper);
-          }
-
-          if (backendBaseURL) {
-            const baseUrlHost = new URL(backendBaseURL).host;
-
-            // 0. A user host with no saved user behind it gets nothing, not even Next.js assets.
-            const userHostGuard = createUserHostGuard();
-
-            essentialMiddlewareChain.unshift(userHostGuard);
-            fullMiddlewareChain.unshift(userHostGuard);
-
-            if (backendBaseURL.startsWith('https://')) {
-              EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 20);
-            }
-
-            // Initialize MiAPI
-            const miConfig = getMiAPIOptions(backendBaseURL, {
-              appId,
-              templateLess,
-              disableSSLValidation,
-              v7Features,
-              personalAccessToken,
-            });
-
-            mi = new MiAPI(backendBaseURL, miConfig);
-
-            // Create middleware chain for HTTP server
-            // Note: We need to adapt Express middlewares to work with raw HTTP requests
-
-            // 1. PP Redirect middleware (essential for all routes)
-            const ppRedirectMiddleware = initPPRedirect(base, templateName);
-            const ppRedirectWrapper = (req: any, res: any, next: () => void) => {
-              ppRedirectMiddleware(req, res, next);
-            };
-
-            essentialMiddlewareChain.push(ppRedirectWrapper);
-            fullMiddlewareChain.push(ppRedirectWrapper);
-
-            // 1b. Dev-panel client assets (client.js/client.css) — served locally, never proxied.
-            const devPanelAssetMiddleware = createDevPanelAssetMiddleware(base);
-
-            essentialMiddlewareChain.push(devPanelAssetMiddleware);
-            fullMiddlewareChain.push(devPanelAssetMiddleware);
-
-            // 2. Proxy Cache middleware (only for non-internal routes)
-            if (enableProxyCache) {
-              const ttl = resolveProxyCacheTtl(proxyCacheTTL);
-
-              // Create mock devServer object that satisfies the type requirements
-              const mockDevServer = {
-                middlewares: {
-                  use: (fn: any) => fn,
-                },
-                config: { logger: console },
-              } as any;
-
-              const cacheConfig = {
-                devServer: mockDevServer,
-                ttl,
-              };
-
-              const proxyCacheMiddleware = initProxyCache(cacheConfig);
-              const proxyCacheWrapper = (req: any, res: any, next: () => void) => {
-                proxyCacheMiddleware(req, res, next);
-              };
-
-              fullMiddlewareChain.push(proxyCacheWrapper);
-
-              logger.info(colors.blue(`🔧 Proxy cache middleware added with TTL: ${ttl}ms`));
-            }
-
-            // 3. Load PP Data middleware (only for non-internal routes; before proxy so v7 internal page name is available for `/data/page/` rewrites)
-            const isIndexRegExp = getIndexPageRegExp(base);
-            // `appBase`, as the Vite plugin passes it: without it every HTML navigation counted as
-            // one into the app, MI's own `/login` included, whose page data load failed and sent the
-            // browser back to the login, without end.
-            const loadPPDataMiddleware = initLoadPPData(
-              isIndexRegExp,
-              mi,
-              Object.assign({ base, appBase: base }, miConfig, { miHudLess }),
-            );
-            const loadPPDataWrapper = (req: any, res: any, next: () => void) => {
-              loadPPDataMiddleware(req, res, next);
-            };
-
-            fullMiddlewareChain.push(loadPPDataWrapper);
-
-            // 4. Proxy Pass middleware (only for non-internal routes)
-
-            // Create mock devServer object for proxy pass middleware
-            const mockProxyDevServer = {
-              middlewares: {
-                use: (fn: any) => fn,
-              },
-              config: { logger: console },
-            } as any;
-
-            const proxyPassMiddlewareInstance = proxyPassMiddleware({
-              devServer: mockProxyDevServer,
-              baseURL: backendBaseURL,
-              proxyIgnore: [
-                ...getProxyIgnore(base),
-                // Next.js internal routes that should not be proxied
-                '/_next',
-                '/__nextjs_',
-                '/installHook.js.map',
-              ],
-              disableSSLValidation,
-              miAPI: mi,
-              templateName,
-            });
-
-            const proxyPassWrapper = (req: any, res: any, next: () => void) => {
-              proxyPassMiddlewareInstance(req, res, next);
-            };
-
-            fullMiddlewareChain.push(proxyPassWrapper);
-
-            // 5. Internal Server middleware (API endpoints + inspector UI) - essential for all routes
-            essentialMiddlewareChain.push(internalServerWrapper);
-            fullMiddlewareChain.push(internalServerWrapper);
-
-            // 6. Rewrite Response middleware (only for non-internal routes)
-            const rewriteResponseMiddleware = initRewriteResponse(
-              (url) => {
+          const chain = createMiddlewareChain({
+            base,
+            templateName,
+            internalServer,
+            backendBaseURL,
+            mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
+            inspector: {
+              enabled: inspectorEnabled !== false,
+              maxMemory: inspectorMaxMemory,
+              captureLimit: inspectorCaptureLimit,
+            },
+            // Next.js's own routes are never proxied.
+            proxy: {
+              cache: enableProxyCache,
+              cacheTtl: proxyCacheTTL,
+              ignore: ['/_next', '/__nextjs_', '/installHook.js.map'],
+            },
+            // The dev panel's client.js / client.css, served locally.
+            devPanelAssets: true,
+            rewrite: (mi, baseUrlHost) => ({
+              // Next.js serves page HTML at the base path or below it (/p/test-nextjs/,
+              // /p/test-nextjs/dashboard), not at index.html; /_next/ assets are left out.
+              predicate: (url) => {
                 const pathname = url.split('?')[0];
 
-                // Next.js serves page HTML at base path or subpaths (e.g. /p/test-nextjs/, /p/test-nextjs/dashboard),
-                // not at index.html. Match page requests under base, excluding /_next/ static assets.
                 return pathname.startsWith(base) && !pathname.includes('/_next/');
               },
-              (response, req) => {
-                const page = mi!.buildPage(response, miHudLess);
+              transform: (response, req) => {
+                const page = mi.buildPage(response, miHudLess);
                 // Inject the dev panel before host-rewriting so its `!!`-prefixed backend
                 // links are handled by urlReplacer like the rest of the page.
                 const withPanel = injectDevPanel(page, base, {
@@ -634,14 +477,21 @@ export function registerNextCommand(cli: CAC): void {
               // Pages only: the check above goes by path, and the app's own files under the base
               // path (its icon, public/ images and JSON) were read as text, a binary one corrupted,
               // and a route handler's stream was held back until it ended.
-              { contentType: (contentType) => contentType.includes('text/html') },
-            );
+              contentType: (contentType) => contentType.includes('text/html'),
+            }),
+          });
 
-            const rewriteResponseWrapper = (req: any, res: any, next: () => void) => {
-              rewriteResponseMiddleware(req, res, next);
-            };
+          /** All pp-dev middlewares for a page request, the rewrite last. */
+          const fullMiddlewareChain: ChainMiddleware[] = chain.rewrite ? [...chain.main, chain.rewrite] : chain.main;
+          /** For Next.js's own routes (/_next/): no proxy, no page data. */
+          const essentialMiddlewareChain: ChainMiddleware[] = chain.essential;
 
-            fullMiddlewareChain.push(rewriteResponseWrapper);
+          if (chain.proxyCacheTtl !== null) {
+            logger.info(colors.blue(`🔧 Proxy cache middleware added with TTL: ${chain.proxyCacheTtl}ms`));
+          }
+
+          if (backendBaseURL && chain.mi) {
+            const mi = chain.mi;
 
             // Dev-panel transport: raw-WebSocket replacement for Vite HMR so the panel's
             // interactive features (template sync) work under Next.js. ClientService is

@@ -1,28 +1,11 @@
-import type { Environment, IndexHtmlTransformResult, Plugin } from 'vite';
-import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
-import { MiAPI } from './lib/pp.middleware.js';
+import type { Connect, Environment, IndexHtmlTransformResult, Plugin } from 'vite';
 import { urlReplacer } from './lib/helpers/url.helper.js';
 import { type ClientService } from './lib/client.service.js';
-import { initProxyCache } from './lib/proxy-cache.middleware.js';
 import { DistService } from './lib/dist.service.js';
-import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
-import { initPPRedirect } from './lib/pp-redirect.middleware.js';
-import { initLoadPPData } from './lib/load-pp-data.middleware.js';
 import { createInternalServer } from './lib/internal.middleware.js';
 import { colors } from './lib/helpers/index.js';
-import { RequestStore } from './lib/request-store.js';
-import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
-import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
-import { VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
-import { createUserHostGuard } from './lib/user-registry.js';
-import { USERS_API_PATH } from './lib/user-routes.js';
-import {
-  getIndexPageRegExp,
-  getMiAPIOptions,
-  getProxyIgnore,
-  resolveProxyCacheTtl,
-  startSyncAndUsers,
-} from './lib/dev-server-setup.js';
+import { startSyncAndUsers } from './lib/dev-server-setup.js';
+import { createMiddlewareChain, mountMiddlewareChain } from './lib/middleware-chain.js';
 import type { NormalizedVitePPDevOptions } from './lib/pp-dev-config.js';
 
 // Config types, validation and normalization live in a module without the server's dependencies.
@@ -107,73 +90,36 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         base += '/';
       }
 
-      if (backendBaseURL) {
-        // Before Vite's own middlewares: a user host with no saved user behind it gets nothing.
-        server.middlewares.use(createUserHostGuard());
-      }
+      // pp-dev's own routes: the inspector's now, the sync, login, editor and users routes below.
+      const internalServer = createInternalServer({ allowedHosts });
 
-      server.middlewares.use(initPPRedirect(base, templateName));
+      // Before Vite's own middlewares, in the order `pp-dev next` runs them too (middleware-chain.ts).
+      const chain = createMiddlewareChain({
+        base,
+        templateName,
+        internalServer,
+        backendBaseURL,
+        mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
+        inspector: {
+          enabled: inspectorEnabled !== false,
+          maxMemory: inspectorMaxMemory,
+          captureLimit: inspectorCaptureLimit,
+        },
+        proxy: { cache: enableProxyCache, cacheTtl: proxyCacheTTL, devServer: server },
+        rewrite: (mi, baseUrlHost) => ({
+          predicate: (url) => url.split('?')[0].endsWith('index.html'),
+          transform: (response, req) =>
+            Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess))),
+        }),
+      });
 
-      if (inspectorEnabled !== false) {
-        const reqStore = new RequestStore(inspectorMaxMemory);
+      mountMiddlewareChain(server, chain);
 
-        server.middlewares.use(createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit));
+      if (backendBaseURL && chain.mi) {
+        const mi = chain.mi;
 
-        const internalServer = createInternalServer({ allowedHosts });
-
-        registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
-
-        // Only route internal pp-dev paths into the Express app. Mounting it for all
-        // paths would run its global express.json()/urlencoded() body parsers, which
-        // consume the request stream before the proxy can pipe it to the backend
-        // (the backend then waits for a body that never arrives and replies 408).
-        server.middlewares.use((req, res, next) => {
-          if (req.url?.startsWith('/@api/') || req.url?.startsWith(INSPECTOR_PATH)) {
-            internalServer(req as never, res as never, next);
-
-            return;
-          }
-
-          next();
-        });
-      }
-
-      if (backendBaseURL) {
         server.config.logger.info(colors.blue(`🌐 Backend URL: ${backendBaseURL}`));
         server.config.logger.info(colors.blue(`🆔 Custom App ID: ${appId}`));
-
-        const baseUrlHost = new URL(backendBaseURL).host;
-
-        const miConfig = getMiAPIOptions(backendBaseURL, {
-          appId,
-          templateLess,
-          disableSSLValidation,
-          v7Features,
-          personalAccessToken,
-        });
-
-        const mi = new MiAPI(backendBaseURL, miConfig);
-
-        if (enableProxyCache) {
-          server.middlewares.use(initProxyCache({ devServer: server, ttl: resolveProxyCacheTtl(proxyCacheTTL) }));
-        }
-
-        const isIndexRegExp = getIndexPageRegExp(base);
-
-        server.middlewares.use(initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, { appId, appBase: base })));
-
-        server.middlewares.use(
-          proxyPassMiddleware({
-            devServer: server,
-            baseURL: backendBaseURL,
-            proxyIgnore: getProxyIgnore(base),
-            disableSSLValidation,
-            miAPI: mi,
-            templateName,
-          }),
-        );
-
-        const internalServer = createInternalServer({ allowedHosts });
 
         const distService = new DistService(
           templateName,
@@ -210,44 +156,15 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         });
 
         clientServices.set(server.environments.client, clientService);
+      }
 
-        // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
-        // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a
-        // `.route` string property on whatever's mounted (to track its mount path) — colliding
-        // with and overwriting Express's own `app.route` *method*. Any route registered on this
-        // app *after* it's been mounted crashes with "this.route is not a function".
-        //
-        // Only route internal pp-dev paths into the Express app (see the matching inspector
-        // gate above) — mounting it for all paths would run its global express.json()/
-        // urlencoded() body parsers, which consume the request stream before the proxy can
-        // pipe it to the backend (the backend then waits for a body that never arrives and
-        // replies 408).
-        server.middlewares.use((req, res, next) => {
-          if (
-            req.url?.startsWith('/@api/login') ||
-            req.url?.startsWith('/@api/variables/') ||
-            req.url?.startsWith(USERS_API_PATH) ||
-            req.url?.startsWith(VARIABLES_EDITOR_PATH)
-          ) {
-            internalServer(req as never, res as never, next);
+      const { rewrite } = chain;
 
-            return;
-          }
-
-          next();
-        });
-
+      if (rewrite) {
+        // A post hook: Vite installs it after its own middlewares and right before the one that
+        // serves index.html, whose response it rewrites.
         return () => {
-          server.middlewares.use(
-            initRewriteResponse(
-              (url) => {
-                return url.split('?')[0].endsWith('index.html');
-              },
-              (response, req) => {
-                return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
-              },
-            ),
-          );
+          server.middlewares.use(rewrite as unknown as Connect.NextHandleFunction);
         };
       }
     },
