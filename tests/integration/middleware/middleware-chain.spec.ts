@@ -236,17 +236,18 @@ describe('the middleware chain', () => {
   });
 
   // With a base of `/` every HTML navigation is one into the app: the inspector page reached the
-  // page-data load first, and MI being down kept it from opening (review note).
-  it('opens the inspector page before the page-data load, whatever the base', async () => {
+  // page-data load first, and MI being down kept it from opening (review note). Its API route
+  // stands in for the page here, which is served from the built `dist/client`.
+  it("serves pp-dev's own routes before the page-data load, whatever the base", async () => {
     const chain = build(true, true, '/');
     const server = serveChain(chain);
     const port = await listen(server);
 
     try {
-      const res = await get(port, '/@pp-dev/inspector', { accept: 'text/html' });
+      const res = await get(port, '/@api/requests', { accept: 'text/html' });
 
       expect(res.status).toBe(200);
-      expect(res.headers['content-type']).toContain('text/html');
+      expect(JSON.parse(res.body)).toMatchObject({ requests: expect.any(Array) });
       expect(upstreamHits).toEqual([]);
     } finally {
       await close(server);
