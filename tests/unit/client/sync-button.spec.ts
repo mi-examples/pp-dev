@@ -138,7 +138,7 @@ describe('initSyncButton', () => {
     $button.click();
     await emit('template:sync:response', {
       syncedAt: '2026-10-27T10:00:00.000Z',
-      currentHash: 'hash',
+
       backupFilename: 'backup.zip',
     });
 

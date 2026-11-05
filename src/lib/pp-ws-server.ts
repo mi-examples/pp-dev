@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
-import { PP_DEV_HMR_WS_PATH } from '../constants.js';
+import { PP_DEV_HMR_WS_PATH, type CustomMessage } from '../shared/ws-messages.js';
 import { createLogger } from './logger.js';
 import { crossOriginReason, type AllowedHosts } from './helpers/origin-guard.js';
 
@@ -26,8 +26,6 @@ export function refuseUpgrade(socket: Duplex): void {
  * (`on(event, handler)` + per-client `send(event, payload)`), so the existing
  * dev-panel sync logic is reused without changes.
  */
-
-type CustomMessage = { type: 'custom'; event: string; data?: unknown };
 
 /** Per-connection sender handed to {@link import('./client.service.js').ClientService} handlers. */
 export interface PPDevHotClient {
@@ -76,11 +74,13 @@ export class PPDevHotServer {
         this.getEventSet(event).add(listener as EventListener);
       },
       off: (event, listener) => {
-        this.eventListeners.get(event)?.delete(listener as EventListener);
-
         if (event === 'close' || event === 'error') {
           this.lifecycleListeners.get(event)?.delete(listener);
+
+          return;
         }
+
+        this.eventListeners.get(event)?.delete(listener as EventListener);
       },
       send: (arg1: unknown, arg2?: unknown) => {
         // Broadcast. ClientService responds per-client and no longer broadcasts,

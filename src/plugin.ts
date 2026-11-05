@@ -1,4 +1,4 @@
-import { type IndexHtmlTransformResult, type Plugin } from 'vite';
+import type { Environment, IndexHtmlTransformResult, Plugin } from 'vite';
 import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
 import { MiAPI } from './lib/pp.middleware.js';
 import { urlReplacer } from './lib/helpers/url.helper.js';
@@ -59,16 +59,19 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   } = options || {};
 
   let isFirstRequest = true;
-  let clientService: ClientService | undefined;
+  // Per dev server, by its client environment: Vite's own restart (the `r` shortcut, a change of
+  // `vite.config.*`) makes the new server with this same plugin instance, then closes the old one.
+  // One variable held the new server's service by then, and the old server's closeBundle disposed it.
+  const clientServices = new WeakMap<Environment, ClientService>();
 
   return {
     name: 'vite-pp-dev',
     apply: 'serve',
-    // A `serve`-only plugin's closeBundle runs when the dev server closes (or restarts, which makes a
-    // new one): the place to stop what the panel started, such as a sync's build.
+    // A `serve`-only plugin's closeBundle runs, once per environment, when the dev server closes (or
+    // restarts, which makes a new one): the place to stop what the panel started, such as a sync's build.
     closeBundle() {
-      clientService?.dispose();
-      clientService = undefined;
+      clientServices.get(this.environment)?.dispose();
+      clientServices.delete(this.environment);
     },
     config: (config) => {
       config.clientInjectionPlugin = {
@@ -196,7 +199,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           ),
         );
 
-        clientService = startSyncAndUsers({
+        const clientService = startSyncAndUsers({
           server,
           internalServer,
           distService,
@@ -205,6 +208,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           projectRoot: server.config.root || process.cwd(),
           miUrl: backendBaseURL,
         });
+
+        clientServices.set(server.environments.client, clientService);
 
         // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
         // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a

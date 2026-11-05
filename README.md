@@ -384,6 +384,15 @@ pp-dev next [options]
 
 `--https`, `--open`, `--cors`, `--strictPort` and `--force` are accepted for compatibility but have no effect with `pp-dev next` (a warning says so); they will be removed.
 
+**Template sync.** The panel's Sync builds the app with `next build` next to the running dev
+server. That build is given Next's default `distDir`, so it goes to `.next` and its static export to
+`out`, and the dev server's `<distDir>/dev` (its manifests and cache) is left alone. Before the build,
+the dev server's generated route types (`<distDir>/dev/types`) are removed, as `pp-dev next-build`
+does, since `next build` would type-check them next to its own; the dev server writes them again on
+its next start. This needs `next.config` wrapped with `withPPDev()`, which applies the build's
+`distDir`; without it the build exports into the app's own `distDir`, as a plain `next build` would,
+and the dev server has to be restarted after the sync.
+
 **Config changes.** Both commands watch `pp-dev.config.*`, `next.config.*` / `vite.config.*`, `package.json` and the `.env*` files of the project root and restart the dev server when one changes, appears or is removed. A `pp-dev.config.*` that can't be loaded (half-written, a syntax error) is reported and the running server is kept; the next save tries again. `pp-dev next` runs its server in a process of its own and starts that process again on a change, as `next dev` does: Next.js caches its config for the life of a process, so a restart in place could not pick up a changed `withPPDev()` config or `next.config.*`.
 
 ### Build
