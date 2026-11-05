@@ -221,6 +221,41 @@ describe('superviseNextServer', () => {
     await restarted;
   });
 
+  // A process the OS could not start (EAGAIN, EMFILE) emits `error` and never `exit`: the event
+  // ended the supervisor, nobody listening, and the restart never settled.
+  it('waits for the next change when the server process could not be started after one', async () => {
+    const { servers, processRef, restart, output } = setup();
+
+    servers[0].ready();
+
+    const restarted = restart();
+
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].emit('error', new Error('spawn EAGAIN'));
+    await restarted;
+
+    expect(processRef.exit).not.toHaveBeenCalled();
+    expect(output()).toContain(
+      'did not start after the config change (spawn EAGAIN); fix the config and save it again',
+    );
+
+    void restart();
+    await flush();
+
+    expect(servers).toHaveLength(3);
+  });
+
+  it('exits with 1 when the first server process could not be started', async () => {
+    const { servers, processRef } = setup();
+
+    servers[0].emit('error', new Error('spawn EMFILE'));
+    await flush();
+
+    expect(processRef.exit).toHaveBeenCalledWith(1);
+  });
+
   it('waits for the next change when the server fails to start after one', async () => {
     const { servers, processRef, restart, output } = setup();
 
@@ -277,6 +312,22 @@ describe('superviseNextServer', () => {
       expect(processRef.exit).toHaveBeenCalledWith(0);
     },
   );
+
+  // The forced kill resolved with no code, reported as 0: a shutdown that did not finish read as clean.
+  it('exits with 1 when the server had to be killed on a signal', async () => {
+    const { servers, processRef, output } = setup();
+
+    servers[0].ready();
+    processRef.emit('SIGTERM');
+
+    await vi.waitFor(() => expect(servers[0].kill).toHaveBeenCalledWith('SIGKILL'));
+    expect(output()).toContain('did not stop within 30 ms');
+
+    servers[0].exit(null, 'SIGKILL');
+    await flush();
+
+    expect(processRef.exit).toHaveBeenCalledWith(1);
+  });
 
   it('asks once on a second signal, and ignores a config change while shutting down', async () => {
     const { servers, processRef, restart } = setup();
@@ -367,5 +418,18 @@ describe("the supervisor's config check", () => {
     );
 
     await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+  });
+
+  // A config that loads but the server process refuses passed the check: the running server was
+  // stopped, and the new one refused the config, leaving none.
+  it('refuses a config the server process would refuse, before the running server is stopped', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-invalid-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"invalid-app"}');
+    fs.writeFileSync(
+      path.join(root, 'pp-dev.config.mjs'),
+      "export default { mi: { url: 'https://mi.example.com' }, app: { id: 1, type: 'template' }, sync: { buildTimeoutMs: 0 } };\n",
+    );
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/sync\.buildTimeoutMs/);
   });
 });

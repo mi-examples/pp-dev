@@ -18,9 +18,9 @@ import { createConfigWatcher, type ConfigWatcher } from './config-watcher.js';
  *
  * The process started by the user (the supervisor) watches the config files and keeps no server
  * state; the server process reports readiness and takes the shutdown request over IPC. A broken
- * `pp-dev.config.*` is caught here before the running server is stopped, and a server process that
- * fails to start after a change leaves the supervisor waiting for the next change, instead of
- * taking the session down.
+ * or invalid `pp-dev.config.*` is caught here before the running server is stopped, and a server
+ * process that fails to start after a change (or could not be started at all) leaves the supervisor
+ * waiting for the next change, instead of taking the session down.
  */
 
 /** Set in the environment of the server process. */
@@ -92,16 +92,24 @@ export function forkNextServer(): ChildProcess {
  * reads `process.env` (set from `.env`) is valid there, and must be here too, or no change to it
  * would ever pass this check. The values stay in this process, so a server process started after
  * this check inherits the current ones, which its own load keeps.
+ *
+ * Validated as the server process validates it, too: a config that loads but is refused there
+ * (`sync.buildTimeoutMs: 0`) passed this check, the running server was stopped, and the new one
+ * refused the config, leaving none.
  */
 export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'development'): Promise<void> {
-  const [{ loadPPDevEnv }, { clearConfigCache, getConfig }] = await Promise.all([
+  const [{ loadPPDevEnv }, { clearConfigCache, getConfig, getPkg }, { validatePPDevConfig }] = await Promise.all([
     import('../lib/env.js'),
     import('../config.js'),
+    import('../lib/pp-dev-config.js'),
   ]);
 
   loadPPDevEnv(mode, projectRoot);
   clearConfigCache();
-  await getConfig(projectRoot);
+
+  const config = await getConfig(projectRoot);
+
+  validatePPDevConfig(config, getPkg(projectRoot).name);
 }
 
 function describeError(error: unknown): string {
@@ -207,7 +215,14 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         }
       });
 
-      proc.on('exit', (code, signal) => {
+      let ended = false;
+
+      const onEnd = (code: number | null, signal: NodeJS.Signals | null, failure?: string) => {
+        if (ended) {
+          return;
+        }
+
+        ended = true;
         settle();
 
         if (server === proc) {
@@ -221,22 +236,28 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
 
         const wasReady = ready;
         const exitCode = code ?? 1;
+        const how = failure ?? signal ?? `code ${exitCode}`;
 
         ready = false;
 
         if (wasReady) {
-          logger.error(colors.red(`❌ The dev server exited (${signal ?? `code ${exitCode}`})`));
+          logger.error(colors.red(`❌ The dev server exited (${how})`));
           void exit(exitCode);
         } else if (everReady) {
           logger.error(
             colors.red(
-              `❌ The dev server did not start after the config change (${signal ?? `code ${exitCode}`}); fix the config and save it again`,
+              `❌ The dev server did not start after the config change (${how}); fix the config and save it again`,
             ),
           );
         } else {
           void exit(exitCode);
         }
-      });
+      };
+
+      proc.on('exit', (code, signal) => onEnd(code, signal));
+      // A process the OS could not start (EAGAIN, EMFILE) reports it here and never exits: the
+      // event ended the supervisor, nobody listening, and a restart's start never settled.
+      proc.on('error', (error) => onEnd(1, null, describeError(error)));
 
       return settled;
     };
@@ -273,7 +294,9 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
 
       const code = await stopServer(signal);
 
-      await exit(code ?? 0);
+      // Killed (the shutdown did not finish in time), or ended by a signal of its own: not a clean
+      // shutdown, which 0 would report.
+      await exit(code ?? 1);
     };
 
     processRef.on('SIGINT', () => void shutdown('SIGINT'));
