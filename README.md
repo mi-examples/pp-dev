@@ -386,6 +386,17 @@ pp-dev next [options]
 
 `--host` without a value listens on all addresses, as `next dev -H 0.0.0.0` does, and Next.js then needs the address another device opens the page from in its [`allowedDevOrigins`](https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins) for HMR and its other dev resources: the host name alone, without scheme or port (`allowedDevOrigins: ['192.168.1.20']` for a page opened at `http://192.168.1.20:3000`). The pages and pp-dev's own routes work either way, since an IP address is always an allowed host.
 
+**Template sync.** The panel's Sync builds the app with `next build` next to the running dev
+server. That build is given Next's default `distDir`, so it goes to `.next` and its static export to
+`out`, and the dev server's `<distDir>/dev` (its manifests and cache) is left alone. Before the build,
+the dev server's generated route types (`<distDir>/dev/types`) are removed, as `pp-dev next-build`
+does, since `next build` would type-check them next to its own; the dev server writes them again on
+its next start. This needs `next.config` wrapped with `withPPDev()`, which applies the build's
+`distDir`; without it the build exports into the app's own `distDir`, as a plain `next build` would,
+and the dev server has to be restarted after the sync.
+
+**Config changes.** Both commands watch `pp-dev.config.*`, `next.config.*` / `vite.config.*`, `package.json` and the `.env*` files of the project root and restart the dev server when one changes, appears or is removed. A `pp-dev.config.*` that can't be loaded (half-written, a syntax error) is reported and the running server is kept; the next save tries again. `pp-dev next` runs its server in a process of its own and starts that process again on a change, as `next dev` does: Next.js caches its config for the life of a process, so a restart in place could not pick up a changed `withPPDev()` config or `next.config.*`.
+
 ### Build
 
 ```bash

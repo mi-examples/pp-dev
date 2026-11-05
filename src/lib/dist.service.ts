@@ -9,7 +9,14 @@ import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
 import { zipDirectoryToBuffer, extractZipSafe } from './helpers/zip.helper.js';
-import { DEFAULT_BUILD_TIMEOUT_MS, runBuildProcess, runNextBuildProcess } from './next-build-runner.js';
+import {
+  DEFAULT_BUILD_TIMEOUT_MS,
+  SYNC_BUILD_DIST_DIR,
+  SYNC_BUILD_EXPORT_DIR,
+  removeStaleDevTypes,
+  runBuildProcess,
+  runNextBuildProcess,
+} from './next-build-runner.js';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
@@ -25,8 +32,21 @@ const pluginPath = path.resolve(DIRNAME, '..', '..');
  */
 export interface NextBuildOptions {
   projectRoot: string;
-  /** Static export output directory (Next.js `distDir`), relative to `projectRoot` or absolute. */
+  /** The app's Next.js `distDir` (`.next` by default), relative to `projectRoot`: the dev server writes under `<distDir>/dev`. */
   distDir: string;
+  /**
+   * The `distDir` of the production build phase, where a build without `withPPDev()` exports: a
+   * config function may set it apart from the development phase's. @default distDir
+   */
+  buildDistDir?: string;
+  /** The app's Next.js `output`; a static export (`'export'`) is what a sync uploads. */
+  output?: string;
+  /**
+   * `next.config` is wrapped with `withPPDev()`, which gives the sync's build a `distDir` of its own
+   * (see {@link DistService.buildNextAssets}). Without it the build exports into `distDir`, as a
+   * plain `next build` does.
+   */
+  configWrapped: boolean;
   packageVersion: string;
   packageRepositoryUrl?: string;
   packageBranchName?: string;
@@ -668,10 +688,6 @@ export class DistService {
           continue;
         }
 
-        if (versionManifestPath && Object.prototype.hasOwnProperty.call(fingerprintFiles, relativePath)) {
-          continue;
-        }
-
         const absolutePath = path.join(contentRootDir, relativePath);
         const fileData = await fs.readFile(absolutePath);
         const actualHash = crypto.createHash('sha256').update(fileData).digest('hex');
@@ -882,21 +898,54 @@ export class DistService {
    * Build a Next.js app via `next build` (static export) and return a ZIP of the
    * export directory, with VERSION/BUILD-MANIFEST written in for parity with the
    * Vite build so backup analysis behaves consistently.
+   *
+   * Built apart from the dev server, which keeps writing under `<distDir>/dev`: with
+   * `output: 'export'` and a custom `distDir`, `next build` empties that `distDir` for its export,
+   * and took the dev server's manifests and cache with it. So the build is given Next's default
+   * `distDir` (`.next`, exported to `out`), which `withPPDev()` applies; a `next.config` without it
+   * builds in place, as a plain `next build` would.
    */
   private async buildNextAssets(): Promise<Buffer> {
-    const { projectRoot, distDir } = this.nextBuild!;
+    const { projectRoot, distDir, buildDistDir = distDir, output, configWrapped } = this.nextBuild!;
+
+    // The dev server's route types: under a custom distDir, `next build` type-checks them next to
+    // its own, which declare the same globals (the step `pp-dev next-build` takes too). The dev
+    // server writes them again on its next start.
+    const removedDevTypes = removeStaleDevTypes(projectRoot, { output, distDir });
+
+    if (removedDevTypes) {
+      this.logger.info(
+        colors.dim(`[DistService] Removed stale dev route types: ${path.relative(projectRoot, removedDevTypes)}`),
+      );
+    }
+
+    const exportDirName = configWrapped || buildDistDir === SYNC_BUILD_DIST_DIR ? SYNC_BUILD_EXPORT_DIR : buildDistDir;
+
+    if (!configWrapped && exportDirName === distDir) {
+      this.logger.warn(
+        colors.yellow(
+          `⚠️  next.config is not wrapped with withPPDev(): the sync's build exports into ${distDir} and removes the dev server's ${path.join(distDir, 'dev')}; restart pp-dev next after the sync`,
+        ),
+      );
+    }
 
     this.logger.info(colors.cyan('[DistService] Next.js build started'));
 
     await this.logBuild(
       'Next.js build',
-      runNextBuildProcess(projectRoot, { timeoutMs: this.buildTimeoutMs, signal: this.builds.signal }),
+      runNextBuildProcess(projectRoot, {
+        timeoutMs: this.buildTimeoutMs,
+        signal: this.builds.signal,
+        distDir: configWrapped ? SYNC_BUILD_DIST_DIR : undefined,
+      }),
     );
 
-    const outDir = path.resolve(projectRoot, distDir);
+    const outDir = path.resolve(projectRoot, exportDirName);
 
     if (!(await this.isDirectory(outDir))) {
-      throw new Error(`Next.js build output directory not found: ${outDir}`);
+      throw new Error(
+        `Next.js build output directory not found: ${outDir}. The sync needs "output: 'export'" in next.config (static export).`,
+      );
     }
 
     // The steps after the build take a while too (the manifest hashes the whole output): a server

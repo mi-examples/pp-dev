@@ -1,7 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 
-const testType = process.env.TEST_TYPE;
-
 type ButtonState = { syncing: boolean; disabled: boolean };
 
 async function recordButtonStates(button: Locator) {
@@ -20,9 +18,6 @@ function recordedStates(page: Page) {
 }
 
 test.describe('Toolbar Sync Functionality', () => {
-  // Skip toolbar tests for Next.js
-  test.skip(testType?.includes('nextjs') ?? false, 'Skipping toolbar tests for Next.js');
-
   test('should have sync button in toolbar', async ({ page, baseURL }) => {
     if (!baseURL) {
       throw new Error('baseURL is not set');

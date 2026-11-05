@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import type { ViteHotContext } from 'vite/types/hot.js';
-import { PP_DEV_HMR_WS_PATH } from '../shared/ws-messages.js';
+import { PP_DEV_HMR_WS_PATH, type CustomMessage } from '../shared/ws-messages.js';
 
 /**
  * Minimal `import.meta.hot`-compatible context for environments without Vite HMR
@@ -11,8 +11,6 @@ import { PP_DEV_HMR_WS_PATH } from '../shared/ws-messages.js';
  * Used only as a fallback: when `import.meta.hot` exists (Vite), that is used
  * instead and this code never runs.
  */
-
-type CustomMessage = { type: 'custom'; event: string; data?: unknown };
 
 /** {@link ViteHotContext}, plus whether the socket is open right now. */
 export type PPDevHotContext = ViteHotContext & { isConnected(): boolean };

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearConfigCache } from '../../../src/config.js';
 import { withPPDev, type PPDevConfig } from '../../../src/index.js';
+import { PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR } from '../../../src/constants.js';
 
 /**
  * withPPDev() merges the file config, the Next config's `ppDev` and its own argument group by
@@ -77,5 +78,32 @@ describe('withPPDev config merge', () => {
     const result = await withPPDev({ allowedDevOrigins: ['other.lan'] })('phase-production-build');
 
     expect(result.allowedDevOrigins).toEqual(['other.lan']);
+  });
+
+  // A template sync's `next build` asks, through the environment, for a distDir of its own, so that
+  // its static export does not replace the running dev server's files (see DistService).
+  it('builds into the distDir a sync asks for, in the production build phase', async () => {
+    vi.stubEnv(PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, '.next');
+
+    const result = await withPPDev({ output: 'export', distDir: 'dist' })('phase-production-build');
+
+    expect(result.distDir).toBe('.next');
+  });
+
+  // `pp-dev next` reads `ppDev` from a plain config too, so that key alone does not say the config
+  // is wrapped; only a wrapped one takes the build-directory override.
+  it('marks the config it returns as wrapped, out of sight of Next', async () => {
+    const result = await withPPDev({ output: 'export', distDir: 'dist' })('phase-development-server');
+
+    expect(result.ppDevWrapped).toBe(true);
+    expect(Object.keys(result)).not.toContain('ppDevWrapped');
+  });
+
+  it('keeps the configured distDir in development, whatever the environment says', async () => {
+    vi.stubEnv(PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, '.next');
+
+    const result = await withPPDev({ output: 'export', distDir: 'dist' })('phase-development-server');
+
+    expect(result.distDir).toBe('dist');
   });
 });

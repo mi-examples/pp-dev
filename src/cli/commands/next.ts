@@ -37,12 +37,7 @@ import { PPDevHotServer, refuseUpgrade } from '../../lib/pp-ws-server.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../lib/next-process-listeners.js';
 import { injectDevPanel, createDevPanelAssetMiddleware } from '../../lib/dev-panel.js';
-import {
-  PATH_PAGE_PREFIX,
-  PATH_TEMPLATE_PREFIX,
-  PATH_TEMPLATE_LOCAL_PREFIX,
-  PP_DEV_NEXT_BUILD_ENV_VAR,
-} from '../../constants.js';
+import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from '../../constants.js';
 import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-config.js';
 import { RequestStore } from '../../lib/request-store.js';
 import { createRequestCaptureMiddleware } from '../../lib/request-capture.middleware.js';
@@ -51,7 +46,7 @@ import { VARIABLES_EDITOR_PATH } from '../../lib/variables-editor.js';
 import { loadPPDevEnv } from '../../lib/env.js';
 import { NEXT_IGNORED_FLAGS, resolveNextListenAddress } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
-import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
+import { isNextServerProcess, reportNextServerReady, superviseNextServer } from '../next-supervisor.js';
 import {
   type NextCommandCLIOptions,
   type NextBundlerChoice,
@@ -77,6 +72,19 @@ export function registerNextCommand(cli: CAC): void {
     .option('--turbopack', `[boolean] use Turbopack for Next dev when native bindings work`)
     .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
       filterDuplicateOptions(options);
+
+      // The process the user started supervises: it watches the config files and runs the server in
+      // a process of its own, started again on a change (see next-supervisor.ts for why). Everything
+      // below is the server process.
+      if (!isNextServerProcess()) {
+        await superviseNextServer({
+          projectRoot: root ? path.resolve(process.cwd(), root) : process.cwd(),
+          logger: createLogger(options.logLevel),
+          mode: options.mode || 'development',
+        });
+
+        return;
+      }
 
       const ignoredFlags = NEXT_IGNORED_FLAGS.filter((flag) => options[flag as keyof typeof options] !== undefined);
 
@@ -105,10 +113,8 @@ export function registerNextCommand(cli: CAC): void {
       let hotServer: PPDevHotServer | null = null;
       /** The dev panel service on {@link hotServer}; disposed before it closes, to stop a sync's build. */
       let clientService: ClientService | null = null;
-      let configWatcher: ConfigWatcher | null = null;
-      let isRestarting = false;
 
-      // Connections to the current HTTP server, so a restart or shutdown can end them.
+      // Connections to the HTTP server, so the shutdown can end them.
       const openSockets = new Set<Socket>();
 
       const logger = createLogger(options.logLevel);
@@ -148,39 +154,10 @@ export function registerNextCommand(cli: CAC): void {
       };
 
       const startNextServer = async () => {
-        if (isRestarting) {
-          return;
-        }
-
-        isRestarting = true;
-
         try {
           // Import Next.js first – with logger available for error reporting
           const { next, constants } = await safeNextImport();
           const { PHASE_DEVELOPMENT_SERVER } = constants;
-
-          // Clean up existing dev-panel WebSocket server if any
-          clientService?.dispose();
-          clientService = null;
-
-          if (hotServer) {
-            await hotServer.close();
-            hotServer = null;
-          }
-
-          // Clean up existing server if any
-          if (httpServer) {
-            logger.info(colors.yellow('🛑 Stopping existing Next.js server...'));
-            await closeHttpServer();
-          }
-
-          // Clean up existing Next.js app if any
-          await closeNextApp();
-
-          // Clear config cache
-          const { clearConfigCache } = await import('../../config.js');
-
-          clearConfigCache();
 
           const { createServer } = await import('http');
 
@@ -671,37 +648,30 @@ export function registerNextCommand(cli: CAC): void {
             // reused unchanged via a Vite-WS-compatible facade.
             hotServer = new PPDevHotServer({ allowedHosts: _normalized.allowedHosts });
 
-            // The sync `next build` runs in production mode, which writes the static export
-            // to the base distDir. Next's dev phase reports distDir as `<distDir>/dev`, so
-            // resolve it from the production config and defensively strip a trailing `/dev`.
-            // With output:'export', the export lands in distDir (or `out` for the default).
-            let exportDistDir: string | undefined = config?.distDir;
+            // What the sync's build needs of the app's Next config: its distDir (the dev phase
+            // reports `<distDir>/dev`, `distDirRoot` the configured one), its output, and whether
+            // `withPPDev()` wraps the config (its marker; a plain config may carry `ppDev` too),
+            // which is what gives that build a distDir of its own.
+            const nextDistDir =
+              config?.distDirRoot ||
+              (config?.distDir || '.next')
+                .replace(/\\/g, '/')
+                .replace(/\/+$/, '')
+                .replace(/\/dev$/, '');
+            const nextConfigWrapped = config?.ppDevWrapped === true;
+            // A build without the override exports where the production phase's config says, which
+            // a config function may set apart from the development phase's.
+            let nextBuildDistDir = nextDistDir;
 
-            // Not a real `next build` — just peeking at the prod config for distDir. Suppress
-            // withPPDev()'s "use pp-dev next-build" nudge for this internal lookup only.
-            const previousNextBuildFlag = process.env[PP_DEV_NEXT_BUILD_ENV_VAR];
+            if (!nextConfigWrapped) {
+              try {
+                const productionConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
 
-            process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = '1';
-
-            try {
-              const prodConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
-
-              exportDistDir = prodConfig?.distDir ?? exportDistDir;
-            } catch {
-              // Fall back to the dev config's distDir (normalized below).
-            } finally {
-              if (previousNextBuildFlag === undefined) {
-                delete process.env[PP_DEV_NEXT_BUILD_ENV_VAR];
-              } else {
-                process.env[PP_DEV_NEXT_BUILD_ENV_VAR] = previousNextBuildFlag;
+                nextBuildDistDir = productionConfig?.distDir || nextDistDir;
+              } catch {
+                // The development phase's distDir stands.
               }
             }
-
-            const normalizedDistDir = (exportDistDir ?? '')
-              .replace(/\\/g, '/')
-              .replace(/\/+$/, '')
-              .replace(/\/dev$/, '');
-            const nextExportDir = !normalizedDistDir || normalizedDistDir === '.next' ? 'out' : normalizedDistDir;
 
             let nextPackageVersion = '0.0.0';
             let nextPackageRepositoryUrl: string | undefined;
@@ -723,7 +693,10 @@ export function registerNextCommand(cli: CAC): void {
               buildTimeoutMs: _normalized.syncBuildTimeoutMs,
               nextBuild: {
                 projectRoot,
-                distDir: nextExportDir,
+                distDir: nextDistDir,
+                buildDistDir: nextBuildDistDir,
+                output: config?.output,
+                configWrapped: nextConfigWrapped,
                 packageVersion: nextPackageVersion,
                 packageRepositoryUrl: nextPackageRepositoryUrl,
               },
@@ -790,22 +763,16 @@ export function registerNextCommand(cli: CAC): void {
 
             logger.info(colors.blue(`🔧 Base path handling active`));
 
-            // Set up config watcher
-            if (!configWatcher) {
-              configWatcher = createConfigWatcher(projectRoot, startNextServer, logger.info);
-              logger.info(colors.blue('🔧 Config file watcher started'));
-            }
-
             // Track open sockets for proper cleanup
             httpServer.on('connection', (socket: any) => {
               openSockets.add(socket);
               socket.on('close', () => openSockets.delete(socket));
             });
-          });
 
-          isRestarting = false;
+            // The supervisor starts the config watcher once the first server is up.
+            reportNextServerReady();
+          });
         } catch (error: any) {
-          isRestarting = false;
           logger.error(colors.red(`❌ Failed to start Next.js server: ${error?.message}. Stack: ${error?.stack}`));
 
           // Special handling for Next.js peer dependency errors
@@ -831,11 +798,6 @@ export function registerNextCommand(cli: CAC): void {
         logger,
         knownRejections: [NEXT_WORKER_SCHEDULER_REJECTION],
         shutdown: async () => {
-          if (configWatcher) {
-            cleanupConfigWatcher(configWatcher);
-            configWatcher = null;
-          }
-
           clientService?.dispose();
           clientService = null;
 

@@ -16,12 +16,20 @@ import {
 
 export { SYNC_IN_PROGRESS_CODE };
 
+const DEFAULT_SYNC_ACTION_TIMEOUT_MS = 120_000;
+
+/** Why a sync's dialog ended without a confirmation: the user's answer, or none that could come. */
+export type SyncCancelReason = 'cancelled' | 'timeout' | 'disconnected' | 'shutdown';
+
+/** The answer to a `template:sync:action-required` dialog. */
+export type SyncActionAnswer = { approved: true } | { approved: false; reason: SyncCancelReason };
+
 export interface ClientServiceOptions {
   distService?: DistService;
   miAPI?: MiAPI;
   /**
    * Max time to wait for the browser to respond to `template:sync:action-required`.
-   * After this, the pending promise resolves to `false` and the resolver is removed.
+   * After this, the pending promise resolves to a `'timeout'` answer and the resolver is removed.
    * @default 120_000
    */
   syncActionTimeoutMs?: number;
@@ -37,7 +45,7 @@ export class ClientService {
   private syncInFlight: Promise<void> | null = null;
   private readonly syncActionResolvers = new Map<
     string,
-    { resolve: (approved: boolean) => void; timeoutId: ReturnType<typeof setTimeout>; cleanup: () => void }
+    { resolve: (answer: SyncActionAnswer) => void; timeoutId: ReturnType<typeof setTimeout>; cleanup: () => void }
   >();
 
   constructor(server: ViteDevServer, opts?: ClientServiceOptions) {
@@ -64,7 +72,7 @@ export class ClientService {
     }
 
     ws.on('error', () => {
-      this.clearAllPendingSyncActions(false);
+      this.clearAllPendingSyncActions('disconnected');
     });
   }
 
@@ -75,11 +83,11 @@ export class ClientService {
    * a message any page could send, and never calls it on shutdown.
    */
   dispose() {
-    this.clearAllPendingSyncActions(false);
+    this.clearAllPendingSyncActions('shutdown');
     this.opts.distService?.stopBuilds();
   }
 
-  private resolveSyncAction(requestId: string, approved: boolean) {
+  private resolveSyncAction(requestId: string, answer: SyncActionAnswer) {
     const entry = this.syncActionResolvers.get(requestId);
 
     if (!entry) {
@@ -89,14 +97,39 @@ export class ClientService {
     clearTimeout(entry.timeoutId);
     entry.cleanup();
     this.syncActionResolvers.delete(requestId);
-    entry.resolve(approved);
+    entry.resolve(answer);
   }
 
-  /** Resolves every pending `requestSyncAction` promise and clears timeouts (e.g. WebSocket closed). */
-  private clearAllPendingSyncActions(approved: boolean) {
+  /** Ends every open dialog with `reason`, clearing its timeout: the dev server or its WebSocket is going. */
+  private clearAllPendingSyncActions(reason: SyncCancelReason) {
     for (const requestId of [...this.syncActionResolvers.keys()]) {
-      this.resolveSyncAction(requestId, approved);
+      this.resolveSyncAction(requestId, { approved: false, reason });
     }
+  }
+
+  /** What the panel and the terminal are told when a sync ends on a dialog without a confirmation. */
+  private describeSyncCancel(reason: SyncCancelReason): string {
+    switch (reason) {
+      case 'cancelled':
+        return 'Sync cancelled by user.';
+      case 'timeout': {
+        const seconds = Math.round((this.opts.syncActionTimeoutMs ?? DEFAULT_SYNC_ACTION_TIMEOUT_MS) / 1000);
+
+        return `Sync cancelled: its dialog was not answered within ${seconds} s.`;
+      }
+      case 'disconnected':
+        return 'Sync cancelled: the tab that started it lost its connection to the dev server.';
+      case 'shutdown':
+        return 'Sync cancelled: the dev server is shutting down.';
+    }
+  }
+
+  /** Ends the sync on a dialog's answer that is not a confirmation. The backup was saved before any dialog. */
+  private cancelSync(client: WebSocketClient, reason: SyncCancelReason) {
+    const description = this.describeSyncCancel(reason);
+
+    this.sendSyncResponse(client, { cancelled: true, message: `${description} Backup was saved.` });
+    this.logger.info(colors.yellow(description));
   }
 
   /** Tells the panel how its sync ended, in the shape it reads (`src/shared/ws-messages.ts`). */
@@ -113,25 +146,32 @@ export class ClientService {
       return;
     }
 
-    this.resolveSyncAction(payload.requestId, payload.approved);
+    this.resolveSyncAction(
+      payload.requestId,
+      payload.approved ? { approved: true } : { approved: false, reason: 'cancelled' },
+    );
   }
 
-  async requestSyncAction(payload: Omit<SyncActionRequiredPayload, 'requestId'>, client: WebSocketClient) {
+  async requestSyncAction(
+    payload: Omit<SyncActionRequiredPayload, 'requestId'>,
+    client: WebSocketClient,
+  ): Promise<SyncActionAnswer> {
     const requestId = randomUUID();
-    const timeoutMs = this.opts.syncActionTimeoutMs ?? 120_000;
+    const timeoutMs = this.opts.syncActionTimeoutMs ?? DEFAULT_SYNC_ACTION_TIMEOUT_MS;
 
-    return await new Promise<boolean>((resolve) => {
-      const cancel = () => this.resolveSyncAction(requestId, false);
-      const timeoutId = setTimeout(cancel, timeoutMs);
+    return await new Promise<SyncActionAnswer>((resolve) => {
+      const cancel = (reason: SyncCancelReason) => this.resolveSyncAction(requestId, { approved: false, reason });
+      const timeoutId = setTimeout(() => cancel('timeout'), timeoutMs);
       // A tab closed while its dialog is open will never answer: cancel the sync at once instead of
       // keeping every other sync blocked until the timeout.
       const { socket } = client as Partial<Pick<WebSocketClient, 'socket'>>;
+      const onClose = () => cancel('disconnected');
 
-      socket?.once('close', cancel);
-      this.syncActionResolvers.set(requestId, { resolve, timeoutId, cleanup: () => socket?.off('close', cancel) });
+      socket?.once('close', onClose);
+      this.syncActionResolvers.set(requestId, { resolve, timeoutId, cleanup: () => socket?.off('close', onClose) });
 
       if (socket && socket.readyState !== socket.OPEN) {
-        cancel();
+        cancel('disconnected');
 
         return;
       }
@@ -296,15 +336,8 @@ export class ClientService {
         let newAssets: Buffer | Error | undefined;
 
         if (currentAssets) {
-          const backupAnalysis = await distService?.analyzeBackup(currentAssets).catch((err: Error) => {
-            if (err.message === 'Backup file is not a ZIP file') {
-              this.logger.error(colors.red('Backup file is not a ZIP file'));
-
-              return err;
-            }
-
-            return err;
-          });
+          // An analysis that fails ends the sync as a failed build does, with its message.
+          const backupAnalysis = await distService?.analyzeBackup(currentAssets).catch((err: Error) => err);
 
           if (backupAnalysis instanceof Error) {
             newAssets = backupAnalysis;
@@ -355,7 +388,7 @@ export class ClientService {
                   client,
                 );
 
-                if (replaceFromServer) {
+                if (replaceFromServer.approved) {
                   await distService.saveTemplateVariablesFile(templateVariables.content);
                 }
               }
@@ -372,13 +405,8 @@ export class ClientService {
                 client,
               );
 
-              if (!shouldContinueSync) {
-                this.sendSyncResponse(client, {
-                  cancelled: true,
-                  message: 'Sync cancelled by user. Backup was saved.',
-                });
-
-                this.logger.info(colors.yellow('Sync cancelled by user'));
+              if (!shouldContinueSync.approved) {
+                this.cancelSync(client, shouldContinueSync.reason);
 
                 return;
               }
@@ -406,13 +434,8 @@ export class ClientService {
                 client,
               );
 
-              if (!shouldContinueAfterVersionMismatch) {
-                this.sendSyncResponse(client, {
-                  cancelled: true,
-                  message: 'Sync cancelled by user. Backup was saved.',
-                });
-
-                this.logger.info(colors.yellow('Sync cancelled by user'));
+              if (!shouldContinueAfterVersionMismatch.approved) {
+                this.cancelSync(client, shouldContinueAfterVersionMismatch.reason);
 
                 return;
               }
@@ -436,13 +459,8 @@ export class ClientService {
                 client,
               );
 
-              if (!shouldContinueAfterMismatch) {
-                this.sendSyncResponse(client, {
-                  cancelled: true,
-                  message: 'Sync cancelled by user. Backup was saved.',
-                });
-
-                this.logger.info(colors.yellow('Sync cancelled by user'));
+              if (!shouldContinueAfterMismatch.approved) {
+                this.cancelSync(client, shouldContinueAfterMismatch.reason);
 
                 return;
               }
@@ -473,13 +491,11 @@ export class ClientService {
           if (updateResult?.status === 'OK') {
             // The meta is `{}` until a first backup is saved (a page with no assets on MI yet).
             const backupMeta = distService?.getBackupMeta();
-            const backupDate = backupMeta?.lastBackupDate ? new Date(backupMeta.lastBackupDate) : new Date();
 
             this.sendSyncResponse(client, {
-              // Now, for a date that doesn't parse: `toISOString()` throws on one, after the upload
-              // succeeded, and the panel showed a failed sync.
-              syncedAt: (Number.isNaN(backupDate.getTime()) ? new Date() : backupDate).toISOString(),
-              currentHash: backupMeta?.lastBackupHash ?? '',
+              // Now, not the last backup's date: a backup the same as the last one is not saved
+              // again, and the panel then showed that one's date as the sync's.
+              syncedAt: new Date().toISOString(),
               backupFilename: backupMeta?.lastBackupName ?? '',
             });
 

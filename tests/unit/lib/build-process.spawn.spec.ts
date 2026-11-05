@@ -10,7 +10,8 @@ vi.mock('child_process', async (orig) => {
   return { ...actual, spawn: spawnMock, spawnSync: spawnSyncMock };
 });
 
-const { runBuildProcess } = await import('../../../src/lib/next-build-runner.js');
+const { runBuildProcess, runNextBuildProcess } = await import('../../../src/lib/next-build-runner.js');
+const { PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, PP_DEV_NEXT_BUILD_ENV_VAR } = await import('../../../src/constants.js');
 
 /**
  * `pp-dev next-build` runs `next build` from the terminal through the same runner as a sync. Put in
@@ -82,5 +83,87 @@ describe('runBuildProcess — a build started from the terminal', () => {
 
     // Its group goes with it, and only its group.
     expect(killMock).toHaveBeenCalledWith(-4242, 'SIGKILL');
+  });
+});
+
+describe('runBuildProcess — stopping a build on Windows', () => {
+  afterEach(() => {
+    spawnMock.mockReset();
+    spawnSyncMock.mockReset();
+    vi.restoreAllMocks();
+  });
+
+  // `spawnSync('taskkill')` held the dev server's event loop until taskkill returned (over a second).
+  it('kills the build tree without blocking: taskkill is spawned, not run synchronously', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+    const proc = Object.assign(new EventEmitter(), { pid: 4242, exitCode: null, signalCode: null, kill: vi.fn() });
+    const taskkill = new EventEmitter();
+
+    spawnMock.mockImplementation((command: string) => (command === 'taskkill' ? taskkill : proc));
+
+    const controller = new AbortController();
+    const build = runBuildProcess('pp-dev build', 'node', ['build'], {
+      cwd: '.',
+      env: {} as NodeJS.ProcessEnv,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'taskkill',
+      ['/PID', '4242', '/T', '/F'],
+      expect.objectContaining({ stdio: 'ignore' }),
+    );
+    expect(spawnSyncMock).not.toHaveBeenCalled();
+
+    // A taskkill that fails (not installed, the process gone already) is no error of the build's.
+    taskkill.emit('error', new Error('spawn taskkill ENOENT'));
+    proc.emit('close', null);
+
+    await expect(build).rejects.toThrow('pp-dev build was stopped');
+  });
+});
+
+describe('runNextBuildProcess — the distDir of the build', () => {
+  afterEach(() => {
+    spawnMock.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  function fakeBuild() {
+    const proc = Object.assign(new EventEmitter(), { pid: 4242, exitCode: null, signalCode: null, kill: vi.fn() });
+
+    spawnMock.mockReturnValue(proc);
+
+    return proc;
+  }
+
+  const buildEnv = () => (spawnMock.mock.calls[0][2] as { env: NodeJS.ProcessEnv }).env;
+
+  // `withPPDev()` reads it in the `next build` process: a template sync's build gets a distDir of
+  // its own, apart from the dev server's.
+  it('passes the distDir asked for to the build', async () => {
+    const proc = fakeBuild();
+    const build = runNextBuildProcess(process.cwd(), { distDir: '.next' });
+
+    proc.emit('close', 0);
+    await build;
+
+    expect(buildEnv()[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR]).toBe('.next');
+    expect(buildEnv()[PP_DEV_NEXT_BUILD_ENV_VAR]).toBe('1');
+  });
+
+  it("passes none otherwise, not even one from pp-dev's own environment", async () => {
+    vi.stubEnv(PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, 'elsewhere');
+
+    const proc = fakeBuild();
+    const build = runNextBuildProcess(process.cwd());
+
+    proc.emit('close', 0);
+    await build;
+
+    expect(buildEnv()).not.toHaveProperty(PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR);
   });
 });

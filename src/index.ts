@@ -15,6 +15,7 @@ import {
   PATH_PAGE_PREFIX,
   PATH_TEMPLATE_PREFIX,
   PATH_TEMPLATE_LOCAL_PREFIX,
+  PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR,
   PP_DEV_NEXT_BUILD_ENV_VAR,
 } from './constants.js';
 import { createLogger } from './lib/logger.js';
@@ -56,6 +57,12 @@ declare module 'next' {
   interface NextConfig {
     /** PP-Dev config. Prefer pp-dev.config.js to avoid Next.js validation warnings. */
     ppDev?: PPDevConfig;
+    /**
+     * Set by `withPPDev()` on the config it returns (non-enumerable, as `ppDev`): `pp-dev next`
+     * reads it to tell a wrapped config from a plain one that carries `ppDev` itself, since only a
+     * wrapped one takes the build-directory override of a template sync.
+     */
+    ppDevWrapped?: true;
   }
 }
 
@@ -423,11 +430,20 @@ export function withPPDev(
         result.allowedDevOrigins = [...(result.allowedDevOrigins ?? []), ...tunnelOrigins];
       }
 
+      // A build pp-dev started for a template sync asks for a distDir of its own, so that its
+      // static export does not replace the running dev server's files (DistService.buildNextAssets).
+      const buildDistDir = process.env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR];
+
+      if (phase === PHASE_PRODUCTION_BUILD && buildDistDir) {
+        result.distDir = buildDistDir;
+      }
+
       Object.defineProperty(result, 'ppDev', {
         value: mergedConfig,
         enumerable: false,
         configurable: true,
       });
+      Object.defineProperty(result, 'ppDevWrapped', { value: true, enumerable: false, configurable: true });
 
       return result;
     } catch (error) {

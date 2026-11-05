@@ -7,6 +7,12 @@
 /** WebSocket path the `pp-dev next` server listens on for dev-panel messages. */
 export const PP_DEV_HMR_WS_PATH = '/@pp-dev-hmr';
 
+/**
+ * A dev-panel message on the wire, in Vite's custom-event shape: the panel's `import.meta.hot` shim
+ * (`src/client/hot-context.ts`) and the `pp-dev next` server (`src/lib/pp-ws-server.ts`) both speak it.
+ */
+export type CustomMessage = { type: 'custom'; event: string; data?: unknown };
+
 /** `template:sync:response` code for a sync requested while another one runs. */
 export const SYNC_IN_PROGRESS_CODE = 'SYNC_IN_PROGRESS';
 
@@ -27,6 +33,6 @@ export interface SyncActionResponsePayload {
 
 /** `template:sync:response`: how a sync ended. */
 export type TemplateSyncResponsePayload =
-  | { syncedAt: string; currentHash: string; backupFilename: string }
+  | { syncedAt: string; backupFilename: string }
   | { error: string; code?: string; config?: { canSync?: boolean; [key: string]: unknown }; refresh?: boolean }
   | { cancelled: boolean; message: string };

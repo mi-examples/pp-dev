@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { registerProcessHandlers } from '../../../src/lib/process-handlers.js';
-import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../../src/lib/next-process-listeners.js';
+import {
+  NEXT_WORKER_SCHEDULER_REJECTION,
+  createNextAppListenerTracker,
+} from '../../../src/lib/next-process-listeners.js';
 
 /**
  * Regression tests for the dev server's process handlers.
@@ -13,8 +16,13 @@ import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '.
  * dev server down.
  */
 
-function setup({ shutdown = vi.fn().mockResolvedValue(undefined), shutdownTimeoutMs = 5000 } = {}) {
-  const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+function setup({
+  shutdown = vi.fn().mockResolvedValue(undefined),
+  shutdownTimeoutMs = 5000,
+  /** With an IPC channel, as the server process of `pp-dev next` has. */
+  supervised = false,
+} = {}) {
+  const proc = Object.assign(new EventEmitter(), { exit: vi.fn() }, supervised ? { send: vi.fn() } : {});
   const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
   const dispose = registerProcessHandlers({ logger, shutdown, shutdownTimeoutMs, processRef: proc as never });
 
@@ -198,6 +206,103 @@ describe('registerProcessHandlers', () => {
     for (const event of ['SIGINT', 'SIGTERM', 'SIGHUP', 'uncaughtException', 'unhandledRejection']) {
       expect(proc.listenerCount(event)).toBe(0);
     }
+  });
+
+  // The server process of `pp-dev next` takes the shutdown from its supervisor over IPC: the
+  // supervisor forwards the signal it got, and a terminal's Ctrl-C reaches both processes anyway.
+  describe('under the pp-dev next supervisor', () => {
+    const shutdownMessage = (reason: string) => ({ type: 'pp-dev:shutdown', reason });
+
+    it("shuts down on the supervisor's message, logging its reason, and exits with 0", async () => {
+      const { proc, shutdown, logger } = setup({ supervised: true });
+
+      proc.emit('message', shutdownMessage('SIGTERM'));
+      await flush();
+
+      expect(shutdown).toHaveBeenCalledTimes(1);
+      expect(proc.exit).toHaveBeenCalledWith(0);
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Received SIGTERM, shutting down gracefully'));
+    });
+
+    it('takes the message that repeats the signal the terminal delivered as the one shutdown', async () => {
+      let finish!: () => void;
+      const shutdown = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+      const { proc } = setup({ shutdown, supervised: true });
+
+      proc.emit('SIGINT');
+      proc.emit('message', shutdownMessage('SIGINT'));
+      proc.emit('message', shutdownMessage('SIGINT'));
+
+      expect(shutdown).toHaveBeenCalledTimes(1);
+      expect(proc.exit).not.toHaveBeenCalled();
+
+      finish();
+      await flush();
+
+      expect(proc.exit).toHaveBeenCalledTimes(1);
+      expect(proc.exit).toHaveBeenCalledWith(0);
+    });
+
+    // The terminal's signal reaches both processes, and the supervisor's message may arrive first:
+    // the signal then came as the "second" one and exited at once, leaving the shutdown undone.
+    it('takes the signal that follows the message repeating it as the one shutdown, the next one as the second', async () => {
+      let finish!: () => void;
+      const shutdown = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+      const { proc, logger } = setup({ shutdown, supervised: true });
+
+      proc.emit('message', shutdownMessage('SIGINT'));
+      proc.emit('SIGINT');
+
+      expect(shutdown).toHaveBeenCalledTimes(1);
+      expect(proc.exit).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+
+      proc.emit('SIGINT');
+
+      expect(proc.exit).toHaveBeenCalledWith(0);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Received SIGINT again'));
+
+      finish();
+      await flush();
+    });
+
+    it('shuts down when the supervisor goes away', async () => {
+      const { proc, shutdown, logger } = setup({ supervised: true });
+
+      proc.emit('disconnect');
+      await flush();
+
+      expect(shutdown).toHaveBeenCalledTimes(1);
+      expect(proc.exit).toHaveBeenCalledWith(0);
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Received the end of the pp-dev process'));
+    });
+
+    it('ignores other messages', async () => {
+      const { proc, shutdown } = setup({ supervised: true });
+
+      proc.emit('message', { type: 'something-else', reason: 'SIGTERM' });
+      proc.emit('message', 'shutdown');
+      await flush();
+
+      expect(shutdown).not.toHaveBeenCalled();
+    });
+
+    it('listens to no messages without a channel, and removes the IPC listeners when disposed', () => {
+      const plain = setup();
+
+      expect(plain.proc.listenerCount('message')).toBe(0);
+      expect(plain.proc.listenerCount('disconnect')).toBe(0);
+
+      const supervised = setup({ supervised: true });
+
+      expect(supervised.proc.listenerCount('message')).toBe(1);
+      expect(supervised.proc.listenerCount('disconnect')).toBe(1);
+
+      supervised.dispose();
+
+      expect(supervised.proc.listenerCount('message')).toBe(0);
+      expect(supervised.proc.listenerCount('disconnect')).toBe(0);
+    });
   });
 });
 

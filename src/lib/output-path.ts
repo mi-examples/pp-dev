@@ -31,6 +31,15 @@ export function createDefaultZipFileName(appName: string): string {
   return normalizeRelativeOutputPath(fileName, 'default ZIP output file name');
 }
 
+/**
+ * The directory a build packs into its ZIP: `build.zip.inDir` against the project root, as the Vite
+ * build (`vite-plugin-zip-pack`, cwd) and the sync (`DistService`, root) read it; the build output
+ * directory without it.
+ */
+export function resolveZipSourceDir(projectRoot: string, outDir: string, inDir: string | undefined): string {
+  return path.resolve(projectRoot, inDir || outDir);
+}
+
 export function resolveOutputFilePath(directory: string, fileName: string, optionName: string): string {
   const safeRelativePath = normalizeRelativeOutputPath(fileName, optionName);
   const resolvedDirectory = path.resolve(directory);
