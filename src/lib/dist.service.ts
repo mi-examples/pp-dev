@@ -181,11 +181,17 @@ const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
 /** Listed in VERSION; basename match for sync UI decisions */
 export const TEMPLATE_VARIABLES_FILE_NAME = '__template_variables.json';
 
-/** Whether `dir` is `parent` or below it. */
+/** Whether `dir` is `parent` or below it (a name that starts with two dots, `..cache`, is below). */
 function isSameOrInside(dir: string, parent: string): boolean {
   const relative = path.relative(parent, dir);
 
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  if (relative === '') {
+    return true;
+  }
+
+  const outside = relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+
+  return !outside;
 }
 
 export class DistService {
