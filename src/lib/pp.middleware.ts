@@ -165,6 +165,16 @@ export class MiAPI {
     return obj;
   }
 
+  /**
+   * The headers the dev panel's own MI calls go with (sync, credentials check): the ones the last
+   * page data load stored, with the personal access token attached. Attached here too, not only by
+   * the load, since there may have been none yet: a dev server restarted in process serves the page
+   * from the load the previous MiAPI made, and a sync right after went to MI with no token at all.
+   */
+  #ownHeaders(): Headers {
+    return this.#clearHeaders(this.#headers);
+  }
+
   #escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
   }
@@ -701,18 +711,20 @@ export class MiAPI {
 
   async getAssets() {
     if (this.appId) {
+      const headers = this.#ownHeaders();
+
       if (this.templateLess) {
-        return await this.assetsApi.downloadPageAssets(this.appId, this.#headers);
+        return await this.assetsApi.downloadPageAssets(this.appId, headers);
       } else {
-        const pageInfo = await this.pageApi.get(this.appId, this.#headers);
+        const pageInfo = await this.pageApi.get(this.appId, headers);
 
         if (this.#isV710OrHigher) {
-          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, headers);
 
-          return await this.assetsApi.downloadTemplateAssets(templateInfo.id, this.#headers);
+          return await this.assetsApi.downloadTemplateAssets(templateInfo.id, headers);
         } else {
           if (pageInfo.template) {
-            return await this.assetsApi.downloadTemplateAssets(pageInfo.template, this.#headers);
+            return await this.assetsApi.downloadTemplateAssets(pageInfo.template, headers);
           }
         }
       }
@@ -721,18 +733,20 @@ export class MiAPI {
 
   async updateAssets(assets: Buffer) {
     if (this.appId) {
+      const headers = this.#ownHeaders();
+
       if (this.templateLess) {
-        return await this.assetsApi.uploadPageAssets(this.appId, assets, this.#headers);
+        return await this.assetsApi.uploadPageAssets(this.appId, assets, headers);
       } else {
-        const pageInfo = await this.pageApi.get(this.appId, this.#headers);
+        const pageInfo = await this.pageApi.get(this.appId, headers);
 
         if (this.#isV710OrHigher) {
-          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, headers);
 
-          return await this.assetsApi.uploadTemplateAssets(templateInfo.id, assets, this.#headers);
+          return await this.assetsApi.uploadTemplateAssets(templateInfo.id, assets, headers);
         } else {
           if (pageInfo.template) {
-            return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, this.#headers);
+            return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, headers);
           }
         }
       }
@@ -746,7 +760,7 @@ export class MiAPI {
    */
   async validateCredentials(headers?: Headers): Promise<{ isValid: boolean; error?: string; code?: string }> {
     try {
-      const testHeaders = headers || this.#headers;
+      const testHeaders = headers ? this.#clearHeaders(headers) : this.#ownHeaders();
 
       // Try to make a simple API call to validate credentials
       await this.get('/api/user', testHeaders, true);

@@ -24,19 +24,40 @@ interface LoadPPDataOptions {
   timeout?: number;
 }
 
-// Performance optimization: Simple cache for API responses
-const apiResponseCache = new Map<string, { timestamp: number; data: any }>();
+/**
+ * The page data loads made, per MiAPI: a load belongs to the instance that made it, which is the
+ * one holding the template and variables it brought. A dev server restarted in process (`pp-dev`
+ * on a config change, or Vite's own restart) builds a new chain with a new MiAPI; served from a
+ * load the old one made, the new one had no template to build the page with, and the dev panel's
+ * MI calls went without the headers a page load stores.
+ */
+const apiResponseCaches = new WeakMap<MiAPI, Map<string, { timestamp: number; epoch: number; data: any }>>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
-function getCachedResponse(key: string): any | null {
-  const cached = apiResponseCache.get(key);
+/** Bumped to forget every load at once, whichever MiAPI made it. */
+let cacheEpoch = 0;
+
+function cacheOf(mi: MiAPI): Map<string, { timestamp: number; epoch: number; data: any }> {
+  let cache = apiResponseCaches.get(mi);
+
+  if (!cache) {
+    cache = new Map();
+    apiResponseCaches.set(mi, cache);
+  }
+
+  return cache;
+}
+
+function getCachedResponse(mi: MiAPI, key: string): any | null {
+  const cache = cacheOf(mi);
+  const cached = cache.get(key);
 
   if (!cached) {
     return null;
   }
 
-  if (Date.now() - cached.timestamp > CACHE_TTL) {
-    apiResponseCache.delete(key);
+  if (cached.epoch !== cacheEpoch || Date.now() - cached.timestamp > CACHE_TTL) {
+    cache.delete(key);
 
     return null;
   }
@@ -44,12 +65,14 @@ function getCachedResponse(key: string): any | null {
   return cached.data;
 }
 
-function setCachedResponse(key: string, data: any): void {
-  apiResponseCache.set(key, { timestamp: Date.now(), data });
+function setCachedResponse(mi: MiAPI, key: string, data: any): void {
+  cacheOf(mi).set(key, { timestamp: Date.now(), epoch: cacheEpoch, data });
 }
 
 // A cached "page data loaded" belongs to the MI session that loaded it.
-onProxyCacheInvalidate(() => apiResponseCache.clear());
+onProxyCacheInvalidate(() => {
+  cacheEpoch += 1;
+});
 
 /**
  * Whether the last page data load succeeded. One that succeeds after none did, or after one failed,
@@ -328,7 +351,7 @@ async function handlePageInfoOnly(
   try {
     // Performance optimization: Check cache first
     const cacheKey = `pageInfo:${appId}`;
-    const cachedData = getCachedResponse(cacheKey);
+    const cachedData = getCachedResponse(mi, cacheKey);
 
     if (cachedData) {
       logger.info(colors.green('Page info loaded from cache'));
@@ -341,7 +364,7 @@ async function handlePageInfoOnly(
     onPageDataLoaded(logger);
 
     // Cache the successful response
-    setCachedResponse(cacheKey, { success: true });
+    setCachedResponse(mi, cacheKey, { success: true });
 
     authProvider.updateState({ isAuthenticated: true });
 
@@ -382,7 +405,7 @@ async function handleTemplateLoad(
   try {
     // Performance optimization: Check cache first
     const cacheKey = `pageData:${templateLess}:${appId}`;
-    const cachedData = getCachedResponse(cacheKey);
+    const cachedData = getCachedResponse(mi, cacheKey);
 
     if (cachedData) {
       logger.info(colors.green('Page data loaded from cache'));
@@ -398,7 +421,7 @@ async function handleTemplateLoad(
     onPageDataLoaded(logger);
 
     // Cache the successful response
-    setCachedResponse(cacheKey, { success: true });
+    setCachedResponse(mi, cacheKey, { success: true });
 
     logger.info(colors.green('Page data loaded successfully'));
 
@@ -467,6 +490,6 @@ function isAuthError(error: unknown): boolean {
 
 /** Forgets every page data load, as at startup: the next successful one counts as a login. */
 export function clearAPICache(): void {
-  apiResponseCache.clear();
+  cacheEpoch += 1;
   pageDataLoaded = false;
 }
