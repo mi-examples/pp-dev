@@ -61,8 +61,31 @@ export function bindModalKeys(overlay: HTMLElement, onKey: (ev: KeyboardEvent) =
   return () => document.removeEventListener('keydown', listener);
 }
 
+/**
+ * Whether `el` can take the focus: not hidden, itself or by an element between it and `overlay`
+ * (the import picker hides the pages its filter leaves out with `display: none`). A hidden last
+ * control let Tab leave the dialog, and Shift+Tab tried to focus it.
+ */
+function isTabbable(el: HTMLElement, overlay: HTMLElement): boolean {
+  for (let node: HTMLElement | null = el; node && node !== overlay; node = node.parentElement) {
+    if (node.hidden) {
+      return false;
+    }
+
+    const style = getComputedStyle(node);
+
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function trapTab(overlay: HTMLElement, ev: KeyboardEvent) {
-  const focusable = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE));
+  const focusable = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) =>
+    isTabbable(el, overlay),
+  );
 
   if (focusable.length === 0) {
     ev.preventDefault();

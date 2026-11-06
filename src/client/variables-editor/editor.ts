@@ -1965,7 +1965,9 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       return;
     }
 
-    let tags = valueRows;
+    // A copy: the table edits its rows in place, so with the rows themselves, what was typed while
+    // the PUT ran went into the saved baseline (and MI's values) the save records afterwards.
+    let tags = valueRows.map((row) => ({ ...row }));
     const beforeText = jsonBaseline.values;
 
     if (valuesRawMode) {
