@@ -1,0 +1,7 @@
+{
+  "extends": "../e2e/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"]
+}

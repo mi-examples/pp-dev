@@ -29,9 +29,10 @@
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test:e2e:ui": "npx playwright test --ui",
     "test:all": "npm run test:unit && npm run test:integration",
-    "lint": "eslint src tests e2e",
-    "lint:fix": "eslint src tests e2e --fix",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tests/tsconfig.json && tsc -p e2e/tsconfig.json",
+    "lint": "eslint src tests e2e scripts",
+    "lint:fix": "eslint src tests e2e scripts --fix",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p src/client/tsconfig.json && tsc -p tests/tsconfig.json && tsc -p e2e/tsconfig.json && tsc -p scripts/tsconfig.json",
     "audit:all": "node scripts/audit-all.mjs",
     "prereinstall:all": "npm run build",
     "reinstall:all": "node scripts/reinstall-all.mjs"

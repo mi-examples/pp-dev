@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { startMockMiServer } from './server.js';
+import { pointConfigAt } from '../e2e/helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
@@ -83,11 +84,7 @@ const cleanup = async () => {
 
 try {
   // 2. Patch config to point at mock server
-  const patched = originalConfig.replace(/url:\s*['"]https?:\/\/[^'"]+['"]/, `url: '${mockMi.url}'`);
-  if (patched === originalConfig) {
-    throw new Error('Could not patch mi.url in pp-dev.config.ts — check the regex.');
-  }
-  fs.writeFileSync(CONFIG_PATH, patched);
+  pointConfigAt(CONFIG_PATH, mockMi.url);
   configPatched = true;
   log(`Patched pp-dev.config.ts → mi.url = ${mockMi.url}`);
 

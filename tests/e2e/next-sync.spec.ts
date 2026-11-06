@@ -14,7 +14,7 @@ import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import JSZip from 'jszip';
+import { zipFromEntries } from '../unit/helpers/zip.js';
 import { WebSocket } from 'ws';
 import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
 import { PP_DEV_HMR_WS_PATH } from '../../src/shared/ws-messages.js';
@@ -29,11 +29,9 @@ const PAGE_URL = `http://localhost:${PORT}/pl/pp-dev-test-template/`;
 const TEMPLATE_ASSETS_PATH = '/api/page_template/id/313/asset';
 
 async function templateAssetsZip(): Promise<string> {
-  const zip = new JSZip();
-
-  zip.file('index.html', '<html><body>the template as it is on MI</body></html>');
-
-  return (await zip.generateAsync({ type: 'nodebuffer' })).toString('base64');
+  return (await zipFromEntries({ 'index.html': '<html><body>the template as it is on MI</body></html>' })).toString(
+    'base64',
+  );
 }
 
 /** Runs a template sync over the dev panel's WebSocket; the server's `template:sync:response`. */

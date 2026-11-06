@@ -1,8 +1,9 @@
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startMockMiServer, type MockMiServer, type MockMode } from '../tests/mock-mi/server.js';
+import { killTree, pointConfigAt } from '../tests/e2e/helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -137,33 +138,18 @@ async function waitForExit(proc: ChildProcess, timeoutMs: number): Promise<boole
   });
 }
 
-async function killTree(proc: ChildProcess): Promise<void> {
-  if (!proc.pid) return;
+/**
+ * Stops `proc` with everything it started (the E2E suites' {@link killTree}), and kills what is
+ * still running after 5 s on POSIX, where SIGTERM can be ignored (taskkill /F already forces it).
+ */
+async function stopTree(proc: ChildProcess): Promise<void> {
+  killTree(proc, 'SIGTERM');
 
-  if (process.platform === 'win32') {
-    try {
-      execSync(`taskkill /PID ${proc.pid} /T /F`, { stdio: 'ignore' });
-    } catch {
-      // already stopped
-    }
+  if (process.platform === 'win32' || (await waitForExit(proc, 5_000))) {
     return;
   }
 
-  try {
-    process.kill(-proc.pid, 'SIGTERM');
-  } catch {
-    proc.kill('SIGTERM');
-  }
-
-  if (await waitForExit(proc, 5_000)) {
-    return;
-  }
-
-  try {
-    process.kill(-proc.pid, 'SIGKILL');
-  } catch {
-    proc.kill('SIGKILL');
-  }
+  killTree(proc, 'SIGKILL');
 }
 
 function spawnCommand(
@@ -233,17 +219,9 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
   let server: ChildProcess | undefined;
   const configPath = path.join(fixture.dir, fixture.configFile);
   const baseURL = `http://localhost:${fixture.port}`;
-  const originalConfig = fs.readFileSync(configPath, 'utf-8');
+  const config = pointConfigAt(configPath, mockMi.url);
 
   try {
-    const patchedConfig = originalConfig.replace(/url:\s*['"]https?:\/\/[^'"]+['"]/, `url: '${mockMi.url}'`);
-
-    if (patchedConfig === originalConfig) {
-      throw new Error(`Could not patch ${fixture.testType} pp-dev config to use mock-mi`);
-    }
-
-    fs.writeFileSync(configPath, patchedConfig);
-
     server = spawnCommand(
       process.execPath,
       [
@@ -277,9 +255,10 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
     });
   } finally {
     if (server) {
-      await killTree(server);
+      await stopTree(server);
     }
-    fs.writeFileSync(configPath, originalConfig);
+
+    config.restore();
   }
 }
 

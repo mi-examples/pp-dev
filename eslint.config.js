@@ -39,9 +39,9 @@ const paddingRules = [
 ];
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'scripts/**', 'tests/test-*/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'scripts/**/*.js', 'scripts/**/*.mjs', 'tests/test-*/**'] },
   {
-    files: ['src/**/*.ts', 'tests/**/*.ts', 'e2e/**/*.ts'],
+    files: ['src/**/*.ts', 'tests/**/*.ts', 'e2e/**/*.ts', 'scripts/**/*.ts'],
     extends: recommendedAsWarnings,
     languageOptions: {
       parserOptions: {
