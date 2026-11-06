@@ -138,6 +138,19 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
           true,
         )
         .then((response) => {
+          // MI's HTML maintenance page comes with a 200: not a verdict on the token.
+          if (typeof response.data !== 'object' || response.data === null) {
+            sendErrorResponse(
+              res,
+              502,
+              'MI is unavailable',
+              'The instance may be down or in maintenance mode. Please try again later.',
+              'MI_UNAVAILABLE',
+            );
+
+            return null;
+          }
+
           if (typeof response.data?.user?.user_id === 'number') {
             miAPI.personalAccessToken = token;
 

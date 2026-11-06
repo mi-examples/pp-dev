@@ -163,6 +163,15 @@ describe('user routes', () => {
     expect(res).toMatchObject({ status: 400, body: { code: 'INVALID_TOKEN' } });
   });
 
+  it('reports MI in maintenance (a page instead of JSON) as unreachable, not as a bad token', async () => {
+    authInfo.mockResolvedValue({ data: '<html><body>Maintenance</body></html>' });
+
+    const res = await call(port, 'POST', USERS_API_PATH, { name: 'viewer', token: 'viewer-token' });
+
+    expect(res).toMatchObject({ status: 502, body: { code: 'MI_UNAVAILABLE' } });
+    expect(users.list()).toEqual([]);
+  });
+
   it('reports MI being unreachable apart from a bad token', async () => {
     authInfo.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
@@ -294,6 +303,34 @@ describe('user routes', () => {
       expect(edited).toMatchObject({ status: 400, body: { code: 'INVALID_TOKEN' } });
       expect(users.get('viewer')).toBe(viewer);
       expect(users.get('reader')).toBeUndefined();
+    });
+
+    // A user MI turned down (restored while MI was in maintenance, say) could only be removed and
+    // added again: the same token was taken as "nothing to check".
+    it('asks MI again about the same token of a user MI had turned down', async () => {
+      users.clear();
+      users.add({ name: 'viewer', kind: 'token', token: 'viewer-token', state: 'expired' });
+
+      const edited = await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { token: 'viewer-token' });
+
+      expect(edited.status).toBe(200);
+      expect(authInfo).toHaveBeenCalledWith(
+        '/data/page/index/auth/info',
+        expect.objectContaining({ Authorization: 'Bearer viewer-token' }),
+      );
+      expect(users.get('viewer')).toMatchObject({ token: 'viewer-token', miUser: { id: 42 } });
+      expect(users.get('viewer')?.state).toBeUndefined();
+    });
+
+    it('leaves such a user as it was when MI turns the same token down again', async () => {
+      users.clear();
+      users.add({ name: 'viewer', kind: 'token', token: 'viewer-token', state: 'expired' });
+      authInfo.mockRejectedValue(Object.assign(new Error('Unauthorized'), { response: { status: 401, data: {} } }));
+
+      const edited = await call(port, 'PATCH', `${USERS_API_PATH}/viewer`, { token: 'viewer-token' });
+
+      expect(edited).toMatchObject({ status: 400, body: { code: 'INVALID_TOKEN' } });
+      expect(users.get('viewer')?.state).toBe('expired');
     });
 
     it('refuses a bad or taken name', async () => {
