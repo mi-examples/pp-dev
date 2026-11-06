@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { loadCommandViteConfig } from '../../../src/cli/vite-config.js';
@@ -63,5 +63,58 @@ describe('loadCommandViteConfig', () => {
     });
 
     expect((config.plugins ?? []).map((plugin) => (plugin as { name: string }).name)).toContain('from-the-file');
+  });
+
+  // What Vite restarted on by itself, for pp-dev's watcher to take over: the config file and what
+  // it imports, and the .env files of Vite's own envDir and mode.
+  it("names the config file, what it imports, and Vite's .env files", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pp-dev-vite-config-deps-'));
+
+    try {
+      mkdirSync(path.join(dir, 'config'));
+      writeFileSync(path.join(dir, 'config', 'helper.mjs'), 'export const envDir = "./config";\n');
+      writeFileSync(
+        path.join(dir, 'vite.config.mjs'),
+        ["import { envDir } from './config/helper.mjs';", 'export default { envDir };', ''].join('\n'),
+      );
+
+      const { configFile, viteEnvFiles } = await loadCommandViteConfig({
+        root: dir,
+        mode: 'staging',
+        command: 'serve',
+        configFile: undefined,
+        logLevel: 'silent',
+      });
+
+      expect(path.resolve(configFile?.path ?? '')).toBe(path.join(dir, 'vite.config.mjs'));
+      expect(configFile?.dependencies.map((file) => path.resolve(file))).toContain(
+        path.join(dir, 'config', 'helper.mjs'),
+      );
+      expect(viteEnvFiles).toEqual(
+        ['.env', '.env.local', '.env.staging', '.env.staging.local'].map((name) => path.join(dir, 'config', name)),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names no .env files for envDir: false', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pp-dev-vite-config-noenv-'));
+
+    try {
+      writeFileSync(path.join(dir, 'vite.config.mjs'), 'export default { envDir: false };\n');
+
+      const { viteEnvFiles } = await loadCommandViteConfig({
+        root: dir,
+        mode: 'development',
+        command: 'serve',
+        configFile: undefined,
+        logLevel: 'silent',
+      });
+
+      expect(viteEnvFiles).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { watch } from 'chokidar';
 import { colors } from '../lib/helpers/color.helper.js';
@@ -8,6 +9,8 @@ export interface ConfigWatcher {
   watcher: ReturnType<typeof watch>;
   /** Settles once changes are seen: a change before that is missed, so the start is logged then. */
   ready: Promise<void>;
+  /** Watches `files` too (see {@link ConfigWatcherOptions.files}); ones already watched are left as they are. */
+  add(files: string[]): void;
   /** Closes the watcher; a restart it had scheduled is dropped, one it is running finishes. */
   close(): Promise<void>;
 }
@@ -17,6 +20,18 @@ export interface ConfigWatcherOptions {
   debounceMs?: number;
   /** The mode whose `.env` files the server loads (`--mode`), watched with `.env` and `.env.local`. @default 'development' */
   mode?: string;
+  /**
+   * Files to watch besides the config files in the project root, wherever they are: a `--config`
+   * elsewhere and the modules it imports, the `.env` files of Vite's own `envDir`. Only ones that
+   * exist: chokidar given a path that doesn't delivers nothing, not even the root's changes (seen
+   * with the `.env` names that are usually absent).
+   */
+  files?: string[];
+}
+
+/** The paths that exist, resolved: what chokidar may be given. */
+function existingFiles(files: string[]): string[] {
+  return files.map((file) => path.resolve(file)).filter((file) => fs.existsSync(file));
 }
 
 /** The files in the project root whose change restarts the dev server, besides the `.env` files of the mode. */
@@ -39,11 +54,6 @@ export const WATCHED_CONFIG_FILES: readonly string[] = [
 /** The `.env` files the dev server loads for `mode`, as Vite's `loadEnv()` does: a change to one is a config change. */
 export function envFilesForMode(mode = 'development'): string[] {
   return ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
-}
-
-/** Every `.env` file, as watcher globs: Vite's own watcher is told to leave them to pp-dev's. */
-export function envFileGlobs(): string[] {
-  return ['**/.env', '**/.env.*'];
 }
 
 /** The files in the project root whose change restarts a dev server running in `mode`. */
@@ -73,13 +83,15 @@ export function createConfigWatcher(
   logger: (message: string) => void,
   options: ConfigWatcherOptions = {},
 ): ConfigWatcher {
-  const { debounceMs = 500, mode } = options;
+  const { debounceMs = 500, mode, files = [] } = options;
   const root = path.resolve(projectRoot);
   const watchedFiles = new Set(watchedConfigFiles(mode));
+  const extraFiles = new Set(existingFiles(files));
 
-  const watcher = watch(root, {
+  const watcher = watch([root, ...extraFiles], {
     // Without stats chokidar is asking about a path it hasn't looked at yet: let it look. With them,
-    // the root itself and the config files pass; other files and every directory are ignored.
+    // the root itself, the config files in it and the files given pass; other files and every
+    // directory are ignored.
     ignored: (filePath, stats) => {
       if (!stats) {
         return false;
@@ -89,7 +101,11 @@ export function createConfigWatcher(
         return path.resolve(filePath) !== root;
       }
 
-      return !watchedFiles.has(path.basename(filePath));
+      const resolved = path.resolve(filePath);
+
+      return (
+        !extraFiles.has(resolved) && !(path.dirname(resolved) === root && watchedFiles.has(path.basename(resolved)))
+      );
     },
     depth: 0,
     persistent: true,
@@ -164,6 +180,17 @@ export function createConfigWatcher(
   return {
     watcher,
     ready,
+    add(paths) {
+      const added = existingFiles(paths).filter((file) => !extraFiles.has(file));
+
+      for (const file of added) {
+        extraFiles.add(file);
+      }
+
+      if (added.length > 0 && !closed) {
+        watcher.add(added);
+      }
+    },
     async close() {
       closed = true;
 

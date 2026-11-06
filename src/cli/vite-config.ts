@@ -3,6 +3,7 @@ import { type InlineConfig, type LogLevel, loadConfigFromFile, mergeConfig } fro
 import { getViteConfig } from '../index.js';
 import { loadPPDevEnv } from '../lib/env.js';
 import type { ResolvedBuildCliOverrides } from '../lib/build-cli-overrides.js';
+import { envFilesForMode } from './config-watcher.js';
 
 export interface CommandViteConfigOptions {
   /** The `[root]` argument of the command. */
@@ -29,9 +30,17 @@ export interface CommandViteConfigOptions {
  * with side effects ran twice, and under `pp-dev` Vite restarted on its own when the file changed,
  * with the plugin instance and the pp-dev config of the first start, before pp-dev's own restart.
  */
-export async function loadCommandViteConfig(
-  opts: CommandViteConfigOptions,
-): Promise<{ config: InlineConfig; envDir: string }> {
+export interface CommandViteConfig {
+  config: InlineConfig;
+  /** The project root: where pp-dev's `.env` files are. */
+  envDir: string;
+  /** The `vite.config.*` loaded, with the files it imports: a change to any of them is a config change. */
+  configFile: { path: string; dependencies: string[] } | null;
+  /** The `.env` files Vite itself loads for `mode`, in its `envDir` (none with `envDir: false`). */
+  viteEnvFiles: string[];
+}
+
+export async function loadCommandViteConfig(opts: CommandViteConfigOptions): Promise<CommandViteConfig> {
   const { root, mode, command, isPreview } = opts;
   const envDir = path.resolve(process.cwd(), root ?? '.');
 
@@ -50,5 +59,14 @@ export async function loadCommandViteConfig(
     config = mergeConfig(config, configFromFile.config);
   }
 
-  return { config, envDir };
+  // As Vite resolves them: its root (the file may set one), and `envDir` against it.
+  const viteRoot = config.root ? path.resolve(config.root) : envDir;
+  const viteEnvDir = config.envDir === false ? null : path.resolve(viteRoot, config.envDir ?? '.');
+
+  return {
+    config,
+    envDir,
+    configFile: configFromFile ? { path: configFromFile.path, dependencies: configFromFile.dependencies } : null,
+    viteEnvFiles: viteEnvDir ? envFilesForMode(mode).map((name) => path.join(viteEnvDir, name)) : [],
+  };
 }

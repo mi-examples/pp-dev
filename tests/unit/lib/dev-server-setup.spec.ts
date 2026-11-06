@@ -95,10 +95,10 @@ describe('dev server setup', () => {
       expect(getProxyIgnore('/pt/page')).toEqual(['/@vite', '/@metricinsights', '/@', '/pt/page']);
     });
 
-    // An empty prefix matched every path: with the plugin in a vite.config of its own (Vite's
-    // default base), nothing was proxied.
-    it('names no page for a base of /', () => {
-      expect(getProxyIgnore('/')).toEqual(['/@vite', '/@metricinsights', '/@']);
+    // With the plugin in a vite.config of its own (Vite's default base) the page is every path:
+    // nothing is proxied, said so rather than by an empty prefix that happened to match everything.
+    it('keeps every path from MI for a base of /', () => {
+      expect(getProxyIgnore('/')).toEqual(['/@vite', '/@metricinsights', '/@', '/']);
     });
   });
 

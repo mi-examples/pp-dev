@@ -62,6 +62,14 @@ export function registerNextCommand(cli: CAC): void {
     .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
       filterDuplicateOptions(options);
 
+      // As `next dev` sets it, whatever it was (a test runner's `test`): Next's own code in the
+      // server process goes by it, not only the bundles' define. Under another value the tsconfig
+      // include Next writes for the route types was the build's (`<distDir>/dev/types`, i.e.
+      // `dist/dev/dev/types`), added to the app's tsconfig on every start. Set here, before the
+      // supervisor's and the server's branches part, so the supervisor's config check loads the
+      // config in the same environment as the server does.
+      Object.assign(process.env, { NODE_ENV: 'development' });
+
       // The process the user started supervises: it watches the config files and runs the server in
       // a process of its own, started again on a change (see next-supervisor.ts for why). Everything
       // below is the server process.
@@ -156,12 +164,6 @@ export function registerNextCommand(cli: CAC): void {
             (importConfig as any).default.default ||
             (importConfig as any)['module.exports'].default ||
             (importConfig as any).default;
-
-          // As `next dev` sets it, whatever it was (a test runner's `test`): Next's own code in this
-          // process goes by it, not only the bundles' define. Under another value the tsconfig include
-          // Next writes for the route types was the build's (`<distDir>/dev/types`, i.e.
-          // `dist/dev/dev/types`), added to the app's tsconfig on every start.
-          Object.assign(process.env, { NODE_ENV: 'development' });
 
           // As `serve` and `next-build` resolve it: `join` took an absolute root for a relative one.
           const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();

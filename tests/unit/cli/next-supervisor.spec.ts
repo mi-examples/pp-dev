@@ -64,6 +64,7 @@ function setup(overrides: { checkConfig?: () => Promise<void> } = {}) {
   const watcher: ConfigWatcher = {
     watcher: {} as never,
     ready: Promise.resolve(),
+    add: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
   };
   let restart: (() => Promise<void>) | null = null;

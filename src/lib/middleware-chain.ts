@@ -19,6 +19,8 @@ import { registerInspectorRoutes, INSPECTOR_PATH } from './request-inspector.js'
 import { RequestStore } from './request-store.js';
 import { createUserHostGuard } from './user-registry.js';
 import { createDevPanelAssetMiddleware } from './dev-panel.js';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
 import { VARIABLES_EDITOR_PATH } from './variables-editor.js';
 import {
   type ChainMiddleware,
@@ -154,6 +156,14 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
   let rewrite: ChainMiddleware | null = null;
 
   if (backendBaseURL) {
+    if (base === '/') {
+      createLogger().warn(
+        colors.yellow(
+          "⚠️  The app's base is '/': MI's paths can't be told from the app's files, so nothing is proxied to MI. Give the app a base path (withPPDev() does, from app.name).",
+        ),
+      );
+    }
+
     const miConfig = getMiAPIOptions(backendBaseURL, options.mi);
 
     mi = new MiAPI(backendBaseURL, miConfig);

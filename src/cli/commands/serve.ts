@@ -10,7 +10,7 @@ import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { INSPECTOR_PATH } from '../../lib/request-inspector.js';
 import { cleanOptions } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
-import { createConfigWatcher, cleanupConfigWatcher, envFileGlobs, type ConfigWatcher } from '../config-watcher.js';
+import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
 import { loadCommandViteConfig } from '../vite-config.js';
 import { stopProfiler, profilerShortcuts } from '../profiler.js';
@@ -55,13 +55,20 @@ export function registerServeCommand(cli: CAC): void {
           // is ok here
           const { createServer } = await import('vite');
           const mode = options.mode || 'development';
-          const { config, envDir } = await loadCommandViteConfig({
+          const { config, envDir, configFile, viteEnvFiles } = await loadCommandViteConfig({
             root,
             mode,
             command: 'serve',
             configFile: options.config,
             logLevel: options.logLevel,
           });
+          // What Vite would restart on by itself: the config file and what it imports (a `--config`
+          // elsewhere, a helper module), and its `.env` files (in its `envDir`). pp-dev's watcher
+          // takes them over, with the config loaded afresh.
+          const viteConfigFiles = [
+            ...viteEnvFiles,
+            ...(configFile ? [configFile.path, ...configFile.dependencies] : []),
+          ];
 
           // Before the new server exists: creating it starts its services (the users registry among
           // them, shared with the running server), which a config refused here must not touch.
@@ -73,7 +80,8 @@ export function registerServeCommand(cli: CAC): void {
 
           // The project's `vite.config.*` is in `config` already (see loadCommandViteConfig), and its
           // changes, as the `.env` files', restart through the config watcher below with a config
-          // loaded afresh: Vite's own restart on them reused this start's, so they are kept from it.
+          // loaded afresh: Vite's own restart on them reused this start's, so they are kept from it
+          // (`configFile: false`; its `.env` files kept from its watcher, and only those).
           nextServer = await createServer(
             mergeConfig(
               config,
@@ -85,7 +93,7 @@ export function registerServeCommand(cli: CAC): void {
                 logLevel: options.logLevel,
                 clearScreen: options.clearScreen,
                 optimizeDeps: { force: options.force },
-                server: { ...cleanOptions(options), watch: { ignored: envFileGlobs() } },
+                server: { ...cleanOptions(options), watch: { ignored: viteEnvFiles } },
                 customLogger: logger,
               },
               true,
@@ -148,11 +156,15 @@ export function registerServeCommand(cli: CAC): void {
             ],
           });
 
-          // Set up config watcher
+          // Set up config watcher; a restart may bring new files to watch (another `--config`, a
+          // helper the config now imports).
           if (!configWatcher) {
             configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info, {
               mode,
+              files: viteConfigFiles,
             });
+          } else {
+            configWatcher.add(viteConfigFiles);
           }
         } catch (e: any) {
           if (!restart) {

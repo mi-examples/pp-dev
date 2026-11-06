@@ -9,13 +9,12 @@ describe('configuredNextDistDir', () => {
     expect(configuredNextDistDir({ distDir: 'dist/dev', distDirRoot: 'dist' })).toBe('dist');
   });
 
-  it('strips the development phase /dev of older Next versions without distDirRoot', () => {
-    expect(configuredNextDistDir({ distDir: 'dist/dev' })).toBe('dist');
-    expect(configuredNextDistDir({ distDir: 'dist\\dev\\' })).toBe('dist');
-  });
-
-  it('is the configured one on Next versions that keep it in development', () => {
+  // Next sets distDirRoot when it appends /dev, and only then: a version that reports the
+  // configured distDir as it is keeps a `build/dev` of its own (a trailing /dev was stripped).
+  it('is the configured one, as it is, on Next versions that keep it in development', () => {
     expect(configuredNextDistDir({ distDir: 'build' })).toBe('build');
+    expect(configuredNextDistDir({ distDir: 'build/dev' })).toBe('build/dev');
+    expect(configuredNextDistDir({ distDir: 'build\\dev\\' })).toBe('build/dev');
   });
 
   it('is .next without a config', () => {
