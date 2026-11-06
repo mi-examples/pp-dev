@@ -47,6 +47,13 @@ export const PP_DEV_NEXT_BUILD_ENV_VAR = 'PP_DEV_NEXT_BUILD';
  */
 export const PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR = 'PP_DEV_NEXT_BUILD_DIST_DIR';
 
+/**
+ * The project root `pp-dev next` and `pp-dev next-build` were given, for `withPPDev()`: Next
+ * evaluates `next.config` with no root to pass on, so run from a parent directory it read that
+ * directory's package.json and pp-dev config ("app.name is required").
+ */
+export const PP_DEV_PROJECT_ROOT_ENV_VAR = 'PP_DEV_PROJECT_ROOT';
+
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',
   '.pp-dev.config.cjs',

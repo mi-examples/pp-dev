@@ -124,6 +124,10 @@ describe('pp-dev next: a template sync next to the running dev server', { timeou
     const hadDevTypes = fs.existsSync(path.join(devDir, 'types'));
 
     expect(fs.existsSync(devDir)).toBe(true);
+    // Handed the loaded config, whose distDir is already `dist/dev`, Next appended `/dev` once more:
+    // the server wrote under `dist/dev/dev`, and listed that in the app's tsconfig on every start.
+    expect(fs.existsSync(path.join(devDir, 'dev'))).toBe(false);
+    expect(fs.readFileSync(path.join(TEST_APP_DIR, 'tsconfig.json'), 'utf8')).not.toContain('dist/dev/dev/');
 
     const response = await syncTemplate();
 

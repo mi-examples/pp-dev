@@ -420,6 +420,26 @@ describe("the supervisor's config check", () => {
     await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
   });
 
+  // A project whose pp-dev config lives in next.config alone (`withPPDev()`) has no standalone
+  // config: the check validated an empty one in its place and refused every change.
+  it('passes a project whose pp-dev config lives in next.config alone', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-next-only-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"next-only-app"}');
+    fs.writeFileSync(path.join(root, 'next.config.mjs'), 'export default {};\n');
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+  });
+
+  it('refuses a broken package.json config', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-pkg-'));
+    fs.writeFileSync(
+      path.join(root, 'package.json'),
+      '{"name":"pkg-app","pp-dev":{"mi":{"url":"https://mi.example.com"},"app":{"id":1,"type":"template"},"sync":{"buildTimeoutMs":0}}}',
+    );
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/sync\.buildTimeoutMs/);
+  });
+
   // A config that loads but the server process refuses passed the check: the running server was
   // stopped, and the new one refused the config, leaving none.
   it('refuses a config the server process would refuse, before the running server is stopped', async () => {

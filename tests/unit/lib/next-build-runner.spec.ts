@@ -2,7 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { removeStaleDevTypes } from '../../../src/lib/next-build-runner';
+import { configuredNextDistDir, removeStaleDevTypes } from '../../../src/lib/next-build-runner';
+
+describe('configuredNextDistDir', () => {
+  it('is the configured distDir, which Next 16 reports as distDirRoot in development', () => {
+    expect(configuredNextDistDir({ distDir: 'dist/dev', distDirRoot: 'dist' })).toBe('dist');
+  });
+
+  it('strips the development phase /dev of older Next versions without distDirRoot', () => {
+    expect(configuredNextDistDir({ distDir: 'dist/dev' })).toBe('dist');
+    expect(configuredNextDistDir({ distDir: 'dist\\dev\\' })).toBe('dist');
+  });
+
+  it('is the configured one on Next versions that keep it in development', () => {
+    expect(configuredNextDistDir({ distDir: 'build' })).toBe('build');
+  });
+
+  it('is .next without a config', () => {
+    expect(configuredNextDistDir(undefined)).toBe('.next');
+    expect(configuredNextDistDir({})).toBe('.next');
+  });
+});
 
 describe('removeStaleDevTypes', () => {
   let root: string;

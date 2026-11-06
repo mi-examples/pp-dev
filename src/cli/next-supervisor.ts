@@ -96,9 +96,14 @@ export function forkNextServer(): ChildProcess {
  * Validated as the server process validates it, too: a config that loads but is refused there
  * (`sync.buildTimeoutMs: 0`) passed this check, the running server was stopped, and the new one
  * refused the config, leaving none.
+ *
+ * Only a standalone config is checked. A project whose pp-dev config lives in `next.config` alone
+ * (`withPPDev()`) has none here: validating the empty config in its place refused every change,
+ * and nothing was ever restarted. The server process loads `next.config`; one that can't be
+ * loaded is reported as a server that did not start after the change.
  */
 export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'development'): Promise<void> {
-  const [{ loadPPDevEnv }, { clearConfigCache, getConfig, getPkg }, { validatePPDevConfig }] = await Promise.all([
+  const [{ loadPPDevEnv }, { clearConfigCache, findConfig, getPkg }, { validatePPDevConfig }] = await Promise.all([
     import('../lib/env.js'),
     import('../config.js'),
     import('../lib/pp-dev-config.js'),
@@ -107,7 +112,11 @@ export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'develop
   loadPPDevEnv(mode, projectRoot);
   clearConfigCache();
 
-  const config = await getConfig(projectRoot);
+  const { config, found } = await findConfig(projectRoot);
+
+  if (!found) {
+    return;
+  }
 
   validatePPDevConfig(config, getPkg(projectRoot).name);
 }
