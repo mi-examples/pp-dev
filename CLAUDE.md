@@ -92,9 +92,9 @@ Test fixtures (real apps installed with the local .tgz):
 
 ## Key conventions
 
-- **Dual ESM/CJS output** — Rollup builds `dist/esm/`, `dist/cjs/`, `dist/types/` from 4 entry points.
+- **Dual ESM/CJS output** — Rollup builds `dist/esm/` from 4 entry points (`index`, `plugin`, `helpers`, `cli`), `dist/cjs/` from the first three (the CLI runs as ESM from `bin/pp-dev.js`), and `dist/types/`.
 - **Config caching** — `src/config.ts` caches loaded config (30 s) and `package.json` (60 s).
-- **Lazy heavy imports** — `esbuild`, `jsdom`, `sharp` are imported lazily to keep startup fast.
+- **Lazy heavy imports** — `esbuild`, `jsdom`, `file-type`, `svgtofont` and the Vite plugins are imported lazily to keep startup fast (`sharp` and `svgo` only through `vite-plugin-image-optimizer`).
 - **Axios instance cache** — one Axios instance per base URL; `keepAlive: false` avoids max-listeners warnings.
 - **No bare `npm audit`** — always `npm run audit:all` so test fixtures are included.
 
