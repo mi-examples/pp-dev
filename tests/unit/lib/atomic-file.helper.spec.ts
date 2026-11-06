@@ -41,6 +41,37 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['taken']);
   });
 
+  // Writes of one file at a time (two editor saves, a save during a sync) shared one temporary
+  // file: the second write went into the file the first was renaming, and the second rename failed
+  // on a file that was gone. Each has its own now, and they go one after the other: two renames over
+  // one file at once fail on Windows for the one that loses.
+  it('takes overlapping writes of one file in order, the last one asked for staying', async () => {
+    const file = path.join(dir, 'schema.json');
+    const contents = Array.from({ length: 10 }, (_, i) => String(i).repeat(100_000));
+
+    await Promise.all(contents.map((content) => writeFileAtomic(file, content)));
+
+    expect(fs.readFileSync(file, 'utf8')).toBe(contents[9]);
+    expect(fs.readdirSync(dir)).toEqual(['schema.json']);
+  });
+
+  it('goes on with the next write of a file after one that failed', async () => {
+    const taken = path.join(dir, 'taken');
+
+    fs.mkdirSync(taken);
+
+    const failed = writeFileAtomic(taken, 'x');
+    const next = writeFileAtomic(taken, 'y');
+
+    await expect(failed).rejects.toThrow();
+    // The queued write is past its wait but not at its rename yet: its temporary file is being
+    // written on the thread pool, which only completes after this turn.
+    fs.rmdirSync(taken);
+    await next;
+
+    expect(fs.readFileSync(taken, 'utf8')).toBe('y');
+  });
+
   it('does the same synchronously', () => {
     const file = path.join(dir, 'users.json');
     const taken = path.join(dir, 'taken');
