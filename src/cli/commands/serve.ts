@@ -10,7 +10,7 @@ import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { INSPECTOR_PATH } from '../../lib/request-inspector.js';
 import { cleanOptions } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
-import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
+import { createConfigWatcher, cleanupConfigWatcher, envFileGlobs, type ConfigWatcher } from '../config-watcher.js';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
 import { loadCommandViteConfig } from '../vite-config.js';
 import { stopProfiler, profilerShortcuts } from '../profiler.js';
@@ -71,6 +71,9 @@ export function registerServeCommand(cli: CAC): void {
             throw new Error('base cannot be equal to "/" or empty string');
           }
 
+          // The project's `vite.config.*` is in `config` already (see loadCommandViteConfig), and its
+          // changes, as the `.env` files', restart through the config watcher below with a config
+          // loaded afresh: Vite's own restart on them reused this start's, so they are kept from it.
           nextServer = await createServer(
             mergeConfig(
               config,
@@ -78,11 +81,11 @@ export function registerServeCommand(cli: CAC): void {
                 root,
                 base: options.base,
                 mode: options.mode,
-                configFile: options.config,
+                configFile: false,
                 logLevel: options.logLevel,
                 clearScreen: options.clearScreen,
                 optimizeDeps: { force: options.force },
-                server: cleanOptions(options),
+                server: { ...cleanOptions(options), watch: { ignored: envFileGlobs() } },
                 customLogger: logger,
               },
               true,
@@ -147,7 +150,9 @@ export function registerServeCommand(cli: CAC): void {
 
           // Set up config watcher
           if (!configWatcher) {
-            configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info);
+            configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info, {
+              mode,
+            });
           }
         } catch (e: any) {
           if (!restart) {

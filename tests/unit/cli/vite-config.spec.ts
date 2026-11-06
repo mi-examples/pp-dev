@@ -23,6 +23,7 @@ describe('loadCommandViteConfig', () => {
       [
         'export default ({ command, mode, isPreview }) => ({',
         '  define: { __SEEN__: JSON.stringify({ command, mode, isPreview: isPreview === true }) },',
+        "  plugins: [{ name: 'from-the-file' }],",
         '});',
         '',
       ].join('\n'),
@@ -47,5 +48,20 @@ describe('loadCommandViteConfig', () => {
     });
 
     expect(JSON.parse(String(config.define?.__SEEN__))).toEqual({ mode: 'production', ...seen });
+  });
+
+  // The file's plugins were left out, for Vite to load the file again (`configFile`): that merged
+  // it under the inline config a second time, arrays doubled, and Vite restarted on its own when
+  // the file changed. The commands pass `configFile: false` now, so the plugins come from here.
+  it("keeps the file's plugins", async () => {
+    const { config } = await loadCommandViteConfig({
+      root,
+      mode: 'production',
+      command: 'serve',
+      configFile: undefined,
+      logLevel: 'silent',
+    });
+
+    expect((config.plugins ?? []).map((plugin) => (plugin as { name: string }).name)).toContain('from-the-file');
   });
 });

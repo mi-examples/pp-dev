@@ -82,4 +82,31 @@ describe('bindShortcuts after the restart shortcut', () => {
     stdin.emit('data', 'x');
     expect(custom).toHaveBeenCalledTimes(1);
   });
+
+  // An action that threw left the "action running" guard set: every key after it was ignored.
+  it('takes the next key after an action that threw', async () => {
+    const failing = vi.fn().mockRejectedValue(new Error('no browser'));
+    const custom = vi.fn();
+    const server = {
+      httpServer: new EventEmitter(),
+      restart: vi.fn(),
+      config: { logger: { info: vi.fn() } },
+    };
+
+    bindShortcuts(server as unknown as ViteDevServer, {
+      customShortcuts: [
+        { key: 'f', description: 'failing', action: failing },
+        { key: 'x', description: 'custom', action: custom },
+      ],
+    });
+
+    stdin.emit('data', 'f');
+    await vi.waitFor(() => expect(failing).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    stdin.emit('data', 'x');
+    await vi.waitFor(() => expect(custom).toHaveBeenCalledTimes(1));
+
+    server.httpServer.emit('close');
+  });
 });

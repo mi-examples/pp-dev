@@ -15,23 +15,41 @@ export interface ConfigWatcher {
 export interface ConfigWatcherOptions {
   /** How long after the last change the restart runs, so one save (editors write several times) restarts once. @default 500 */
   debounceMs?: number;
+  /** The mode whose `.env` files the server loads (`--mode`), watched with `.env` and `.env.local`. @default 'development' */
+  mode?: string;
 }
 
-/** The files in the project root whose change restarts the dev server. */
+/** The files in the project root whose change restarts the dev server, besides the `.env` files of the mode. */
 export const WATCHED_CONFIG_FILES: readonly string[] = [
   ...PP_DEV_CONFIG_NAMES,
   'package.json',
   'next.config.js',
   'next.config.mjs',
+  'next.config.cjs',
   'next.config.ts',
+  'next.config.mts',
   'vite.config.js',
   'vite.config.mjs',
+  'vite.config.cjs',
   'vite.config.ts',
-  '.env',
-  '.env.local',
-  '.env.development',
-  '.env.development.local',
+  'vite.config.mts',
+  'vite.config.cts',
 ];
+
+/** The `.env` files the dev server loads for `mode`, as Vite's `loadEnv()` does: a change to one is a config change. */
+export function envFilesForMode(mode = 'development'): string[] {
+  return ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
+}
+
+/** Every `.env` file, as watcher globs: Vite's own watcher is told to leave them to pp-dev's. */
+export function envFileGlobs(): string[] {
+  return ['**/.env', '**/.env.*'];
+}
+
+/** The files in the project root whose change restarts a dev server running in `mode`. */
+export function watchedConfigFiles(mode = 'development'): string[] {
+  return [...WATCHED_CONFIG_FILES, ...envFilesForMode(mode)];
+}
 
 function describeError(error: unknown): string {
   return error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -55,9 +73,9 @@ export function createConfigWatcher(
   logger: (message: string) => void,
   options: ConfigWatcherOptions = {},
 ): ConfigWatcher {
-  const { debounceMs = 500 } = options;
+  const { debounceMs = 500, mode } = options;
   const root = path.resolve(projectRoot);
-  const watchedFiles = new Set(WATCHED_CONFIG_FILES);
+  const watchedFiles = new Set(watchedConfigFiles(mode));
 
   const watcher = watch(root, {
     // Without stats chokidar is asking about a path it hasn't looked at yet: let it look. With them,

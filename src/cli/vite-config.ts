@@ -20,8 +20,14 @@ export interface CommandViteConfigOptions {
 
 /**
  * The Vite config a command starts from: the `.env` files of `mode` loaded, pp-dev's config
- * ({@link getViteConfig}), and the project's `vite.config.*` merged over it without its plugins.
+ * ({@link getViteConfig}), and the project's `vite.config.*` merged over it, plugins included.
  * `serve`, `build`, `optimize` and `preview` each had a copy of this.
+ *
+ * The commands pass this to Vite with `configFile: false`: given the file too, Vite loaded it a
+ * second time and merged it under the inline config, so its arrays (`server.allowedHosts`,
+ * `optimizeDeps.include`, `build.rollupOptions.external`) held every entry twice, a config function
+ * with side effects ran twice, and under `pp-dev` Vite restarted on its own when the file changed,
+ * with the plugin instance and the pp-dev config of the first start, before pp-dev's own restart.
  */
 export async function loadCommandViteConfig(
   opts: CommandViteConfigOptions,
@@ -41,10 +47,7 @@ export async function loadCommandViteConfig(
   let config = await getViteConfig(opts.buildOverrides, { mode, root: envDir });
 
   if (configFromFile) {
-    const fileConfig = { ...configFromFile.config };
-
-    delete fileConfig.plugins;
-    config = mergeConfig(config, fileConfig);
+    config = mergeConfig(config, configFromFile.config);
   }
 
   return { config, envDir };

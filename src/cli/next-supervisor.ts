@@ -5,7 +5,7 @@ import {
   SUPERVISOR_SHUTDOWN_MESSAGE,
   type SupervisorMessage,
 } from '../lib/process-handlers.js';
-import { createConfigWatcher, type ConfigWatcher } from './config-watcher.js';
+import { createConfigWatcher, type ConfigWatcher, type ConfigWatcherOptions } from './config-watcher.js';
 
 /**
  * `pp-dev next` runs its server in a process of its own and restarts that process on a config
@@ -65,7 +65,12 @@ export interface NextSupervisorOptions {
   /** Starts a server process. @default {@link forkNextServer} */
   startServerProcess?: () => NextServerProcess;
   /** @default {@link createConfigWatcher} */
-  createWatcher?: (projectRoot: string, restart: () => Promise<void>, log: (message: string) => void) => ConfigWatcher;
+  createWatcher?: (
+    projectRoot: string,
+    restart: () => Promise<void>,
+    log: (message: string) => void,
+    options?: ConfigWatcherOptions,
+  ) => ConfigWatcher;
   /** How long a server process may take to stop before it is killed. @default 10000 */
   stopTimeoutMs?: number;
   /** For tests. @default process */
@@ -220,7 +225,7 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         settle();
 
         if (!watcher && !shuttingDown) {
-          watcher = createWatcher(projectRoot, restart, logger.info);
+          watcher = createWatcher(projectRoot, restart, logger.info, { mode });
         }
       });
 

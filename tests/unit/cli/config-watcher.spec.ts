@@ -33,9 +33,12 @@ function makeProject(files: Record<string, string> = { 'pp-dev.config.ts': 'expo
   return dir;
 }
 
-async function startWatcher(dir: string, restart: () => Promise<void>) {
+async function startWatcher(dir: string, restart: () => Promise<void>, options: { mode?: string } = {}) {
   const logs: string[] = [];
-  const watcher = createConfigWatcher(dir, restart, (message) => logs.push(message), { debounceMs: DEBOUNCE_MS });
+  const watcher = createConfigWatcher(dir, restart, (message) => logs.push(message), {
+    debounceMs: DEBOUNCE_MS,
+    ...options,
+  });
 
   watchers.push(watcher);
   await watcher.ready;
@@ -114,6 +117,26 @@ describe('createConfigWatcher', () => {
 
     await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
     expect(logs.some((line) => line.includes('Config file removed: .env'))).toBe(true);
+  });
+
+  // The names were a fixed list: `next.config.mts` (Next 16), `vite.config.cts`/`.mts` and the
+  // `.env.<mode>` files of a `--mode` other than development never restarted the server.
+  it('watches the .env files of the mode, and every config extension', async () => {
+    const dir = makeProject({ 'next.config.mts': 'export default {};\n', '.env.staging': 'MI_A=1\n' });
+    const restart = vi.fn().mockResolvedValue(undefined);
+
+    await startWatcher(dir, restart, { mode: 'staging' });
+
+    fs.appendFileSync(path.join(dir, '.env.staging'), 'MI_B=2\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
+
+    fs.appendFileSync(path.join(dir, 'next.config.mts'), '// changed\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(2), { timeout: 5000 });
+
+    fs.writeFileSync(path.join(dir, '.env.development'), 'MI_C=3\n');
+    await settle();
+
+    expect(restart).toHaveBeenCalledTimes(2);
   });
 
   it('ignores other files and files in subdirectories', async () => {

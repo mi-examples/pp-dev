@@ -120,7 +120,9 @@ describe('superviseNextServer', () => {
 
     servers[0].ready();
 
-    expect(createWatcher).toHaveBeenCalledWith('/app', expect.any(Function), expect.any(Function));
+    expect(createWatcher).toHaveBeenCalledWith('/app', expect.any(Function), expect.any(Function), {
+      mode: 'development',
+    });
   });
 
   it("exits with the server's code when the first start fails", async () => {
