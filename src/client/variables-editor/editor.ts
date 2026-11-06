@@ -13,6 +13,7 @@ import {
   importReviewStepHtml,
 } from './import-modal.js';
 import {
+  bindModalKeys,
   normalizeJsonText,
   showConfirmModal,
   showCustomValueModal,
@@ -164,6 +165,9 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   let valuesRawMode = activeTab === 'values' && valuesJsonModeFromUrl();
   let rawMode = false;
   let dirty = false;
+  // A save's PUT and its reload are under way: another Save would diff against the baseline the
+  // first one is about to replace, and send a second full replacement.
+  let saving = false;
   let editSeq = 0;
   let banner: { type: BannerType; html: string } | null = null;
   // Last-known saved JSON for each tab — used to build the post-save GitHub-style diff.
@@ -244,7 +248,8 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         return false;
       }
 
-      showBanner('error', 'Failed to load the schema: ' + escapeHtml(errorMessage(e)));
+      // Edits made meanwhile stay on screen, as they do when the load succeeds.
+      showBanner('error', 'Failed to load the schema: ' + escapeHtml(errorMessage(e)), editSeq !== editSeqAtStart);
 
       return false;
     }
@@ -255,10 +260,21 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     // An error answer (e.g. 503 with no dist service) is not a schema: kept as one, it rendered as
     // "No local __template_variables.json found" and offered to create a file over the real one.
+    // Unless the tab was edited while the load ran: the edits, and the schema they were made on,
+    // are kept on screen (the failed reload emptied the tab and the typing was gone).
     if (!r.ok) {
-      schemaState = null;
-      schemaRows = [];
-      showBanner('error', 'Failed to load the schema: ' + escapeHtml((data && data.error) || 'HTTP ' + r.status));
+      const edited = editSeq !== editSeqAtStart;
+
+      if (!edited) {
+        schemaState = null;
+        schemaRows = [];
+      }
+
+      showBanner(
+        'error',
+        'Failed to load the schema: ' + escapeHtml((data && data.error) || 'HTTP ' + r.status),
+        edited,
+      );
 
       return false;
     }
@@ -285,6 +301,23 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   async function loadValues(seq: number, editSeqAtStart: number): Promise<boolean> {
     let r: Response;
 
+    // A save is a full replacement. Keep the state explicitly unavailable after a failed read so
+    // the user cannot accidentally submit an empty replacement set — unless the tab was edited
+    // while the load ran: the edits, and the values they were made on, are kept on screen (the
+    // failed reload emptied the tab and the typing was gone, the tab still dirty).
+    const failed = (html: string) => {
+      const edited = editSeq !== editSeqAtStart;
+
+      if (!edited) {
+        valuesState = null;
+        valueRows = [];
+      }
+
+      showBanner('error', html, edited);
+
+      return false;
+    };
+
     try {
       r = await fetch('/@api/variables/values');
     } catch (e) {
@@ -292,11 +325,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         return false;
       }
 
-      valuesState = null;
-      valueRows = [];
-      showBanner('error', 'Failed to load values: ' + escapeHtml(errorMessage(e)));
-
-      return false;
+      return failed('Failed to load values: ' + escapeHtml(errorMessage(e)));
     }
 
     if (!r.ok) {
@@ -306,13 +335,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         return false;
       }
 
-      // A save is a full replacement. Keep the state explicitly unavailable after a failed
-      // read so the user cannot accidentally submit an empty replacement set.
-      valuesState = null;
-      valueRows = [];
-      showBanner('error', escapeHtml(err.error || 'Failed to load values.'));
-
-      return false;
+      return failed(escapeHtml(err.error || 'Failed to load values.'));
     }
 
     let data: ValuesState;
@@ -324,11 +347,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         return false;
       }
 
-      valuesState = null;
-      valueRows = [];
-      showBanner('error', 'Failed to parse the values response: ' + escapeHtml(errorMessage(e)));
-
-      return false;
+      return failed('Failed to parse the values response: ' + escapeHtml(errorMessage(e)));
     }
 
     if (seq !== valuesSeq) {
@@ -568,12 +587,38 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     });
   }
 
+  /**
+   * The error for the first row whose additional_options text is not JSON, or null. Such a row
+   * holds the text as typed, as a string: serialized for raw mode or a save, it became a valid
+   * JSON string, and the rows raw mode makes back are new objects, no longer marked as invalid —
+   * so `{bad` was saved as `"{bad"`.
+   */
+  function invalidAdditionalOptionsError(): string | null {
+    const index = schemaRows.findIndex((row) => invalidAdditionalOptionsRows.has(row));
+
+    if (index === -1) {
+      return null;
+    }
+
+    const tagName = schemaRows[index].name || 'row ' + (index + 1);
+
+    return 'additional_options must be valid JSON for "' + escapeHtml(tagName) + '".';
+  }
+
   function toggleRawMode() {
     if (!schemaState) {
       return;
     }
 
     if (!rawMode) {
+      const invalid = invalidAdditionalOptionsError();
+
+      if (invalid) {
+        showBanner('error', invalid + ' Fix it before switching to raw JSON.', true);
+
+        return;
+      }
+
       // Entering raw mode: serialize the current table state so edits aren't lost.
       schemaState.raw = JSON.stringify(Object.assign({}, schemaState.schema, { tags: schemaRows }), null, 2);
     } else {
@@ -1034,12 +1079,10 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
     if (rawMode) {
       raw = byId<HTMLTextAreaElement>('raw-editor')!.value;
     } else {
-      const invalidAdditionalOptionsIndex = schemaRows.findIndex((row) => invalidAdditionalOptionsRows.has(row));
+      const invalid = invalidAdditionalOptionsError();
 
-      if (invalidAdditionalOptionsIndex !== -1) {
-        const tagName = schemaRows[invalidAdditionalOptionsIndex].name || 'row ' + (invalidAdditionalOptionsIndex + 1);
-
-        showBanner('error', 'additional_options must be valid JSON for "' + escapeHtml(tagName) + '".');
+      if (invalid) {
+        showBanner('error', invalid);
 
         return;
       }
@@ -1054,7 +1097,25 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       return;
     }
 
-    showJsonDiffModal(beforeText, raw, () => void commitSchemaSave(raw).catch(showSaveError));
+    showJsonDiffModal(beforeText, raw, () => commitSave(() => commitSchemaSave(raw)));
+  }
+
+  /** Runs a confirmed save, with Save off until it and its reload are done (see `saving`). */
+  function commitSave(commit: () => Promise<void>) {
+    setSaving(true);
+    void commit()
+      .catch(showSaveError)
+      .finally(() => setSaving(false));
+  }
+
+  function setSaving(value: boolean) {
+    saving = value;
+
+    const saveBtn = byId<HTMLButtonElement>('save-btn');
+
+    if (saveBtn) {
+      saveBtn.disabled = value;
+    }
   }
 
   // Every way a save can fail ends in a visible error: a lost save must never look like a pending
@@ -1138,6 +1199,10 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       ? 'Saved, with warning(s):<ul>' + warnings.map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>'
       : 'Schema saved.';
 
+    // What the file holds now, also with newer edits: the next diff compares with it (it showed
+    // the lines just saved as changes again).
+    jsonBaseline.schema = raw;
+
     if (hasNewerEdits) {
       showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
 
@@ -1146,7 +1211,6 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     setDirty(false);
     showBanner(warnings.length ? 'warning' : 'success', message);
-    jsonBaseline.schema = raw;
 
     await reloadAfterSave('schema');
   }
@@ -1624,19 +1688,25 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         closeImportModal();
       }
     });
-    overlay.addEventListener('keydown', (ev) => {
+    document.body.appendChild(overlay);
+    // On the document, not the overlay: with nothing focused in the dialog (its error state, a
+    // click on its text) Escape reached nothing.
+    unbindImportKeys = bindModalKeys(overlay, (ev) => {
       if (ev.key === 'Escape') {
         ev.preventDefault();
         closeImportModal();
       }
     });
-
-    document.body.appendChild(overlay);
     void renderImportPickerStep(overlay);
   }
 
+  let unbindImportKeys: (() => void) | null = null;
+
   function closeImportModal() {
     const overlay = byId('ve-import-overlay');
+
+    unbindImportKeys?.();
+    unbindImportKeys = null;
 
     if (overlay) {
       overlay.remove();
@@ -1906,7 +1976,9 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
           JSON.parse(byId<HTMLTextAreaElement>('values-raw-editor')!.value) as ExportableValueRow[],
         );
       } catch (e) {
-        showBanner('error', 'Raw JSON is not valid: ' + escapeHtml(errorMessage(e)));
+        // The draft stays as typed: re-rendered, the textarea was made again from the last loaded
+        // rows, and the whole draft was gone.
+        showBanner('error', 'Raw JSON is not valid: ' + escapeHtml(errorMessage(e)), true);
 
         return;
       }
@@ -1921,7 +1993,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       return;
     }
 
-    showJsonDiffModal(beforeText, afterText, () => void commitValuesSave(tags, afterText).catch(showSaveError));
+    showJsonDiffModal(beforeText, afterText, () => commitSave(() => commitValuesSave(tags, afterText)));
   }
 
   async function commitValuesSave(tags: ValueRow[], afterText: string) {
@@ -1959,6 +2031,14 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     renderLocalUpdateButton();
 
+    // What MI holds now, also with newer edits: the next diff compares with it, and the JSON
+    // issues bar no longer takes the saved values for ones changed since the load.
+    jsonBaseline.values = afterText;
+
+    if (valuesState) {
+      valuesState.combined = tags.map((t) => ({ name: t.name, value: t.value }));
+    }
+
     if (hasNewerEdits) {
       showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
 
@@ -1967,12 +2047,15 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     setDirty(false);
     showBanner(warnings.length ? 'warning' : 'success', message);
-    jsonBaseline.values = afterText;
 
     await reloadAfterSave('values');
   }
 
   function save() {
+    if (saving) {
+      return;
+    }
+
     (activeTab === 'schema' ? saveSchema() : saveValues()).catch(showSaveError);
   }
 

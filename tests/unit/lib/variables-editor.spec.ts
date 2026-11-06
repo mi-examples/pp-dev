@@ -255,6 +255,26 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body.warnings).toEqual([expect.stringContaining('"has$special!chars" contains a character')]);
     });
 
+    // What the editor keeps of additional_options text that isn't JSON is that text, as a string:
+    // saved without a word, MI's editor got a string where it reads an object or a list.
+    it('warns (without blocking) on additional_options that are text, not JSON', async () => {
+      const { app } = setup();
+      const raw = JSON.stringify({
+        tags: [
+          { name: 'bad', additional_options: '{bad' },
+          { name: 'empty', additional_options: '' },
+          { name: 'list', additional_options: [{ name: 'id' }] },
+        ],
+      });
+
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/schema')!({ body: { raw } }, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.warnings).toEqual([expect.stringContaining('"bad" has additional_options that are text')]);
+    });
+
     it('answers with JSON when the file cannot be written', async () => {
       const { app, saveTemplateVariablesFile } = setup();
       const res = makeRes();

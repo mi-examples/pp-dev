@@ -22,6 +22,68 @@ const find = <T extends HTMLElement = HTMLButtonElement>(root: ParentNode, selec
 // dialog's confirmation: as the latter, it saved or discarded on a Cancel reached by Shift+Tab.
 const isButton = (target: EventTarget | null) => target instanceof HTMLButtonElement;
 
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Listens for `overlay`'s keys on the document while it is the dialog on top, and returns the
+ * function that stops listening (also stopped once the overlay leaves the page).
+ *
+ * On the overlay itself, the keys reached a dialog only while the focus was inside it: a click on
+ * the diff's text or the dialog's body put the focus on `<body>`, and Escape (or ←/→) did nothing.
+ * Tab cycles within the dialog: it left it for the page behind (the toolbar's Save).
+ */
+export function bindModalKeys(overlay: HTMLElement, onKey: (ev: KeyboardEvent) => void): () => void {
+  const listener = (ev: KeyboardEvent) => {
+    if (!overlay.isConnected) {
+      document.removeEventListener('keydown', listener);
+
+      return;
+    }
+
+    const overlays = document.querySelectorAll('.ve-modal-overlay');
+
+    if (overlays[overlays.length - 1] !== overlay) {
+      return;
+    }
+
+    if (ev.key === 'Tab') {
+      trapTab(overlay, ev);
+
+      return;
+    }
+
+    onKey(ev);
+  };
+
+  document.addEventListener('keydown', listener);
+
+  return () => document.removeEventListener('keydown', listener);
+}
+
+function trapTab(overlay: HTMLElement, ev: KeyboardEvent) {
+  const focusable = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE));
+
+  if (focusable.length === 0) {
+    ev.preventDefault();
+
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  const inside = active instanceof Node && overlay.contains(active);
+
+  if (ev.shiftKey && (!inside || active === first)) {
+    ev.preventDefault();
+    last.focus();
+  } else if (!ev.shiftKey && (!inside || active === last)) {
+    ev.preventDefault();
+    first.focus();
+  }
+}
+
 // Asks for a value (in place of window.prompt()); `onDone` gets `null` when the user cancels.
 export function showCustomValueModal(title: string, initialValue: string, onDone: (value: string | null) => void) {
   const overlay = openOverlay(
@@ -44,6 +106,7 @@ export function showCustomValueModal(title: string, initialValue: string, onDone
   inputEl.select();
 
   function close(value: string | null) {
+    unbindKeys();
     overlay.remove();
     onDone(value);
   }
@@ -55,8 +118,9 @@ export function showCustomValueModal(title: string, initialValue: string, onDone
       close(null);
     }
   });
-  inputEl.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') {
+
+  const unbindKeys = bindModalKeys(overlay, (ev) => {
+    if (ev.key === 'Enter' && !isButton(ev.target)) {
       ev.preventDefault();
       close(inputEl.value);
     } else if (ev.key === 'Escape') {
@@ -84,6 +148,7 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
   find(overlay, '.ve-modal-ok').focus();
 
   function close(confirmed: boolean) {
+    unbindKeys();
     overlay.remove();
 
     if (confirmed) {
@@ -98,7 +163,8 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
       close(false);
     }
   });
-  overlay.addEventListener('keydown', (ev) => {
+
+  const unbindKeys = bindModalKeys(overlay, (ev) => {
     if (ev.key === 'Enter' && !isButton(ev.target)) {
       ev.preventDefault();
       close(true);
@@ -129,6 +195,7 @@ export function showInfoModal(title: string, bodyHtml: string) {
   find(overlay, '.ve-modal-ok').focus();
 
   function close() {
+    unbindKeys();
     overlay.remove();
   }
 
@@ -138,8 +205,9 @@ export function showInfoModal(title: string, bodyHtml: string) {
       close();
     }
   });
-  overlay.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' || ev.key === 'Escape') {
+
+  const unbindKeys = bindModalKeys(overlay, (ev) => {
+    if ((ev.key === 'Enter' && !isButton(ev.target)) || ev.key === 'Escape') {
       ev.preventDefault();
       close();
     }
@@ -332,6 +400,7 @@ export function showJsonDiffModal(beforeText: string, afterText: string, onConfi
   }
 
   function close(confirmed: boolean) {
+    unbindKeys();
     overlay.remove();
 
     if (confirmed && typeof onConfirm === 'function') {
@@ -347,7 +416,8 @@ export function showJsonDiffModal(beforeText: string, afterText: string, onConfi
       close(false);
     }
   });
-  overlay.addEventListener('keydown', (ev) => {
+
+  const unbindKeys = bindModalKeys(overlay, (ev) => {
     if (ev.key === 'ArrowLeft' && hasChanges) {
       ev.preventDefault();
 
