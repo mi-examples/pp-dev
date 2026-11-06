@@ -101,6 +101,15 @@ function onPageDataLoadFailed(): void {
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
 
 /**
+ * Where the browser goes when MI refuses the page data for want of a session or token: MI's home,
+ * proxied, which sends a visitor without a session to its login page (where the proxy adds the
+ * Token Login form), and a logged-in one back here to `/home`, which loads the page data again and
+ * then redirects to the app. The same for every MI version: a v7 instance's app was sent to its
+ * own base path instead, and asked for the page data again there, without end.
+ */
+const AUTH_FAILURE_REDIRECT_URL = `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`;
+
+/**
  * Whether the request is a top-level HTML document navigation (as opposed to an
  * asset/XHR/HMR request). Used to detect deep-linked page loads so template data
  * can be loaded even when the first request is not the main page URL.
@@ -167,7 +176,7 @@ export function initLoadPPData(
   mi: MiAPI,
   opts: Partial<NormalizedVitePPDevOptions> & { base?: string; appBase?: string },
 ): NextHandleFunction {
-  const { templateLess = false, miHudLess = false, appId, base, appBase, v7Features } = opts;
+  const { templateLess = false, miHudLess = false, appId, base, appBase } = opts;
 
   const logger = createLogger();
 
@@ -217,12 +226,7 @@ export function initLoadPPData(
           if (!isNeedTemplateLoad) {
             await handlePageInfoOnly(
               mi,
-              {
-                templateLess,
-                miHudLess,
-                appId: appId!,
-                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-              },
+              { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
               req,
               res,
               recordLoadError,
@@ -231,12 +235,7 @@ export function initLoadPPData(
           } else {
             await handleTemplateLoad(
               mi,
-              {
-                templateLess,
-                miHudLess,
-                appId: appId!,
-                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-              },
+              { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
               req,
               res,
               recordLoadError,
@@ -279,12 +278,7 @@ export function initLoadPPData(
       if (!isNeedTemplateLoad) {
         const result = await handlePageInfoOnly(
           mi,
-          {
-            templateLess,
-            miHudLess,
-            appId: appId!,
-            redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-          },
+          { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
           req,
           res,
           next,
@@ -296,12 +290,7 @@ export function initLoadPPData(
 
       const result = await handleTemplateLoad(
         mi,
-        {
-          templateLess,
-          miHudLess,
-          appId: appId!,
-          redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-        },
+        { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
         req,
         res,
         next,
@@ -377,7 +366,7 @@ async function handlePageInfoOnly(
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+      redirectUrl || AUTH_FAILURE_REDIRECT_URL,
       res,
       next,
       logger,
@@ -432,7 +421,7 @@ async function handleTemplateLoad(
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+      redirectUrl || AUTH_FAILURE_REDIRECT_URL,
       res,
       next,
       logger,

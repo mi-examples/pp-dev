@@ -51,9 +51,16 @@ export function getIndexPageRegExp(base: string): RegExp {
   return new RegExp(`^((${escapeRegExp(base)})|/)$`);
 }
 
-/** Paths the proxy never sends to MI: pp-dev's and Vite's own, and the page itself. */
+/**
+ * Paths the proxy never sends to MI: pp-dev's and Vite's own, and the page itself. A base of `/`
+ * (the plugin in a `vite.config` of its own, Vite's default) names no page: as an empty prefix it
+ * matched every path, and nothing was proxied.
+ */
 export function getProxyIgnore(base: string): string[] {
-  return ['/@vite', '/@metricinsights', '/@', base.endsWith('/') ? base.slice(0, -1) : base];
+  const own = ['/@vite', '/@metricinsights', '/@'];
+  const page = base.endsWith('/') ? base.slice(0, -1) : base;
+
+  return page ? [...own, page] : own;
 }
 
 export interface SyncAndUsersOptions {

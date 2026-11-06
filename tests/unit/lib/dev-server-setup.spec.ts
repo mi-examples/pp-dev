@@ -94,6 +94,12 @@ describe('dev server setup', () => {
       expect(getProxyIgnore('/pl/page/')).toEqual(['/@vite', '/@metricinsights', '/@', '/pl/page']);
       expect(getProxyIgnore('/pt/page')).toEqual(['/@vite', '/@metricinsights', '/@', '/pt/page']);
     });
+
+    // An empty prefix matched every path: with the plugin in a vite.config of its own (Vite's
+    // default base), nothing was proxied.
+    it('names no page for a base of /', () => {
+      expect(getProxyIgnore('/')).toEqual(['/@vite', '/@metricinsights', '/@']);
+    });
   });
 
   describe('getMiAPIOptions', () => {

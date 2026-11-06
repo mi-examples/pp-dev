@@ -103,8 +103,12 @@ export function initRewriteResponse(
       if (req.method === 'HEAD') {
         res.end = function (chunk?: any, encoding?: any, cb?: any) {
           const callback = [chunk, encoding, cb].find((arg) => typeof arg === 'function');
+          // Only a page's: a file under the base (`pp-dev next`) keeps its length, as its GET does.
+          const contentType = res.getHeader('content-type');
+          const isPage =
+            !options.contentType || options.contentType(contentType === undefined ? '' : String(contentType));
 
-          if (!res.headersSent) {
+          if (!res.headersSent && isPage) {
             res.removeHeader('content-length');
           }
 

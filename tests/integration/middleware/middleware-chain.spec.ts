@@ -238,6 +238,38 @@ describe('the middleware chain', () => {
   // With a base of `/` every HTML navigation is one into the app: the inspector page reached the
   // page-data load first, and MI being down kept it from opening (review note). Its API route
   // stands in for the page here, which is served from the built `dist/client`.
+  it('proxies MI paths with a base of / (the plugin in a vite.config of its own)', async () => {
+    const chain = build(true, false, '/');
+    const server = serveChain(chain);
+    const port = await listen(server);
+
+    try {
+      const res = await get(port, '/api/user');
+
+      expect(res.status).toBe(200);
+      expect(upstreamHits).toEqual(['GET /api/user']);
+    } finally {
+      await close(server);
+    }
+  });
+
+  // Next's basePath has no trailing slash, and the index regexp matched the base literally: under
+  // `pp-dev next` the page data was loaded for document navigations only, so a fetch of the page
+  // got it with its variables unsubstituted and no MI error.
+  it("loads the page data for a fetch of the page under a Next-style base, as under Vite's", async () => {
+    const chain = build(true, false, '/p/chain-app');
+    const server = serveChain(chain);
+    const port = await listen(server);
+
+    try {
+      await get(port, '/p/chain-app/', { accept: '*/*' });
+
+      expect(upstreamHits.length).toBeGreaterThan(0);
+    } finally {
+      await close(server);
+    }
+  });
+
   it("serves pp-dev's own routes before the page-data load, whatever the base", async () => {
     const chain = build(true, true, '/');
     const server = serveChain(chain);

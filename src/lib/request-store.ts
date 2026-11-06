@@ -30,6 +30,7 @@ function toMeta(e: RequestEntry): RequestMeta {
     responseSize: e.responseBody?.byteLength ?? 0,
     requestBodyTruncated: e.requestBodyTruncated,
     responseBodyTruncated: e.responseBodyTruncated,
+    aborted: e.aborted,
   };
 }
 
@@ -51,6 +52,8 @@ export interface RequestEntry {
   responseHeaders: Record<string, number | string | string[] | undefined>;
   responseBody: Buffer | null;
   responseBodyTruncated: boolean;
+  /** The response was never ended: the socket was destroyed (a proxy error after the headers went out, the client gone). */
+  aborted?: boolean;
 }
 
 export interface RequestMeta {
@@ -66,6 +69,7 @@ export interface RequestMeta {
   responseSize: number;
   requestBodyTruncated: boolean;
   responseBodyTruncated: boolean;
+  aborted?: boolean;
 }
 
 export class RequestStore {
