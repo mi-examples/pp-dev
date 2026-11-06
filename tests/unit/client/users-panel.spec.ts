@@ -473,6 +473,39 @@ describe('initUsersPanel', () => {
       expect(patches()).toHaveLength(1);
     });
 
+    // The lock was released when the answer's headers came, before its body was read: a second
+    // Enter then sent a PATCH to the old name, answered 404.
+    it('keeps the form locked until the answer has been read', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value = 'reader';
+
+      let readBody: (body: unknown) => void = () => {};
+
+      fetchMock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: () => new Promise((resolve) => (readBody = resolve)),
+      }));
+
+      const $form = $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')!;
+
+      $form.requestSubmit();
+      await flush();
+      $form.dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+
+      const patches = () => fetchMock.mock.calls.filter(([, init]) => (init as RequestInit)?.method === 'PATCH');
+
+      expect(patches()).toHaveLength(1);
+
+      readBody({ user: { name: 'reader', kind: 'token', origin: 'o' } });
+      await flush();
+
+      expect(patches()).toHaveLength(1);
+    });
+
     it('sends a new token when one is typed', async () => {
       const $panel = await openPopover();
 

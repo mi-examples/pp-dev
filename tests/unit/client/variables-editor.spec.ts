@@ -1146,6 +1146,39 @@ describe('Variables Editor page', () => {
       dom.close();
     });
 
+    // The JSON issues bar worked out while the PUT ran compared with the old values, and stayed:
+    // the value just saved was flagged as changed until the next keystroke.
+    it('works the JSON issues out again once the save has recorded what it saved', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values&mode=json`);
+
+      pending[0]!({
+        ok: true,
+        json: async () => ({
+          schema: { tags: [{ name: 'title', tag_type: 'text' }] },
+          live: [],
+          combined: [{ name: 'title', value: 'initial' }],
+        }),
+      });
+      await flush();
+
+      enter('#values-raw-editor', '[{"name":"title","value":"submitted"}]');
+      click('#save-btn');
+      click('.ve-modal-ok');
+      // A newer edit while the PUT runs: the bar is worked out against "initial".
+      enter('#values-raw-editor', '[{"name":"title","value":"submitted"} ]');
+      await new Promise((resolve) => setTimeout(resolve, 350));
+
+      expect(find('#values-raw-issues').textContent).toContain('title');
+
+      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
+      await flush();
+
+      expect(banner()).toContain('Newer edits remain unsaved.');
+      expect(find('#values-raw-issues').textContent).not.toContain('title');
+
+      dom.close();
+    });
+
     // additional_options text that isn't JSON was kept as a string; raw mode serialized it as a
     // valid JSON string, and the rows it made back were no longer marked: `{bad` was saved.
     it('keeps raw mode closed while an additional_options text is not JSON', async () => {

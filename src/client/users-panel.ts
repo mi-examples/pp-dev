@@ -360,33 +360,37 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
         $save.disabled = true;
       }
 
-      const response = await request('PATCH', `${USERS_API}/${encodeURIComponent(name)}`, {
-        name: newName,
-        ...(token ? { token } : {}),
-      });
+      // Held until the answer is read and the list refreshed: released when the headers came, a
+      // second Enter while a rename's body was on its way sent a PATCH to the old name (404).
+      try {
+        const response = await request('PATCH', `${USERS_API}/${encodeURIComponent(name)}`, {
+          name: newName,
+          ...(token ? { token } : {}),
+        });
 
-      delete $form.dataset.submitting;
+        if (!response) {
+          return;
+        }
 
-      if ($save) {
-        $save.disabled = false;
+        const { user } = (await response.json()) as { user: PublicUser };
+
+        // This tab's own user got a new host: go on there (the old one would only send it on).
+        if (tabUser === name && user.name !== name) {
+          window.location.href = samePageOn(user.origin);
+
+          return;
+        }
+
+        editing = null;
+        renderedData = '';
+        await refresh();
+      } finally {
+        delete $form.dataset.submitting;
+
+        if ($save) {
+          $save.disabled = false;
+        }
       }
-
-      if (!response) {
-        return;
-      }
-
-      const { user } = (await response.json()) as { user: PublicUser };
-
-      // This tab's own user got a new host: go on there (the old one would only send it on).
-      if (tabUser === name && user.name !== name) {
-        window.location.href = samePageOn(user.origin);
-
-        return;
-      }
-
-      editing = null;
-      renderedData = '';
-      await refresh();
     });
 
     $list.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(($remove) => {

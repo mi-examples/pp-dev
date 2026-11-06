@@ -94,13 +94,15 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
  * which pruning would then delete. With an unusual format, a backup is rather kept than matched.
  *
  * Like {@link DistService.backupName}, only the first `{pageName}` and the first `{date}` are
- * placeholders; any later one stays in the name as it is.
+ * placeholders; any later one stays in the name as it is. The date may carry the `-<n>` a second
+ * backup in the same second gets (see {@link DistService.backupName}).
  */
 export function backupNamePattern(template: string, pageName: string, sampleDate: string): RegExp {
-  const date = sampleDate
-    .split(/(\d+)/)
-    .map((piece, index) => (index % 2 === 1 ? '\\d+' : escapeRegExp(piece)))
-    .join('');
+  const date =
+    sampleDate
+      .split(/(\d+)/)
+      .map((piece, index) => (index % 2 === 1 ? '\\d+' : escapeRegExp(piece)))
+      .join('') + '(?:-\\d+)?';
   const placeholders = [
     { token: `{${TEMPLATE_PART_PAGE_NAME}}`, pattern: escapeRegExp(pageName) },
     { token: `{${TEMPLATE_PART_DATE}}`, pattern: date },
@@ -334,10 +336,37 @@ export class DistService {
     }
   }
 
-  backupName(pageName: string, date: Date = new Date()) {
+  /**
+   * The backup's file name. `copy` (2, 3, …) goes after the date, for a backup made in the same
+   * second as one already there: the default date has seconds, and the second backup took the
+   * first one's name and overwrote it. A template without `{date}` has one name only.
+   */
+  backupName(pageName: string, date: Date = new Date(), copy = 1) {
     return this.backupNameTemplate
       .replace(`{${TEMPLATE_PART_PAGE_NAME}}`, pageName)
-      .replace(`{${TEMPLATE_PART_DATE}}`, this.dateFormat(date));
+      .replace(`{${TEMPLATE_PART_DATE}}`, this.dateFormat(date) + (copy > 1 ? `-${copy}` : ''));
+  }
+
+  /** A backup name for `date` that no file in the backups folder has yet (see {@link backupName}). */
+  private async freeBackupName(date: Date): Promise<string> {
+    let name = this.backupName(this.pageName, date);
+
+    for (let copy = 2; ; copy += 1) {
+      try {
+        await fs.access(path.resolve(this.backupFolder, name));
+      } catch {
+        return name;
+      }
+
+      const next = this.backupName(this.pageName, date, copy);
+
+      // A template without `{date}`: the same name again, which the backup replaces as before.
+      if (next === name) {
+        return name;
+      }
+
+      name = next;
+    }
   }
 
   getBackupMeta() {
@@ -794,7 +823,7 @@ export class DistService {
 
     const backupDate = new Date();
 
-    const filename = this.backupName(this.pageName, backupDate);
+    const filename = await this.freeBackupName(backupDate);
 
     meta.lastBackupName = filename;
     meta.lastBackupHash = resolvedBackupFileHash;
