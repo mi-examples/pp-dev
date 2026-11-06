@@ -14,12 +14,15 @@ import { createLogger } from './logger.js';
 export interface AuthState {
   isAuthenticated: boolean;
   isRedirected: boolean;
+  /** When the state was last updated by `setAuthenticated` or `updateState` (ms since epoch), 0 before. */
+  lastChecked: number;
 }
 
 class AuthProvider {
   private state: AuthState = {
     isAuthenticated: false,
     isRedirected: false,
+    lastChecked: 0,
   };
 
   private listeners: Set<(state: AuthState) => void> = new Set();
@@ -50,6 +53,7 @@ class AuthProvider {
    */
   setAuthenticated(authenticated: boolean): void {
     this.state.isAuthenticated = authenticated;
+    this.state.lastChecked = Date.now();
     this.notifyListeners();
   }
 
@@ -73,6 +77,7 @@ class AuthProvider {
       this.state.isRedirected = updates.isRedirected;
     }
 
+    this.state.lastChecked = Date.now();
     this.notifyListeners();
   }
 
@@ -83,6 +88,7 @@ class AuthProvider {
     this.state = {
       isAuthenticated: false,
       isRedirected: false,
+      lastChecked: 0,
     };
     this.notifyListeners();
   }
