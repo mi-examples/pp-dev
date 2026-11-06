@@ -67,6 +67,7 @@ export function registerBuildCommand(cli: CAC): void {
           root,
           mode,
           command: 'build',
+          ssr: Boolean(buildOptions.ssr),
           configFile: options.config,
           logLevel: options.logLevel,
           buildOverrides: cliOverrides,

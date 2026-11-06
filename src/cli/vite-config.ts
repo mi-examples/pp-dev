@@ -1,5 +1,12 @@
 import * as path from 'path';
-import { type InlineConfig, type LogLevel, loadConfigFromFile, mergeConfig } from 'vite';
+import {
+  type InlineConfig,
+  type LogLevel,
+  type ViteDevServer,
+  loadConfigFromFile,
+  mergeConfig,
+  normalizePath,
+} from 'vite';
 import { getViteConfig } from '../index.js';
 import { loadPPDevEnv } from '../lib/env.js';
 import type { ResolvedBuildCliOverrides } from '../lib/build-cli-overrides.js';
@@ -13,6 +20,8 @@ export interface CommandViteConfigOptions {
   command: 'build' | 'serve';
   /** `preview`: `serve` with `isPreview`, as Vite resolves it. */
   isPreview?: boolean;
+  /** `build --ssr`: what a config function sees as `isSsrBuild`. */
+  ssr?: boolean;
   /** `--config`. */
   configFile: string | undefined;
   logLevel: LogLevel | undefined;
@@ -46,12 +55,7 @@ export async function loadCommandViteConfig(opts: CommandViteConfigOptions): Pro
 
   loadPPDevEnv(mode, envDir);
 
-  const configFromFile = await loadConfigFromFile(
-    { mode, command, ...(isPreview ? { isPreview } : {}) },
-    opts.configFile,
-    root,
-    opts.logLevel,
-  );
+  const configFromFile = await loadViteConfigFile(opts);
 
   let config = await getViteConfig(opts.buildOverrides, { mode, root: envDir });
 
@@ -70,4 +74,67 @@ export async function loadCommandViteConfig(opts: CommandViteConfigOptions): Pro
     configFile: configFromFile ? { path: configFromFile.path, dependencies: configFromFile.dependencies } : null,
     viteEnvFiles: viteEnvDir ? envFilesForMode(mode).map((name) => path.join(viteEnvDir, name)) : [],
   };
+}
+
+/**
+ * Loads the project's `vite.config.*` as Vite's own load of it did, the one the commands now pass
+ * up (`configFile: false`): `isSsrBuild` for `build --ssr`, and `NODE_ENV` as Vite defaults it for
+ * the command (`production` for a build and a preview, `development` otherwise) when none is set —
+ * Vite sets it only once it resolves the config, after this load, so a plugin a config enables for
+ * `process.env.NODE_ENV === 'production'` was left out of the build. The value is taken back after
+ * the load: Vite then decides it as it would have (a `.env` file's `NODE_ENV=development` included).
+ */
+async function loadViteConfigFile(opts: CommandViteConfigOptions) {
+  const { mode, command, isPreview } = opts;
+  const defaultNodeEnv = command === 'build' || isPreview ? 'production' : 'development';
+  const setNodeEnv = process.env.NODE_ENV === undefined;
+
+  if (setNodeEnv) {
+    Object.assign(process.env, { NODE_ENV: defaultNodeEnv });
+  }
+
+  try {
+    return await loadConfigFromFile(
+      {
+        mode,
+        command,
+        isSsrBuild: command === 'build' && opts.ssr === true,
+        ...(isPreview ? { isPreview } : {}),
+      },
+      opts.configFile,
+      opts.root,
+      opts.logLevel,
+    );
+  } finally {
+    if (setNodeEnv) {
+      Reflect.deleteProperty(process.env, 'NODE_ENV');
+    }
+  }
+}
+
+/**
+ * The `.env` files a Vite dev server loads, as it resolved them: its `mode` (the config file's when
+ * the command gave none) and its `envDir` (after the plugins' config hooks); none for
+ * `envDir: false`. In Vite's form (forward slashes), as its watcher holds them.
+ */
+export function viteEnvFilesOf(config: { mode: string; envDir: string | false }): string[] {
+  const { envDir } = config;
+
+  return envDir === false ? [] : envFilesForMode(config.mode).map((name) => normalizePath(path.join(envDir, name)));
+}
+
+/**
+ * Takes the `.env` files of `server` from its own watcher, as resolved (see {@link viteEnvFilesOf}),
+ * and returns them for pp-dev's watcher: on a change Vite restarted itself with the config and
+ * plugin instances of the start, and the list known before the server existed can miss them (a
+ * `mode` set in the config file, an `envDir` a plugin's config hook set).
+ */
+export function takeViteEnvFiles(server: Pick<ViteDevServer, 'config' | 'watcher'>): string[] {
+  const files = viteEnvFilesOf(server.config);
+
+  if (files.length > 0) {
+    server.watcher.unwatch(files);
+  }
+
+  return files;
 }

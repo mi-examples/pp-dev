@@ -57,7 +57,7 @@ function fakeServer(): FakeServer {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function setup(overrides: { checkConfig?: () => Promise<void> } = {}) {
+function setup(overrides: { checkConfig?: () => Promise<void>; mode?: string } = {}) {
   const servers: FakeServer[] = [];
   const processRef = Object.assign(new EventEmitter(), { exit: vi.fn() });
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -77,6 +77,7 @@ function setup(overrides: { checkConfig?: () => Promise<void> } = {}) {
 
   void superviseNextServer({
     projectRoot: '/app',
+    ...(overrides.mode ? { mode: overrides.mode } : {}),
     logger,
     checkConfig,
     startServerProcess: () => {
@@ -121,9 +122,27 @@ describe('superviseNextServer', () => {
 
     servers[0].ready();
 
-    expect(createWatcher).toHaveBeenCalledWith('/app', expect.any(Function), expect.any(Function), {
-      mode: 'development',
-    });
+    expect(createWatcher).toHaveBeenCalledWith(
+      '/app',
+      expect.any(Function),
+      expect.any(Function),
+      expect.objectContaining({ mode: 'development' }),
+    );
+  });
+
+  // Next's development phase loads `.env.development*` whatever pp-dev's `--mode`: with
+  // `--mode staging` a change to them restarted nothing.
+  it("watches Next's development .env files whatever the mode", () => {
+    const { servers, createWatcher } = setup({ mode: 'staging' });
+
+    servers[0].ready();
+
+    const options = (createWatcher.mock.calls[0] as unknown[] | undefined)?.[3] as { mode?: string; files?: string[] };
+
+    expect(options.mode).toBe('staging');
+    expect(options.files).toEqual(
+      ['.env', '.env.local', '.env.development', '.env.development.local'].map((name) => path.join('/app', name)),
+    );
   });
 
   it("exits with the server's code when the first start fails", async () => {

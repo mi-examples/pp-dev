@@ -12,7 +12,7 @@ import { cleanOptions } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
 import { createConfigWatcher, cleanupConfigWatcher, type ConfigWatcher } from '../config-watcher.js';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
-import { loadCommandViteConfig } from '../vite-config.js';
+import { loadCommandViteConfig, takeViteEnvFiles } from '../vite-config.js';
 import { stopProfiler, profilerShortcuts } from '../profiler.js';
 
 export function registerServeCommand(cli: CAC): void {
@@ -103,6 +103,10 @@ export function registerServeCommand(cli: CAC): void {
           if (!nextServer.httpServer) {
             throw new Error('HTTP server not available');
           }
+
+          // Its `.env` files as it resolved them, which the list above can miss (a `mode` in the
+          // config file, an `envDir` from a plugin's config hook): taken from its watcher too.
+          viteConfigFiles.push(...takeViteEnvFiles(nextServer));
 
           // Stop the running server, if any, now that the new one is ready to listen
           if (server) {

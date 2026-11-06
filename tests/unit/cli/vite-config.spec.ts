@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -119,6 +119,74 @@ describe('loadCommandViteConfig', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // The commands pass Vite `configFile: false`, so this load is the only one: it must see the
+  // config as Vite's own did — NODE_ENV defaulted for the command, isSsrBuild for `build --ssr`.
+  describe('as Vite loaded the file', () => {
+    let dir: string;
+    let nodeEnv: string | undefined;
+
+    beforeAll(() => {
+      dir = mkdtempSync(path.join(tmpdir(), 'pp-dev-vite-config-env-'));
+      writeFileSync(
+        path.join(dir, 'vite.config.mjs'),
+        [
+          'export default ({ isSsrBuild }) => ({',
+          "  plugins: process.env.NODE_ENV === 'production' ? [{ name: 'production-only' }] : [{ name: 'other' }],",
+          '  define: { __SSR__: JSON.stringify(isSsrBuild === true) },',
+          '});',
+          '',
+        ].join('\n'),
+      );
+    });
+
+    afterAll(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    beforeEach(() => {
+      nodeEnv = process.env.NODE_ENV;
+      Reflect.deleteProperty(process.env, 'NODE_ENV');
+    });
+
+    afterEach(() => {
+      if (nodeEnv === undefined) {
+        Reflect.deleteProperty(process.env, 'NODE_ENV');
+      } else {
+        Object.assign(process.env, { NODE_ENV: nodeEnv });
+      }
+    });
+
+    const load = (options: { command: 'build' | 'serve'; isPreview?: boolean; ssr?: boolean }) =>
+      loadCommandViteConfig({ root: dir, mode: 'production', configFile: undefined, logLevel: 'silent', ...options });
+    const pluginNames = (config: { plugins?: unknown[] }) =>
+      (config.plugins ?? []).map((plugin) => (plugin as { name: string }).name);
+
+    it.each([
+      ['a build', { command: 'build' as const }, 'production-only'],
+      ['a preview', { command: 'serve' as const, isPreview: true }, 'production-only'],
+      ['the dev server', { command: 'serve' as const }, 'other'],
+    ])('defaults NODE_ENV for %s while the file loads, and takes it back', async (_name, options, plugin) => {
+      const { config } = await load(options);
+
+      expect(pluginNames(config)).toContain(plugin);
+      expect(process.env.NODE_ENV).toBeUndefined();
+    });
+
+    it('keeps a NODE_ENV that is set', async () => {
+      Object.assign(process.env, { NODE_ENV: 'development' });
+
+      const { config } = await load({ command: 'build' });
+
+      expect(pluginNames(config)).toContain('other');
+      expect(process.env.NODE_ENV).toBe('development');
+    });
+
+    it('tells the file of an SSR build', async () => {
+      expect(JSON.parse(String((await load({ command: 'build', ssr: true })).config.define?.__SSR__))).toBe(true);
+      expect(JSON.parse(String((await load({ command: 'build' })).config.define?.__SSR__))).toBe(false);
+    });
   });
 
   it('names no .env files for envDir: false', async () => {

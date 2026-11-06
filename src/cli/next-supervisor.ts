@@ -1,11 +1,17 @@
 import { fork, type ChildProcess } from 'node:child_process';
+import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
 import {
   SUPERVISOR_READY_MESSAGE,
   SUPERVISOR_SHUTDOWN_MESSAGE,
   type SupervisorMessage,
 } from '../lib/process-handlers.js';
-import { createConfigWatcher, type ConfigWatcher, type ConfigWatcherOptions } from './config-watcher.js';
+import {
+  createConfigWatcher,
+  envFilesForMode,
+  type ConfigWatcher,
+  type ConfigWatcherOptions,
+} from './config-watcher.js';
 
 /**
  * `pp-dev next` runs its server in a process of its own and restarts that process on a config
@@ -225,7 +231,12 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         settle();
 
         if (!watcher && !shuttingDown) {
-          watcher = createWatcher(projectRoot, restart, logger.info, { mode });
+          // The `.env` files of the mode pp-dev loads, and the development ones Next's dev server
+          // loads itself, whatever `--mode` says.
+          watcher = createWatcher(projectRoot, restart, logger.info, {
+            mode,
+            files: envFilesForMode('development').map((name) => path.join(projectRoot, name)),
+          });
         }
       });
 
