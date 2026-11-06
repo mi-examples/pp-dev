@@ -133,6 +133,4 @@ Real apps that install the local `.tgz` of the package:
 - `tests/test-nextjs/`: Next.js ESM app
 - `tests/test-nextjs-cjs/`: Next.js CJS app
 
-## Known Issues
-
-- **Next.js toolbar tests**: the toolbar E2E tests are skipped for the Next.js fixtures, where the panel is injected differently.
+The toolbar's browser tests run for every fixture: under `pp-dev next` the dev panel is the same page fragment, injected by the server's page rewrite instead of Vite's `transformIndexHtml`. Config changes and restarts are covered by the server E2E suite (`tests/e2e/config-restart.spec.ts`).
