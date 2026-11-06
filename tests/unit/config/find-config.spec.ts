@@ -35,6 +35,22 @@ describe('findConfig', () => {
     await expect(findConfig(root)).resolves.toEqual({ config: { app: { id: 4, type: 'page' } }, found: true });
   });
 
+  // A file that exports nothing (null, a half-written save) or a package key of the wrong kind
+  // counted as no config at all: the supervisor's check let the change through, stopped the
+  // working server, and the new one refused the empty config.
+  it('finds a config file whatever it exports', async () => {
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"null-app"}');
+    fs.writeFileSync(path.join(root, 'pp-dev.config.mjs'), 'export default null;\n');
+
+    await expect(findConfig(root)).resolves.toEqual({ config: {}, found: true });
+  });
+
+  it("finds package.json's pp-dev whatever it holds", async () => {
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"pkg-app","pp-dev":"oops"}');
+
+    await expect(findConfig(root)).resolves.toEqual({ config: {}, found: true });
+  });
+
   it('finds none in a project whose config lives in next.config', async () => {
     fs.writeFileSync(path.join(root, 'package.json'), '{"name":"next-app"}');
     fs.writeFileSync(path.join(root, 'next.config.mjs'), 'export default {};\n');

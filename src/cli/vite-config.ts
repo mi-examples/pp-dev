@@ -59,8 +59,9 @@ export async function loadCommandViteConfig(opts: CommandViteConfigOptions): Pro
     config = mergeConfig(config, configFromFile.config);
   }
 
-  // As Vite resolves them: its root (the file may set one), and `envDir` against it.
-  const viteRoot = config.root ? path.resolve(config.root) : envDir;
+  // As Vite resolves them: its root — the command's `[root]` when given (the inline config's, over
+  // the file's), else the file's `root`, else the current directory — and `envDir` against it.
+  const viteRoot = root ? envDir : config.root ? path.resolve(config.root) : envDir;
   const viteEnvDir = config.envDir === false ? null : path.resolve(viteRoot, config.envDir ?? '.');
 
   return {

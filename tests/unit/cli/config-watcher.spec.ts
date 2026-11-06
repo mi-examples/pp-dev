@@ -189,6 +189,30 @@ describe('createConfigWatcher', () => {
     await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
   });
 
+  // A file given that doesn't exist yet (Vite's `.env.local` in its own envDir) was dropped, so
+  // creating it later restarted nothing — and Vite's watcher ignores it too.
+  it('sees a file it is given once it is created, through its directory', async () => {
+    const dir = makeProject();
+
+    fs.mkdirSync(path.join(dir, 'config'));
+
+    const restart = vi.fn().mockResolvedValue(undefined);
+    const { watcher } = await startWatcher(dir, restart, { files: [path.join(dir, 'config', '.env.local')] });
+
+    fs.writeFileSync(path.join(dir, 'config', 'other.txt'), 'not watched\n');
+    await settle();
+    expect(restart).not.toHaveBeenCalled();
+
+    fs.writeFileSync(path.join(dir, 'config', '.env.local'), 'VITE_A=1\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
+
+    // Added later, before it exists, too.
+    watcher.add([path.join(dir, 'config', '.env.staging')]);
+    await settle();
+    fs.writeFileSync(path.join(dir, 'config', '.env.staging'), 'VITE_B=1\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(2), { timeout: 5000 });
+  });
+
   it('ignores other files and files in subdirectories', async () => {
     const dir = makeProject();
     const restart = vi.fn().mockResolvedValue(undefined);

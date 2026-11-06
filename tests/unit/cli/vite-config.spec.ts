@@ -98,6 +98,29 @@ describe('loadCommandViteConfig', () => {
     }
   });
 
+  // The command's [root] is the inline config's, over the file's `root`: with `pp-dev .` and
+  // `root: './web'` in the file, Vite loads the .env files of `.`, and those were not the ones named.
+  it("names the .env files of the command's root over the file's", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pp-dev-vite-config-root-'));
+
+    try {
+      mkdirSync(path.join(dir, 'web'));
+      writeFileSync(path.join(dir, 'vite.config.mjs'), "export default { root: './web' };\n");
+
+      const { viteEnvFiles } = await loadCommandViteConfig({
+        root: dir,
+        mode: 'development',
+        command: 'serve',
+        configFile: undefined,
+        logLevel: 'silent',
+      });
+
+      expect(viteEnvFiles[0]).toBe(path.join(dir, '.env'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('names no .env files for envDir: false', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pp-dev-vite-config-noenv-'));
 

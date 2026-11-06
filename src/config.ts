@@ -275,25 +275,31 @@ export async function getConfig(projectRoot = process.cwd()): Promise<PPDevConfi
 /**
  * The standalone pp-dev config: a `pp-dev.config.*` file, else package.json's `pp-dev`; and whether
  * there is one, for a check that must not take the empty config of a project whose pp-dev config
- * lives in `next.config` (`withPPDev()`) for a refused one.
+ * lives in `next.config` (`withPPDev()`) for a refused one. Found means the file or the package key
+ * is there, whatever it holds: a file that exports nothing (`null`, a half-written save) is a config
+ * to validate, not a project without one.
  */
 export async function findConfig(projectRoot = process.cwd()): Promise<{ config: PPDevConfig; found: boolean }> {
   const root = path.resolve(projectRoot);
   const dirContent = getDirectoryContent(root);
+  const configNames = PP_DEV_CONFIG_NAMES as never as string[];
+  const hasConfigFile = configNames.some((name) => dirContent.includes(name));
+  const pkg = getPackageJson(root);
+  const hasPackageConfig = Object.prototype.hasOwnProperty.call(pkg, 'pp-dev');
 
-  const newConfig = await loadConfig<PPDevConfig>(dirContent, PP_DEV_CONFIG_NAMES as never as string[], root);
+  const newConfig = hasConfigFile ? await loadConfig<PPDevConfig>(dirContent, configNames, root) : null;
 
   if (newConfig) {
     return { config: newConfig, found: true };
   }
 
-  const packageConfig = getPackageJson(root)['pp-dev'];
+  const packageConfig = pkg['pp-dev'];
 
   if (packageConfig && typeof packageConfig === 'object' && !Array.isArray(packageConfig)) {
     return { config: packageConfig as PPDevConfig, found: true };
   }
 
-  return { config: {}, found: false };
+  return { config: {}, found: hasConfigFile || hasPackageConfig };
 }
 
 export function clearConfigCache() {

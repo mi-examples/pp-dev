@@ -22,16 +22,12 @@ export interface ConfigWatcherOptions {
   mode?: string;
   /**
    * Files to watch besides the config files in the project root, wherever they are: a `--config`
-   * elsewhere and the modules it imports, the `.env` files of Vite's own `envDir`. Only ones that
-   * exist: chokidar given a path that doesn't delivers nothing, not even the root's changes (seen
-   * with the `.env` names that are usually absent).
+   * elsewhere and the modules it imports, the `.env` files of Vite's own `envDir`. Ones that don't
+   * exist yet are watched for too (a `.env.local` created later), through their directory, which
+   * must exist: chokidar given a path that doesn't delivers nothing, not even the root's changes
+   * (seen with the `.env` names that are usually absent).
    */
   files?: string[];
-}
-
-/** The paths that exist, resolved: what chokidar may be given. */
-function existingFiles(files: string[]): string[] {
-  return files.map((file) => path.resolve(file)).filter((file) => fs.existsSync(file));
 }
 
 /** The files in the project root whose change restarts the dev server, besides the `.env` files of the mode. */
@@ -86,22 +82,49 @@ export function createConfigWatcher(
   const { debounceMs = 500, mode, files = [] } = options;
   const root = path.resolve(projectRoot);
   const watchedFiles = new Set(watchedConfigFiles(mode));
-  const extraFiles = new Set(existingFiles(files));
+  /** The files given (see {@link ConfigWatcherOptions.files}), resolved, whether they exist or not. */
+  const extraFiles = new Set<string>();
+  /** The directories watched for them: the root, and each given file's, when it exists. */
+  const watchedDirs = new Set([root]);
 
-  const watcher = watch([root, ...extraFiles], {
+  /** Takes `paths` in; the directories chokidar has yet to be given. */
+  const register = (paths: string[]): string[] => {
+    const newDirs: string[] = [];
+
+    for (const file of paths.map((file) => path.resolve(file))) {
+      if (extraFiles.has(file)) {
+        continue;
+      }
+
+      extraFiles.add(file);
+
+      const dir = path.dirname(file);
+
+      if (!watchedDirs.has(dir) && fs.existsSync(dir)) {
+        watchedDirs.add(dir);
+        newDirs.push(dir);
+      }
+    }
+
+    return newDirs;
+  };
+
+  register(files);
+
+  const watcher = watch([...watchedDirs], {
     // Without stats chokidar is asking about a path it hasn't looked at yet: let it look. With them,
-    // the root itself, the config files in it and the files given pass; other files and every
-    // directory are ignored.
+    // the watched directories, the config files in the root and the files given pass; other files
+    // and every other directory are ignored.
     ignored: (filePath, stats) => {
       if (!stats) {
         return false;
       }
 
-      if (stats.isDirectory()) {
-        return path.resolve(filePath) !== root;
-      }
-
       const resolved = path.resolve(filePath);
+
+      if (stats.isDirectory()) {
+        return !watchedDirs.has(resolved);
+      }
 
       return (
         !extraFiles.has(resolved) && !(path.dirname(resolved) === root && watchedFiles.has(path.basename(resolved)))
@@ -181,14 +204,10 @@ export function createConfigWatcher(
     watcher,
     ready,
     add(paths) {
-      const added = existingFiles(paths).filter((file) => !extraFiles.has(file));
+      const newDirs = register(paths);
 
-      for (const file of added) {
-        extraFiles.add(file);
-      }
-
-      if (added.length > 0 && !closed) {
-        watcher.add(added);
+      if (newDirs.length > 0 && !closed) {
+        watcher.add(newDirs);
       }
     },
     async close() {

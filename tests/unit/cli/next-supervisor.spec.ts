@@ -433,6 +433,16 @@ describe("the supervisor's config check", () => {
     await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
   });
 
+  // A config file that exports nothing counted as no config: the check passed, the working server
+  // was stopped, and the new one refused the empty config.
+  it('refuses a config file that exports nothing', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-null-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"null-app"}');
+    fs.writeFileSync(path.join(root, 'pp-dev.config.mjs'), 'export default null;\n');
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/mi\.url/);
+  });
+
   it('refuses a broken package.json config', async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-pkg-'));
     fs.writeFileSync(
