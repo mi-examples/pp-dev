@@ -69,11 +69,25 @@ const defaultConfig = {
   context: 'globalThis',
 };
 
+/**
+ * `npm run build:analyze` (`--environment ANALYZE`): a treemap of the ESM build in `dist/stats.html`.
+ * Passed with `--configPlugin`, the visualizer only saw the bundle of this config file, not the build.
+ */
+const analyzePlugins = process.env.ANALYZE
+  ? [
+      (await import('rollup-plugin-visualizer')).visualizer({
+        filename: 'dist/stats.html',
+        gzipSize: true,
+      }),
+    ]
+  : [];
+
 const configs = [
   // ESM Build
   defineConfig({
     ...defaultConfig,
     plugins: [
+      ...analyzePlugins,
       typescript({
         tsconfig: './tsconfig.esm.json',
         declaration: false,
@@ -115,9 +129,11 @@ const configs = [
     preserveEntrySignatures: 'strict',
   }),
 
-  // CJS Build
+  // CJS Build: the entries a `require()` reaches. The CLI is run from `bin/pp-dev.js`, which loads
+  // the ESM one; its CJS build was dead weight in the package.
   defineConfig({
     ...defaultConfig,
+    input: Object.fromEntries(Object.entries(defaultConfig.input).filter(([name]) => name !== 'cli')),
     plugins: [
       typescript({
         tsconfig: './tsconfig.cjs.json',

@@ -2041,6 +2041,10 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       valuesState.combined = tags.map((t) => ({ name: t.name, value: t.value }));
     }
 
+    // The JSON issues bar may have been worked out while the PUT ran, against the old values: the
+    // values just saved stayed flagged as changed until the next keystroke.
+    refreshValuesJsonIssues();
+
     if (hasNewerEdits) {
       showBanner('warning', message + '<div>Newer edits remain unsaved.</div>', true);
 

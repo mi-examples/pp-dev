@@ -15,7 +15,7 @@
     "build:node": "rollup --config rollup.config.ts --configPlugin typescript && node scripts/postbuild.js && node scripts/build-types.mjs",
     "build:client": "rollup --config src/client/rollup.config.ts --configPlugin typescript",
     "build:watch": "rollup --config rollup.config.ts --configPlugin typescript --watch",
-    "build:analyze": "rollup --config rollup.config.ts --configPlugin typescript --configPlugin rollup-plugin-visualizer",
+    "build:analyze": "rollup --config rollup.config.ts --configPlugin typescript --environment ANALYZE",
     "postbuild": "npm pack && node scripts/rename-pack.js",
     "startup:profile": "node --prof bin/pp-dev.js",
     "test": "npm run test:all",
@@ -29,9 +29,10 @@
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test:e2e:ui": "npx playwright test --ui",
     "test:all": "npm run test:unit && npm run test:integration",
-    "lint": "eslint src tests e2e",
-    "lint:fix": "eslint src tests e2e --fix",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tests/tsconfig.json && tsc -p e2e/tsconfig.json",
+    "lint": "eslint src tests e2e scripts",
+    "lint:fix": "eslint src tests e2e scripts --fix",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p src/client/tsconfig.json && tsc -p tests/tsconfig.json && tsc -p e2e/tsconfig.json && tsc -p scripts/tsconfig.json",
     "audit:all": "node scripts/audit-all.mjs",
     "prereinstall:all": "npm run build",
     "reinstall:all": "node scripts/reinstall-all.mjs"
@@ -74,11 +75,9 @@
       "undici": "^6.28.1"
     },
     "chokidar": "^5.0.0",
-    "file-type": "^22.2.0",
     "glob": "^14.0.3",
     "http-cache-semantics": ">=4.3.0",
     "ip-address": ">=10.7.1",
-    "js-yaml": ">=4.3.1",
     "minimatch": "11.0.4",
     "nanoid": "3.3.18",
     "next@*": {
@@ -86,7 +85,6 @@
     },
     "qs": ">=6.16.1",
     "serialize-javascript": ">=7.1.2",
-    "sharp": "^0.35.5",
     "tar": "^7.5.22",
     "vite@*": {
       "postcss": "8.5.23"

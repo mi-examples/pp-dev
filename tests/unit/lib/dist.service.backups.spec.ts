@@ -174,6 +174,43 @@ describe('DistService — start-up and backups', () => {
     );
   });
 
+  // The default date has seconds: now that every change on MI gets a backup, two in the same
+  // second took the same name, and the second overwrote the first.
+  it('gives a second backup in the same second a name of its own, which pruning still counts', async () => {
+    const backups = path.join(root, 'backups');
+
+    fs.mkdirSync(backups);
+    memoryMeta();
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-06T10:09:45.100Z') });
+
+    try {
+      const service = new DistService('page', {
+        root,
+        metaDir: '.pp-dev-meta',
+        backupFolder: 'backups',
+        maxBackups: 2,
+      });
+
+      await service.saveBackup(Buffer.from('first'), analysis('first'));
+      vi.setSystemTime(new Date('2026-11-06T10:09:45.600Z'));
+      await service.saveBackup(Buffer.from('second'), analysis('second'));
+
+      expect(fs.readdirSync(backups).sort()).toEqual([
+        'page-2026-11-06T10-09-45-2.zip',
+        'page-2026-11-06T10-09-45.zip',
+      ]);
+      expect(fs.readFileSync(path.join(backups, 'page-2026-11-06T10-09-45.zip'), 'utf8')).toBe('first');
+      expect(service.getBackupMeta()!.lastBackupName).toBe('page-2026-11-06T10-09-45-2.zip');
+
+      vi.setSystemTime(new Date('2026-11-06T10:09:46.000Z'));
+      await service.saveBackup(Buffer.from('third'), analysis('third'));
+
+      expect(fs.readdirSync(backups)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps every backup with maxBackups: false', async () => {
     const backups = path.join(root, 'backups');
 
@@ -302,6 +339,13 @@ describe('backupNamePattern', () => {
     // The constructor reads the meta (and creates its folders) in the background: done before
     // afterAll removes the root, or a late mkdir recreates it, or rmSync meets a folder being made.
     await service.getLatestSavedBackup();
+  });
+
+  it('matches the name of a second backup in the same second, and no other suffix', () => {
+    const pattern = backupNamePattern('{pageName}-{date}.zip', 'page', defaultDate);
+
+    expect(pattern.test('page-2026-11-06T10-09-45-2.zip')).toBe(true);
+    expect(pattern.test('page-2026-11-06T10-09-45-copy.zip')).toBe(false);
   });
 
   it("doesn't take a repeated placeholder for a second one", () => {

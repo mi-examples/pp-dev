@@ -100,18 +100,20 @@ interface Fixture {
   port: number;
 }
 
+// Ports of their own: 3105 and 3106 were the Playwright runner's defaults, and the two suites
+// collided when run at the same time locally.
 const fixtures: Fixture[] = [
   {
     name: 'pp-dev next (withPPDev layout)',
     dir: path.resolve(__dirname, '../test-nextjs'),
-    args: ['--port', '3105'],
-    port: 3105,
+    args: ['--port', '3115'],
+    port: 3115,
   },
   {
     name: 'pp-dev (Vite)',
     dir: path.resolve(__dirname, '../test-commonjs'),
-    args: ['--port', '3106', '--strictPort'],
-    port: 3106,
+    args: ['--port', '3116', '--strictPort'],
+    port: 3116,
   },
 ];
 

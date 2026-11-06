@@ -18,6 +18,12 @@ import { pointConfigAt, startDevServer, type DevServerProcess } from './helpers/
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
 const CONFIG_PATH = path.join(TEST_APP_DIR, 'pp-dev.config.ts');
+/**
+ * The main suite's port, given to the server: on Next's default 3000 another server running there
+ * (a developer's own `pp-dev`) answered the requests, or Next moved to 3001 and the suite talked to
+ * the wrong one. Apart from the Playwright runner's (3105–3107) and the other suites' ports.
+ */
+const PORT_WITH_BACKEND = 3101;
 
 function startPPDev(extraEnv?: Record<string, string>, args: string[] = []): DevServerProcess {
   // Use npm run dev so npm resolves the node binary via nvm4w correctly.
@@ -94,7 +100,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     mockMi = await startMockMiServer({ mode: 'replay', cassetteName: 'startup' });
     // Start pp-dev against mock-mi so CI never depends on the VPN-only MI instance.
     config = pointConfigAt(CONFIG_PATH, mockMi.url);
-    ppdev = startPPDev();
+    ppdev = startPPDev(undefined, ['--port', String(PORT_WITH_BACKEND)]);
     // Wait for the very last startup log so all startup lines are in ppdev.lines
     await ppdev.waitForLine(/Config file watcher started/i, 60_000);
   }, 90_000);
@@ -124,7 +130,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   // ── 3: HTTP sanity-check ──────────────────────────────────────────────
 
   it('serves HTTP responses', async () => {
-    const res = await fetch('http://localhost:3000/', {
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/`, {
       redirect: 'manual',
       signal: AbortSignal.timeout(10_000),
     });
@@ -134,7 +140,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
 
   it('loads page data from mock-mi cassette', async () => {
     // The first request compiles the page in Next.js dev: 9-10 s on a cold `.next` cache.
-    const res = await fetch('http://localhost:3000/pl/pp-dev-test-template/', {
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/pl/pp-dev-test-template/`, {
       signal: AbortSignal.timeout(30_000),
     });
 
@@ -144,7 +150,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   });
 
   it('proxies MI data requests through mock-mi cassette', async () => {
-    const res = await fetch('http://localhost:3000/data/page/index/auth/info', {
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/data/page/index/auth/info`, {
       signal: AbortSignal.timeout(10_000),
     });
 
@@ -169,7 +175,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
         const request = http.get(
           {
             host: 'localhost',
-            port: 3000,
+            port: PORT_WITH_BACKEND,
             path: '/pl/pp-dev-test-template/',
             agent: false,
             headers: encodingHeaders,
@@ -195,7 +201,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
       expect(html).toContain('pp-dev-info');
 
       const list = (await (
-        await fetch('http://localhost:3000/@api/requests?search=/pl/pp-dev-test-template/', {
+        await fetch(`http://localhost:${PORT_WITH_BACKEND}/@api/requests?search=/pl/pp-dev-test-template/`, {
           signal: AbortSignal.timeout(10_000),
         })
       ).json()) as { requests: { id: string; url: string }[] };
@@ -205,7 +211,9 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
       expect(captured).toBeDefined();
 
       const details = (await (
-        await fetch(`http://localhost:3000/@api/requests/${captured!.id}`, { signal: AbortSignal.timeout(10_000) })
+        await fetch(`http://localhost:${PORT_WITH_BACKEND}/@api/requests/${captured!.id}`, {
+          signal: AbortSignal.timeout(10_000),
+        })
       ).json()) as { responseBody: string };
 
       expect(Buffer.from(details.responseBody, 'base64').toString('utf8')).toContain('</html>');
@@ -217,20 +225,24 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   // template sync uploads to MI with the developer's token). Its Host is still evil.example:3000.
   it('refuses requests and WebSocket upgrades for a host it was not started for', async () => {
     for (const urlPath of ['/', '/@api/users', '/@pp-dev/inspector']) {
-      const res = await getWithHost(3000, urlPath, 'evil.example:3000');
+      const res = await getWithHost(PORT_WITH_BACKEND, urlPath, `evil.example:${PORT_WITH_BACKEND}`);
 
       expect(res.status, urlPath).toBe(403);
       expect(res.body).toContain('this host ("evil.example") is not allowed');
     }
 
-    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
-    expect(await upgradeStatusWithHost(3000, '/_next/hmr', 'evil.example:3000')).toBe('HTTP/1.1 403 Forbidden');
+    expect(await upgradeStatusWithHost(PORT_WITH_BACKEND, '/@pp-dev-hmr', `evil.example:${PORT_WITH_BACKEND}`)).toBe(
+      'HTTP/1.1 403 Forbidden',
+    );
+    expect(await upgradeStatusWithHost(PORT_WITH_BACKEND, '/_next/hmr', `evil.example:${PORT_WITH_BACKEND}`)).toBe(
+      'HTTP/1.1 403 Forbidden',
+    );
   });
 
   it('still answers localhost and IP addresses', async () => {
-    expect((await getWithHost(3000, '/@api/users', 'localhost:3000')).status).toBe(200);
-    expect((await getWithHost(3000, '/@api/users', '127.0.0.1:3000')).status).toBe(200);
-    expect(await upgradeStatusWithHost(3000, '/@pp-dev-hmr', 'localhost:3000')).toBe(
+    expect((await getWithHost(PORT_WITH_BACKEND, '/@api/users', `localhost:${PORT_WITH_BACKEND}`)).status).toBe(200);
+    expect((await getWithHost(PORT_WITH_BACKEND, '/@api/users', `127.0.0.1:${PORT_WITH_BACKEND}`)).status).toBe(200);
+    expect(await upgradeStatusWithHost(PORT_WITH_BACKEND, '/@pp-dev-hmr', `localhost:${PORT_WITH_BACKEND}`)).toBe(
       'HTTP/1.1 101 Switching Protocols',
     );
   });
@@ -239,7 +251,9 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   // no icon (only under the base path): it got Next's 404. Under `pp-dev` MI answers it through the
   // proxy; the cassette has MI's icon.
   it('proxies /favicon.ico to MI, as under pp-dev', async () => {
-    const res = await fetch('http://localhost:3000/favicon.ico', { signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/favicon.ico`, {
+      signal: AbortSignal.timeout(10_000),
+    });
 
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/x-icon');
@@ -257,7 +271,9 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
       ['/pl/pp-dev-test-template/favicon.ico', 'src/app/favicon.ico'],
       ['/pl/pp-dev-test-template/next.svg', 'public/next.svg'],
     ]) {
-      const res = await fetch(`http://localhost:3000${urlPath}`, { signal: AbortSignal.timeout(30_000) });
+      const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}${urlPath}`, {
+        signal: AbortSignal.timeout(30_000),
+      });
 
       expect(res.status, urlPath).toBe(200);
       expect(Buffer.from(await res.arrayBuffer()).equals(fs.readFileSync(path.join(TEST_APP_DIR, file))), urlPath).toBe(

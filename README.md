@@ -36,6 +36,10 @@ npm install next@^16
 
 **Note**: pp-dev accepts Next.js 13 to 16 (`peerDependencies`: `>= 13 < 17`); the test apps run on Next.js 16. It is a peer dependency, so it isn't installed with pp-dev.
 
+### Bundled build tools
+
+pp-dev installs `sass` (SCSS in a portal page), and `sharp` and `svgo` (image optimization, `build.imageOptimisations`): a page uses them without listing them itself. A page that pins its own version of one lists it in its `package.json`.
+
 ## Package Structure
 
 The pp-dev package provides multiple entry points for different use cases:
@@ -337,13 +341,13 @@ The command detects flat 0.x configs and legacy `pp-watch.config.*` files, conve
 
 ### Global Options
 
-| Option                   | Description                                                                      |
-| ------------------------ | -------------------------------------------------------------------------------- |
-| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                         |
-| `--base <path>`          | Public base path (default: `/`)                                                  |
-| `-l, --logLevel <level>` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `silent` (default: `info`) |
-| `--clearScreen`          | Clear screen before logging                                                      |
-| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`)   |
+| Option                   | Description                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                       |
+| `--base <path>`          | Public base path (default: `/`)                                                |
+| `-l, --logLevel <level>` | Log level: `info`, `warn`, `error`, `silent` (default: `info`)                 |
+| `--clearScreen`          | Clear screen before logging                                                    |
+| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`) |
 
 ### Development Server
 
@@ -360,18 +364,22 @@ pp-dev [root] [options]
 | `--open [path]` | -           | Open browser on server start      |
 | `--strictPort`  | -           | Exit if port is already in use    |
 
-**Development Shortcuts**:
+**Development Shortcuts** (`h` lists them):
 
 - `l` - Proxy re-login (refresh authentication)
 - `r` - Restart dev server
 - `u` - Show server URLs
+- `o` - Open the page in the browser
+- `c` - Clear the console
+- `C` - Clear the proxy cache
+- `p` - Start/stop the CPU profiler (when started with `--profile`)
 - `q` - Quit dev server
 
 ### Next.js Development
 
 ```bash
 pp-dev next [options]
-# Aliases: pp-dev next-server, pp-dev next-dev
+# Aliases: pp-dev next-serve, pp-dev next-dev
 ```
 
 | Option          | Default     | Description                                                         |
