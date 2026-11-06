@@ -58,7 +58,11 @@ describe('DistService — root-scoped path resolution', () => {
     const buffer = await service.buildNewAssets();
 
     expect(buffer.byteLength).toBeGreaterThan(0);
-    expect(spawnMock).toHaveBeenCalledWith('node', expect.anything(), expect.objectContaining({ cwd: projectRoot }));
+    expect(spawnMock).toHaveBeenCalledWith(
+      process.execPath,
+      expect.anything(),
+      expect.objectContaining({ cwd: projectRoot }),
+    );
   });
 
   // stopBuilds replaced its AbortController, so a sync still fetching assets when the server closed

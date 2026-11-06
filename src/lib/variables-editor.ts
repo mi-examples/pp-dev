@@ -337,10 +337,14 @@ export function registerVariablesEditorRoutes(
 
     try {
       const allPages = await miAPI.listPages();
-      const currentPage = allPages.find((page) => page.internal_name === miAPI.internalPageName) ?? null;
+      // By id when the config names the page: the internal name is only known once a v7 page load
+      // ran, and without it the current page was listed as one to import from.
+      const isCurrentPage = (page: { id: number; internal_name: string }) =>
+        miAPI.pageId !== undefined ? page.id === miAPI.pageId : page.internal_name === miAPI.internalPageName;
+      const currentPage = allPages.find(isCurrentPage) ?? null;
 
       const pages = allPages
-        .filter((page) => page.internal_name !== miAPI.internalPageName)
+        .filter((page) => !isCurrentPage(page))
         .map((page) => ({
           id: page.id,
           name: page.name,

@@ -6,6 +6,7 @@
 import type { MiAPI } from './pp.middleware.js';
 import { getTokenErrorInfo, isTokenError } from './helpers/token.helper.js';
 import { MI_SESSION_COOKIE } from './helpers/cookie.helper.js';
+import { unavailableAuthInfoError } from '../api/unavailable-json-api.js';
 
 export interface MiUser {
   id: number;
@@ -28,7 +29,16 @@ export async function whoIs(miAPI: MiAPI, headers: Record<string, string>): Prom
       // A refusal is an answer here, not a failure of the developer's own token.
       { quiet: true },
     );
-    const user = response.data?.user;
+    const data: unknown = response.data;
+
+    // MI's HTML maintenance page, or an SSO page, comes with a 200 too. It says nothing about the
+    // credentials, which it used to count as refused: at a start during a maintenance window every
+    // saved token user came back expired.
+    if (typeof data !== 'object' || data === null) {
+      throw unavailableAuthInfoError();
+    }
+
+    const user = (data as { user?: { user_id?: unknown; username?: unknown } }).user;
 
     return typeof user?.user_id === 'number'
       ? { miUser: { id: user.user_id, username: typeof user.username === 'string' ? user.username : '' } }

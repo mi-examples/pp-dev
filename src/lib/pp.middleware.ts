@@ -148,6 +148,11 @@ export class MiAPI {
     return this.#v7Features;
   }
 
+  /** The page this dev server serves (`app.id`), when the config names one. */
+  get pageId(): number | undefined {
+    return this.appId;
+  }
+
   #clearHeaders(headers: Headers) {
     const obj = Object.assign({}, headers, {
       host: undefined,
@@ -175,10 +180,6 @@ export class MiAPI {
 
   set personalAccessToken(token: string | undefined) {
     this.#personalAccessToken = token;
-  }
-
-  updateHeaders(headers: Headers) {
-    this.#clearHeaders(headers);
   }
 
   private get localTemplateHTML() {

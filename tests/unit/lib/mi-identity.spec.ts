@@ -153,3 +153,23 @@ describe('a token MI refuses', () => {
     expect(error.mock.calls.some(([message]) => String(message).includes('API request failed'))).toBe(true);
   });
 });
+
+describe('an answer that is no JSON (MI in maintenance, an SSO page)', () => {
+  const page = () => fakeMi(async () => ({ data: '<html><body>Maintenance</body></html>' }));
+
+  it('is no verdict on the credentials: whoIs throws', async () => {
+    await expect(whoIs(page(), { Authorization: 'Bearer t' })).rejects.toThrow('maintenance mode');
+  });
+
+  it('so a token is reported as unchecked, not as rejected', async () => {
+    expect(await checkUserToken(page(), 't')).toMatchObject({
+      ok: false,
+      rejected: false,
+      message: expect.stringContaining('Could not check the API token'),
+    });
+  });
+
+  it('and a session check throws too, instead of answering "a guest"', async () => {
+    await expect(createSessionCheck(page())('s')).rejects.toThrow('maintenance mode');
+  });
+});

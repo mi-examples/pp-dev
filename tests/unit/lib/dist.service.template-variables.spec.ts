@@ -72,3 +72,25 @@ describe('DistService#readPublicTemplateVariablesFile', () => {
     expect(result).toEqual(content);
   });
 });
+
+describe('DistService#saveTemplateVariablesFile', () => {
+  // The dev server serves this file: a write that failed halfway left it truncated.
+  it('writes the file whole, through a temporary file it does not leave behind', async () => {
+    const root = fsModule.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-template-variables-root-'));
+
+    try {
+      const service = new DistService('test-app', { ...state, root });
+      const file = path.join(root, 'public', TEMPLATE_VARIABLES_FILE_NAME);
+
+      fsModule.mkdirSync(path.dirname(file), { recursive: true });
+      fsModule.writeFileSync(file, '{"tags":[]}');
+
+      await service.saveTemplateVariablesFile(Buffer.from('{"tags":[{"name":"greeting"}]}'));
+
+      expect(fsModule.readFileSync(file, 'utf8')).toBe('{"tags":[{"name":"greeting"}]}');
+      expect(fsModule.readdirSync(path.dirname(file))).toEqual([TEMPLATE_VARIABLES_FILE_NAME]);
+    } finally {
+      fsModule.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

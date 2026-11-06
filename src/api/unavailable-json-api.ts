@@ -7,9 +7,17 @@ export const PAGE_TEMPLATE_FETCH_FRAGMENT = 'Something went wrong when fetching 
 /** Thrown when `/api/page_variable` returns non-JSON (e.g. HTML maintenance page). */
 export const PAGE_VARIABLES_FETCH_FRAGMENT = 'Something went wrong when fetching page variables';
 
+/** Thrown when `/data/page/index/auth/info` returns non-JSON (e.g. HTML maintenance page). */
+export const AUTH_INFO_FETCH_FRAGMENT = 'Something went wrong when checking who the credentials belong to';
+
 const MAINTENANCE_SUFFIX = ' The instance may be down or in maintenance mode. Please try again later.';
 
-const FRAGMENTS = [PAGE_DATA_FETCH_FRAGMENT, PAGE_TEMPLATE_FETCH_FRAGMENT, PAGE_VARIABLES_FETCH_FRAGMENT];
+const FRAGMENTS = [
+  PAGE_DATA_FETCH_FRAGMENT,
+  PAGE_TEMPLATE_FETCH_FRAGMENT,
+  PAGE_VARIABLES_FETCH_FRAGMENT,
+  AUTH_INFO_FETCH_FRAGMENT,
+];
 
 export function unavailablePageDataError(): Error {
   return new Error(`${PAGE_DATA_FETCH_FRAGMENT}.${MAINTENANCE_SUFFIX}`);
@@ -21,6 +29,10 @@ export function unavailablePageTemplateDataError(): Error {
 
 export function unavailablePageVariablesError(): Error {
   return new Error(`${PAGE_VARIABLES_FETCH_FRAGMENT}.${MAINTENANCE_SUFFIX}`);
+}
+
+export function unavailableAuthInfoError(): Error {
+  return new Error(`${AUTH_INFO_FETCH_FRAGMENT}.${MAINTENANCE_SUFFIX}`);
 }
 
 /**

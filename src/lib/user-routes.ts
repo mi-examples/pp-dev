@@ -252,7 +252,9 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
 
     let edited: SavedUser = { ...user, name: newName };
 
-    if (token && token !== user.token) {
+    // The same token again on a user MI turned down (at a restore during an MI maintenance window,
+    // say) asks MI again: there used to be no way back but removing and adding the user.
+    if (token && (token !== user.token || user.state === 'expired')) {
       const contextAtStart = users.context;
       const check = await checkUserToken(miAPI, token);
 
@@ -286,7 +288,7 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
       return;
     }
 
-    if (newName === name && edited.token === user.token) {
+    if (newName === name && edited.token === user.token && edited.state === user.state) {
       res.json({ user: toPublicUser(user, req) });
 
       return;

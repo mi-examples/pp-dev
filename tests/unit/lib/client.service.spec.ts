@@ -473,7 +473,6 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     unknownFiles: [],
     templateVariables: null,
     mainHash: 'main',
-    allFilesInMeta: true,
     buildManifestMismatch: null,
     versionManifestHashMismatches: [],
   });
@@ -526,6 +525,7 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     const miAPI = {
       getAssets: vi.fn().mockResolvedValue(Buffer.from('current')),
       updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
+      validateCredentials: vi.fn().mockResolvedValue({ isValid: true }),
     } as unknown as MiAPI;
 
     new ClientService(server, { distService, miAPI, syncActionTimeoutMs: opts.timeoutMs ?? 5_000 });
@@ -555,7 +555,7 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
 
   it('tells the panel when its dialog was not answered in time, not that the user cancelled', async () => {
     const { sync, dialogs, responses } = setup({
-      analysis: async () => ({ ...cleanAnalysis(), unknownFiles: ['extra.js'], allFilesInMeta: false }),
+      analysis: async () => ({ ...cleanAnalysis(), unknownFiles: ['extra.js'] }),
       answers: [],
       timeoutMs: 1_000,
     });
@@ -776,10 +776,68 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     it('reports an upload MI did not accept', async () => {
       const { sync, responses, miAPI } = setup({});
 
-      vi.mocked(miAPI.updateAssets).mockResolvedValue({ status: 'ERROR' } as never);
+      vi.mocked(miAPI.updateAssets).mockResolvedValue({ status: 'ERROR', message: 'Quota exceeded' } as never);
       await sync();
 
-      expect(responses).toEqual([{ error: 'Failed to update assets' }]);
+      expect(responses).toEqual([
+        { error: 'Failed to update assets: MI answered with {"status":"ERROR","message":"Quota exceeded"}' },
+      ]);
+    });
+
+    // "Failed to update assets" was all the panel got of a maintenance page, a session that expired
+    // during a long build (a bare "Request failed with status code 412", no refresh), or MI gone down.
+    it("reports an upload MI answered with its maintenance page, with the page's head", async () => {
+      const { sync, responses, miAPI } = setup({});
+
+      vi.mocked(miAPI.updateAssets).mockResolvedValue(
+        '<html>\n  <body>Maintenance in progress</body>\n</html>' as never,
+      );
+      await sync();
+
+      expect(responses).toEqual([
+        {
+          error:
+            'Failed to update assets: MI answered with a non-JSON body: "<html> <body>Maintenance in progress</body> </html>"',
+        },
+      ]);
+    });
+
+    it('asks for a refresh when the session expired during the upload, as for the download', async () => {
+      const { sync, responses, miAPI } = setup({});
+
+      vi.mocked(miAPI.updateAssets).mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 412'), {
+          isAxiosError: true,
+          response: { status: 412, data: { message: 'Session expired' } },
+        }),
+      );
+      vi.mocked(miAPI.validateCredentials).mockResolvedValue({
+        isValid: false,
+        error: 'Personal access token expired',
+        code: 'PAT_EXPIRED',
+      });
+      await sync();
+
+      expect(responses).toEqual([{ error: 'Personal access token expired', code: 'PAT_EXPIRED', refresh: true }]);
+    });
+
+    it('reports MI gone down during the upload as a connection error', async () => {
+      const { sync, responses, miAPI } = setup({});
+
+      vi.mocked(miAPI.updateAssets).mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 503'), {
+          isAxiosError: true,
+          response: { status: 503 },
+        }),
+      );
+      await sync();
+
+      expect(responses).toEqual([
+        {
+          error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+          code: 'CONNECTION_ERROR',
+        },
+      ]);
     });
   });
 });

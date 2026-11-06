@@ -9,6 +9,7 @@ import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
 import { zipDirectoryToBuffer, extractZipSafe } from './helpers/zip.helper.js';
+import { writeFileAtomic } from './helpers/atomic-file.helper.js';
 import {
   DEFAULT_BUILD_TIMEOUT_MS,
   SYNC_BUILD_DIST_DIR,
@@ -17,7 +18,7 @@ import {
   runBuildProcess,
   runNextBuildProcess,
 } from './next-build-runner.js';
-import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
+import { normalizeRelativeOutputPath } from './output-path.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
@@ -58,8 +59,6 @@ export interface SyncOptions {
   backupFolder?: string;
   backupNameTemplate?: string;
   dateFormat?: (date: Date) => string;
-  distZipFolder?: string;
-  distZipFilename?: string;
   versionFileTemplate?: string;
   /** Build directory to zip in memory for template sync, independent of persistent ZIP output. */
   buildInputFolder?: string;
@@ -125,7 +124,7 @@ export interface SyncMeta {
   lastBackupName: string;
   lastBackupHash: string;
   lastBackupDate: string;
-  /** VERSION manifest `checksum` when the last saved backup had a valid VERSION file */
+  /** Written by older versions, which skipped a backup on it alone; no longer read or written. */
   lastMainHash?: string;
 }
 
@@ -166,8 +165,6 @@ export interface BackupAnalysis {
   templateVariables: TemplateVariablesBackupInfo | null;
   /** VERSION manifest aggregate checksum (`checksum` field); null if no VERSION file */
   mainHash: string | null;
-  /** Every zip entry is listed in VERSION (no extras beyond VERSION/BUILD-MANIFEST) */
-  allFilesInMeta: boolean;
   /** Set when BUILD-MANIFEST.json `buildFingerprint` differs from the recomputed backup fingerprint */
   buildManifestMismatch: { expected: string; actual: string } | null;
   /** Files present on disk whose SHA-256 does not match VERSION manifest `files` (empty if none or no VERSION) */
@@ -175,7 +172,6 @@ export interface BackupAnalysis {
 }
 
 const metaFileName = 'sync-service.meta.json';
-const UNKNOWN_FILE_PLACEHOLDER_HASH = '__NOT_IN_VERSION_FILE__';
 const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
 
 /** Listed in VERSION; basename match for sync UI decisions */
@@ -201,8 +197,6 @@ export class DistService {
   private readonly dateFormat: (date: Date) => string;
   private readonly pageName: string;
   private currentMeta: SyncMeta | null = null;
-  private readonly distZipFolder: string;
-  private readonly distZipFilename: string;
   private readonly versionFileTemplate: string;
   private readonly buildInputFolder?: string;
   private readonly nextBuild?: NextBuildOptions;
@@ -222,8 +216,6 @@ export class DistService {
     const {
       root = process.cwd(),
       backupFolder = 'backups',
-      distZipFolder = path.resolve(root, 'dist-zip'),
-      distZipFilename = createDefaultZipFileName(this.pageName),
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
       versionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json',
       buildInputFolder,
@@ -242,8 +234,6 @@ export class DistService {
     this.backupNameTemplate = backupNameTemplate;
     this.dateFormat = dateFormat;
 
-    this.distZipFolder = distZipFolder;
-    this.distZipFilename = normalizeRelativeOutputPath(distZipFilename, 'ZIP output file name');
     this.versionFileTemplate = normalizeRelativeOutputPath(versionFileTemplate, 'VERSION file name template');
     this.buildInputFolder = buildInputFolder;
     this.nextBuild = nextBuild;
@@ -615,7 +605,6 @@ export class DistService {
       const normalizedManifestFiles: Record<string, string> = {};
       let templateVariables: TemplateVariablesBackupInfo | null = null;
       let manifestChecksum: string | null = null;
-      const manifestFileActualHashes: Record<string, string> = {};
       let versionManifestHashMismatches: VersionManifestHashMismatch[] = [];
 
       if (versionManifestPath) {
@@ -662,8 +651,6 @@ export class DistService {
 
           const actualHash = crypto.createHash('sha256').update(fileData).digest('hex');
 
-          manifestFileActualHashes[relativePath] = actualHash;
-
           if (actualHash !== expectedHash) {
             versionManifestHashMismatches.push({ relativePath, expected: expectedHash, actual: actualHash });
           }
@@ -687,8 +674,6 @@ export class DistService {
         }
       }
 
-      const mismatchedManifestPaths = new Set(versionManifestHashMismatches.map((m) => m.relativePath));
-
       const fingerprintFiles: Record<string, string> = {};
       const unknownFiles: string[] = [];
 
@@ -703,17 +688,14 @@ export class DistService {
 
         const absolutePath = path.join(contentRootDir, relativePath);
         const fileData = await fs.readFile(absolutePath);
-        const actualHash = crypto.createHash('sha256').update(fileData).digest('hex');
 
-        if (versionManifestPath && Object.prototype.hasOwnProperty.call(normalizedManifestFiles, relativePath)) {
-          fingerprintFiles[relativePath] = mismatchedManifestPaths.has(relativePath)
-            ? manifestFileActualHashes[relativePath]!
-            : normalizedManifestFiles[relativePath]!;
-        } else if (versionManifestPath) {
-          fingerprintFiles[relativePath] = UNKNOWN_FILE_PLACEHOLDER_HASH;
+        // Every file by its content, listed in VERSION or not. A file VERSION doesn't list went in
+        // as a placeholder: a change to such a file then gave the fingerprint of the last backup,
+        // and no backup was saved before the sync overwrote it.
+        fingerprintFiles[relativePath] = crypto.createHash('sha256').update(fileData).digest('hex');
+
+        if (versionManifestPath && !Object.prototype.hasOwnProperty.call(normalizedManifestFiles, relativePath)) {
           unknownFiles.push(relativePath);
-        } else {
-          fingerprintFiles[relativePath] = actualHash;
         }
       }
 
@@ -743,7 +725,6 @@ export class DistService {
         unknownFiles,
         templateVariables,
         mainHash: manifestChecksum,
-        allFilesInMeta: Boolean(versionManifestPath && unknownFiles.length === 0),
         buildManifestMismatch,
         versionManifestHashMismatches,
       };
@@ -784,7 +765,9 @@ export class DistService {
     const templateVariablesPath = path.resolve(this.root, 'public', TEMPLATE_VARIABLES_FILE_NAME);
 
     await fs.mkdir(path.dirname(templateVariablesPath), { recursive: true });
-    await fs.writeFile(templateVariablesPath, content);
+    // Written aside and renamed over the old file: the dev server serves this one, and a write that
+    // failed halfway (a full disk, a crash) left it truncated.
+    await writeFileAtomic(templateVariablesPath, content);
 
     return templateVariablesPath;
   }
@@ -795,28 +778,18 @@ export class DistService {
     const lastSavedBackup = await this.getLatestSavedBackup();
     const meta = await this.meta();
 
-    if (lastSavedBackup) {
-      const { lastBackupHash, lastMainHash } = meta;
+    // Only the fingerprint, of every file's content, says whether MI's assets changed since the last
+    // backup. The VERSION checksum used to be enough to skip: it is the checksum of the last build,
+    // which a page edited in MI keeps, so the one backup that mattered (of that edit, before the
+    // sync overwrote it) was the one skipped.
+    if (lastSavedBackup && meta.lastBackupHash === resolvedBackupFileHash) {
+      this.logger.info(
+        colors.yellow(
+          `[DistService] Backup skipped: same backup fingerprint as last saved (${resolvedBackupFileHash.slice(0, 12)}...)`,
+        ),
+      );
 
-      if (lastBackupHash === resolvedBackupFileHash) {
-        this.logger.info(
-          colors.yellow(
-            `[DistService] Backup skipped: same backup fingerprint as last saved (${resolvedBackupFileHash.slice(0, 12)}...)`,
-          ),
-        );
-
-        return;
-      }
-
-      if (resolvedAnalysis.allFilesInMeta && resolvedAnalysis.mainHash && lastMainHash === resolvedAnalysis.mainHash) {
-        this.logger.info(
-          colors.yellow(
-            `[DistService] Backup skipped: same VERSION manifest checksum (main hash) and all files listed in VERSION`,
-          ),
-        );
-
-        return;
-      }
+      return;
     }
 
     const backupDate = new Date();
@@ -826,12 +799,7 @@ export class DistService {
     meta.lastBackupName = filename;
     meta.lastBackupHash = resolvedBackupFileHash;
     meta.lastBackupDate = backupDate.toISOString();
-
-    if (resolvedAnalysis.mainHash) {
-      meta.lastMainHash = resolvedAnalysis.mainHash;
-    } else {
-      delete meta.lastMainHash;
-    }
+    delete meta.lastMainHash;
 
     await this.syncMeta();
 
@@ -849,9 +817,11 @@ export class DistService {
 
     this.logger.info(colors.cyan('[DistService] Build started'));
 
+    // This process's Node, as the Next build does: `node` from PATH is another Node, or none, under
+    // a dev server an IDE or a launcher started.
     const buildCommand = runBuildProcess(
       'pp-dev build',
-      'node',
+      process.execPath,
       [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'],
       {
         cwd: this.root,
@@ -864,36 +834,21 @@ export class DistService {
     try {
       await this.logBuild('Build', buildCommand);
 
-      if (this.buildInputFolder) {
-        const buildInputPath = path.resolve(this.root, this.buildInputFolder);
-
-        if (!(await this.isDirectory(buildInputPath))) {
-          throw new Error(`Build input directory ${buildInputPath} not found`);
-        }
-
-        const zip = await zipDirectoryToBuffer(buildInputPath);
-
-        this.throwIfStopped('pp-dev build');
-
-        return zip;
+      if (!this.buildInputFolder) {
+        throw new Error('The sync has no build directory to zip (build.outDir or build.zip.inDir)');
       }
 
-      const assetFile = path.resolve(this.root, this.distZipFolder, this.distZipFilename);
-      let assets: Buffer;
+      const buildInputPath = path.resolve(this.root, this.buildInputFolder);
 
-      try {
-        assets = await fs.readFile(assetFile);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          throw new Error(`File ${assetFile} not found`);
-        }
-
-        throw error;
+      if (!(await this.isDirectory(buildInputPath))) {
+        throw new Error(`Build input directory ${buildInputPath} not found`);
       }
+
+      const zip = await zipDirectoryToBuffer(buildInputPath);
 
       this.throwIfStopped('pp-dev build');
 
-      return assets;
+      return zip;
     } catch (e) {
       this.logger.error(e instanceof Error ? (e.stack ?? e.message) : String(e));
 
@@ -978,6 +933,9 @@ export class DistService {
 
     await writeBuildVersionManifest({
       outDir,
+      // The branch name comes from `git` in the project, not in whatever directory the dev server
+      // was started from.
+      root: projectRoot,
       packageVersion: this.nextBuild!.packageVersion,
       versionFileTemplate: this.versionFileTemplate,
       packageRepositoryUrl: this.nextBuild!.packageRepositoryUrl,

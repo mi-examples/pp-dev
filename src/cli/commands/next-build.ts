@@ -131,6 +131,7 @@ export function registerNextBuildCommand(cli: CAC): void {
           if (versionPlugin !== false && versionPlugin.enabled !== false) {
             await writeBuildVersionManifest({
               outDir,
+              root: projectRoot,
               packageVersion: typeof projectPkg.version === 'string' ? projectPkg.version : '0.0.0',
               versionFileTemplate: versionPlugin.versionFileTemplate,
               packageRepositoryUrl:

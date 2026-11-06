@@ -577,6 +577,28 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body.pages).toEqual([{ id: 2, name: 'Page', internal_name: 'other', sameTemplate: true }]);
     });
 
+    // The internal name is only known once a v7 page load ran: without it, the current page was
+    // listed as a page to import values from.
+    it('excludes the current page by its id when its internal name is not known', async () => {
+      const miAPI = {
+        pageId: 1,
+        internalPageName: undefined,
+        listPages: vi
+          .fn()
+          .mockResolvedValue([
+            page({ id: 1, name: 'Current', internal_name: 'current', template_id: 313 }),
+            page({ id: 2, name: 'Sibling', internal_name: 'sibling', template_id: 313 }),
+          ]),
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/pages')!({}, res);
+
+      expect(res.body.currentPageName).toBe('Current');
+      expect(res.body.pages).toEqual([{ id: 2, name: 'Sibling', internal_name: 'sibling', sameTemplate: true }]);
+    });
+
     it('502s when listPages throws', async () => {
       const miAPI = {
         internalPageName: 'current',

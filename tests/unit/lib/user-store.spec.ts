@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { getUserStorePath, keepTokenUsers, readStoredUsers, writeStoredUsers } from '../../../src/lib/user-store.js';
 import { UserRegistry } from '../../../src/lib/user-registry.js';
-import type { TokenCheck } from '../../../src/lib/mi-identity.js';
+import { checkUserToken, type TokenCheck } from '../../../src/lib/mi-identity.js';
+import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /** PP-4600: token users kept between dev server runs, in a file in the home directory. */
 
@@ -287,5 +288,33 @@ describe('keepTokenUsers', () => {
 
     expect(afterFirst).toBe(2);
     expect(active).toBe(2);
+  });
+});
+
+describe('keepTokenUsers while MI is in maintenance', () => {
+  // MI's maintenance page comes with a 200: it counted as "credentials refused", so every saved
+  // user came back expired, with no way back but removing and adding each one.
+  it('restores the saved users unchecked when MI answers with a page instead of JSON', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-users-maintenance-'));
+    const users = new UserRegistry();
+    const file = getUserStorePath('/work/app', MI_URL, home);
+    const miAPI = { get: vi.fn(async () => ({ data: '<html><body>Maintenance</body></html>' })) } as unknown as MiAPI;
+
+    try {
+      writeStoredUsers(file, [{ name: 'viewer', token: 'viewer-token' }], { project: '/work/app', miUrl: MI_URL });
+
+      await keepTokenUsers(users, {
+        projectRoot: '/work/app',
+        miUrl: MI_URL,
+        checkToken: (token) => checkUserToken(miAPI, token),
+        homeDir: home,
+      });
+
+      expect(users.get('viewer')).toMatchObject({ kind: 'token', token: 'viewer-token' });
+      expect(users.get('viewer')?.state).toBeUndefined();
+      expect(users.get('viewer')?.miUser).toBeUndefined();
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });

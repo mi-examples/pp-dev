@@ -52,6 +52,12 @@ describe('runBuildProcess', () => {
     ).rejects.toThrow('test build exited with code 3');
   });
 
+  it('rejects when the build command cannot be started, instead of waiting for it', async () => {
+    await expect(
+      runBuildProcess('test build', 'pp-dev-no-such-command', ['build'], { cwd: process.cwd(), env: process.env }),
+    ).rejects.toThrow('ENOENT');
+  });
+
   it('stops a build that runs past its time limit', async () => {
     const started = Date.now();
 
