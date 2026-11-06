@@ -2,17 +2,19 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
-const afterBundlePath = resolve(
-  // After the build this module is a chunk in `dist/esm/` or `dist/cjs/`: the package is 3 levels up.
-  (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
-  '../../..',
-);
+/**
+ * This module's own path. From `import.meta.url` in both builds: rollup gives the CJS one a
+ * polyfill made of that module's `__filename`. A `__filename` found in scope was taken first, as
+ * the CJS build's, but `node -e` and the REPL define a global one (`[eval]`), from which the ESM
+ * build resolved the package directory and failed on its package.json.
+ */
+const modulePath = fileURLToPath(import.meta.url);
 
-const beforeBundlePath = resolve(
-  // Run from source (`src/constants.ts`, e.g. in tests): the package is 2 levels up.
-  (typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url),
-  '../..',
-);
+// After the build this module is a chunk in `dist/esm/` or `dist/cjs/`: the package is 3 levels up.
+const afterBundlePath = resolve(modulePath, '../../..');
+
+// Run from source (`src/constants.ts`, e.g. in tests): the package is 2 levels up.
+const beforeBundlePath = resolve(modulePath, '../..');
 
 export const PP_DEV_PACKAGE_DIR = existsSync(resolve(afterBundlePath, 'package.json'))
   ? afterBundlePath
@@ -46,6 +48,13 @@ export const PP_DEV_NEXT_BUILD_ENV_VAR = 'PP_DEV_NEXT_BUILD';
  * running dev server's `<distDir>/dev` alone (see `DistService.buildNextAssets`).
  */
 export const PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR = 'PP_DEV_NEXT_BUILD_DIST_DIR';
+
+/**
+ * The project root `pp-dev next` and `pp-dev next-build` were given, for `withPPDev()`: Next
+ * evaluates `next.config` with no root to pass on, so run from a parent directory it read that
+ * directory's package.json and pp-dev config ("app.name is required").
+ */
+export const PP_DEV_PROJECT_ROOT_ENV_VAR = 'PP_DEV_PROJECT_ROOT';
 
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',

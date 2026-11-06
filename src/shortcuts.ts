@@ -104,9 +104,21 @@ export function bindShortcuts(server: ViteDevServer, opts: BindShortcutsOptions)
       return;
     }
 
+    // Reset however the action ends: one that threw (`r` with a port in use, `o` with no browser)
+    // left it set, and every key after it was ignored for the life of the server.
     actionRunning = true;
-    await shortcut.action(server);
-    actionRunning = false;
+
+    try {
+      await shortcut.action(server);
+    } catch (error) {
+      logger.error(
+        colors.red(
+          `Shortcut '${input}' failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        ),
+      );
+    } finally {
+      actionRunning = false;
+    }
   };
 
   process.stdin.setRawMode(true);

@@ -18,6 +18,7 @@ import {
   PATH_TEMPLATE_LOCAL_PREFIX,
   PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR,
   PP_DEV_NEXT_BUILD_ENV_VAR,
+  PP_DEV_PROJECT_ROOT_ENV_VAR,
 } from './constants.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
@@ -381,8 +382,10 @@ export function withPPDev(
         );
       }
 
-      const config = await getConfig();
-      const pkg = getPkg();
+      // The root the pp-dev command was given, when there is one: Next passes none on.
+      const projectRoot = process.env[PP_DEV_PROJECT_ROOT_ENV_VAR] || process.cwd();
+      const config = await getConfig(projectRoot);
+      const pkg = getPkg(projectRoot);
       const templateName = pkg.name;
 
       // Resolve the Next.js configuration

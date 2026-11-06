@@ -23,7 +23,13 @@ import { PPDevHotServer, refuseUpgrade } from '../../lib/pp-ws-server.js';
 import { registerProcessHandlers } from '../../lib/process-handlers.js';
 import { NEXT_WORKER_SCHEDULER_REJECTION, createNextAppListenerTracker } from '../../lib/next-process-listeners.js';
 import { injectDevPanel } from '../../lib/dev-panel.js';
-import { PATH_PAGE_PREFIX, PATH_TEMPLATE_PREFIX, PATH_TEMPLATE_LOCAL_PREFIX } from '../../constants.js';
+import {
+  PATH_PAGE_PREFIX,
+  PATH_TEMPLATE_PREFIX,
+  PATH_TEMPLATE_LOCAL_PREFIX,
+  PP_DEV_PROJECT_ROOT_ENV_VAR,
+} from '../../constants.js';
+import { configuredNextDistDir } from '../../lib/next-build-runner.js';
 import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-config.js';
 import { INSPECTOR_PATH } from '../../lib/request-inspector.js';
 import { loadPPDevEnv } from '../../lib/env.js';
@@ -55,6 +61,14 @@ export function registerNextCommand(cli: CAC): void {
     .option('--turbopack', `[boolean] use Turbopack for Next dev when native bindings work`)
     .action(async (root: string, options: ServerOptions & NextCommandCLIOptions) => {
       filterDuplicateOptions(options);
+
+      // As `next dev` sets it, whatever it was (a test runner's `test`): Next's own code in the
+      // server process goes by it, not only the bundles' define. Under another value the tsconfig
+      // include Next writes for the route types was the build's (`<distDir>/dev/types`, i.e.
+      // `dist/dev/dev/types`), added to the app's tsconfig on every start. Set here, before the
+      // supervisor's and the server's branches part, so the supervisor's config check loads the
+      // config in the same environment as the server does.
+      Object.assign(process.env, { NODE_ENV: 'development' });
 
       // The process the user started supervises: it watches the config files and runs the server in
       // a process of its own, started again on a change (see next-supervisor.ts for why). Everything
@@ -155,6 +169,7 @@ export function registerNextCommand(cli: CAC): void {
           const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
 
           loadPPDevEnv(options.mode || 'development', projectRoot);
+          process.env[PP_DEV_PROJECT_ROOT_ENV_VAR] = projectRoot;
 
           // Get pp-dev config from Next.js app config. `withPPDev()` also hands its result over out
           // of band: Next 13 and 14 drop the non-enumerable `ppDev` and `ppDevWrapped` from the config.
@@ -237,6 +252,9 @@ export function registerNextCommand(cli: CAC): void {
           }
 
           const bundlerChoice = parseNextBundlerCli(options);
+          // The app's distDir as configured: the loaded config's is the dev phase's `<distDir>/dev`,
+          // to which Next appends `/dev` again when handed as `conf` (see configuredNextDistDir).
+          const nextDistDir = configuredNextDistDir(config);
 
           const createAndPrepareNext = async (bundler: NextBundlerChoice) => {
             // Next's createServer() mutates process.env.TURBOPACK. Clear it before each
@@ -253,6 +271,7 @@ export function registerNextCommand(cli: CAC): void {
               dir: projectRoot,
               conf: {
                 ...config,
+                distDir: nextDistDir,
                 basePath: base,
                 assetPrefix: base,
               },
@@ -507,12 +526,6 @@ export function registerNextCommand(cli: CAC): void {
             // reports `<distDir>/dev`, `distDirRoot` the configured one), its output, and whether
             // `withPPDev()` wraps the config (its marker; a plain config may carry `ppDev` too),
             // which is what gives that build a distDir of its own.
-            const nextDistDir =
-              config?.distDirRoot ||
-              (config?.distDir || '.next')
-                .replace(/\\/g, '/')
-                .replace(/\/+$/, '')
-                .replace(/\/dev$/, '');
             const nextConfigWrapped = config?.ppDevWrapped === true || handoff?.wrapped === true;
             // A build without the override exports where the production phase's config says, which
             // a config function may set apart from the development phase's.
@@ -596,7 +609,20 @@ export function registerNextCommand(cli: CAC): void {
             logger.info(colors.blue(`🔧 Custom App ID: ${appId}`));
           }
 
-          httpServer.listen(port, host, () => {
+          const server = httpServer;
+
+          // A port in use is an `error` event, not a thrown one: unheard, it ended the process with
+          // the uncaught exceptions of three listeners (this server's, Next's) and no word of the port.
+          await new Promise<void>((resolve, reject) => {
+            server.once('error', reject);
+
+            server.listen(port, host, () => {
+              server.off('error', reject);
+              resolve();
+            });
+          });
+
+          {
             // Listening on every address: the URLs are for the one a browser on this machine opens.
             const allAddresses = host === '0.0.0.0' || host === '::';
             const origin = `http://${allAddresses ? 'localhost' : host}:${port}`;
@@ -626,8 +652,18 @@ export function registerNextCommand(cli: CAC): void {
 
             // The supervisor starts the config watcher once the first server is up.
             reportNextServerReady();
-          });
+          }
         } catch (error: any) {
+          if (error?.code === 'EADDRINUSE') {
+            logger.error(
+              colors.red(
+                `❌ Port ${listenPort} is already in use (${listenHost}). Stop what is listening there, or pass another --port.`,
+              ),
+            );
+
+            process.exit(1);
+          }
+
           logger.error(colors.red(`❌ Failed to start Next.js server: ${error?.message}. Stack: ${error?.stack}`));
 
           // Special handling for Next.js peer dependency errors

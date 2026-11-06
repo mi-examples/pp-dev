@@ -238,6 +238,46 @@ describe('the middleware chain', () => {
   // With a base of `/` every HTML navigation is one into the app: the inspector page reached the
   // page-data load first, and MI being down kept it from opening (review note). Its API route
   // stands in for the page here, which is served from the built `dist/client`.
+  // The proxy runs before Vite serves the app's files, and with a base of / the app's /index.html,
+  // /src/main.ts and assets can't be told from MI's paths: nothing is proxied, and the app is served.
+  it('proxies nothing with a base of / (the plugin in a vite.config of its own), and serves the app', async () => {
+    const chain = build(true, false, '/');
+    const server = serveChain(chain);
+    const port = await listen(server);
+
+    try {
+      const page = await get(port, '/index.html', { accept: '*/*' });
+
+      expect(page.status).toBe(200);
+      expect(page.body).toContain('MiAPI@');
+
+      // The renderer's answer (404 here), not MI's.
+      const api = await get(port, '/api/user', { accept: '*/*' });
+
+      expect(api.status).toBe(404);
+      expect(upstreamHits).toEqual([]);
+    } finally {
+      await close(server);
+    }
+  });
+
+  // Next's basePath has no trailing slash, and the index regexp matched the base literally: under
+  // `pp-dev next` the page data was loaded for document navigations only, so a fetch of the page
+  // got it with its variables unsubstituted and no MI error.
+  it("loads the page data for a fetch of the page under a Next-style base, as under Vite's", async () => {
+    const chain = build(true, false, '/p/chain-app');
+    const server = serveChain(chain);
+    const port = await listen(server);
+
+    try {
+      await get(port, '/p/chain-app/', { accept: '*/*' });
+
+      expect(upstreamHits.length).toBeGreaterThan(0);
+    } finally {
+      await close(server);
+    }
+  });
+
   it("serves pp-dev's own routes before the page-data load, whatever the base", async () => {
     const chain = build(true, true, '/');
     const server = serveChain(chain);

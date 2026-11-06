@@ -1,11 +1,17 @@
 import { fork, type ChildProcess } from 'node:child_process';
+import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
 import {
   SUPERVISOR_READY_MESSAGE,
   SUPERVISOR_SHUTDOWN_MESSAGE,
   type SupervisorMessage,
 } from '../lib/process-handlers.js';
-import { createConfigWatcher, type ConfigWatcher } from './config-watcher.js';
+import {
+  createConfigWatcher,
+  envFilesForMode,
+  type ConfigWatcher,
+  type ConfigWatcherOptions,
+} from './config-watcher.js';
 
 /**
  * `pp-dev next` runs its server in a process of its own and restarts that process on a config
@@ -65,7 +71,12 @@ export interface NextSupervisorOptions {
   /** Starts a server process. @default {@link forkNextServer} */
   startServerProcess?: () => NextServerProcess;
   /** @default {@link createConfigWatcher} */
-  createWatcher?: (projectRoot: string, restart: () => Promise<void>, log: (message: string) => void) => ConfigWatcher;
+  createWatcher?: (
+    projectRoot: string,
+    restart: () => Promise<void>,
+    log: (message: string) => void,
+    options?: ConfigWatcherOptions,
+  ) => ConfigWatcher;
   /** How long a server process may take to stop before it is killed. @default 10000 */
   stopTimeoutMs?: number;
   /** For tests. @default process */
@@ -96,9 +107,14 @@ export function forkNextServer(): ChildProcess {
  * Validated as the server process validates it, too: a config that loads but is refused there
  * (`sync.buildTimeoutMs: 0`) passed this check, the running server was stopped, and the new one
  * refused the config, leaving none.
+ *
+ * Only a standalone config is checked. A project whose pp-dev config lives in `next.config` alone
+ * (`withPPDev()`) has none here: validating the empty config in its place refused every change,
+ * and nothing was ever restarted. The server process loads `next.config`; one that can't be
+ * loaded is reported as a server that did not start after the change.
  */
 export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'development'): Promise<void> {
-  const [{ loadPPDevEnv }, { clearConfigCache, getConfig, getPkg }, { validatePPDevConfig }] = await Promise.all([
+  const [{ loadPPDevEnv }, { clearConfigCache, findConfig, getPkg }, { validatePPDevConfig }] = await Promise.all([
     import('../lib/env.js'),
     import('../config.js'),
     import('../lib/pp-dev-config.js'),
@@ -107,7 +123,11 @@ export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'develop
   loadPPDevEnv(mode, projectRoot);
   clearConfigCache();
 
-  const config = await getConfig(projectRoot);
+  const { config, found } = await findConfig(projectRoot);
+
+  if (!found) {
+    return;
+  }
 
   validatePPDevConfig(config, getPkg(projectRoot).name);
 }
@@ -211,7 +231,12 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         settle();
 
         if (!watcher && !shuttingDown) {
-          watcher = createWatcher(projectRoot, restart, logger.info);
+          // The `.env` files of the mode pp-dev loads, and the development ones Next's dev server
+          // loads itself, whatever `--mode` says.
+          watcher = createWatcher(projectRoot, restart, logger.info, {
+            mode,
+            files: envFilesForMode('development').map((name) => path.join(projectRoot, name)),
+          });
         }
       });
 

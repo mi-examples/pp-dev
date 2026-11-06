@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
 import { safeNextImport } from '../../lib/next-import.js';
-import { PP_DEV_NEXT_BUILD_ENV_VAR } from '../../constants.js';
+import { PP_DEV_NEXT_BUILD_ENV_VAR, PP_DEV_PROJECT_ROOT_ENV_VAR } from '../../constants.js';
+import { clearWithPPDevHandoff, readWithPPDevHandoff } from '../../lib/next-config-handoff.js';
 import { normalizePPDevConfig, validatePPDevConfig } from '../../lib/pp-dev-config.js';
 import {
   resolveBuildCliOverrides,
@@ -76,10 +77,18 @@ export function registerNextBuildCommand(cli: CAC): void {
             (importConfig as any)['module.exports'].default ||
             (importConfig as any).default;
 
+          process.env[PP_DEV_PROJECT_ROOT_ENV_VAR] = projectRoot;
+
+          // `withPPDev()` also hands its result over out of band, as `pp-dev next` reads it: Next 13
+          // and 14 drop the non-enumerable `ppDev` from the config, and the build went on with the
+          // standalone file or no config at all (another zip name, no versionFile template).
+          clearWithPPDevHandoff();
+
           const nextConfig = await loadConfig(constants.PHASE_PRODUCTION_BUILD, projectRoot);
+          const handoff = readWithPPDevHandoff();
 
           // Resolve pp-dev config: prefer `ppDev` on the Next.js config, else standalone pp-dev config file
-          let ppDevConfig = nextConfig?.ppDev || {};
+          let ppDevConfig = nextConfig?.ppDev || handoff?.ppDev || {};
 
           if (Object.keys(ppDevConfig).length === 0) {
             const { getConfig } = await import('../../config.js');

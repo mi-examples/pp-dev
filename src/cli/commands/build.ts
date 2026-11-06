@@ -67,6 +67,7 @@ export function registerBuildCommand(cli: CAC): void {
           root,
           mode,
           command: 'build',
+          ssr: Boolean(buildOptions.ssr),
           configFile: options.config,
           logLevel: options.logLevel,
           buildOverrides: cliOverrides,
@@ -78,7 +79,8 @@ export function registerBuildCommand(cli: CAC): void {
             root,
             base: options.base,
             mode: options.mode,
-            configFile: options.config,
+            // The file is in `config` already (see loadCommandViteConfig).
+            configFile: false,
             logLevel: options.logLevel,
             clearScreen: options.clearScreen,
             optimizeDeps: { force: options.force },

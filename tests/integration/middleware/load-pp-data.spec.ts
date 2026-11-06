@@ -22,14 +22,18 @@ function createTestServer(middleware: any): Promise<{ server: Server; port: numb
   });
 }
 
-function makeRequest(port: number, path: string, headers: Record<string, string> = {}): Promise<{ status: number }> {
+function makeRequest(
+  port: number,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; location?: string }> {
   return new Promise((resolve) => {
     const http = require('http');
     const req = http.request(
       { hostname: 'localhost', port, path, method: 'GET', headers, agent: false },
       (res: any) => {
         res.on('data', () => {});
-        res.on('end', () => resolve({ status: res.statusCode }));
+        res.on('end', () => resolve({ status: res.statusCode, location: res.headers.location }));
       },
     );
     req.end();
@@ -169,14 +173,22 @@ describe('initLoadPPData — navigations to MI pages outside the app', () => {
     }
   });
 
-  it('still answers the app itself with the redirect an expired session gets', async () => {
+  // A v7 app was sent to its own base path, which asked MI for the page data again, without end
+  // (ERR_TOO_MANY_REDIRECTS): to MI's home, as any other, which sends the browser to the login.
+  it('still answers the app itself with the redirect an expired session gets, to the login, not to itself', async () => {
     const { server, port } = await createTestServer(buildMiddleware(APP_BASE));
 
     try {
       const response = await makeRequest(port, '/pt/foo/dashboard', DOCUMENT_HEADERS);
 
       expect(response.status).toBe(302);
+      expect(response.location).toBe('/home?proxyRedirect=%2F');
       expect(getPageVariables).toHaveBeenCalledTimes(1);
+
+      const own = await makeRequest(port, APP_BASE, DOCUMENT_HEADERS);
+
+      expect(own.status).toBe(302);
+      expect(own.location).toBe('/home?proxyRedirect=%2F');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

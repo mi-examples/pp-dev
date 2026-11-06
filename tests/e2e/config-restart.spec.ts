@@ -184,6 +184,29 @@ describe('restart on a config change', { timeout: 120_000 }, () => {
         expect(await isListening(fixture.port)).toBe(true);
       });
 
+      // Under `pp-dev`, Vite restarted on its own when a `.env` file changed, with the plugin
+      // instance (and the pp-dev config) of the first start, 500 ms before pp-dev's own restart.
+      it('restarts once for a .env file', async () => {
+        const envFile = path.join(fixture.dir, '.env');
+        const startsBefore = countLines(server, RUNNING);
+
+        try {
+          fs.writeFileSync(envFile, 'MI_PP_DEV_E2E_ENV=1\n');
+
+          await waitForLines(server, RUNNING, startsBefore + 1);
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+
+          expect(countLines(server, RUNNING)).toBe(startsBefore + 1);
+          expect(server.lines.some((line) => /changed, restarting server/.test(line))).toBe(false);
+          expect(await isListening(fixture.port)).toBe(true);
+        } finally {
+          fs.rmSync(envFile, { force: true });
+        }
+
+        // Removing it is a change too.
+        await waitForLines(server, RUNNING, startsBefore + 2);
+      });
+
       it('keeps the running server when the config cannot be loaded', async () => {
         const startsBefore = countLines(server, RUNNING);
 

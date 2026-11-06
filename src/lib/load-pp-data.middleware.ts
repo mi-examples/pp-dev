@@ -24,19 +24,40 @@ interface LoadPPDataOptions {
   timeout?: number;
 }
 
-// Performance optimization: Simple cache for API responses
-const apiResponseCache = new Map<string, { timestamp: number; data: any }>();
+/**
+ * The page data loads made, per MiAPI: a load belongs to the instance that made it, which is the
+ * one holding the template and variables it brought. A dev server restarted in process (`pp-dev`
+ * on a config change, or Vite's own restart) builds a new chain with a new MiAPI; served from a
+ * load the old one made, the new one had no template to build the page with, and the dev panel's
+ * MI calls went without the headers a page load stores.
+ */
+const apiResponseCaches = new WeakMap<MiAPI, Map<string, { timestamp: number; epoch: number; data: any }>>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
-function getCachedResponse(key: string): any | null {
-  const cached = apiResponseCache.get(key);
+/** Bumped to forget every load at once, whichever MiAPI made it. */
+let cacheEpoch = 0;
+
+function cacheOf(mi: MiAPI): Map<string, { timestamp: number; epoch: number; data: any }> {
+  let cache = apiResponseCaches.get(mi);
+
+  if (!cache) {
+    cache = new Map();
+    apiResponseCaches.set(mi, cache);
+  }
+
+  return cache;
+}
+
+function getCachedResponse(mi: MiAPI, key: string): any | null {
+  const cache = cacheOf(mi);
+  const cached = cache.get(key);
 
   if (!cached) {
     return null;
   }
 
-  if (Date.now() - cached.timestamp > CACHE_TTL) {
-    apiResponseCache.delete(key);
+  if (cached.epoch !== cacheEpoch || Date.now() - cached.timestamp > CACHE_TTL) {
+    cache.delete(key);
 
     return null;
   }
@@ -44,12 +65,14 @@ function getCachedResponse(key: string): any | null {
   return cached.data;
 }
 
-function setCachedResponse(key: string, data: any): void {
-  apiResponseCache.set(key, { timestamp: Date.now(), data });
+function setCachedResponse(mi: MiAPI, key: string, data: any): void {
+  cacheOf(mi).set(key, { timestamp: Date.now(), epoch: cacheEpoch, data });
 }
 
 // A cached "page data loaded" belongs to the MI session that loaded it.
-onProxyCacheInvalidate(() => apiResponseCache.clear());
+onProxyCacheInvalidate(() => {
+  cacheEpoch += 1;
+});
 
 /**
  * Whether the last page data load succeeded. One that succeeds after none did, or after one failed,
@@ -76,6 +99,15 @@ function onPageDataLoadFailed(): void {
 
 // Constants
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
+
+/**
+ * Where the browser goes when MI refuses the page data for want of a session or token: MI's home,
+ * proxied, which sends a visitor without a session to its login page (where the proxy adds the
+ * Token Login form), and a logged-in one back here to `/home`, which loads the page data again and
+ * then redirects to the app. The same for every MI version: a v7 instance's app was sent to its
+ * own base path instead, and asked for the page data again there, without end.
+ */
+const AUTH_FAILURE_REDIRECT_URL = `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`;
 
 /**
  * Whether the request is a top-level HTML document navigation (as opposed to an
@@ -144,7 +176,7 @@ export function initLoadPPData(
   mi: MiAPI,
   opts: Partial<NormalizedVitePPDevOptions> & { base?: string; appBase?: string },
 ): NextHandleFunction {
-  const { templateLess = false, miHudLess = false, appId, base, appBase, v7Features } = opts;
+  const { templateLess = false, miHudLess = false, appId, base, appBase } = opts;
 
   const logger = createLogger();
 
@@ -194,12 +226,7 @@ export function initLoadPPData(
           if (!isNeedTemplateLoad) {
             await handlePageInfoOnly(
               mi,
-              {
-                templateLess,
-                miHudLess,
-                appId: appId!,
-                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-              },
+              { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
               req,
               res,
               recordLoadError,
@@ -208,12 +235,7 @@ export function initLoadPPData(
           } else {
             await handleTemplateLoad(
               mi,
-              {
-                templateLess,
-                miHudLess,
-                appId: appId!,
-                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-              },
+              { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
               req,
               res,
               recordLoadError,
@@ -256,12 +278,7 @@ export function initLoadPPData(
       if (!isNeedTemplateLoad) {
         const result = await handlePageInfoOnly(
           mi,
-          {
-            templateLess,
-            miHudLess,
-            appId: appId!,
-            redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-          },
+          { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
           req,
           res,
           next,
@@ -273,12 +290,7 @@ export function initLoadPPData(
 
       const result = await handleTemplateLoad(
         mi,
-        {
-          templateLess,
-          miHudLess,
-          appId: appId!,
-          redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-        },
+        { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
         req,
         res,
         next,
@@ -328,7 +340,7 @@ async function handlePageInfoOnly(
   try {
     // Performance optimization: Check cache first
     const cacheKey = `pageInfo:${appId}`;
-    const cachedData = getCachedResponse(cacheKey);
+    const cachedData = getCachedResponse(mi, cacheKey);
 
     if (cachedData) {
       logger.info(colors.green('Page info loaded from cache'));
@@ -341,7 +353,7 @@ async function handlePageInfoOnly(
     onPageDataLoaded(logger);
 
     // Cache the successful response
-    setCachedResponse(cacheKey, { success: true });
+    setCachedResponse(mi, cacheKey, { success: true });
 
     authProvider.updateState({ isAuthenticated: true });
 
@@ -354,7 +366,7 @@ async function handlePageInfoOnly(
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+      redirectUrl || AUTH_FAILURE_REDIRECT_URL,
       res,
       next,
       logger,
@@ -382,7 +394,7 @@ async function handleTemplateLoad(
   try {
     // Performance optimization: Check cache first
     const cacheKey = `pageData:${templateLess}:${appId}`;
-    const cachedData = getCachedResponse(cacheKey);
+    const cachedData = getCachedResponse(mi, cacheKey);
 
     if (cachedData) {
       logger.info(colors.green('Page data loaded from cache'));
@@ -398,7 +410,7 @@ async function handleTemplateLoad(
     onPageDataLoaded(logger);
 
     // Cache the successful response
-    setCachedResponse(cacheKey, { success: true });
+    setCachedResponse(mi, cacheKey, { success: true });
 
     logger.info(colors.green('Page data loaded successfully'));
 
@@ -409,7 +421,7 @@ async function handleTemplateLoad(
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+      redirectUrl || AUTH_FAILURE_REDIRECT_URL,
       res,
       next,
       logger,
@@ -467,6 +479,6 @@ function isAuthError(error: unknown): boolean {
 
 /** Forgets every page data load, as at startup: the next successful one counts as a login. */
 export function clearAPICache(): void {
-  apiResponseCache.clear();
+  cacheEpoch += 1;
   pageDataLoaded = false;
 }

@@ -33,9 +33,16 @@ function makeProject(files: Record<string, string> = { 'pp-dev.config.ts': 'expo
   return dir;
 }
 
-async function startWatcher(dir: string, restart: () => Promise<void>) {
+async function startWatcher(
+  dir: string,
+  restart: () => Promise<void>,
+  options: { mode?: string; files?: string[] } = {},
+) {
   const logs: string[] = [];
-  const watcher = createConfigWatcher(dir, restart, (message) => logs.push(message), { debounceMs: DEBOUNCE_MS });
+  const watcher = createConfigWatcher(dir, restart, (message) => logs.push(message), {
+    debounceMs: DEBOUNCE_MS,
+    ...options,
+  });
 
   watchers.push(watcher);
   await watcher.ready;
@@ -114,6 +121,96 @@ describe('createConfigWatcher', () => {
 
     await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
     expect(logs.some((line) => line.includes('Config file removed: .env'))).toBe(true);
+  });
+
+  // The names were a fixed list: `next.config.mts` (Next 16), `vite.config.cts`/`.mts` and the
+  // `.env.<mode>` files of a `--mode` other than development never restarted the server.
+  it('watches the .env files of the mode, and every config extension', async () => {
+    const dir = makeProject({ 'next.config.mts': 'export default {};\n', '.env.staging': 'MI_A=1\n' });
+    const restart = vi.fn().mockResolvedValue(undefined);
+
+    await startWatcher(dir, restart, { mode: 'staging' });
+
+    fs.appendFileSync(path.join(dir, '.env.staging'), 'MI_B=2\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
+
+    fs.appendFileSync(path.join(dir, 'next.config.mts'), '// changed\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(2), { timeout: 5000 });
+
+    fs.writeFileSync(path.join(dir, '.env.development'), 'MI_C=3\n');
+    await settle();
+
+    expect(restart).toHaveBeenCalledTimes(2);
+  });
+
+  // Vite restarted on its own for its config file and what it imports, and for its .env files:
+  // kept from that, pp-dev's watcher must watch them wherever they are (a --config elsewhere, a
+  // helper module, an envDir of Vite's own), not only the config names in the root.
+  it('watches the files it is given wherever they are, and ones added later', async () => {
+    const dir = makeProject({ 'pp-dev.config.ts': 'export default {};\n' });
+
+    fs.mkdirSync(path.join(dir, 'config'));
+    fs.writeFileSync(path.join(dir, 'config', 'vite.dev.ts'), 'export default {};\n');
+    fs.writeFileSync(path.join(dir, 'config', 'helper.ts'), 'export const a = 1;\n');
+    fs.writeFileSync(path.join(dir, 'config', '.env'), 'VITE_A=1\n');
+
+    const restart = vi.fn().mockResolvedValue(undefined);
+    const { watcher } = await startWatcher(dir, restart, { files: [path.join(dir, 'config', 'vite.dev.ts')] });
+
+    fs.appendFileSync(path.join(dir, 'config', 'vite.dev.ts'), '// changed\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
+
+    fs.appendFileSync(path.join(dir, 'config', 'helper.ts'), '// not watched\n');
+    await settle();
+    expect(restart).toHaveBeenCalledTimes(1);
+
+    watcher.add([path.join(dir, 'config', 'helper.ts'), path.join(dir, 'config', '.env')]);
+    await settle();
+
+    fs.appendFileSync(path.join(dir, 'config', 'helper.ts'), '// watched now\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(2), { timeout: 5000 });
+
+    fs.appendFileSync(path.join(dir, 'config', '.env'), 'VITE_B=2\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(3), { timeout: 5000 });
+  });
+
+  // chokidar given a path that doesn't exist delivered nothing at all, not even the root's changes:
+  // the `.env` names Vite loads are usually absent, and the first config change after a start was
+  // never seen (the e2e waited a minute for it).
+  it('still sees the root with files it is given that do not exist', async () => {
+    const dir = makeProject();
+    const restart = vi.fn().mockResolvedValue(undefined);
+
+    await startWatcher(dir, restart, {
+      files: [path.join(dir, '.env'), path.join(dir, '.env.local'), path.join(dir, 'config', 'missing.ts')],
+    });
+
+    fs.appendFileSync(path.join(dir, 'pp-dev.config.ts'), '// changed\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
+  });
+
+  // A file given that doesn't exist yet (Vite's `.env.local` in its own envDir) was dropped, so
+  // creating it later restarted nothing — and Vite's watcher ignores it too.
+  it('sees a file it is given once it is created, through its directory', async () => {
+    const dir = makeProject();
+
+    fs.mkdirSync(path.join(dir, 'config'));
+
+    const restart = vi.fn().mockResolvedValue(undefined);
+    const { watcher } = await startWatcher(dir, restart, { files: [path.join(dir, 'config', '.env.local')] });
+
+    fs.writeFileSync(path.join(dir, 'config', 'other.txt'), 'not watched\n');
+    await settle();
+    expect(restart).not.toHaveBeenCalled();
+
+    fs.writeFileSync(path.join(dir, 'config', '.env.local'), 'VITE_A=1\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1), { timeout: 5000 });
+
+    // Added later, before it exists, too.
+    watcher.add([path.join(dir, 'config', '.env.staging')]);
+    await settle();
+    fs.writeFileSync(path.join(dir, 'config', '.env.staging'), 'VITE_B=1\n');
+    await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(2), { timeout: 5000 });
   });
 
   it('ignores other files and files in subdirectories', async () => {

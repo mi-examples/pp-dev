@@ -464,6 +464,22 @@ describe('initRewriteResponse — contentType', () => {
     expect(served.headers['content-length']).toBe(String(Buffer.byteLength(JSON_BODY)));
   });
 
+  // The HEAD branch dropped the Content-Length before the type was looked at: under `pp-dev next`
+  // a HEAD of a file under the base lost the length its GET keeps.
+  it('keeps the Content-Length of a HEAD response of another type', async () => {
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', 1234);
+        res.end();
+      },
+      { method: 'HEAD', options: pagesOnly },
+    );
+
+    expect(served.status).toBe(200);
+    expect(served.headers['content-length']).toBe('1234');
+  });
+
   it('passes a response through whose type is only set right before end()', async () => {
     const served = await serve(
       (res) => {

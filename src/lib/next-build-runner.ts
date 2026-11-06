@@ -18,6 +18,18 @@ import { PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR, PP_DEV_NEXT_BUILD_ENV_VAR } from '.
  *
  * @returns the removed directory, or null when nothing needed removing
  */
+/**
+ * The app's `distDir` as configured (`.next` by default), from the config Next's development phase
+ * loaded: Next 16 reports `<distDir>/dev` there and keeps the configured one in `distDirRoot`,
+ * which it sets when it appends `/dev` and only then; earlier versions report the configured one
+ * as it is (a `build/dev` of one's own stays `build/dev`). The dev server is given this one, not
+ * the loaded `distDir`: Next appends `/dev` to a `conf` it is handed as it does to the file's, and
+ * the server wrote under `<distDir>/dev/dev`, where nothing of pp-dev looked.
+ */
+export function configuredNextDistDir(config: { distDir?: string; distDirRoot?: string } | undefined): string {
+  return (config?.distDirRoot || config?.distDir || '.next').replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
 export function removeStaleDevTypes(
   projectRoot: string,
   nextConfig: { output?: string; distDir?: string } | undefined,

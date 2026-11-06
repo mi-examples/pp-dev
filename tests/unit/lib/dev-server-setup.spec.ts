@@ -94,6 +94,12 @@ describe('dev server setup', () => {
       expect(getProxyIgnore('/pl/page/')).toEqual(['/@vite', '/@metricinsights', '/@', '/pl/page']);
       expect(getProxyIgnore('/pt/page')).toEqual(['/@vite', '/@metricinsights', '/@', '/pt/page']);
     });
+
+    // With the plugin in a vite.config of its own (Vite's default base) the page is every path:
+    // nothing is proxied, said so rather than by an empty prefix that happened to match everything.
+    it('keeps every path from MI for a base of /', () => {
+      expect(getProxyIgnore('/')).toEqual(['/@vite', '/@metricinsights', '/@', '/']);
+    });
   });
 
   describe('getMiAPIOptions', () => {

@@ -19,6 +19,8 @@ import { registerInspectorRoutes, INSPECTOR_PATH } from './request-inspector.js'
 import { RequestStore } from './request-store.js';
 import { createUserHostGuard } from './user-registry.js';
 import { createDevPanelAssetMiddleware } from './dev-panel.js';
+import { createLogger } from './logger.js';
+import { colors } from './helpers/color.helper.js';
 import { VARIABLES_EDITOR_PATH } from './variables-editor.js';
 import {
   type ChainMiddleware,
@@ -38,7 +40,7 @@ export interface PageRewrite {
 }
 
 export interface MiddlewareChainOptions {
-  /** The app's base path, as the server knows it (`/pl/<name>` or `/pl/<name>/`). */
+  /** The app's base path, as the server knows it (`/pl/<name>` or `/pl/<name>/`); the chain uses it with a trailing slash. */
   base: string;
   templateName: string;
   /** pp-dev's own routes (`/@api/*`, the inspector and editor pages); the caller registers more on it. */
@@ -90,7 +92,12 @@ const asChain = (middleware: Connect.NextHandleFunction): ChainMiddleware => mid
  * one. The parts without a backend: the capture, the redirects and pp-dev's own routes.
  */
 export function createMiddlewareChain(options: MiddlewareChainOptions): MiddlewareChain {
-  const { base, templateName, internalServer, backendBaseURL, inspector, proxy } = options;
+  const { templateName, internalServer, backendBaseURL, inspector, proxy } = options;
+  // Vite's base ends with a slash, Next's basePath doesn't, and the index regexp matches the base
+  // literally: under `pp-dev next` it never matched the page's path (the redirect middleware adds
+  // the slash first), so the page data was loaded for document navigations only, and a fetch of
+  // the page got it with its variables unsubstituted.
+  const base = options.base.endsWith('/') ? options.base : `${options.base}/`;
   const main: ChainMiddleware[] = [];
   const essential: ChainMiddleware[] = [];
 
@@ -149,6 +156,14 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
   let rewrite: ChainMiddleware | null = null;
 
   if (backendBaseURL) {
+    if (base === '/') {
+      createLogger().warn(
+        colors.yellow(
+          "⚠️  The app's base is '/': MI's paths can't be told from the app's files, so nothing is proxied to MI. Give the app a base path (withPPDev() does, from app.name).",
+        ),
+      );
+    }
+
     const miConfig = getMiAPIOptions(backendBaseURL, options.mi);
 
     mi = new MiAPI(backendBaseURL, miConfig);

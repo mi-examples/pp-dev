@@ -51,9 +51,18 @@ export function getIndexPageRegExp(base: string): RegExp {
   return new RegExp(`^((${escapeRegExp(base)})|/)$`);
 }
 
-/** Paths the proxy never sends to MI: pp-dev's and Vite's own, and the page itself. */
+/**
+ * Paths the proxy never sends to MI: pp-dev's and Vite's own, and the page itself. With a base of
+ * `/` (the plugin in a `vite.config` of its own, Vite's default) the page is every path: nothing
+ * is proxied, on purpose — the proxy runs before Vite serves the app's files, and the app's
+ * `/index.html`, `/src/main.ts` and assets can't be told from MI's paths. It was so as an empty
+ * prefix, by accident; the chain says so now (see createMiddlewareChain).
+ */
 export function getProxyIgnore(base: string): string[] {
-  return ['/@vite', '/@metricinsights', '/@', base.endsWith('/') ? base.slice(0, -1) : base];
+  const own = ['/@vite', '/@metricinsights', '/@'];
+  const page = base.endsWith('/') ? base.slice(0, -1) : base;
+
+  return [...own, page || '/'];
 }
 
 export interface SyncAndUsersOptions {

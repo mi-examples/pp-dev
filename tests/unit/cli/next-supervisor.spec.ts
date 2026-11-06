@@ -57,13 +57,14 @@ function fakeServer(): FakeServer {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function setup(overrides: { checkConfig?: () => Promise<void> } = {}) {
+function setup(overrides: { checkConfig?: () => Promise<void>; mode?: string } = {}) {
   const servers: FakeServer[] = [];
   const processRef = Object.assign(new EventEmitter(), { exit: vi.fn() });
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const watcher: ConfigWatcher = {
     watcher: {} as never,
     ready: Promise.resolve(),
+    add: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
   };
   let restart: (() => Promise<void>) | null = null;
@@ -76,6 +77,7 @@ function setup(overrides: { checkConfig?: () => Promise<void> } = {}) {
 
   void superviseNextServer({
     projectRoot: '/app',
+    ...(overrides.mode ? { mode: overrides.mode } : {}),
     logger,
     checkConfig,
     startServerProcess: () => {
@@ -120,7 +122,27 @@ describe('superviseNextServer', () => {
 
     servers[0].ready();
 
-    expect(createWatcher).toHaveBeenCalledWith('/app', expect.any(Function), expect.any(Function));
+    expect(createWatcher).toHaveBeenCalledWith(
+      '/app',
+      expect.any(Function),
+      expect.any(Function),
+      expect.objectContaining({ mode: 'development' }),
+    );
+  });
+
+  // Next's development phase loads `.env.development*` whatever pp-dev's `--mode`: with
+  // `--mode staging` a change to them restarted nothing.
+  it("watches Next's development .env files whatever the mode", () => {
+    const { servers, createWatcher } = setup({ mode: 'staging' });
+
+    servers[0].ready();
+
+    const options = (createWatcher.mock.calls[0] as unknown[] | undefined)?.[3] as { mode?: string; files?: string[] };
+
+    expect(options.mode).toBe('staging');
+    expect(options.files).toEqual(
+      ['.env', '.env.local', '.env.development', '.env.development.local'].map((name) => path.join('/app', name)),
+    );
   });
 
   it("exits with the server's code when the first start fails", async () => {
@@ -418,6 +440,36 @@ describe("the supervisor's config check", () => {
     );
 
     await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+  });
+
+  // A project whose pp-dev config lives in next.config alone (`withPPDev()`) has no standalone
+  // config: the check validated an empty one in its place and refused every change.
+  it('passes a project whose pp-dev config lives in next.config alone', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-next-only-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"next-only-app"}');
+    fs.writeFileSync(path.join(root, 'next.config.mjs'), 'export default {};\n');
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+  });
+
+  // A config file that exports nothing counted as no config: the check passed, the working server
+  // was stopped, and the new one refused the empty config.
+  it('refuses a config file that exports nothing', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-null-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"null-app"}');
+    fs.writeFileSync(path.join(root, 'pp-dev.config.mjs'), 'export default null;\n');
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/mi\.url/);
+  });
+
+  it('refuses a broken package.json config', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-pkg-'));
+    fs.writeFileSync(
+      path.join(root, 'package.json'),
+      '{"name":"pkg-app","pp-dev":{"mi":{"url":"https://mi.example.com"},"app":{"id":1,"type":"template"},"sync":{"buildTimeoutMs":0}}}',
+    );
+
+    await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/sync\.buildTimeoutMs/);
   });
 
   // A config that loads but the server process refuses passed the check: the running server was

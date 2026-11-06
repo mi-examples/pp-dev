@@ -45,7 +45,8 @@ export function registerPreviewCommand(cli: CAC): void {
             mergeConfig(config, {
               root,
               base: options.base,
-              configFile: options.config,
+              // The file is in `config` already (see loadCommandViteConfig).
+              configFile: false,
               logLevel: options.logLevel,
               mode: options.mode,
               build: {

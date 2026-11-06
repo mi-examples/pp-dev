@@ -231,7 +231,7 @@ export function createRequestCaptureMiddleware(
 
     let finalized = false;
 
-    function finalize(): void {
+    function finalize(aborted = false): void {
       if (finalized) {
         return;
       }
@@ -260,8 +260,13 @@ export function createRequestCaptureMiddleware(
         responseHeaders: redactResponseHeaders(res.getHeaders()),
         responseBody,
         responseBodyTruncated: resTruncated,
+        ...(aborted ? { aborted } : {}),
       });
     }
+
+    // A response that is destroyed instead of ended (a proxy error once the headers went out, the
+    // client gone mid-stream) never reaches end(): exactly the requests that failed were missing.
+    res.once('close', () => finalize(true));
 
     res.write = ((chunk: unknown, ...args: unknown[]): boolean => {
       captureChunk(chunk, getWriteEncoding(args));
