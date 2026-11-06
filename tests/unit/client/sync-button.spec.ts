@@ -183,7 +183,9 @@ describe('initSyncButton', () => {
     expect($button.disabled).toBe(false);
     expect($button.classList.contains('syncing')).toBe(false);
     expect(deps.closeAllConfirmModals).toHaveBeenCalled();
-    expect(deps.infoPopup).toHaveBeenCalledWith(expect.objectContaining({ title: 'Sync result unknown', type: 'warning' }));
+    expect(deps.infoPopup).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Sync result unknown', type: 'warning' }),
+    );
 
     await emit('vite:ws:connect');
     $button.click();

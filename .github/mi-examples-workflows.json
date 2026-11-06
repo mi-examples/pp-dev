@@ -1,11 +1,5 @@
 {
-  "callers": [
-    "ci",
-    "secret-scan",
-    "dependency-audit",
-    "release",
-    "main-ahead-check"
-  ],
+  "callers": ["ci", "secret-scan", "dependency-audit", "release", "main-ahead-check"],
   "inputs": {
     "ci": {
       "dist-dir": "dist",

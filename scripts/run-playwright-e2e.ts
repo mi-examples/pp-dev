@@ -17,10 +17,7 @@ const fixtureDirs = {
 function unquoteEnvValue(value: string): string {
   const trimmed = value.trim();
 
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
     return trimmed.slice(1, -1);
   }
 
@@ -239,10 +236,7 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
   const originalConfig = fs.readFileSync(configPath, 'utf-8');
 
   try {
-    const patchedConfig = originalConfig.replace(
-      /url:\s*['"]https?:\/\/[^'"]+['"]/,
-      `url: '${mockMi.url}'`,
-    );
+    const patchedConfig = originalConfig.replace(/url:\s*['"]https?:\/\/[^'"]+['"]/, `url: '${mockMi.url}'`);
 
     if (patchedConfig === originalConfig) {
       throw new Error(`Could not patch ${fixture.testType} pp-dev config to use mock-mi`);
@@ -252,7 +246,15 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
 
     server = spawnCommand(
       process.execPath,
-      [ppDevBinFor(fixture.dir), ...fixture.commandArgs, '--host', 'localhost', '--port', String(fixture.port), '--strictPort'],
+      [
+        ppDevBinFor(fixture.dir),
+        ...fixture.commandArgs,
+        '--host',
+        'localhost',
+        '--port',
+        String(fixture.port),
+        '--strictPort',
+      ],
       {
         cwd: fixture.dir,
         env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: undefined },

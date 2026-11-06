@@ -110,9 +110,9 @@ describe('writeBuildVersionManifest output path', () => {
       expect(normalizedOnDisk).not.toContain('/>');
       expect(normalizedOnDisk.startsWith('<?xml')).toBe(true);
 
-      const [versionFileName] = readFileSync(path.join(outDir, 'BUILD-MANIFEST.json'), 'utf-8').match(
-        /"versionFile":\s*"([^"]+)"/,
-      )!.slice(1) as [string];
+      const [versionFileName] = readFileSync(path.join(outDir, 'BUILD-MANIFEST.json'), 'utf-8')
+        .match(/"versionFile":\s*"([^"]+)"/)!
+        .slice(1) as [string];
       const manifest = JSON.parse(readFileSync(path.join(outDir, versionFileName), 'utf-8'));
       const expectedHash = createHash('sha256').update(normalizedOnDisk).digest('hex');
 
