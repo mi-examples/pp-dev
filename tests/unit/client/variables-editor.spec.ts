@@ -1076,9 +1076,9 @@ describe('Variables Editor page', () => {
       await flush();
 
       expect(find<HTMLButtonElement>('#save-btn').disabled).toBe(false);
-      expect(fetch.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')).toHaveLength(
-        1,
-      );
+      const calls = fetch.mock.calls as unknown as Array<[string, RequestInit | undefined]>;
+
+      expect(calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
 
       dom.close();
     });
