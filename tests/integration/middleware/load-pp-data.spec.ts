@@ -22,13 +22,20 @@ function createTestServer(middleware: any): Promise<{ server: Server; port: numb
   });
 }
 
-function makeRequest(port: number, path: string, headers: Record<string, string> = {}): Promise<{ status: number }> {
+function makeRequest(
+  port: number,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; location?: string }> {
   return new Promise((resolve) => {
     const http = require('http');
-    const req = http.request({ hostname: 'localhost', port, path, method: 'GET', headers }, (res: any) => {
-      res.on('data', () => {});
-      res.on('end', () => resolve({ status: res.statusCode }));
-    });
+    const req = http.request(
+      { hostname: 'localhost', port, path, method: 'GET', headers, agent: false },
+      (res: any) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve({ status: res.statusCode, location: res.headers.location }));
+      },
+    );
     req.end();
   });
 }
@@ -109,6 +116,91 @@ describe('initLoadPPData — load on deep-linked sub-path navigation', () => {
     try {
       await makeRequest(port, '/pl/other-app/dashboard', DOCUMENT_HEADERS);
 
+      expect(getPageVariables).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+/**
+ * Regression tests for the login loop under `pp-dev next`: it passed no `appBase`, which counted as
+ * "everything is under the base", so a navigation to MI's own `/login` loaded the page data too.
+ * With an expired session that load failed, the middleware sent the browser back to MI, MI sent it
+ * to `/login`, and so on without end: nobody could log in again.
+ */
+describe('initLoadPPData — navigations to MI pages outside the app', () => {
+  const APP_BASE = '/pt/foo/';
+  const isIndexRegExp = new RegExp(`^((${APP_BASE})|/)$`);
+  const unauthorized = () => Promise.reject(Object.assign(new Error('Unauthorized'), { response: { status: 401 } }));
+
+  let getPageVariables: ReturnType<typeof vi.fn>;
+
+  function buildMiddleware(appBase: string | undefined) {
+    getPageVariables = vi.fn(unauthorized);
+
+    const mi = {
+      getPageVariables,
+      getPageTemplate: vi.fn(unauthorized),
+      getPageInfo: vi.fn(unauthorized),
+    } as unknown as MiAPI;
+
+    // The options `pp-dev next` builds (`base` for its redirects), with and without `appBase`.
+    return initLoadPPData(isIndexRegExp, mi, {
+      appId: 123,
+      templateLess: false,
+      miHudLess: false,
+      v7Features: true,
+      base: APP_BASE,
+      appBase,
+    } as any);
+  }
+
+  beforeEach(() => {
+    clearAPICache();
+  });
+
+  it('proxies /login as it is while the session is expired, instead of redirecting back (the loop)', async () => {
+    const { server, port } = await createTestServer(buildMiddleware(APP_BASE));
+
+    try {
+      const response = await makeRequest(port, '/login', DOCUMENT_HEADERS);
+
+      expect(response.status).toBe(200);
+      expect(getPageVariables).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  // A v7 app was sent to its own base path, which asked MI for the page data again, without end
+  // (ERR_TOO_MANY_REDIRECTS): to MI's home, as any other, which sends the browser to the login.
+  it('still answers the app itself with the redirect an expired session gets, to the login, not to itself', async () => {
+    const { server, port } = await createTestServer(buildMiddleware(APP_BASE));
+
+    try {
+      const response = await makeRequest(port, '/pt/foo/dashboard', DOCUMENT_HEADERS);
+
+      expect(response.status).toBe(302);
+      expect(response.location).toBe('/home?proxyRedirect=%2F');
+      expect(getPageVariables).toHaveBeenCalledTimes(1);
+
+      const own = await makeRequest(port, APP_BASE, DOCUMENT_HEADERS);
+
+      expect(own.status).toBe(302);
+      expect(own.location).toBe('/home?proxyRedirect=%2F');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('counts no navigation as one into the app when no base is known', async () => {
+    const { server, port } = await createTestServer(buildMiddleware(undefined));
+
+    try {
+      const response = await makeRequest(port, '/login', DOCUMENT_HEADERS);
+
+      expect(response.status).toBe(200);
       expect(getPageVariables).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

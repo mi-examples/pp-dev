@@ -83,7 +83,11 @@ describe('migrate — migrateLegacyFlatConfig', () => {
   });
 
   it('maps proxy fields', () => {
-    const result = migrateLegacyFlatConfig({ enableProxyCache: false, proxyCacheTTL: 30000, disableSSLValidation: true });
+    const result = migrateLegacyFlatConfig({
+      enableProxyCache: false,
+      proxyCacheTTL: 30000,
+      disableSSLValidation: true,
+    });
     expect(result.proxy?.cache).toBe(false);
     expect(result.proxy?.cacheTtl).toBe(30000);
     expect(result.proxy?.tls?.allowSelfSigned).toBe(true);
@@ -134,7 +138,10 @@ describe('migrate — migratePPWatchConfig', () => {
 });
 
 describe('migrate — generateConfigFileContent', () => {
-  const config = { mi: { url: 'https://mi.co', mode: 'standalone' as const }, app: { id: 42, type: 'template' as const } };
+  const config = {
+    mi: { url: 'https://mi.co', mode: 'standalone' as const },
+    app: { id: 42, type: 'template' as const },
+  };
 
   it('generates TS output with defineConfig import', () => {
     const out = generateConfigFileContent(config, 'ts');

@@ -3,4 +3,19 @@ dist
 dist-zip
 coverage
 *.tgz
-tests/test-nextjs/.next
+# What the fixtures' builds and dev servers write (their own .gitignore files, which Prettier does
+# not read): `format:check` runs in CI next to them.
+tests/test-*/.next
+tests/test-*/out
+tests/test-*/next-env.d.ts
+playwright-report
+test-results
+# Written by tools in their own style: the shared workflows and their config (re-written by the
+# generator), the release bot, the mock-mi recorder,
+# Next.js (the fixtures' tsconfig) and the Variables Editor (the fixtures' variables file).
+.github/workflows
+.github/mi-examples-workflows.json
+CHANGELOG.md
+tests/mock-mi/cassettes
+tests/test-*/tsconfig.json
+tests/test-*/public/__template_variables.json

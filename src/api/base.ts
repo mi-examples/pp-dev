@@ -1,5 +1,5 @@
-import { Axios } from 'axios';
-import { Headers } from './constants';
+import type { Axios } from 'axios';
+import type { Headers } from './constants.js';
 
 export class BaseAPI {
   protected axios: Axios;

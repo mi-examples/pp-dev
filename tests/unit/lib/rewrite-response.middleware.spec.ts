@@ -1,0 +1,633 @@
+import { describe, it, expect, vi } from 'vitest';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { initRewriteResponse, type RewriteResponseOptions } from '../../../src/lib/rewrite-response.middleware.js';
+import { createLogger } from '../../../src/lib/logger.js';
+
+/**
+ * Regression tests for "pages are cut short under `pp-dev next`".
+ *
+ * Next.js (`send-payload.js`) sets `Content-Length` for the HTML it rendered and then calls
+ * `res.end(html)`. The rewrite middleware replaces that body with a longer one (page template,
+ * dev panel, host rewriting) but left the header as it was, so browsers stopped reading at the
+ * original length and Node clients failed with HPE_INVALID_CONSTANT. Vite never sets the header,
+ * which is why only the Next.js path was affected.
+ *
+ * The tests go through a real HTTP server and client: a stale `Content-Length` is only visible
+ * on the wire.
+ */
+
+const ORIGINAL = '<html><body><h1>Page</h1></body></html>';
+const PANEL = `<div id="pp-dev-panel">${'x'.repeat(200)}</div>`;
+const REWRITTEN = ORIGINAL.replace('</body>', `${PANEL}</body>`);
+
+function injectPanel(body: Buffer) {
+  return Buffer.from(body.toString('utf8').replace('</body>', `${PANEL}</body>`));
+}
+
+type Served = { status: number; headers: http.IncomingHttpHeaders; body: Buffer };
+
+async function serve(
+  respond: (res: http.ServerResponse) => void,
+  {
+    method = 'GET',
+    rewrite = injectPanel,
+    options,
+  }: { method?: string; rewrite?: (body: Buffer) => Buffer; options?: RewriteResponseOptions } = {},
+) {
+  const middleware = initRewriteResponse(() => true, rewrite, options);
+
+  const server = http.createServer((req, res) => {
+    void middleware(req as any, res, () => respond(res));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  const { port } = server.address() as AddressInfo;
+
+  const get = () =>
+    new Promise<Served>((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port, path: '/', method, agent: false }, (res) => {
+        const chunks: Buffer[] = [];
+
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+        );
+        res.on('error', reject);
+      });
+
+      req.on('error', reject);
+      req.end();
+    });
+
+  const close = () => new Promise<void>((resolve) => server.close(() => resolve()));
+
+  try {
+    return await get();
+  } finally {
+    await close();
+  }
+}
+
+describe('initRewriteResponse', () => {
+  it('updates a Content-Length preset by the renderer to the rewritten body (Next.js send-payload)', async () => {
+    const served = await serve((res) => {
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+      res.end(ORIGINAL);
+    });
+
+    expect(served.status).toBe(200);
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+  });
+
+  // Next.js 16 (pipe-readable.js) flushes the headers before it writes the first chunk: the stale
+  // length went out with them, and the rewrite could only warn and send a body that was cut short.
+  it('keeps the headers back when the renderer flushes them before writing (Next.js pipe-readable)', async () => {
+    const warn = vi.spyOn(createLogger(), 'warn').mockImplementation(() => {});
+
+    const served = await serve((res) => {
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+      res.flushHeaders();
+      res.write(ORIGINAL);
+      res.end();
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  // Next.js wraps end() over the rewrite with its compression middleware. With no compression
+  // accepted, that wrapper writes the headers (_implicitHeader → writeHead) before it passes the
+  // page on, and the rewritten page went out cut short at the rendered length.
+  it('keeps the headers back when a wrapper over end() writes them first (Next.js compression)', async () => {
+    const warn = vi.spyOn(createLogger(), 'warn').mockImplementation(() => {});
+
+    const served = await serve((res) => {
+      const end = res.end;
+
+      res.end = function (this: http.ServerResponse, ...args: unknown[]) {
+        if (!this.headersSent) {
+          this.writeHead(this.statusCode);
+        }
+
+        return (end as (...a: unknown[]) => http.ServerResponse).apply(this, args);
+      } as typeof res.end;
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+      res.end(ORIGINAL);
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  it('replaces a Content-Length given to writeHead, and keeps its status and other headers', async () => {
+    const served = await serve((res) => {
+      res.writeHead(201, { 'Content-Type': 'text/html', 'Content-Length': Buffer.byteLength(ORIGINAL), 'X-Page': '1' });
+      res.end(ORIGINAL);
+    });
+
+    expect(served.status).toBe(201);
+    expect(served.headers['x-page']).toBe('1');
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+  });
+
+  // Held until end(), the headers given to writeHead were out of the rewrite's sight: a
+  // Content-Encoding there left a gzip body read as text and sent back garbled.
+  it('reads a Content-Encoding given to writeHead before rewriting the body', async () => {
+    const compressed = gzipSync(Buffer.from(ORIGINAL));
+
+    const served = await serve((res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip' });
+      res.end(compressed);
+    });
+
+    expect(served.headers['content-encoding']).toBe('gzip');
+    expect(gunzipSync(served.body).toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it("replaces a Content-Length in writeHead's raw header list, keeping a repeated header", async () => {
+    const served = await serve((res) => {
+      res.writeHead(200, [
+        'Content-Type',
+        'text/html',
+        'Content-Length',
+        String(Buffer.byteLength(ORIGINAL)),
+        'Set-Cookie',
+        'a=1',
+        'Set-Cookie',
+        'b=2',
+      ]);
+      res.end(ORIGINAL);
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+    expect(served.headers['set-cookie']).toEqual(['a=1', 'b=2']);
+  });
+
+  it('sets the length of the re-encoded body when the response is compressed', async () => {
+    const compressed = gzipSync(Buffer.from(ORIGINAL));
+
+    const served = await serve((res) => {
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Content-Length', compressed.length);
+      res.end(compressed);
+    });
+
+    expect(gunzipSync(served.body).toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(served.body.length));
+  });
+
+  it('serves the whole rewritten body when no Content-Length was preset (Vite)', async () => {
+    const served = await serve((res) => {
+      res.setHeader('Content-Type', 'text/html');
+      res.end(ORIGINAL);
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(served.body.length));
+  });
+
+  it('keeps a Buffer passed to end()', async () => {
+    const served = await serve((res) => {
+      res.end(Buffer.from(ORIGINAL));
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it('collects string chunks passed to write()', async () => {
+    const served = await serve((res) => {
+      res.write(ORIGINAL.slice(0, 12));
+      res.write(ORIGINAL.slice(12));
+      res.end();
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it('keeps the bytes of a chunk whose producer reuses the buffer once the write is acknowledged', async () => {
+    const served = await serve((res) => {
+      const reused = Buffer.from(ORIGINAL);
+
+      res.write(reused, () => {
+        reused.fill('#');
+        res.end();
+      });
+    });
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+  });
+
+  it('acknowledges write() asynchronously, so a callback-driven producer does not recurse', async () => {
+    const chunks = 20_000;
+    let syncAck = false;
+
+    const served = await serve((res) => {
+      let written = 0;
+
+      const writeNext = () => {
+        if (written === chunks) {
+          res.end('</body></html>');
+
+          return;
+        }
+
+        written += 1;
+
+        let returned = false;
+
+        res.write('a', () => {
+          if (!returned) {
+            syncAck = true;
+          }
+
+          writeNext();
+        });
+        returned = true;
+      };
+
+      res.write('<html><body>');
+      writeNext();
+    });
+
+    expect(syncAck).toBe(false);
+    expect(served.body.toString('utf8')).toBe(`<html><body>${'a'.repeat(chunks)}${PANEL}</body></html>`);
+  });
+
+  it('drops the GET page length from a HEAD response instead of rewriting its absent body', async () => {
+    const rewrite = vi.fn(injectPanel);
+    const callback = vi.fn();
+
+    const served = await serve(
+      (res) => {
+        // What Next.js (send-payload.js) does for HEAD: the GET page's length, no body.
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+        res.end(null, callback);
+      },
+      { method: 'HEAD', rewrite },
+    );
+
+    expect(served.status).toBe(200);
+    expect(served.headers['content-length']).toBeUndefined();
+    expect(served.headers['content-type']).toBe('text/html');
+    expect(served.body.length).toBe(0);
+    expect(rewrite).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  // Vite's send() and Next's sendRenderResult answer a matching If-None-Match with a 304 and no
+  // body, by an ETag of the page before the rewrite: a reload after "Reload variables" kept the
+  // page with the old values.
+  it('asks the renderer for the whole page, never a 304 by the ETag of the page before the rewrite', async () => {
+    const etag = 'W/"page-v1"';
+    let seenIfNoneMatch: string | undefined;
+    const middleware = initRewriteResponse(() => true, injectPanel);
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        seenIfNoneMatch = req.headers['if-none-match'];
+
+        if (seenIfNoneMatch === etag) {
+          res.statusCode = 304;
+          res.end();
+
+          return;
+        }
+
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Etag', etag);
+        res.end(ORIGINAL);
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            {
+              host: '127.0.0.1',
+              port,
+              path: '/',
+              agent: false,
+              headers: { accept: 'text/html,*/*;q=0.8', 'if-none-match': etag },
+            },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(seenIfNoneMatch).toBeUndefined();
+      expect(served.status).toBe(200);
+      expect(served.body.toString('utf8')).toBe(REWRITTEN);
+      expect(served.headers.etag).toBeUndefined();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  // Under `pp-dev next` the path predicate also matches the app's files under its base, which pass
+  // through: a script's fetch of one keeps its validator, and the 304 reaches it.
+  it('leaves the If-None-Match of a request that asks for no page to the handler', async () => {
+    const etag = '"file-v1"';
+    const middleware = initRewriteResponse(() => true, injectPanel, {
+      contentType: (type) => type.includes('text/html'),
+    });
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        if (req.headers['if-none-match'] === etag) {
+          res.statusCode = 304;
+          res.end();
+
+          return;
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Etag', etag);
+        res.end('{"ok":true}');
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            { host: '127.0.0.1', port, path: '/', agent: false, headers: { accept: '*/*', 'if-none-match': etag } },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(served.status).toBe(304);
+      expect(served.body).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('runs the callback passed to end()', async () => {
+    const callback = vi.fn();
+
+    await serve((res) => {
+      res.end(ORIGINAL, callback);
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not touch the headers once they are sent', async () => {
+    const warn = vi.spyOn(createLogger(), 'warn').mockImplementation(() => {});
+    const middleware = initRewriteResponse(() => true, injectPanel);
+    const setHeader = vi.fn(() => {
+      throw new Error('ERR_HTTP_HEADERS_SENT');
+    });
+    const end = vi.fn();
+    const res = {
+      headersSent: true,
+      getHeader: (name: string) => (name === 'content-length' ? Buffer.byteLength(ORIGINAL) : undefined),
+      setHeader,
+      write: vi.fn(),
+      end,
+    };
+
+    await middleware({ url: '/', headers: {} } as any, res as any, () => res.end(ORIGINAL));
+
+    expect(setHeader).not.toHaveBeenCalled();
+    expect(end).toHaveBeenCalledTimes(1);
+    expect((end.mock.calls[0] as unknown[])[0]).toEqual(Buffer.from(REWRITTEN));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Under `pp-dev next` the predicate goes by path, so the app's own route handlers under the base
+ * path matched too. Their responses were held back whole until they ended: a stream (server-sent
+ * events, chunked JSON) delivered nothing meanwhile, a never-ending one never. With `contentType`,
+ * a response that isn't a page is passed on as it comes, as soon as its type is known.
+ */
+describe('initRewriteResponse — contentType', () => {
+  const pagesOnly: RewriteResponseOptions = { contentType: (type) => type.includes('text/html') };
+  const JSON_BODY = '{"ok":true}';
+
+  it('passes a response of another type through untouched, with its own Content-Length', async () => {
+    const served = await serve(
+      (res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(JSON_BODY) });
+        res.end(JSON_BODY);
+      },
+      { options: pagesOnly },
+    );
+
+    expect(served.body.toString('utf8')).toBe(JSON_BODY);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(JSON_BODY)));
+  });
+
+  // The HEAD branch dropped the Content-Length before the type was looked at: under `pp-dev next`
+  // a HEAD of a file under the base lost the length its GET keeps.
+  it('keeps the Content-Length of a HEAD response of another type', async () => {
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', 1234);
+        res.end();
+      },
+      { method: 'HEAD', options: pagesOnly },
+    );
+
+    expect(served.status).toBe(200);
+    expect(served.headers['content-length']).toBe('1234');
+  });
+
+  it('passes a response through whose type is only set right before end()', async () => {
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON_BODY);
+      },
+      { options: pagesOnly },
+    );
+
+    expect(served.body.toString('utf8')).toBe(JSON_BODY);
+  });
+
+  it('still rewrites a page', async () => {
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Length', Buffer.byteLength(ORIGINAL));
+        res.end(ORIGINAL);
+      },
+      { options: pagesOnly },
+    );
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+    expect(served.headers['content-length']).toBe(String(Buffer.byteLength(REWRITTEN)));
+  });
+
+  // A file from `public/` without an extension gets no Content-Type from `send`: with none at end()
+  // the filter never ran, and the bytes went through the page rewrite (#374's review).
+  it('passes an untyped response through, as one the filter rejects', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x3c, 0x2f, 0x62, 0x6f, 0x64, 0x79, 0x3e]);
+    const rewrite = vi.fn(injectPanel);
+    const served = await serve(
+      (res) => {
+        res.setHeader('Content-Length', bytes.length);
+        res.end(bytes);
+      },
+      { options: pagesOnly, rewrite },
+    );
+
+    expect(served.body.equals(bytes)).toBe(true);
+    expect(served.headers['content-type']).toBeUndefined();
+    expect(served.headers['content-length']).toBe(String(bytes.length));
+    expect(rewrite).not.toHaveBeenCalled();
+  });
+
+  it('rewrites an untyped response when the filter takes an empty type', async () => {
+    const served = await serve(
+      (res) => {
+        res.end(ORIGINAL);
+      },
+      { options: { contentType: (type) => type === '' || type.includes('text/html') } },
+    );
+
+    expect(served.body.toString('utf8')).toBe(REWRITTEN);
+  });
+
+  // Next.js wraps the response again over the rewrite: its compression middleware (end/write, and
+  // on-headers' writeHead that sets Content-Encoding) and, for an app route's file, a flushHeaders()
+  // before the first chunk. Putting the original methods back on pass-through dropped those wrappers:
+  // the icon went out gzipped under its raw Content-Length and no Content-Encoding (e2e caught it).
+  it("keeps Next.js's compression in place when a file passes through", async () => {
+    const compression = (await import('next/dist/compiled/compression/index.js')).default;
+    const icon = Buffer.from('ICON'.repeat(600));
+    const middleware = initRewriteResponse(() => true, injectPanel, pagesOnly);
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () =>
+        compression()(req, res, () => {
+          res.setHeader('Content-Type', 'image/x-icon');
+          res.setHeader('Content-Length', icon.length);
+          res.flushHeaders();
+          res.write(icon);
+          res.end();
+        }),
+      );
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const served = await new Promise<Served>((resolve, reject) => {
+        http
+          .request(
+            { host: '127.0.0.1', port, path: '/', agent: false, headers: { 'accept-encoding': 'gzip' } },
+            (res) => {
+              const chunks: Buffer[] = [];
+
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () =>
+                resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+              );
+              res.on('error', reject);
+            },
+          )
+          .on('error', reject)
+          .end();
+      });
+
+      expect(served.headers['content-encoding']).toBe('gzip');
+      expect(served.headers['content-length']).toBeUndefined();
+      expect(gunzipSync(served.body).equals(icon)).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("delivers a stream's chunks as they are written, not once it ends", async () => {
+    const middleware = initRewriteResponse(() => true, injectPanel, pagesOnly);
+    let endNow!: () => void;
+    const clientHasFirstChunk = new Promise<void>((resolve) => (endNow = resolve));
+
+    const server = http.createServer((req, res) => {
+      void middleware(req as any, res, () => {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: 1\n\n');
+        void clientHasFirstChunk.then(() => res.end('data: 2\n\n'));
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const chunks: string[] = [];
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        http.request({ host: '127.0.0.1', port, path: '/', agent: false }, resolve).on('error', reject).end();
+      });
+      const firstChunk = new Promise<string>((resolve) =>
+        response.once('data', (chunk: Buffer) => resolve(String(chunk))),
+      );
+
+      response.on('data', (chunk: Buffer) => chunks.push(String(chunk)));
+
+      // A held-back stream never gets here before the server ends it, which it only does afterwards.
+      await expect(
+        Promise.race([firstChunk, new Promise((_, reject) => setTimeout(() => reject(new Error('held back')), 2_000))]),
+      ).resolves.toBe('data: 1\n\n');
+
+      endNow();
+
+      await new Promise<void>((resolve) => response.on('end', resolve));
+
+      expect(chunks.join('')).toBe('data: 1\n\ndata: 2\n\n');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

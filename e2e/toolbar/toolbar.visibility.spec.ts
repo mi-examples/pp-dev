@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const testType = process.env.TEST_TYPE;
-
 test.describe('Toolbar Visibility', () => {
-  // Skip toolbar tests for Next.js as it doesn't inject the toolbar in the same way
-  test.skip(testType?.includes('nextjs') ?? false, 'Skipping toolbar tests for Next.js');
-
   test('should display pp-dev toolbar on page load', async ({ page, baseURL }) => {
     if (!baseURL) {
       throw new Error('baseURL is not set');

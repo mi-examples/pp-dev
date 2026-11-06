@@ -1,10 +1,13 @@
-import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { INSPECTOR_PATH, registerInspectorRoutes } from '../../../src/lib/request-inspector.js';
 import { RequestStore } from '../../../src/lib/request-store.js';
 
 function makeApp() {
-  const handlers = new Map<string, (req: any, res: any) => any>();
+  const handlers = new Map<string, (req: any, res: any, next?: () => void) => any>();
 
   const app = {
     handlers,
@@ -17,37 +20,6 @@ function makeApp() {
   };
 
   return app as unknown as import('express').Application & { handlers: typeof handlers };
-}
-
-function getInspectorHtml(): string {
-  const app = makeApp();
-  const res: any = {
-    body: '',
-    setHeader() {},
-    end(body: string) {
-      res.body = body;
-    },
-  };
-
-  registerInspectorRoutes(app, new RequestStore());
-  app.handlers.get(`GET ${INSPECTOR_PATH}`)!({}, res);
-
-  return res.body;
-}
-
-function highlightJsonFromGeneratedClient(html: string, input: string): string {
-  const start = html.indexOf('function syntaxHighlightJson');
-  const end = html.indexOf('function decodeTextBody', start);
-
-  expect(start).toBeGreaterThanOrEqual(0);
-  expect(end).toBeGreaterThan(start);
-
-  const context = { output: '' };
-  const helperSource = html.slice(start, end);
-
-  runInNewContext(`${helperSource}\noutput = syntaxHighlightJson(${JSON.stringify(input)});`, context);
-
-  return context.output;
 }
 
 describe('registerInspectorRoutes', () => {
@@ -79,13 +51,217 @@ describe('registerInspectorRoutes', () => {
   });
 });
 
-describe('request inspector JSON rendering', () => {
-  it('escapes invalid JSON before inserting it into the detail HTML', () => {
-    const payload = '</pre><img src=x onerror=alert(1)>';
-    const rendered = highlightJsonFromGeneratedClient(getInspectorHtml(), payload);
+describe('GET /@api/requests', () => {
+  it('takes the first value of a repeated query parameter instead of failing', () => {
+    const app = makeApp();
+    const store = new RequestStore();
+    const res: any = { json: (body: unknown) => (res.body = body) };
 
-    expect(rendered).toBe('&lt;/pre&gt;&lt;img src=x onerror=alert(1)&gt;');
-    expect(rendered).not.toContain('<img');
-    expect(rendered).not.toContain('</pre>');
+    for (const [method, url] of [
+      ['GET', '/a'],
+      ['POST', '/b'],
+    ]) {
+      store.add({
+        id: store.allocateId(),
+        timestamp: 0,
+        method,
+        url,
+        statusCode: 200,
+        duration: 0,
+        source: 'proxy',
+        requestHeaders: {},
+        requestBody: null,
+        requestBodyTruncated: false,
+        responseHeaders: {},
+        responseBody: null,
+        responseBodyTruncated: false,
+      });
+    }
+
+    registerInspectorRoutes(app, store);
+    app.handlers.get('GET /@api/requests')!({ query: { method: ['post', 'get'], search: ['/b', '/a'] } }, res);
+
+    expect(res.body.requests.map((e: { url: string }) => e.url)).toEqual(['/b']);
+  });
+});
+
+// A body is captured as it went to the browser. Next.js compresses its chunks, and the page showed,
+// copied and saved those bytes as text.
+describe('GET /@api/requests/:id', () => {
+  const SCRIPT = 'console.log("hello from a chunk");'.repeat(20);
+
+  function detailsOf(body: Buffer, contentEncoding?: string | string[], captureLimit?: number) {
+    const app = makeApp();
+    const store = new RequestStore();
+    const res: any = { json: (value: unknown) => (res.body = value) };
+    const id = store.allocateId();
+
+    store.add({
+      id,
+      timestamp: 0,
+      method: 'GET',
+      url: '/_next/static/chunks/main.js',
+      statusCode: 200,
+      duration: 0,
+      source: 'local',
+      requestHeaders: {},
+      requestBody: null,
+      requestBodyTruncated: false,
+      responseHeaders: {
+        'content-type': 'application/javascript',
+        ...(contentEncoding ? { 'content-encoding': contentEncoding } : {}),
+      },
+      responseBody: body,
+      responseBodyTruncated: false,
+    });
+    registerInspectorRoutes(app, store, captureLimit);
+    app.handlers.get('GET /@api/requests/:id')!({ params: { id } }, res);
+
+    return res.body as { responseBody: string | null; responseBodySize: number; responseBodyTruncated: boolean };
+  }
+
+  const text = (b64: string) => Buffer.from(b64, 'base64').toString('utf8');
+
+  it.each([
+    ['gzip', gzipSync],
+    ['br', brotliCompressSync],
+    ['deflate', deflateSync],
+    ['GZIP', gzipSync],
+  ] as const)('gives a %s body unpacked, with the size it was sent in', (encoding, compress) => {
+    const sent = compress(Buffer.from(SCRIPT));
+    const details = detailsOf(sent, encoding);
+
+    expect(text(details.responseBody!)).toBe(SCRIPT);
+    expect(details.responseBodySize).toBe(sent.length);
+  });
+
+  it('gives a body without Content-Encoding as captured', () => {
+    expect(text(detailsOf(Buffer.from(SCRIPT)).responseBody!)).toBe(SCRIPT);
+  });
+
+  it('gives a body that does not unpack as captured, instead of failing', () => {
+    const broken = Buffer.from('not gzip at all');
+
+    expect(Buffer.from(detailsOf(broken, 'gzip').responseBody!, 'base64')).toEqual(broken);
+  });
+
+  // res.setHeader() takes an array; reading only its first value took one layer off a body packed
+  // twice and showed the rest as text.
+  it.each([['gzip, gzip'], [['gzip', 'gzip']]])('gives a body with several encodings (%j) as captured', (encoding) => {
+    const sent = gzipSync(gzipSync(Buffer.from(SCRIPT)));
+
+    expect(Buffer.from(detailsOf(sent, encoding).responseBody!, 'base64')).toEqual(sent);
+  });
+
+  it('unpacks a body whose single encoding was set as an array', () => {
+    expect(text(detailsOf(gzipSync(Buffer.from(SCRIPT)), ['gzip']).responseBody!)).toBe(SCRIPT);
+  });
+
+  // The capture limit counts compressed bytes: a few KB of gzip can unpack to hundreds of MB, all
+  // at once in the dev server's memory.
+  it('says a body is too large instead of unpacking it past the capture limit', () => {
+    const sent = gzipSync(Buffer.alloc(4 * 1024 * 1024, 'a'));
+    const details = detailsOf(sent, 'gzip', 64 * 1024);
+
+    expect(sent.length).toBeLessThan(64 * 1024);
+    expect(details.responseBody).toBeNull();
+    expect(details.responseBodyTruncated).toBe(true);
+    expect(details.responseBodySize).toBe(sent.length);
+  });
+});
+
+// The page was a template literal built on every request; it is now built from
+// src/client/request-inspector into dist/client, and served from there.
+describe('the Request Inspector page', () => {
+  let clientDir: string;
+
+  beforeEach(() => {
+    clientDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-inspector-client-'));
+    fs.copyFileSync(
+      path.resolve(__dirname, '../../../src/client/request-inspector/request-inspector.html'),
+      path.join(clientDir, 'request-inspector.html'),
+    );
+    fs.writeFileSync(path.join(clientDir, 'request-inspector.js'), 'console.log("inspector");');
+    fs.writeFileSync(path.join(clientDir, 'secret.txt'), 'not for the browser');
+  });
+
+  afterEach(() => {
+    fs.rmSync(clientDir, { recursive: true, force: true });
+  });
+
+  function request(app: ReturnType<typeof makeApp>, route: string, params: Record<string, string> = {}) {
+    return new Promise<{ status: number; headers: Record<string, string>; body: string; passed: boolean }>(
+      (resolve) => {
+        const res: any = {
+          statusCode: 200,
+          headers: {} as Record<string, string>,
+          setHeader(name: string, value: string) {
+            res.headers[name.toLowerCase()] = value;
+          },
+          status(code: number) {
+            res.statusCode = code;
+
+            return res;
+          },
+          type(value: string) {
+            res.headers['content-type'] = value;
+
+            return res;
+          },
+          end(body: string | Buffer) {
+            resolve({ status: res.statusCode, headers: res.headers, body: String(body), passed: false });
+          },
+        };
+
+        app.handlers.get(`GET ${route}`)!({ params }, res, () =>
+          resolve({ status: 0, headers: {}, body: '', passed: true }),
+        );
+      },
+    );
+  }
+
+  it('serves the built page with the capture limit filled in', async () => {
+    const app = makeApp();
+
+    registerInspectorRoutes(app, new RequestStore(), 5 * 1024 * 1024, clientDir);
+
+    const page = await request(app, INSPECTOR_PATH);
+
+    expect(page.status).toBe(200);
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(page.body).toContain('data-capture-limit="5242880"');
+    expect(page.body).toContain('<script type="module" src="/@pp-dev/inspector/request-inspector.js">');
+    // No inline handlers left: the page script handles every click.
+    expect(page.body).not.toMatch(/\son[a-z]+=/);
+  });
+
+  it('says so when the page is not built', async () => {
+    const app = makeApp();
+
+    fs.rmSync(path.join(clientDir, 'request-inspector.html'));
+    registerInspectorRoutes(app, new RequestStore(), undefined, clientDir);
+
+    const page = await request(app, INSPECTOR_PATH);
+
+    expect(page.status).toBe(500);
+    expect(page.body).toContain('request-inspector page not built');
+  });
+
+  it("serves the page's own script and styles, and nothing else from the folder", async () => {
+    const app = makeApp();
+
+    registerInspectorRoutes(app, new RequestStore(), undefined, clientDir);
+
+    const script = await request(app, `${INSPECTOR_PATH}/:file`, { file: 'request-inspector.js' });
+
+    expect(script.headers['content-type']).toBe('text/javascript; charset=utf-8');
+    expect(script.body).toBe('console.log("inspector");');
+
+    for (const file of ['secret.txt', '../package.json', 'request-inspector.html']) {
+      expect((await request(app, `${INSPECTOR_PATH}/:file`, { file })).passed, file).toBe(true);
+    }
+
+    // Listed, but not built: left to the next handler too.
+    expect((await request(app, `${INSPECTOR_PATH}/:file`, { file: 'request-inspector.css' })).passed).toBe(true);
   });
 });

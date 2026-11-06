@@ -1,5 +1,3 @@
-import svgToFont from 'svgtofont';
-
 export interface IconFontGeneratorOptions {
   sourceDir: string;
   outputDir: string;
@@ -18,6 +16,10 @@ export class IconFontGenerator {
   }
 
   public async generate(): Promise<void> {
+    // Loaded here, not with the module: the CLI imports this class for one command, and svgtofont
+    // takes about a second to load for all the others (`--version` included).
+    const { default: svgToFont } = await import('svgtofont');
+
     await svgToFont({
       src: this.sourceDir,
       dist: this.outputDir,

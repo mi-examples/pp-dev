@@ -7,26 +7,44 @@ import { MiAPI } from './pp.middleware.js';
 import { Logger, ViteDevServer, WebSocketClient } from 'vite';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
+import {
+  SYNC_IN_PROGRESS_CODE,
+  type SyncActionRequiredPayload,
+  type SyncActionResponsePayload,
+  type TemplateSyncResponsePayload,
+} from '../shared/ws-messages.js';
 
-interface SyncActionRequestPayload {
-  requestId: string;
-  title: string;
-  content: string;
-  confirmText: string;
-  cancelText: string;
+export { SYNC_IN_PROGRESS_CODE };
+
+const DEFAULT_SYNC_ACTION_TIMEOUT_MS = 120_000;
+
+/** What MI answered an upload with, for the error message: its JSON, or the head of a text body. */
+function describeUploadAnswer(answer: unknown): string {
+  if (typeof answer === 'string') {
+    const text = answer.replace(/\s+/g, ' ').trim();
+
+    return `with a non-JSON body: "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`;
+  }
+
+  if (answer && typeof answer === 'object') {
+    return `with ${JSON.stringify(answer).slice(0, 200)}`;
+  }
+
+  return `with ${String(answer)}`;
 }
 
-interface SyncActionResponsePayload {
-  requestId: string;
-  approved: boolean;
-}
+/** Why a sync's dialog ended without a confirmation: the user's answer, or none that could come. */
+export type SyncCancelReason = 'cancelled' | 'timeout' | 'disconnected' | 'shutdown';
+
+/** The answer to a `template:sync:action-required` dialog. */
+export type SyncActionAnswer = { approved: true } | { approved: false; reason: SyncCancelReason };
 
 export interface ClientServiceOptions {
   distService?: DistService;
   miAPI?: MiAPI;
   /**
    * Max time to wait for the browser to respond to `template:sync:action-required`.
-   * After this, the pending promise resolves to `false` and the resolver is removed.
+   * After this, the pending promise resolves to a `'timeout'` answer and the resolver is removed.
    * @default 120_000
    */
   syncActionTimeoutMs?: number;
@@ -38,9 +56,11 @@ export class ClientService {
   private readonly eventMap: Map<string, (this: ClientService, ...attrs: any[]) => void>;
 
   private logger: Logger;
+  /** The running template sync, if any (see `onTemplateSync`). */
+  private syncInFlight: Promise<void> | null = null;
   private readonly syncActionResolvers = new Map<
     string,
-    { resolve: (approved: boolean) => void; timeoutId: ReturnType<typeof setTimeout> }
+    { resolve: (answer: SyncActionAnswer) => void; timeoutId: ReturnType<typeof setTimeout>; cleanup: () => void }
   >();
 
   constructor(server: ViteDevServer, opts?: ClientServiceOptions) {
@@ -66,16 +86,23 @@ export class ClientService {
       ws.on(event, handler);
     }
 
-    ws.on('close', () => {
-      this.clearAllPendingSyncActions(false);
-    });
-
     ws.on('error', () => {
-      this.clearAllPendingSyncActions(false);
+      this.clearAllPendingSyncActions('disconnected');
     });
   }
 
-  private resolveSyncAction(requestId: string, approved: boolean) {
+  /**
+   * The dev server shuts down: no dialog can be answered any more, and a running sync's build must
+   * not outlive it. Called by whoever closes the server (the Vite plugin's `closeBundle`, `pp-dev
+   * next`'s restart and shutdown). Not a WebSocket `close` listener: Vite takes `ws.on('close')` for
+   * a message any page could send, and never calls it on shutdown.
+   */
+  dispose() {
+    this.clearAllPendingSyncActions('shutdown');
+    this.opts.distService?.stopBuilds();
+  }
+
+  private resolveSyncAction(requestId: string, answer: SyncActionAnswer) {
     const entry = this.syncActionResolvers.get(requestId);
 
     if (!entry) {
@@ -83,15 +110,46 @@ export class ClientService {
     }
 
     clearTimeout(entry.timeoutId);
+    entry.cleanup();
     this.syncActionResolvers.delete(requestId);
-    entry.resolve(approved);
+    entry.resolve(answer);
   }
 
-  /** Resolves every pending `requestSyncAction` promise and clears timeouts (e.g. WebSocket closed). */
-  private clearAllPendingSyncActions(approved: boolean) {
+  /** Ends every open dialog with `reason`, clearing its timeout: the dev server or its WebSocket is going. */
+  private clearAllPendingSyncActions(reason: SyncCancelReason) {
     for (const requestId of [...this.syncActionResolvers.keys()]) {
-      this.resolveSyncAction(requestId, approved);
+      this.resolveSyncAction(requestId, { approved: false, reason });
     }
+  }
+
+  /** What the panel and the terminal are told when a sync ends on a dialog without a confirmation. */
+  private describeSyncCancel(reason: SyncCancelReason): string {
+    switch (reason) {
+      case 'cancelled':
+        return 'Sync cancelled by user.';
+      case 'timeout': {
+        const seconds = Math.round((this.opts.syncActionTimeoutMs ?? DEFAULT_SYNC_ACTION_TIMEOUT_MS) / 1000);
+
+        return `Sync cancelled: its dialog was not answered within ${seconds} s.`;
+      }
+      case 'disconnected':
+        return 'Sync cancelled: the tab that started it lost its connection to the dev server.';
+      case 'shutdown':
+        return 'Sync cancelled: the dev server is shutting down.';
+    }
+  }
+
+  /** Ends the sync on a dialog's answer that is not a confirmation. The backup was saved before any dialog. */
+  private cancelSync(client: WebSocketClient, reason: SyncCancelReason) {
+    const description = this.describeSyncCancel(reason);
+
+    this.sendSyncResponse(client, { cancelled: true, message: `${description} Backup was saved.` });
+    this.logger.info(colors.yellow(description));
+  }
+
+  /** Tells the panel how its sync ended, in the shape it reads (`src/shared/ws-messages.ts`). */
+  private sendSyncResponse(client: WebSocketClient, payload: TemplateSyncResponsePayload) {
+    client.send('template:sync:response', payload);
   }
 
   onInfoDataRequest(_data: unknown, client: WebSocketClient) {
@@ -103,35 +161,80 @@ export class ClientService {
       return;
     }
 
-    this.resolveSyncAction(payload.requestId, payload.approved);
+    this.resolveSyncAction(
+      payload.requestId,
+      payload.approved ? { approved: true } : { approved: false, reason: 'cancelled' },
+    );
   }
 
-  async requestSyncAction(payload: Omit<SyncActionRequestPayload, 'requestId'>, client: WebSocketClient) {
+  async requestSyncAction(
+    payload: Omit<SyncActionRequiredPayload, 'requestId'>,
+    client: WebSocketClient,
+  ): Promise<SyncActionAnswer> {
     const requestId = randomUUID();
-    const timeoutMs = this.opts.syncActionTimeoutMs ?? 120_000;
+    const timeoutMs = this.opts.syncActionTimeoutMs ?? DEFAULT_SYNC_ACTION_TIMEOUT_MS;
 
-    return await new Promise<boolean>((resolve) => {
-      const timeoutId = setTimeout(() => {
-        this.resolveSyncAction(requestId, false);
-      }, timeoutMs);
+    return await new Promise<SyncActionAnswer>((resolve) => {
+      const cancel = (reason: SyncCancelReason) => this.resolveSyncAction(requestId, { approved: false, reason });
+      const timeoutId = setTimeout(() => cancel('timeout'), timeoutMs);
+      // A tab closed while its dialog is open will never answer: cancel the sync at once instead of
+      // keeping every other sync blocked until the timeout.
+      const { socket } = client as Partial<Pick<WebSocketClient, 'socket'>>;
+      const onClose = () => cancel('disconnected');
 
-      this.syncActionResolvers.set(requestId, { resolve, timeoutId });
+      socket?.once('close', onClose);
+      this.syncActionResolvers.set(requestId, { resolve, timeoutId, cleanup: () => socket?.off('close', onClose) });
+
+      if (socket && socket.readyState !== socket.OPEN) {
+        cancel('disconnected');
+
+        return;
+      }
 
       client.send('template:sync:action-required', {
         ...payload,
         requestId,
-      } satisfies SyncActionRequestPayload);
+      } satisfies SyncActionRequiredPayload);
     });
   }
 
-  async onTemplateSync(_data: unknown, client: WebSocketClient) {
+  /**
+   * One sync at a time: a second click, a second tab, or a click the panel replays after a
+   * reconnect would otherwise start a second build into the same `dist`/`.next` and a second
+   * upload to MI while the first is still running.
+   */
+  async onTemplateSync(data: unknown, client: WebSocketClient) {
+    if (this.syncInFlight) {
+      this.logger.warn(colors.yellow('Template sync requested while another one is running; ignored'));
+
+      this.sendSyncResponse(client, {
+        error:
+          'A template sync is already running. Wait for it to finish, or answer its dialog in the tab that started it.',
+        code: SYNC_IN_PROGRESS_CODE,
+      });
+
+      return;
+    }
+
+    const sync = this.runTemplateSync(data, client);
+
+    this.syncInFlight = sync;
+
+    try {
+      await sync;
+    } finally {
+      this.syncInFlight = null;
+    }
+  }
+
+  private async runTemplateSync(_data: unknown, client: WebSocketClient) {
     if (this.opts.distService && this.opts.miAPI) {
       const { distService, miAPI } = this.opts;
 
       try {
         if (this.server.config.clientInjectionPlugin?.v7Features) {
           if (!miAPI?.isV710OrHigher) {
-            client.send('template:sync:response', {
+            this.sendSyncResponse(client, {
               error: 'This feature is available only for MI v7.1.0 or higher',
               config: {
                 canSync: false,
@@ -148,94 +251,9 @@ export class ClientService {
           }
         }
 
-        const currentAssets = await miAPI?.getAssets().catch(async (err) => {
-          if (isAxiosError(err)) {
-            // Use the token helper for better error handling
-            const errorInfo = getTokenErrorInfo(err);
-
-            if (errorInfo.code === 'SESSION_EXPIRED') {
-              this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
-
-              // Try to validate credentials to get more specific error information
-              try {
-                const validation = await miAPI?.validateCredentials();
-
-                if (validation && !validation.isValid) {
-                  this.logger.error(colors.red(`Authentication error: ${validation.error}`));
-                  client.send('template:sync:response', {
-                    error: validation.error,
-                    code: validation.code,
-                    refresh: true,
-                  });
-                } else {
-                  this.logger.info(colors.yellow('Session expired'));
-                  client.send('template:sync:response', {
-                    error: 'Session expired',
-                    code: 'SESSION_EXPIRED',
-                    refresh: true,
-                  });
-                }
-              } catch (validationError) {
-                this.logger.info(colors.yellow('Session expired'));
-                client.send('template:sync:response', {
-                  error: 'Session expired',
-                  code: 'SESSION_EXPIRED',
-                  refresh: true,
-                });
-              }
-
-              return err;
-            }
-
-            // Get Address Info error (server in maintenance mode, VPN connection is needed or no internet connection)
-            if (
-              err.cause instanceof Error &&
-              ((err.cause as { code: string } & Error).code === 'ECONNRESET' ||
-                (err.cause as { code: string } & Error).code === 'ENOTFOUND')
-            ) {
-              this.logger.info(
-                colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
-              );
-
-              client.send('template:sync:response', {
-                error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-                code: 'CONNECTION_ERROR',
-              });
-
-              return err;
-            }
-
-            // HTTP gateway / maintenance (explicit status)
-            const httpStatus = err.response?.status;
-
-            if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
-              this.logger.info(
-                colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),
-              );
-
-              client.send('template:sync:response', {
-                error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-                code: 'CONNECTION_ERROR',
-              });
-
-              return err;
-            }
-          }
-
-          // PageAPI / PageTemplateAPI: 200 + HTML / non-JSON → plain Error (not axios)
-          if (isUnavailableJsonApiError(err)) {
-            this.logger.info(
-              colors.yellow(
-                'Server in maintenance mode or non-JSON page / page-template API response (unavailable HTML body)',
-              ),
-            );
-
-            client.send('template:sync:response', {
-              error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-              code: 'CONNECTION_ERROR',
-            });
-
-            return err;
+        const currentAssets = await miAPI.getAssets().catch(async (err: unknown) => {
+          if (await this.reportMiFailure(client, err)) {
+            return err as Error;
           }
 
           throw err;
@@ -248,15 +266,8 @@ export class ClientService {
         let newAssets: Buffer | Error | undefined;
 
         if (currentAssets) {
-          const backupAnalysis = await distService?.analyzeBackup(currentAssets).catch((err: Error) => {
-            if (err.message === 'Backup file is not a ZIP file') {
-              this.logger.error(colors.red('Backup file is not a ZIP file'));
-
-              return err;
-            }
-
-            return err;
-          });
+          // An analysis that fails ends the sync as a failed build does, with its message.
+          const backupAnalysis = await distService?.analyzeBackup(currentAssets).catch((err: Error) => err);
 
           if (backupAnalysis instanceof Error) {
             newAssets = backupAnalysis;
@@ -286,9 +297,10 @@ export class ClientService {
               ? []
               : otherManifestMismatches.map((m) => m.relativePath);
 
-            const promptReplaceTemplateVariables = async () => {
+            /** Whether the sync goes on: a dialog nobody answered stops it, as the other dialogs do. */
+            const promptReplaceTemplateVariables = async (): Promise<boolean> => {
               if (!backupAnalysis.templateVariables || !distService) {
-                return;
+                return true;
               }
 
               const { templateVariables } = backupAnalysis;
@@ -307,10 +319,18 @@ export class ClientService {
                   client,
                 );
 
-                if (replaceFromServer) {
+                if (replaceFromServer.approved) {
                   await distService.saveTemplateVariablesFile(templateVariables.content);
+                } else if (replaceFromServer.reason !== 'cancelled') {
+                  // A timeout, a closed tab, a stopping server: not "Keep local", which went on to
+                  // build and upload the local variables with nobody having answered.
+                  this.cancelSync(client, replaceFromServer.reason);
+
+                  return false;
                 }
               }
+
+              return true;
             };
 
             if (backupAnalysis.unknownFiles.length > 0) {
@@ -324,20 +344,15 @@ export class ClientService {
                 client,
               );
 
-              if (!shouldContinueSync) {
-                client.send('template:sync:response', {
-                  cancelled: true,
-                  message: 'Sync cancelled by user. Backup was saved.',
-                });
-
-                this.logger.info(colors.yellow('Sync cancelled by user'));
+              if (!shouldContinueSync.approved) {
+                this.cancelSync(client, shouldContinueSync.reason);
 
                 return;
               }
             }
 
-            if (mixedTemplateAndOthers) {
-              await promptReplaceTemplateVariables();
+            if (mixedTemplateAndOthers && !(await promptReplaceTemplateVariables())) {
+              return;
             }
 
             if (!onlyTemplateVariablesMismatch && pathsForVersionModal.length > 0) {
@@ -358,13 +373,8 @@ export class ClientService {
                 client,
               );
 
-              if (!shouldContinueAfterVersionMismatch) {
-                client.send('template:sync:response', {
-                  cancelled: true,
-                  message: 'Sync cancelled by user. Backup was saved.',
-                });
-
-                this.logger.info(colors.yellow('Sync cancelled by user'));
+              if (!shouldContinueAfterVersionMismatch.approved) {
+                this.cancelSync(client, shouldContinueAfterVersionMismatch.reason);
 
                 return;
               }
@@ -388,20 +398,15 @@ export class ClientService {
                 client,
               );
 
-              if (!shouldContinueAfterMismatch) {
-                client.send('template:sync:response', {
-                  cancelled: true,
-                  message: 'Sync cancelled by user. Backup was saved.',
-                });
-
-                this.logger.info(colors.yellow('Sync cancelled by user'));
+              if (!shouldContinueAfterMismatch.approved) {
+                this.cancelSync(client, shouldContinueAfterMismatch.reason);
 
                 return;
               }
             }
 
-            if (!mixedTemplateAndOthers) {
-              await promptReplaceTemplateVariables();
+            if (!mixedTemplateAndOthers && !(await promptReplaceTemplateVariables())) {
+              return;
             }
 
             newAssets = await distService?.buildNewAssets();
@@ -411,38 +416,52 @@ export class ClientService {
         }
 
         if (newAssets && newAssets instanceof Buffer) {
-          const updateResult = await miAPI?.updateAssets(newAssets);
+          // Built, but the dev server is shutting down (or restarting, with a sync of its own to come):
+          // nothing is uploaded from here any more.
+          if (distService.stopped) {
+            this.sendSyncResponse(client, { error: 'Sync stopped: the dev server is shutting down.' });
+            this.logger.warn(colors.yellow('Sync stopped before the upload: the dev server is shutting down'));
+
+            return;
+          }
+
+          let updateResult: Awaited<ReturnType<MiAPI['updateAssets']>>;
+
+          try {
+            updateResult = await miAPI.updateAssets(newAssets);
+          } catch (error) {
+            // An MI session that expired during a long build, or MI gone down meanwhile, is reported
+            // as it is for the download, not as a bare "Request failed with status code 412".
+            if (await this.reportMiFailure(client, error)) {
+              return;
+            }
+
+            throw error;
+          }
 
           if (updateResult?.status === 'OK') {
+            // The meta is `{}` until a first backup is saved (a page with no assets on MI yet).
             const backupMeta = distService?.getBackupMeta();
 
-            const {
-              lastBackupName: backupFilename,
-              lastBackupHash: currentHash,
-              lastBackupDate: backupDate,
-            } = backupMeta || {
-              lastBackupName: '',
-              lastBackupHash: '',
-              lastBackupDate: new Date().toISOString(),
-            };
-
-            client.send('template:sync:response', {
-              syncedAt: new Date(backupDate),
-              currentHash,
-              backupFilename,
+            this.sendSyncResponse(client, {
+              // Now, not the last backup's date: a backup the same as the last one is not saved
+              // again, and the panel then showed that one's date as the sync's.
+              syncedAt: new Date().toISOString(),
+              backupFilename: backupMeta?.lastBackupName ?? '',
             });
 
             this.logger.info(colors.green('Template synced'));
           } else {
-            client.send('template:sync:response', {
-              error: 'Failed to update assets',
-            });
+            // A 200 without the `{ status: 'OK' }` an upload ends with: MI's maintenance page (HTML)
+            // or a JSON error of its own. The answer is the only clue, so it goes along.
+            const error = `Failed to update assets: MI answered ${describeUploadAnswer(updateResult)}`;
 
-            this.logger.error(colors.red('Failed to update assets'));
+            this.sendSyncResponse(client, { error });
+            this.logger.error(colors.red(error));
           }
         } else {
           if (newAssets instanceof Error) {
-            client.send('template:sync:response', {
+            this.sendSyncResponse(client, {
               error: newAssets.message,
             });
 
@@ -451,7 +470,7 @@ export class ClientService {
             return;
           }
 
-          client.send('template:sync:response', {
+          this.sendSyncResponse(client, {
             error: 'Failed to build new assets',
           });
 
@@ -464,7 +483,7 @@ export class ClientService {
 
         this.logger.error(colors.red(`Template sync failed: ${message}`));
 
-        client.send('template:sync:response', {
+        this.sendSyncResponse(client, {
           error: message,
           code: 'SYNC_FAILED',
         });
@@ -472,7 +491,7 @@ export class ClientService {
         return;
       }
     } else {
-      client.send('template:sync:response', {
+      this.sendSyncResponse(client, {
         error: 'Dist service or MiAPI is not defined',
       });
 
@@ -480,6 +499,103 @@ export class ClientService {
 
       return;
     }
+  }
+
+  /**
+   * Tells the panel about an MI request that failed for a reason the sync can't help: credentials
+   * that expired (with `refresh`), MI down or in maintenance (also behind a 200 with an HTML body).
+   * `false` when it is none of those, and the caller reports it as a failed sync.
+   */
+  private async reportMiFailure(client: WebSocketClient, err: unknown): Promise<boolean> {
+    if (isAxiosError(err)) {
+      const errorInfo = getTokenErrorInfo(err);
+
+      if (errorInfo.code === 'SESSION_EXPIRED') {
+        this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
+
+        // Try to validate credentials to get more specific error information
+        try {
+          const validation = await this.opts.miAPI?.validateCredentials();
+
+          if (validation && !validation.isValid) {
+            this.logger.error(colors.red(`Authentication error: ${validation.error}`));
+            this.sendSyncResponse(client, {
+              error: validation.error ?? 'Authentication failed',
+              code: validation.code,
+              refresh: true,
+            });
+          } else {
+            this.logger.info(colors.yellow('Session expired'));
+            this.sendSyncResponse(client, {
+              error: 'Session expired',
+              code: 'SESSION_EXPIRED',
+              refresh: true,
+            });
+          }
+        } catch {
+          this.logger.info(colors.yellow('Session expired'));
+          this.sendSyncResponse(client, {
+            error: 'Session expired',
+            code: 'SESSION_EXPIRED',
+            refresh: true,
+          });
+        }
+
+        return true;
+      }
+
+      // Get Address Info error (server in maintenance mode, VPN connection is needed or no internet connection)
+      if (
+        err.cause instanceof Error &&
+        ((err.cause as { code: string } & Error).code === 'ECONNRESET' ||
+          (err.cause as { code: string } & Error).code === 'ENOTFOUND')
+      ) {
+        this.logger.info(
+          colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
+        );
+
+        this.sendSyncResponse(client, {
+          error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+          code: 'CONNECTION_ERROR',
+        });
+
+        return true;
+      }
+
+      // HTTP gateway / maintenance (explicit status)
+      const httpStatus = err.response?.status;
+
+      if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
+        this.logger.info(
+          colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),
+        );
+
+        this.sendSyncResponse(client, {
+          error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+          code: 'CONNECTION_ERROR',
+        });
+
+        return true;
+      }
+    }
+
+    // PageAPI / PageTemplateAPI: 200 + HTML / non-JSON → plain Error (not axios)
+    if (isUnavailableJsonApiError(err)) {
+      this.logger.info(
+        colors.yellow(
+          'Server in maintenance mode or non-JSON page / page-template API response (unavailable HTML body)',
+        ),
+      );
+
+      this.sendSyncResponse(client, {
+        error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+        code: 'CONNECTION_ERROR',
+      });
+
+      return true;
+    }
+
+    return false;
   }
 
   /**

@@ -22,6 +22,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { startMockMiServer, DEFAULT_PORT } from './server.js';
+import { pointConfigAt } from '../e2e/helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
@@ -46,15 +47,7 @@ const mockMi = await startMockMiServer({
 });
 
 // Temporarily rewrite pp-dev.config.ts to point at the mock server
-const originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
-const patchedConfig = originalConfig.replace(
-  /url:\s*['"]https?:\/\/[^'"]+['"]/,
-  `url: '${mockMi.url}'`,
-);
-if (patchedConfig === originalConfig) {
-  throw new Error('Could not patch mi.url in pp-dev.config.ts');
-}
-fs.writeFileSync(CONFIG_PATH, patchedConfig);
+const { original: originalConfig } = pointConfigAt(CONFIG_PATH, mockMi.url);
 
 const ppdev = spawn(process.execPath, [PP_DEV_JS, 'next'], {
   cwd: TEST_APP_DIR,

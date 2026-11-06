@@ -7,6 +7,7 @@ import { colors } from './helpers/color.helper.js';
 import { ServerResponse } from 'http';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
 import { cutUrlParams } from './helpers/url.helper.js';
+import { RequestUser, UserRegistry, getUserNameFromHost, userRegistry } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -18,14 +19,23 @@ export interface CacheItem {
 }
 
 export interface ProxyCacheOpts {
-  devServer: ViteDevServer | Express;
+  /** Gets the cache as `cache`, where a server is there to take it. */
+  devServer?: ViteDevServer | Express;
   ttl?: number;
   maxSize?: number; // Maximum cache size in bytes
   maxItems?: number; // Maximum number of cache items
+  /** Saved users; each one gets its own cache entries. @default the shared {@link userRegistry} */
+  users?: UserRegistry;
 }
 
 declare module 'vite' {
   interface ViteDevServer {
+    cache?: ProxyCache;
+  }
+}
+
+declare module 'express' {
+  interface Express {
     cache?: ProxyCache;
   }
 }
@@ -37,6 +47,32 @@ const FILE_EXTENSION_REGEX = /\.(?:[a-z0-9]+)$/i;
 const DEFAULT_TTL = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_MAX_SIZE = 100 * 1024 * 1024; // 100MB
 const DEFAULT_MAX_ITEMS = 1000;
+
+/** The largest body the cache keeps; a larger response goes to the client as it arrives. */
+const MAX_CACHED_ITEM_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Whether a proxied response may be cached, decided once its headers are set: a 200 that isn't
+ * streamed (Server-Sent Events, `X-Accel-Buffering: no`) and doesn't announce a body too large to
+ * keep. Anything else must reach the client as it arrives instead of being held until it ends.
+ */
+function isCacheableResponse(res: ServerResponse): boolean {
+  if (res.statusCode !== 200) {
+    return false;
+  }
+
+  if (/^text\/event-stream/i.test(String(res.getHeader('content-type') ?? ''))) {
+    return false;
+  }
+
+  if (String(res.getHeader('x-accel-buffering') ?? '').toLowerCase() === 'no') {
+    return false;
+  }
+
+  const contentLength = Number(res.getHeader('content-length'));
+
+  return !(Number.isFinite(contentLength) && contentLength >= MAX_CACHED_ITEM_SIZE);
+}
 
 /**
  * In-memory TTL cache with item-count and total-size limits.
@@ -136,8 +172,8 @@ const cache = new ProxyCache(DEFAULT_MAX_SIZE, DEFAULT_MAX_ITEMS);
 
 const invalidateListeners = new Set<() => void>();
 
-/** The personal access token of the last proxied request that carried one. */
-let lastBearerToken: string | undefined;
+/** The personal access token of the last proxied request that carried one, per user key. */
+const lastBearerTokens = new Map<string, string>();
 
 /**
  * Runs `listener` whenever the proxy cache is dropped because the MI session changed, so other
@@ -158,10 +194,41 @@ export function onProxyCacheInvalidate(listener: () => void): () => void {
  */
 export function invalidateProxyCache(reason: string): void {
   cache.clear();
-  lastBearerToken = undefined;
+  lastBearerTokens.clear();
   invalidateListeners.forEach((listener) => listener());
 
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
+}
+
+/** Registries whose removed users already have their cache dropped. */
+const watchedRegistries = new WeakSet<UserRegistry>();
+
+/** Whether `cacheKey` holds a response for `userKey` (`''` is the original user). */
+function isCacheKeyOf(cacheKey: string, userKey: string): boolean {
+  return userKey ? cacheKey.startsWith(`@${userKey}@`) : !cacheKey.startsWith('@');
+}
+
+/**
+ * Drops what is cached for one saved user (its MI session changed, or it was removed), leaving the
+ * other users' entries warm. For the original user (`''`) it drops everything, like
+ * {@link invalidateProxyCache}, since per-session caches such as the page data belong to it.
+ */
+export function invalidateUserProxyCache(userKey: string, reason: string): void {
+  if (!userKey) {
+    invalidateProxyCache(reason);
+
+    return;
+  }
+
+  for (const key of cache.keys()) {
+    if (isCacheKeyOf(key, userKey)) {
+      cache.del(key);
+    }
+  }
+
+  lastBearerTokens.delete(userKey);
+
+  createLogger().info(colors.blue(`Proxy cache cleared for ${userKey}: ${reason}`));
 }
 
 /**
@@ -170,18 +237,20 @@ export function invalidateProxyCache(reason: string): void {
  *
  * - With a personal access token the token is the identity. MI answers every bearer request with a
  *   new session id, whatever cookie it got, so the cookies say nothing there; only another token
- *   does. Token logins through `/@api/login` clear the cache themselves.
+ *   does. Token logins through `/@api/login` clear the cache themselves. Each saved user (`userKey`)
+ *   has a token of its own, so tokens are compared per user.
  * - Otherwise MI keeps the session id stable while a session lasts and issues a new one on login
  *   and logout, so a `Set-Cookie` with an id other than the one the request carried marks exactly
  *   those moments.
  */
-function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse): string | undefined {
+function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse, userKey: string): string | undefined {
   const token = getRequestBearerToken(req);
 
   if (token !== undefined) {
+    const lastBearerToken = lastBearerTokens.get(userKey);
     const changed = lastBearerToken !== undefined && token !== lastBearerToken;
 
-    lastBearerToken = token;
+    lastBearerTokens.set(userKey, token);
 
     return changed ? 'personal access token changed' : undefined;
   }
@@ -194,13 +263,56 @@ function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse): s
 }
 
 /**
- * Generates an optimized cache key from URL and query parameters
+ * Whether a response may still be cached for the user it was requested as: not when that user was
+ * removed, replaced (removed and added again) or got another MI session while the request was in
+ * flight, or the old identity's answer would refill the new one's cache.
  */
-function generateCacheKey(url: string): string {
-  // Remove query parameters for better cache hit rates
+function isStillSameIdentity(
+  requestUser: RequestUser,
+  sessionAtStart: string | undefined,
+  users: UserRegistry,
+): boolean {
+  if (!requestUser.user) {
+    return true;
+  }
+
+  return users.get(requestUser.key) === requestUser.user && requestUser.user.session === sessionAtStart;
+}
+
+/**
+ * Whether the request goes to MI with the verified session of its session user. The cache of a
+ * session user is only for that session: on its own host the browser sends whatever session it
+ * holds (another tab's login, a guest session, a stale cookie), and that answer must neither be
+ * cached for the user nor be answered from its cache. On the main host the proxy sends the kept one.
+ */
+function hasVerifiedSession(req: Connect.IncomingMessage, requestUser: RequestUser): boolean {
+  const { user } = requestUser;
+
+  if (user?.kind !== 'session') {
+    return true;
+  }
+
+  if (!user.session) {
+    return false;
+  }
+
+  return (
+    getUserNameFromHost(req.headers.host) !== user.name ||
+    getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE) === user.session
+  );
+}
+
+/**
+ * Generates an optimized cache key from URL and query parameters. A saved user's entries are
+ * prefixed with its `userKey`, so one user is never served what MI answered another. Every entry
+ * is keyed by the host it was requested on, too: the proxy rewrites absolute URLs in a body to that
+ * host, and a user is served on more than one (a default user on `localhost` and its own host, the
+ * original user on `localhost`, `127.0.0.1` and the `--host` name).
+ */
+function generateCacheKey(url: string, userKey: string, host: string): string {
+  // Only files with extensions are cached (judged by the path); the key keeps the query.
   const cleanUrl = url.split('?')[0];
 
-  // Only cache files with extensions
   if (!FILE_EXTENSION_REGEX.test(cleanUrl)) {
     return '';
   }
@@ -209,7 +321,7 @@ function generateCacheKey(url: string): string {
     return '';
   }
 
-  return url;
+  return userKey ? `@${userKey}@${host}:${url}` : `${host}:${url}`;
 }
 
 /**
@@ -248,7 +360,13 @@ function setResponseHeaders(res: ServerResponse, headers: Record<string, any>): 
 }
 
 export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
-  const { devServer, ttl = DEFAULT_TTL, maxSize = DEFAULT_MAX_SIZE, maxItems = DEFAULT_MAX_ITEMS } = opts;
+  const {
+    devServer,
+    ttl = DEFAULT_TTL,
+    maxSize = DEFAULT_MAX_SIZE,
+    maxItems = DEFAULT_MAX_ITEMS,
+    users = userRegistry,
+  } = opts;
 
   const logger = createLogger();
 
@@ -258,22 +376,39 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     cache.maxItems = maxItems;
   }
 
-  devServer.cache = cache;
+  if (devServer) {
+    devServer.cache = cache;
+  }
+
+  if (!watchedRegistries.has(users)) {
+    watchedRegistries.add(users);
+    users.onRemove((user) => invalidateUserProxyCache(user.name, 'user removed'));
+    users.onSessionChange((user) => invalidateUserProxyCache(user.name, 'MI session changed or ended'));
+  }
 
   return (req, res, next) => {
+    const requestUser = users.resolve(req);
+
+    // A user host with no saved user behind it is never cached.
+    if (!requestUser) {
+      return next();
+    }
+
     res.once('finish', () => {
-      const change = res.hasHeader(PROXY_HEADER) ? getIdentityChange(req, res) : undefined;
+      const change = res.hasHeader(PROXY_HEADER) ? getIdentityChange(req, res, requestUser.key) : undefined;
 
       if (change) {
-        invalidateProxyCache(`${change} (${req.method} ${cutUrlParams(req.url ?? '')})`);
+        invalidateUserProxyCache(requestUser.key, `${change} (${req.method} ${cutUrlParams(req.url ?? '')})`);
       }
     });
 
+    // The MI session a session user had when the request started, to tell whether it changed by the end.
+    const sessionAtStart = requestUser.user?.session;
     const url = req.originalUrl || req.url || '';
-    const cacheKey = req.method === 'GET' ? generateCacheKey(url) : '';
+    const cacheKey = req.method === 'GET' ? generateCacheKey(url, requestUser.key, req.headers.host ?? '') : '';
 
     // Skip caching if no valid cache key
-    if (!cacheKey) {
+    if (!cacheKey || !hasVerifiedSession(req, requestUser)) {
       return next();
     }
 
@@ -298,50 +433,116 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     const originalEnd = res.end;
     const originalWrite = res.write;
     const chunks: Buffer[] = [];
+    let bufferedSize = 0;
+    // Decided on the first write or end, once the response's status and headers are known.
+    let mode: 'undecided' | 'buffer' | 'pass' = 'undecided';
 
-    // Override write method to capture response data
-    (res as any).write = function (
-      data: any,
-      encoding?: BufferEncoding,
-      callback?: (error?: Error | null) => void,
-    ): boolean {
-      if (!res.hasHeader(PROXY_HEADER)) {
-        return originalWrite.call(this, data, encoding as BufferEncoding, callback);
+    const toBuffer = (data: unknown, encoding?: BufferEncoding): Buffer | null => {
+      if (data === undefined || data === null) {
+        return null;
       }
 
-      // Convert data to Buffer and store
       if (typeof data === 'string') {
-        const safeEncoding: BufferEncoding = encoding || 'utf8';
-
-        chunks.push(Buffer.from(data, safeEncoding));
-      } else if (Buffer.isBuffer(data)) {
-        chunks.push(data);
-      } else if (data !== null && data !== undefined) {
-        chunks.push(Buffer.from(String(data), 'utf8'));
+        return Buffer.from(data, encoding || 'utf8');
       }
 
-      callback?.();
+      // A copy: the producer may reuse its buffer once the write is acknowledged.
+      if (data instanceof Uint8Array) {
+        return Buffer.from(data);
+      }
 
-      return true;
+      return Buffer.from(String(data), 'utf8');
     };
 
-    // Override end method to finalize response and cache
-    (res as any).end = function (chunk?: any, encoding?: BufferEncoding, callback?: () => void): ServerResponse {
+    // Stop capturing and send what was held so far. The overrides stay in place and only forward from
+    // now on: putting `res.write`/`res.end` back would also drop whatever a later middleware wrapped
+    // them in (Next.js compresses its chunks that way, and their tails went out uncompressed).
+    const passThrough = () => {
+      mode = 'pass';
+
+      for (const held of chunks.splice(0)) {
+        (originalWrite as (chunk: Buffer) => boolean).call(res, held);
+      }
+    };
+
+    const decide = () => {
+      if (mode !== 'undecided') {
+        return;
+      }
+
       if (!res.hasHeader(PROXY_HEADER)) {
-        return originalEnd.call(this, chunk, encoding as BufferEncoding, callback);
+        mode = 'pass';
+
+        return;
+      }
+
+      // Only a complete 200 that isn't streamed is ever cached. Anything else goes to the client
+      // as it arrives: an event stream used to reach it only once it ended, and a redirect or
+      // error was held for nothing.
+      if (!isCacheableResponse(res)) {
+        passThrough();
+
+        return;
+      }
+
+      mode = 'buffer';
+    };
+
+    // Override write method to capture response data
+    res.write = function (
+      this: ServerResponse,
+      data: unknown,
+      encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+      callback?: (error?: Error | null) => void,
+    ): boolean {
+      decide();
+
+      if (mode === 'pass') {
+        return (originalWrite as (...args: unknown[]) => boolean).call(this, data, encodingOrCallback, callback);
+      }
+
+      const encoding = typeof encodingOrCallback === 'string' ? encodingOrCallback : undefined;
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      const buffer = toBuffer(data, encoding);
+
+      if (buffer) {
+        chunks.push(buffer);
+        bufferedSize += buffer.length;
+      }
+
+      // Past the largest item the cache keeps: stop holding the body, send it on as it comes.
+      if (bufferedSize > MAX_CACHED_ITEM_SIZE) {
+        passThrough();
+      }
+
+      if (done) {
+        process.nextTick(done);
+      }
+
+      return true;
+    } as ServerResponse['write'];
+
+    // Override end method to finalize response and cache
+    res.end = function (this: ServerResponse, chunk?: unknown, encoding?: unknown, callback?: unknown): ServerResponse {
+      decide();
+
+      if (mode === 'pass') {
+        return (originalEnd as (...args: unknown[]) => ServerResponse).call(this, chunk, encoding, callback);
+      }
+
+      if (typeof chunk === 'function') {
+        callback = chunk;
+        chunk = undefined;
+      } else if (typeof encoding === 'function') {
+        callback = encoding;
+        encoding = undefined;
       }
 
       // Add final chunk if provided
-      if (chunk !== undefined && chunk !== null) {
-        if (typeof chunk === 'string') {
-          const safeEncoding: BufferEncoding = encoding || 'utf8';
+      const last = toBuffer(chunk, typeof encoding === 'string' ? (encoding as BufferEncoding) : undefined);
 
-          chunks.push(Buffer.from(chunk, safeEncoding));
-        } else if (Buffer.isBuffer(chunk)) {
-          chunks.push(chunk);
-        } else {
-          chunks.push(Buffer.from(String(chunk), 'utf8'));
-        }
+      if (last) {
+        chunks.push(last);
       }
 
       // Create final buffer and cache response
@@ -352,10 +553,15 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
 
         const responseSize = Buffer.byteLength(finalBuffer);
 
-        // Only cache successful, non-empty responses of reasonable size (max 10MB per item). A
-        // redirect or error (e.g. MI's login redirect for an asset while logged out) must not
-        // outlive the state that produced it.
-        if (res.statusCode === 200 && responseSize > 0 && responseSize < 10 * 1024 * 1024) {
+        // Only cache successful, non-empty responses of reasonable size. A redirect or error (e.g.
+        // MI's login redirect for an asset while logged out) must not outlive the state that
+        // produced it.
+        if (
+          res.statusCode === 200 &&
+          responseSize > 0 &&
+          responseSize < MAX_CACHED_ITEM_SIZE &&
+          isStillSameIdentity(requestUser, sessionAtStart, users)
+        ) {
           // Replaying a cached `Set-Cookie` would put the browser back on the session that was
           // current when the item was cached.
           const { 'set-cookie': _setCookie, ...headers } = res.getHeaders();
@@ -376,23 +582,10 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
         finalBuffer = createResponseBuffer(chunks);
       }
 
-      // Send response with proper encoding handling
-      const finalEncoding = encoding || 'utf8';
-
-      return originalEnd.call(this, finalBuffer, finalEncoding as BufferEncoding, callback);
-    };
+      return (originalEnd as (...args: unknown[]) => ServerResponse).call(this, finalBuffer, callback);
+    } as ServerResponse['end'];
 
     next();
-  };
-}
-
-// Export cache statistics for monitoring
-export function getCacheStats() {
-  return {
-    totalSize: cache.getTotalSize(),
-    itemCount: cache.getItemCount(),
-    maxSize: cache.maxSize,
-    maxItems: cache.maxItems,
   };
 }
 

@@ -1,316 +1,15 @@
-import { IndexHtmlTransformResult, Plugin } from 'vite';
-import proxyPassMiddleware from './lib/proxy-pass.middleware.js';
-import { MiAPI } from './lib/pp.middleware.js';
-import { redirect, urlReplacer } from './lib/helpers/url.helper.js';
-import { ClientService } from './lib/client.service.js';
-import { initProxyCache, invalidateProxyCache } from './lib/proxy-cache.middleware.js';
+import type { Connect, Environment, IndexHtmlTransformResult, Plugin } from 'vite';
+import { urlReplacer } from './lib/helpers/url.helper.js';
+import { type ClientService } from './lib/client.service.js';
 import { DistService } from './lib/dist.service.js';
-import { initRewriteResponse } from './lib/rewrite-response.middleware.js';
-import { initPPRedirect } from './lib/pp-redirect.middleware.js';
-import { initLoadPPData } from './lib/load-pp-data.middleware.js';
-import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createInternalServer } from './lib/internal.middleware.js';
-import { colors, getTokenErrorInfo, isSecureRequest, rewriteSetCookieHeader } from './lib/helpers/index.js';
-import { RequestStore } from './lib/request-store.js';
-import { createRequestCaptureMiddleware } from './lib/request-capture.middleware.js';
-import { registerInspectorRoutes, INSPECTOR_PATH } from './lib/request-inspector.js';
-import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from './lib/variables-editor.js';
-import { createDefaultZipFileName, normalizeRelativeOutputPath } from './lib/output-path.js';
+import { colors } from './lib/helpers/index.js';
+import { startSyncAndUsers } from './lib/dev-server-setup.js';
+import { createMiddlewareChain, mountMiddlewareChain } from './lib/middleware-chain.js';
+import type { NormalizedVitePPDevOptions } from './lib/pp-dev-config.js';
 
-// ─── Public config types ──────────────────────────────────────────────────────
-
-export type MiMode = 'standalone' | 'embedding';
-export type MiInclude = 'shared-components' | 'top-bar';
-export type AppType = 'page' | 'template';
-
-export interface MiConfig {
-  /** MI instance base URL. Falls back to process.env.MI_BACKEND_URL. */
-  url?: string;
-  /** Personal Access Token. Falls back to process.env.MI_ACCESS_TOKEN. */
-  token?: string;
-  /** How the page integrates into MI. @default 'standalone' */
-  mode?: MiMode;
-  /** Optional MI shared resources. Only valid when mode === 'standalone'. */
-  include?: MiInclude;
-  /** MI API/routing version. @default 7 */
-  apiVersion?: 6 | 7;
-}
-
-export interface AppConfig {
-  /** Portal page / app ID on MI. Required for type=template and type=page+standalone. */
-  id?: number;
-  /** Internal asset name. @default package.json#name */
-  name?: string;
-  /** App type affecting routing and data loading. @default 'template' */
-  type?: AppType;
-}
-
-export interface ProxyConfig {
-  /** Enable request caching to the backend. @default true */
-  cache?: boolean;
-  /** Cache TTL in milliseconds. @default 600000 */
-  cacheTtl?: number;
-  tls?: {
-    /** Allow self-signed TLS certificates. @default false */
-    allowSelfSigned?: boolean;
-  };
-}
-
-interface DistZipBuildConfig {
-  /** Output ZIP file name. @default '<app.name>.zip' */
-  fileName?: string;
-  /** Output directory for the ZIP archive. @default 'dist-zip' */
-  outDir?: string;
-  /** Input directory to zip. @default value of build.outDir */
-  inDir?: string;
-}
-
-interface VersionFileBuildConfig {
-  /** @default true */
-  enabled?: boolean;
-  /** @default 'VERSION-v{packageversion}-{currentDate}.json' */
-  fileNameTemplate?: string;
-}
-
-export interface BuildConfig {
-  /** Build output directory. @default 'dist' */
-  outDir?: string;
-  /** Pack build output into a ZIP archive. @default true */
-  zip?: boolean | DistZipBuildConfig;
-  /** Create a VERSION JSON file with SHA256 hashes. @default true */
-  versionFile?: boolean | VersionFileBuildConfig;
-  /** Image optimisation options. @default true */
-  imageOptimisations?: boolean | Record<string, unknown>;
-}
-
-export interface SyncConfig {
-  /** Directory for sync backups. @default 'backups' */
-  backupsDir?: string;
-}
-
-export interface InspectorConfig {
-  /** Enable the request inspector web UI at /@pp-dev/inspector. @default true */
-  enabled?: boolean;
-  /** Maximum RAM for stored request/response payloads in bytes. @default 1073741824 (1 GB) */
-  maxMemory?: number;
-  /** Maximum bytes captured per individual request/response body. @default 10485760 (10 MB) */
-  captureLimit?: number;
-}
-
-export type DevPanelPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-
-export interface DevPanelConfig {
-  /** Screen corner the dev panel is anchored to. @default 'bottom-right' */
-  position?: DevPanelPosition;
-  /** Fully hide the panel. Restore in the browser with ?pp-dev-panel=show. @default false */
-  hidden?: boolean;
-  /** Auto-hide: the panel slides behind the screen edge leaving a thin strip; hover reveals it. @default false */
-  autoHide?: boolean;
-}
-
-export interface PPDevConfig {
-  mi?: MiConfig;
-  app?: AppConfig;
-  proxy?: ProxyConfig;
-  build?: BuildConfig;
-  sync?: SyncConfig;
-  inspector?: InspectorConfig;
-  devPanel?: DevPanelConfig;
-}
-
-// ─── Internal normalized options (used by vitePPDev Vite plugin) ─────────────
-
-export interface VersionPluginOptions {
-  /**
-   * Version file filename template.
-   * Placeholders: {packageversion}, {currentDate}
-   * @default "VERSION-v{packageversion}-{currentDate}.json"
-   */
-  versionFileTemplate?: string;
-  /** @default true */
-  enabled?: boolean;
-}
-
-/** @internal — used by the Vite plugin and CLI; not part of the public API. */
-export interface NormalizedVitePPDevOptions {
-  templateName: string;
-  backendBaseURL?: string;
-  appId?: number;
-  templateLess: boolean;
-  miHudLess: boolean;
-  integrateMiTopBar: boolean | { addRootElement?: boolean; addSharedComponentsScripts?: boolean };
-  enableProxyCache: boolean;
-  proxyCacheTTL: number;
-  disableSSLValidation: boolean;
-  imageOptimizer: boolean | Parameters<typeof ViteImageOptimizer>[0];
-  outDir: string;
-  distZip: false | { outFileName: string; outDir: string; inDir?: string };
-  versionPlugin: false | VersionPluginOptions;
-  syncBackupsDir: string;
-  v7Features: boolean;
-  personalAccessToken?: string;
-  inspectorEnabled: boolean;
-  inspectorMaxMemory: number;
-  inspectorCaptureLimit: number;
-  devPanelPosition: DevPanelPosition;
-  devPanelHidden: boolean;
-  devPanelAutoHide: boolean;
-}
-
-const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-
-// ─── Validation ───────────────────────────────────────────────────────────────
-
-export function validatePPDevConfig(config: PPDevConfig, templateName: string): void {
-  const miMode = config.mi?.mode ?? 'standalone';
-  const appType = config.app?.type ?? 'template';
-  const apiVersion = config.mi?.apiVersion ?? 7;
-  const miUrl = config.mi?.url ?? process.env.MI_BACKEND_URL;
-
-  if (!templateName) {
-    throw new Error('[pp-dev] app.name is required (or set package.json#name)');
-  }
-
-  if (config.mi?.include && miMode !== 'standalone') {
-    console.warn('[pp-dev] mi.include is only valid when mi.mode is "standalone"');
-    throw new Error('[pp-dev] mi.include requires mi.mode to be "standalone"');
-  }
-
-  if (!miUrl) {
-    if (miMode === 'embedding' || appType === 'template') {
-      throw new Error('[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"');
-    }
-
-    if (miMode === 'standalone' && appType === 'page') {
-      console.warn('[pp-dev] mi.url is not set — dev server will run without a backend proxy');
-    }
-  }
-
-  if (appType === 'template' && !config.app?.id) {
-    throw new Error('[pp-dev] app.id is required when app.type is "template"');
-  }
-
-  const requiresPageAppId = appType === 'page' && miUrl && (miMode === 'standalone' || apiVersion >= 7);
-
-  if (requiresPageAppId && !config.app?.id) {
-    throw new Error('[pp-dev] app.id is required when backend page data is loaded for app.type "page"');
-  }
-
-  if (config.devPanel?.position !== undefined && !DEV_PANEL_POSITIONS.includes(config.devPanel.position)) {
-    throw new Error(`[pp-dev] devPanel.position must be one of: ${DEV_PANEL_POSITIONS.join(', ')}`);
-  }
-}
-
-// ─── Normalization ────────────────────────────────────────────────────────────
-
-export function normalizePPDevConfig(config: PPDevConfig, templateName: string): NormalizedVitePPDevOptions {
-  const { mi = {}, app = {}, proxy = {}, build = {}, sync = {}, inspector = {}, devPanel = {} } = config;
-
-  const miMode = mi.mode ?? 'standalone';
-  const appType = app.type ?? 'template';
-  const apiVersion = mi.apiVersion ?? 7;
-
-  const miHudLess = miMode === 'standalone';
-
-  let integrateMiTopBar: NormalizedVitePPDevOptions['integrateMiTopBar'] = false;
-
-  if (mi.include === 'top-bar') {
-    integrateMiTopBar = true;
-  } else if (mi.include === 'shared-components') {
-    integrateMiTopBar = { addSharedComponentsScripts: true, addRootElement: false };
-  }
-
-  const templateLess = appType === 'page';
-
-  const resolvedName = app.name ?? templateName;
-  const defaultVersionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json';
-
-  let distZip: NormalizedVitePPDevOptions['distZip'];
-  const zipCfg = build.zip;
-
-  if (zipCfg === false) {
-    distZip = false;
-  } else if (zipCfg === true || zipCfg === undefined) {
-    distZip = { outFileName: createDefaultZipFileName(resolvedName), outDir: 'dist-zip' };
-  } else {
-    distZip = {
-      outFileName: normalizeRelativeOutputPath(
-        zipCfg.fileName ?? createDefaultZipFileName(resolvedName),
-        'build.zip.fileName',
-      ),
-      outDir: zipCfg.outDir ?? 'dist-zip',
-      ...(zipCfg.inDir ? { inDir: zipCfg.inDir } : {}),
-    };
-  }
-
-  let versionPlugin: NormalizedVitePPDevOptions['versionPlugin'];
-  const vfCfg = build.versionFile;
-
-  if (vfCfg === false) {
-    versionPlugin = false;
-  } else if (vfCfg === true || vfCfg === undefined) {
-    versionPlugin = { versionFileTemplate: defaultVersionFileTemplate, enabled: true };
-  } else {
-    versionPlugin = {
-      versionFileTemplate: normalizeRelativeOutputPath(
-        vfCfg.fileNameTemplate ?? defaultVersionFileTemplate,
-        'build.versionFile.fileNameTemplate',
-      ),
-      enabled: vfCfg.enabled ?? true,
-    };
-  }
-
-  let imageOptimizer: NormalizedVitePPDevOptions['imageOptimizer'];
-  const imgCfg = build.imageOptimisations;
-
-  if (imgCfg === false) {
-    imageOptimizer = false;
-  } else if (imgCfg === true || imgCfg === undefined) {
-    imageOptimizer = {};
-  } else {
-    imageOptimizer = imgCfg;
-  }
-
-  return {
-    templateName: resolvedName,
-    backendBaseURL: mi.url ?? process.env.MI_BACKEND_URL,
-    appId: app.id,
-    templateLess,
-    miHudLess,
-    integrateMiTopBar,
-    enableProxyCache: proxy.cache ?? true,
-    proxyCacheTTL: proxy.cacheTtl ?? 600_000,
-    disableSSLValidation: proxy.tls?.allowSelfSigned ?? false,
-    imageOptimizer,
-    outDir: build.outDir ?? 'dist',
-    distZip,
-    versionPlugin,
-    syncBackupsDir: sync.backupsDir ?? 'backups',
-    v7Features: apiVersion >= 7,
-    personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
-    inspectorEnabled: inspector.enabled ?? true,
-    inspectorMaxMemory: inspector.maxMemory ?? 1 * 1024 * 1024 * 1024,
-    inspectorCaptureLimit: inspector.captureLimit ?? 10 * 1024 * 1024,
-    devPanelPosition: devPanel.position ?? 'bottom-right',
-    devPanelHidden: devPanel.hidden ?? false,
-    devPanelAutoHide: devPanel.autoHide ?? false,
-  };
-}
-
-// ─── Internal MiAPI config ────────────────────────────────────────────────────
-
-interface MiAPIConfig {
-  headers: {
-    host: string;
-    referer: string;
-    origin: string;
-  };
-  appId?: number;
-  templateLess: boolean;
-  disableSSLValidation: boolean;
-  v7Features: boolean;
-  personalAccessToken?: string;
-}
+// Config types, validation and normalization live in a module without the server's dependencies.
+export * from './lib/pp-dev-config.js';
 
 // ─── Vite plugin ──────────────────────────────────────────────────────────────
 
@@ -328,6 +27,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     distZip,
     versionPlugin,
     syncBackupsDir,
+    syncMaxBackups,
+    syncBuildTimeoutMs,
     v7Features,
     personalAccessToken,
     inspectorEnabled,
@@ -336,13 +37,25 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     devPanelPosition,
     devPanelHidden,
     devPanelAutoHide,
+    persistUsers,
+    allowedHosts,
   } = options || {};
 
   let isFirstRequest = true;
+  // Per dev server, by its client environment: Vite's own restart (the `r` shortcut, a change of
+  // `vite.config.*`) makes the new server with this same plugin instance, then closes the old one.
+  // One variable held the new server's service by then, and the old server's closeBundle disposed it.
+  const clientServices = new WeakMap<Environment, ClientService>();
 
   return {
     name: 'vite-pp-dev',
     apply: 'serve',
+    // A `serve`-only plugin's closeBundle runs, once per environment, when the dev server closes (or
+    // restarts, which makes a new one): the place to stop what the panel started, such as a sync's build.
+    closeBundle() {
+      clientServices.get(this.environment)?.dispose();
+      clientServices.delete(this.environment);
+    },
     config: (config) => {
       config.clientInjectionPlugin = {
         backendBaseURL,
@@ -377,247 +90,36 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         base += '/';
       }
 
-      const baseWithoutTrailingSlash = base.substring(0, base.lastIndexOf('/'));
+      // pp-dev's own routes: the inspector's now, the sync, login, editor and users routes below.
+      const internalServer = createInternalServer({ allowedHosts });
 
-      server.middlewares.use(initPPRedirect(base, templateName));
+      // Before Vite's own middlewares, in the order `pp-dev next` runs them too (middleware-chain.ts).
+      const chain = createMiddlewareChain({
+        base,
+        templateName,
+        internalServer,
+        backendBaseURL,
+        mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
+        inspector: {
+          enabled: inspectorEnabled !== false,
+          maxMemory: inspectorMaxMemory,
+          captureLimit: inspectorCaptureLimit,
+        },
+        proxy: { cache: enableProxyCache, cacheTtl: proxyCacheTTL, devServer: server },
+        rewrite: (mi, baseUrlHost) => ({
+          predicate: (url) => url.split('?')[0].endsWith('index.html'),
+          transform: (response, req) =>
+            Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess))),
+        }),
+      });
 
-      if (inspectorEnabled !== false) {
-        const reqStore = new RequestStore(inspectorMaxMemory);
+      mountMiddlewareChain(server, chain);
 
-        server.middlewares.use(createRequestCaptureMiddleware(reqStore, inspectorCaptureLimit));
+      if (backendBaseURL && chain.mi) {
+        const mi = chain.mi;
 
-        const internalServer = createInternalServer();
-
-        registerInspectorRoutes(internalServer, reqStore, inspectorCaptureLimit);
-
-        // Only route internal pp-dev paths into the Express app. Mounting it for all
-        // paths would run its global express.json()/urlencoded() body parsers, which
-        // consume the request stream before the proxy can pipe it to the backend
-        // (the backend then waits for a body that never arrives and replies 408).
-        server.middlewares.use((req, res, next) => {
-          if (req.url?.startsWith('/@api/') || req.url?.startsWith(INSPECTOR_PATH)) {
-            internalServer(req as never, res as never, next);
-
-            return;
-          }
-
-          next();
-        });
-      }
-
-      if (backendBaseURL) {
         server.config.logger.info(colors.blue(`🌐 Backend URL: ${backendBaseURL}`));
         server.config.logger.info(colors.blue(`🆔 Custom App ID: ${appId}`));
-
-        const baseUrlHost = new URL(backendBaseURL).host;
-
-        const miConfig: MiAPIConfig = {
-          headers: {
-            host: baseUrlHost,
-            referer: backendBaseURL,
-            origin: backendBaseURL.replace(/^(https?:\/\/)([^/]+)(\/.*)?$/i, '$1$2'),
-          },
-          appId,
-          templateLess,
-          disableSSLValidation,
-          v7Features,
-          personalAccessToken: personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
-        };
-
-        const mi = new MiAPI(backendBaseURL, miConfig);
-
-        if (enableProxyCache) {
-          let ttl = +proxyCacheTTL;
-
-          if (!ttl || Number.isNaN(ttl) || ttl < 0) {
-            ttl = 10 * 60 * 1000;
-          }
-
-          server.middlewares.use(initProxyCache({ devServer: server, ttl }));
-        }
-
-        const isIndexRegExp = new RegExp(`^((${base})|/)$`);
-
-        server.middlewares.use(initLoadPPData(isIndexRegExp, mi, Object.assign({}, options, { appId, appBase: base })));
-
-        server.middlewares.use(
-          proxyPassMiddleware({
-            devServer: server,
-            baseURL: backendBaseURL,
-            proxyIgnore: ['/@vite', '/@metricinsights', '/@', baseWithoutTrailingSlash],
-            disableSSLValidation,
-            miAPI: mi,
-            templateName,
-          }),
-        );
-
-        const sendErrorResponse = (res: any, status: number, error: string, details?: string, code?: string) => {
-          const response: any = { error };
-
-          if (details) {
-            response.details = details;
-          }
-
-          if (code) {
-            response.code = code;
-          }
-
-          res.status(status).json(response).end();
-        };
-
-        const handleTokenValidationError = (res: any, error: any, tokenType: string) => {
-          server.config.logger.error(`${tokenType} token validation error:`, error);
-
-          const errorInfo = getTokenErrorInfo(error);
-
-          if (error.tokenErrorInfo) {
-            const enhancedErrorInfo = error.tokenErrorInfo;
-
-            sendErrorResponse(
-              res,
-              enhancedErrorInfo.status || 500,
-              enhancedErrorInfo.userFriendlyMessage,
-              enhancedErrorInfo.message,
-              enhancedErrorInfo.code,
-            );
-          } else {
-            let status: number;
-            let errorMessage: string;
-            let errorCode: string;
-
-            switch (errorInfo.code) {
-              case 'SESSION_EXPIRED':
-                status = 412;
-                errorMessage = tokenType === 'personal' ? 'Personal access token expired' : 'Session expired';
-                errorCode = tokenType === 'personal' ? 'PAT_EXPIRED' : 'SESSION_EXPIRED';
-                break;
-              case 'UNAUTHORIZED':
-                status = 401;
-                errorMessage = 'Unauthorized';
-                errorCode = 'UNAUTHORIZED';
-                break;
-              case 'FORBIDDEN':
-                status = 403;
-                errorMessage = 'Access forbidden';
-                errorCode = 'FORBIDDEN';
-                break;
-              default:
-                status = 500;
-                errorMessage = 'Internal server error';
-                errorCode = errorInfo.code;
-            }
-
-            const details =
-              tokenType === 'personal' && errorCode === 'PAT_EXPIRED'
-                ? 'Your personal access token has expired. Please generate a new token from the portal.'
-                : tokenType === 'regular' && errorCode === 'SESSION_EXPIRED'
-                  ? 'Your portal session has expired. Please refresh your token or re-authenticate.'
-                  : errorInfo.userFriendlyMessage;
-
-            sendErrorResponse(res, status, errorMessage, details, errorCode);
-          }
-
-          return null;
-        };
-
-        const internalServer = createInternalServer();
-
-        internalServer.post('/@api/login', async (req, res, next) => {
-          const { token, tokenType } = req.body;
-
-          if (!token) {
-            sendErrorResponse(res, 400, 'Token is required');
-
-            return;
-          }
-
-          server.config.logger.info(`Attempting to validate ${tokenType} token...`);
-
-          if (tokenType === 'personal') {
-            const testRequest = await mi
-              .get<{ user: { user_id: number; username: string } }>(
-                '/data/page/index/auth/info',
-                {
-                  'Content-Type': 'application/json',
-                  Accept: 'application/json',
-                  Authorization: `Bearer ${token}`,
-                },
-                true,
-              )
-              .then(async (response) => {
-                if (typeof response.data?.user?.user_id === 'number') {
-                  mi.personalAccessToken = token;
-
-                  server.config.logger.info(
-                    `Personal access token validated successfully for user ${response.data.user.user_id}`,
-                  );
-
-                  return response;
-                }
-
-                sendErrorResponse(res, 400, 'Token expired or invalid');
-
-                return null;
-              })
-              .catch((error: any) => handleTokenValidationError(res, error, 'personal'));
-
-            if (!testRequest) {
-              return;
-            }
-
-            invalidateProxyCache('logged in with a personal access token');
-
-            redirect(res, '/', 302);
-          } else if (tokenType === 'regular') {
-            const testRequest = await mi
-              .get<{ users: { user_id: number; username: string }[] }>(
-                '/api/user',
-                {
-                  'Content-Type': 'application/json',
-                  Accept: 'application/json',
-                  Token: token,
-                },
-                true,
-              )
-              .then((response) => {
-                if (response.data?.users?.length) {
-                  mi.personalAccessToken = undefined;
-
-                  server.config.logger.info(
-                    `Regular token validated successfully for ${response.data.users.length} user(s)`,
-                  );
-
-                  res.setHeader(
-                    'set-cookie',
-                    rewriteSetCookieHeader(response.headers['set-cookie'], isSecureRequest(req)) ?? '',
-                  );
-
-                  return response;
-                }
-
-                sendErrorResponse(res, 400, 'Token expired or invalid');
-
-                return null;
-              })
-              .catch((error: any) => handleTokenValidationError(res, error, 'regular'));
-
-            if (!testRequest) {
-              return;
-            }
-
-            invalidateProxyCache('logged in with a token');
-
-            redirect(res, '/', 302);
-          } else {
-            sendErrorResponse(
-              res,
-              400,
-              'Invalid tokenType',
-              'tokenType must be "personal" or "regular".',
-              'INVALID_TOKEN_TYPE',
-            );
-          }
-        });
 
         const distService = new DistService(
           templateName,
@@ -625,14 +127,10 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
             {
               root: server.config.root,
               backupFolder: syncBackupsDir,
+              maxBackups: syncMaxBackups,
+              buildTimeoutMs: syncBuildTimeoutMs,
               buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
             },
-            typeof distZip === 'object'
-              ? {
-                  distZipFolder: distZip.outDir,
-                  distZipFilename: distZip.outFileName,
-                }
-              : undefined,
             typeof versionPlugin === 'object'
               ? {
                   versionFileTemplate: versionPlugin.versionFileTemplate,
@@ -641,45 +139,26 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           ),
         );
 
-        new ClientService(server, { distService, miAPI: mi });
-        registerVariablesEditorRoutes(internalServer, { distService, miAPI: mi });
-
-        // IMPORTANT: mount `internalServer` only after all `.get`/`.post`/`.put`/... routes are
-        // registered on it. Vite's own middleware-mounting (`server.middlewares.use`) sets a
-        // `.route` string property on whatever's mounted (to track its mount path) — colliding
-        // with and overwriting Express's own `app.route` *method*. Any route registered on this
-        // app *after* it's been mounted crashes with "this.route is not a function".
-        //
-        // Only route internal pp-dev paths into the Express app (see the matching inspector
-        // gate above) — mounting it for all paths would run its global express.json()/
-        // urlencoded() body parsers, which consume the request stream before the proxy can
-        // pipe it to the backend (the backend then waits for a body that never arrives and
-        // replies 408).
-        server.middlewares.use((req, res, next) => {
-          if (
-            req.url?.startsWith('/@api/login') ||
-            req.url?.startsWith('/@api/variables/') ||
-            req.url?.startsWith(VARIABLES_EDITOR_PATH)
-          ) {
-            internalServer(req as never, res as never, next);
-
-            return;
-          }
-
-          next();
+        const clientService = startSyncAndUsers({
+          server,
+          internalServer,
+          distService,
+          miAPI: mi,
+          persistUsers,
+          projectRoot: server.config.root || process.cwd(),
+          miUrl: backendBaseURL,
         });
 
+        clientServices.set(server.environments.client, clientService);
+      }
+
+      const { rewrite } = chain;
+
+      if (rewrite) {
+        // A post hook: Vite installs it after its own middlewares and right before the one that
+        // serves index.html, whose response it rewrites.
         return () => {
-          server.middlewares.use(
-            initRewriteResponse(
-              (url) => {
-                return url.split('?')[0].endsWith('index.html');
-              },
-              (response, req) => {
-                return Buffer.from(urlReplacer(baseUrlHost, req.headers.host ?? '', mi.buildPage(response, miHudLess)));
-              },
-            ),
-          );
+          server.middlewares.use(rewrite as unknown as Connect.NextHandleFunction);
         };
       }
     },

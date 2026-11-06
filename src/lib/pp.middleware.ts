@@ -1,8 +1,16 @@
 import axios, { Axios } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
-import { JSDOM } from 'jsdom';
-import { AssetsAPI, Page, PageAPI, AssetsV7API, PageTemplateAPI, PageVariableAPI, PageVariableTagEntry } from '../api/index.js';
+import { getJSDOM } from './helpers/jsdom.helper.js';
+import {
+  AssetsAPI,
+  Page,
+  PageAPI,
+  AssetsV7API,
+  PageTemplateAPI,
+  PageVariableAPI,
+  PageVariableTagEntry,
+} from '../api/index.js';
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { createLogger } from './logger.js';
 import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
@@ -34,6 +42,18 @@ export class MiAPI {
   #pageTitle!: string;
 
   #pageVars: { name: string; value: string }[];
+
+  /** Whether {@link #pageVars} holds the page's values yet (they are loaded with the page data). */
+  #pageVarsLoaded = false;
+
+  /** See `#getPageVarReplacements()`. */
+  #pageVarReplacements: {
+    vars: { name: string; value: string }[];
+    replacements: { regExp: RegExp; value: string }[];
+  } | null = null;
+
+  /** See `#getPageShell()`. */
+  #pageShell: { template: string | null; title: string; before: string; after: string } | null = null;
 
   #v7Features!: boolean;
 
@@ -83,10 +103,9 @@ export class MiAPI {
     if (axiosInstanceCache.has(cacheKey)) {
       this.#axios = axiosInstanceCache.get(cacheKey)!;
     } else {
-      if (disableSSLValidation) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-      }
-
+      // TLS is relaxed for this client only: not through `NODE_TLS_REJECT_UNAUTHORIZED` or
+      // `axios.defaults`, which would turn certificate checks off for every HTTPS call in the process.
+      // The proxy relaxes its own through `secure`.
       const httpsAgent = new https.Agent({
         // Axios http adapter registers `socket.on('error', …)` per request; concurrent
         // requests on one keep-alive TLS socket stack listeners and trigger MaxListenersExceededWarning.
@@ -102,13 +121,6 @@ export class MiAPI {
         httpAgent: new http.Agent({ keepAlive: false }),
         httpsAgent,
       });
-
-      // Some code paths (redirects, deps, or bare `axios` in the same process) merge with
-      // `axios.defaults`; setting the same agent avoids a second pool and keeps TLS relaxed
-      // consistent with `disableSSLValidation` without re‑enabling keep-alive.
-      if (disableSSLValidation) {
-        axios.defaults.httpsAgent = httpsAgent;
-      }
 
       axiosInstanceCache.set(cacheKey, this.#axios);
     }
@@ -136,6 +148,11 @@ export class MiAPI {
     return this.#v7Features;
   }
 
+  /** The page this dev server serves (`app.id`), when the config names one. */
+  get pageId(): number | undefined {
+    return this.appId;
+  }
+
   #clearHeaders(headers: Headers) {
     const obj = Object.assign({}, headers, {
       host: undefined,
@@ -153,6 +170,16 @@ export class MiAPI {
     return obj;
   }
 
+  /**
+   * The headers the dev panel's own MI calls go with (sync, credentials check): the ones the last
+   * page data load stored, with the personal access token attached. Attached here too, not only by
+   * the load, since there may have been none yet: a dev server restarted in process serves the page
+   * from the load the previous MiAPI made, and a sync right after went to MI with no token at all.
+   */
+  #ownHeaders(): Headers {
+    return this.#clearHeaders(this.#headers);
+  }
+
   #escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
   }
@@ -163,10 +190,6 @@ export class MiAPI {
 
   set personalAccessToken(token: string | undefined) {
     this.#personalAccessToken = token;
-  }
-
-  updateHeaders(headers: Headers) {
-    this.#clearHeaders(headers);
   }
 
   private get localTemplateHTML() {
@@ -362,12 +385,14 @@ export class MiAPI {
           const parsed = JSON.parse(tags) as { name: string; value: string }[];
 
           this.#pageVars = parsed;
+          this.#pageVarsLoaded = true;
           this.#pageTitle = name;
 
           return parsed;
         }
 
         this.#pageVars = [];
+        this.#pageVarsLoaded = true;
         this.#pageTitle = name;
 
         return [];
@@ -412,7 +437,9 @@ export class MiAPI {
     const tags = await this.pageVariableApi.getById(pageId, this.#clearHeaders(headers));
 
     this.logger.info(
-      colors.green(`[page-variables] Fetched ${tags.length} live variable(s) for page ID ${pageId} in ${Date.now() - start}ms`),
+      colors.green(
+        `[page-variables] Fetched ${tags.length} live variable(s) for page ID ${pageId} in ${Date.now() - start}ms`,
+      ),
     );
 
     return tags;
@@ -464,6 +491,19 @@ export class MiAPI {
    */
   async getPageVariablesFor(pageId: number, headers: Headers = this.#headers): Promise<PageVariableTagEntry[]> {
     return this.pageVariableApi.getById(pageId, this.#clearHeaders(headers));
+  }
+
+  /**
+   * The page variable values the dev server substitutes for `[VarName]` in the page it serves (to
+   * every user), as last loaded from MI; `null` for a templateLess page or before they are loaded.
+   * They can lag behind MI: they are reloaded with the page data, by {@link reloadPageVariables}.
+   */
+  get localPageVariables(): { name: string; value: string }[] | null {
+    if (this.templateLess || !this.#pageVarsLoaded) {
+      return null;
+    }
+
+    return this.#pageVars.map(({ name, value }) => ({ name, value }));
   }
 
   /** Whether this page has no associated template — no `__template_variables.json`, no page variables. */
@@ -576,72 +616,116 @@ export class MiAPI {
   buildPage(content: string | Buffer, miHudLess = false) {
     let result = typeof content === 'string' ? content : content.toString('utf-8');
 
-    for (const v of this.#pageVars) {
-      const escapedName = this.#escapeRegExp(v.name);
-      const pageVarRegex = new RegExp(`\\[${escapedName}\\]`, 'g');
-
-      result = result.replace(pageVarRegex, () => v.value);
+    for (const { regExp, value } of this.#getPageVarReplacements()) {
+      result = result.replace(regExp, () => value);
     }
 
-    const dom = new JSDOM(miHudLess ? result : this.#pageTemplate!);
+    if (miHudLess) {
+      const JSDOM = getJSDOM();
 
+      return new JSDOM(result).serialize();
+    }
+
+    const { before, after } = this.#getPageShell();
+
+    return before + result + after;
+  }
+
+  /** {@link buildPage}'s `[VarName]` substitutions, compiled once for each loaded set of variables. */
+  #getPageVarReplacements(): { regExp: RegExp; value: string }[] {
+    if (this.#pageVarReplacements?.vars !== this.#pageVars) {
+      this.#pageVarReplacements = {
+        vars: this.#pageVars,
+        replacements: this.#pageVars.map(({ name, value }) => ({
+          regExp: new RegExp(`\\[${this.#escapeRegExp(name)}\\]`, 'g'),
+          value,
+        })),
+      };
+    }
+
+    return this.#pageVarReplacements.replacements;
+  }
+
+  /**
+   * The page template with the page's title, split where {@link buildPage} puts the page's content.
+   * Parsing and serializing the template takes a DOM, so it is done once for each template and title,
+   * not on every page load.
+   */
+  #getPageShell(): { before: string; after: string } {
+    const template = this.#pageTemplate;
+    const title = this.#pageTitle;
+
+    if (this.#pageShell?.template === template && this.#pageShell.title === title) {
+      return this.#pageShell;
+    }
+
+    const JSDOM = getJSDOM();
+    const dom = new JSDOM(template!);
+    const { document } = dom.window;
     const placeholderText = '%%PLACEHOLDER%%';
+    const placeholder = document.createElement('div');
 
-    if (!miHudLess) {
-      const placeholder = dom.window.document.createElement('div');
+    placeholder.innerHTML = placeholderText;
 
-      placeholder.innerHTML = placeholderText;
+    const container = document.querySelector('.main-side');
 
-      const container = dom.window.document.querySelector('.main-side');
+    if (container) {
+      const scripts = container.querySelectorAll('script');
 
-      if (container) {
-        const scripts = container.querySelectorAll('script');
-
-        if (scripts.length) {
-          container.insertBefore(placeholder, scripts.item(scripts.length - 1));
-        } else {
-          container.append(placeholder);
-        }
+      if (scripts.length) {
+        container.insertBefore(placeholder, scripts.item(scripts.length - 1));
       } else {
-        const container = dom.window.document.createElement('div');
-
         container.append(placeholder);
-
-        dom.window.document.body.append(container);
       }
+    } else {
+      const container = document.createElement('div');
 
-      const head = dom.window.document.querySelector('head')!;
-      const title = head!.querySelector('title');
+      container.append(placeholder);
 
-      if (title) {
-        title.text = this.#pageTitle;
-      } else {
-        const titleEl = dom.window.document.createElement('title');
+      document.body.append(container);
+    }
 
-        titleEl.textContent = this.#pageTitle;
-        head.appendChild(titleEl);
-      }
+    const head = document.querySelector('head')!;
+    const titleElement = head.querySelector('title');
+
+    if (titleElement) {
+      titleElement.text = title;
+    } else {
+      const titleEl = document.createElement('title');
+
+      titleEl.textContent = title;
+      head.appendChild(titleEl);
     }
 
     const serializedDom = dom.serialize();
+    const match = new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i').exec(serializedDom)!;
 
-    return serializedDom.replace(new RegExp(`<div>\\s*${placeholderText}\\s*<\\/div>`, 'i'), result);
+    this.#pageShell = {
+      template,
+      title,
+      before: serializedDom.slice(0, match.index),
+      after: serializedDom.slice(match.index + match[0].length),
+    };
+
+    return this.#pageShell;
   }
 
   async getAssets() {
     if (this.appId) {
+      const headers = this.#ownHeaders();
+
       if (this.templateLess) {
-        return await this.assetsApi.downloadPageAssets(this.appId, this.#headers);
+        return await this.assetsApi.downloadPageAssets(this.appId, headers);
       } else {
-        const pageInfo = await this.pageApi.get(this.appId, this.#headers);
+        const pageInfo = await this.pageApi.get(this.appId, headers);
 
         if (this.#isV710OrHigher) {
-          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, headers);
 
-          return await this.assetsApi.downloadTemplateAssets(templateInfo.id, this.#headers);
+          return await this.assetsApi.downloadTemplateAssets(templateInfo.id, headers);
         } else {
           if (pageInfo.template) {
-            return await this.assetsApi.downloadTemplateAssets(pageInfo.template, this.#headers);
+            return await this.assetsApi.downloadTemplateAssets(pageInfo.template, headers);
           }
         }
       }
@@ -650,18 +734,20 @@ export class MiAPI {
 
   async updateAssets(assets: Buffer) {
     if (this.appId) {
+      const headers = this.#ownHeaders();
+
       if (this.templateLess) {
-        return await this.assetsApi.uploadPageAssets(this.appId, assets, this.#headers);
+        return await this.assetsApi.uploadPageAssets(this.appId, assets, headers);
       } else {
-        const pageInfo = await this.pageApi.get(this.appId, this.#headers);
+        const pageInfo = await this.pageApi.get(this.appId, headers);
 
         if (this.#isV710OrHigher) {
-          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, this.#headers);
+          const templateInfo = await this.pageTemplateApi.get(pageInfo.template_id!, headers);
 
-          return await this.assetsApi.uploadTemplateAssets(templateInfo.id, assets, this.#headers);
+          return await this.assetsApi.uploadTemplateAssets(templateInfo.id, assets, headers);
         } else {
           if (pageInfo.template) {
-            return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, this.#headers);
+            return await this.assetsApi.uploadTemplateAssets(pageInfo.template, assets, headers);
           }
         }
       }
@@ -675,7 +761,7 @@ export class MiAPI {
    */
   async validateCredentials(headers?: Headers): Promise<{ isValid: boolean; error?: string; code?: string }> {
     try {
-      const testHeaders = headers || this.#headers;
+      const testHeaders = headers ? this.#clearHeaders(headers) : this.#ownHeaders();
 
       // Try to make a simple API call to validate credentials
       await this.get('/api/user', testHeaders, true);
@@ -692,7 +778,17 @@ export class MiAPI {
     }
   }
 
-  async get<T extends any = any>(path: string, headers?: Record<string, any>, cleanup = false) {
+  /**
+   * @param options.quiet Don't log a refused request: for a check whose refusal is an answer (whose
+   *   token or session this is), where "API request failed" and the advice to refresh a token read as
+   *   if the developer's own token had failed.
+   */
+  async get<T extends any = any>(
+    path: string,
+    headers?: Record<string, any>,
+    cleanup = false,
+    options: { quiet?: boolean } = {},
+  ) {
     const normalizedHeaders = cleanup ? headers : Object.assign({}, this.#clearHeaders(this.#headers), headers);
 
     try {
@@ -704,23 +800,15 @@ export class MiAPI {
       if (getTokenErrorInfo(error).code !== 'UNKNOWN_ERROR') {
         const errorInfo = getTokenErrorInfo(error);
 
-        this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
+        if (!options.quiet) {
+          this.logger.error(colors.red(`API request failed: ${errorInfo.userFriendlyMessage}`));
 
-        // Log detailed error information with suggestions
-        logTokenError(this.logger, error, 'API Request');
-
-        // Preserve the original error structure but enhance it with our error info
-        if (error.response) {
-          // If it's already an Axios error, enhance it
-          error.tokenErrorInfo = errorInfo;
-        } else {
-          // If it's a generic error, create a mock response structure
-          (error as any).response = {
-            status: errorInfo.status,
-            data: { message: errorInfo.message },
-          };
-          error.tokenErrorInfo = errorInfo;
+          // Log detailed error information with suggestions
+          logTokenError(this.logger, error, 'API Request');
         }
+
+        // A known code comes from the response's status, so the error always has a response here.
+        error.tokenErrorInfo = errorInfo;
 
         throw error;
       }

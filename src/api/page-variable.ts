@@ -1,5 +1,6 @@
 import { BaseAPI } from './base.js';
 import { Headers } from './constants.js';
+import { unavailablePageVariablesError } from './unavailable-json-api.js';
 
 export interface PageVariableTagEntry {
   name: string;
@@ -65,7 +66,12 @@ export class PageVariableAPI extends BaseAPI {
       })
     ).data;
 
-    return normalizePageVariableTags(data?.tags);
+    // Not a JSON response (e.g. MI's HTML maintenance page, which also comes with a 200)
+    if (typeof data !== 'object' || data === null) {
+      throw unavailablePageVariablesError();
+    }
+
+    return normalizePageVariableTags(data.tags);
   }
 
   /** PUT `/api/page_variable?page_id={pageId}` */

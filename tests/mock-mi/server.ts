@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { createHash } from 'crypto';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -46,6 +47,22 @@ export interface Cassette {
 
 export const CASSETTES_DIR = path.resolve(__dirname, 'cassettes');
 export const DEFAULT_PORT = 7331;
+/** Replay mode only: `GET` lists the requests the mock received (method, path, Authorization), `DELETE` clears them. */
+export const MOCK_REQUESTS_PATH = '/__mock-mi/requests';
+
+/**
+ * How the request log keeps an `Authorization` header: the scheme and a short hash of the
+ * credentials (`Bearer sha256:…`), enough to tell whose token it was but never the token itself.
+ */
+export function fingerprintAuthorization(authorization: string | undefined): string | undefined {
+  if (!authorization) {
+    return undefined;
+  }
+
+  const [scheme, credentials = ''] = authorization.split(/\s+/, 2);
+
+  return `${scheme} sha256:${createHash('sha256').update(credentials).digest('hex').slice(0, 16)}`;
+}
 const FILESYSTEM_PATH_RE = /\/(?:opt|var|srv|usr|home)\/[^\s"'<>),\]}]+/g;
 // Internal MI instance hosts must not land in a public repo.
 // The first label is swapped for "mi" and the domain for example.com, so distinct hosts stay
@@ -301,12 +318,15 @@ export async function startMockMiServer(opts: {
   port?: number;
   cassetteName?: string;
   realMiUrl?: string;
+  /** Replay only: a test's own answers, served over the cassette's (same key: method and path). */
+  interactions?: Interaction[];
 }): Promise<MockMiServer> {
   const {
     mode,
     port = DEFAULT_PORT,
     cassetteName = 'startup',
     realMiUrl = process.env.REAL_MI_URL,
+    interactions = [],
   } = opts;
 
   const app = express();
@@ -318,11 +338,32 @@ export async function startMockMiServer(opts: {
     const map = new Map<string, Interaction>();
 
     // Last-response-wins: the final state after any auth/login sequence
-    for (const interaction of cassette.interactions) {
+    for (const interaction of [...cassette.interactions, ...interactions]) {
       map.set(cassetteKey(interaction.request.method, interaction.request.pathname), interaction);
     }
 
+    // What reached the mock, so browser tests can check whom a request went to MI as (PP-4601).
+    // Credentials are kept only as a fingerprint: the log is readable through the dev proxy.
+    const received: { method: string; path: string; authorization?: string }[] = [];
+
+    app.get(MOCK_REQUESTS_PATH, (_req: Request, res: Response) => {
+      res.json(received);
+    });
+
+    app.delete(MOCK_REQUESTS_PATH, (_req: Request, res: Response) => {
+      received.length = 0;
+      res.status(204).end();
+    });
+
     app.use((req: Request, res: Response) => {
+      if (received.length < 5000) {
+        received.push({
+          method: req.method,
+          path: req.url,
+          authorization: fingerprintAuthorization(req.headers.authorization),
+        });
+      }
+
       const url = new URL(req.url, `http://localhost:${port}`);
       const key = cassetteKey(req.method, requestPath(url));
       const interaction = map.get(key);
@@ -384,7 +425,9 @@ export async function startMockMiServer(opts: {
               const url = new URL(req.url ?? '/', `http://localhost:${port}`);
               const key = cassetteKey(req.method ?? 'GET', requestPath(url));
               const encodingHeader = proxyRes.headers['content-encoding'];
-              const encoding = String(Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader ?? '').toLowerCase();
+              const encoding = String(
+                Array.isArray(encodingHeader) ? encodingHeader[0] : (encodingHeader ?? ''),
+              ).toLowerCase();
 
               // Decompress so cassette bodies are plain text/JSON
               let bodyBuffer = rawBuffer;
@@ -466,8 +509,7 @@ export async function startMockMiServer(opts: {
       resolve({
         url,
         save: cassetteSave,
-        close: () =>
-          new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res()))),
+        close: () => new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res()))),
       });
     });
     server.once('error', reject);

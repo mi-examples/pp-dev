@@ -34,6 +34,39 @@ function makeRes(): ServerResponse {
   return res;
 }
 
+// A response destroyed instead of ended (a proxy error once the headers went out, the client gone
+// mid-stream) never reached end(): the requests that failed were the ones the inspector lacked.
+describe('createRequestCaptureMiddleware — a response that is destroyed', () => {
+  it('stores it, marked as aborted', async () => {
+    const store = new RequestStore(1024 * 1024);
+    const middleware = createRequestCaptureMiddleware(store);
+    const req = makeReq('GET', '/api/slow');
+    const res = makeRes();
+
+    middleware(req, res, () => {});
+    res.statusCode = 502;
+    res.destroy();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(store.list()).toMatchObject([{ url: '/api/slow', statusCode: 502, aborted: true }]);
+  });
+
+  it('stores one that ends as usual once, not aborted', async () => {
+    const store = new RequestStore(1024 * 1024);
+    const middleware = createRequestCaptureMiddleware(store);
+    const req = makeReq('GET', '/api/fast');
+    const res = makeRes();
+
+    middleware(req, res, () => {});
+    res.end('ok');
+    res.destroy();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(store.list()).toHaveLength(1);
+    expect(store.list()[0].aborted).toBeUndefined();
+  });
+});
+
 describe('createRequestCaptureMiddleware — stream neutrality', () => {
   it('does not switch the request stream into flowing mode', () => {
     const store = new RequestStore(1024 * 1024);

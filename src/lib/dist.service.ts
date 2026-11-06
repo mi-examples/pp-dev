@@ -3,16 +3,22 @@ import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
 import * as crypto from 'crypto';
 import * as process from 'process';
-import * as child_process from 'child_process';
-import * as console from 'console';
 import * as os from 'os';
 import { createLogger } from './logger.js';
 import { Logger } from 'vite';
 import { colors } from './helpers/color.helper.js';
 import { writeBuildVersionManifest } from './version-manifest.js';
 import { zipDirectoryToBuffer, extractZipSafe } from './helpers/zip.helper.js';
-import { runNextBuildProcess } from './next-build-runner.js';
-import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
+import { writeFileAtomic } from './helpers/atomic-file.helper.js';
+import {
+  DEFAULT_BUILD_TIMEOUT_MS,
+  SYNC_BUILD_DIST_DIR,
+  SYNC_BUILD_EXPORT_DIR,
+  removeStaleDevTypes,
+  runBuildProcess,
+  runNextBuildProcess,
+} from './next-build-runner.js';
+import { normalizeRelativeOutputPath } from './output-path.js';
 
 export const TEMPLATE_PART_PAGE_NAME = 'pageName';
 export const TEMPLATE_PART_DATE = 'date';
@@ -20,7 +26,6 @@ export const TEMPLATE_PART_DATE = 'date';
 const DIRNAME = path.dirname((typeof __filename !== 'undefined' && __filename) || fileURLToPath(import.meta.url));
 
 const pluginPath = path.resolve(DIRNAME, '..', '..');
-const node_modules_path = path.resolve(pluginPath, '..', '..');
 
 /**
  * When set, {@link DistService.buildNewAssets} builds with `next build` and zips the
@@ -28,8 +33,21 @@ const node_modules_path = path.resolve(pluginPath, '..', '..');
  */
 export interface NextBuildOptions {
   projectRoot: string;
-  /** Static export output directory (Next.js `distDir`), relative to `projectRoot` or absolute. */
+  /** The app's Next.js `distDir` (`.next` by default), relative to `projectRoot`: the dev server writes under `<distDir>/dev`. */
   distDir: string;
+  /**
+   * The `distDir` of the production build phase, where a build without `withPPDev()` exports: a
+   * config function may set it apart from the development phase's. @default distDir
+   */
+  buildDistDir?: string;
+  /** The app's Next.js `output`; a static export (`'export'`) is what a sync uploads. */
+  output?: string;
+  /**
+   * `next.config` is wrapped with `withPPDev()`, which gives the sync's build a `distDir` of its own
+   * (see {@link DistService.buildNextAssets}). Without it the build exports into `distDir`, as a
+   * plain `next build` does.
+   */
+  configWrapped: boolean;
   packageVersion: string;
   packageRepositoryUrl?: string;
   packageBranchName?: string;
@@ -41,19 +59,74 @@ export interface SyncOptions {
   backupFolder?: string;
   backupNameTemplate?: string;
   dateFormat?: (date: Date) => string;
-  distZipFolder?: string;
-  distZipFilename?: string;
   versionFileTemplate?: string;
   /** Build directory to zip in memory for template sync, independent of persistent ZIP output. */
   buildInputFolder?: string;
   nextBuild?: NextBuildOptions;
+  /**
+   * How many of this page's backups to keep; older ones are deleted after each new backup.
+   * `false` or `0` keeps them all. @default DEFAULT_MAX_BACKUPS
+   */
+  maxBackups?: number | false;
+  /** How long a sync's build may run before it is stopped. @default DEFAULT_BUILD_TIMEOUT_MS */
+  buildTimeoutMs?: number;
+  /**
+   * Folder of the sync meta file (the last backup's name, hash and date), relative to `root`.
+   * @default `.pp-dev-meta` in the backups folder, next to the backups it describes
+   */
+  metaDir?: string;
+}
+
+/** `PK\x03\x04`: how a ZIP file starts. */
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+/** Backups kept per page when `maxBackups` is not set. */
+export const DEFAULT_MAX_BACKUPS = 20;
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Matches the file names `backupNameTemplate` gives this page's backups, whatever their date.
+ *
+ * The date part must look like `sampleDate` (a date `dateFormat` formatted): each run of digits may
+ * be any run of digits, everything else is literal. A looser wildcard would also match another
+ * page whose name starts with this one (`page` and `page-admin-2026-…zip`) or any `page-notes.zip`,
+ * which pruning would then delete. With an unusual format, a backup is rather kept than matched.
+ *
+ * Like {@link DistService.backupName}, only the first `{pageName}` and the first `{date}` are
+ * placeholders; any later one stays in the name as it is. The date may carry the `-<n>` a second
+ * backup in the same second gets (see {@link DistService.backupName}).
+ */
+export function backupNamePattern(template: string, pageName: string, sampleDate: string): RegExp {
+  const date =
+    sampleDate
+      .split(/(\d+)/)
+      .map((piece, index) => (index % 2 === 1 ? '\\d+' : escapeRegExp(piece)))
+      .join('') + '(?:-\\d+)?';
+  const placeholders = [
+    { token: `{${TEMPLATE_PART_PAGE_NAME}}`, pattern: escapeRegExp(pageName) },
+    { token: `{${TEMPLATE_PART_DATE}}`, pattern: date },
+  ]
+    .map((placeholder) => ({ ...placeholder, at: template.indexOf(placeholder.token) }))
+    .filter((placeholder) => placeholder.at !== -1)
+    .sort((a, b) => a.at - b.at);
+
+  let source = '^';
+  let position = 0;
+
+  for (const { token, pattern, at } of placeholders) {
+    source += escapeRegExp(template.slice(position, at)) + pattern;
+    position = at + token.length;
+  }
+
+  return new RegExp(`${source}${escapeRegExp(template.slice(position))}$`);
 }
 
 export interface SyncMeta {
   lastBackupName: string;
   lastBackupHash: string;
   lastBackupDate: string;
-  /** VERSION manifest `checksum` when the last saved backup had a valid VERSION file */
+  /** Written by older versions, which skipped a backup on it alone; no longer read or written. */
   lastMainHash?: string;
 }
 
@@ -94,22 +167,30 @@ export interface BackupAnalysis {
   templateVariables: TemplateVariablesBackupInfo | null;
   /** VERSION manifest aggregate checksum (`checksum` field); null if no VERSION file */
   mainHash: string | null;
-  /** Every zip entry is listed in VERSION (no extras beyond VERSION/BUILD-MANIFEST) */
-  allFilesInMeta: boolean;
   /** Set when BUILD-MANIFEST.json `buildFingerprint` differs from the recomputed backup fingerprint */
   buildManifestMismatch: { expected: string; actual: string } | null;
   /** Files present on disk whose SHA-256 does not match VERSION manifest `files` (empty if none or no VERSION) */
   versionManifestHashMismatches: VersionManifestHashMismatch[];
 }
 
-const metaDirName = '.pp-dev-meta';
-const metaDirPath = path.resolve(node_modules_path, metaDirName);
-const metaFilePath = path.resolve(metaDirPath, 'sync-service.meta.json');
-const UNKNOWN_FILE_PLACEHOLDER_HASH = '__NOT_IN_VERSION_FILE__';
+const metaFileName = 'sync-service.meta.json';
 const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
 
 /** Listed in VERSION; basename match for sync UI decisions */
 export const TEMPLATE_VARIABLES_FILE_NAME = '__template_variables.json';
+
+/** Whether `dir` is `parent` or below it (a name that starts with two dots, `..cache`, is below). */
+function isSameOrInside(dir: string, parent: string): boolean {
+  const relative = path.relative(parent, dir);
+
+  if (relative === '') {
+    return true;
+  }
+
+  const outside = relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+
+  return !outside;
+}
 
 export class DistService {
   private readonly root: string;
@@ -118,11 +199,16 @@ export class DistService {
   private readonly dateFormat: (date: Date) => string;
   private readonly pageName: string;
   private currentMeta: SyncMeta | null = null;
-  private readonly distZipFolder: string;
-  private readonly distZipFilename: string;
   private readonly versionFileTemplate: string;
   private readonly buildInputFolder?: string;
   private readonly nextBuild?: NextBuildOptions;
+  private readonly maxBackups: number;
+  private readonly buildTimeoutMs: number;
+  private readonly metaDir: string;
+  /** Aborted by {@link stopBuilds}, for good. */
+  private readonly builds = new AbortController();
+  /** Settles once the sync meta file is read; never rejects (see loadMeta). */
+  private readonly metaLoaded: Promise<void>;
 
   private logger: Logger;
 
@@ -132,13 +218,14 @@ export class DistService {
     const {
       root = process.cwd(),
       backupFolder = 'backups',
-      distZipFolder = path.resolve(root, 'dist-zip'),
-      distZipFilename = createDefaultZipFileName(this.pageName),
       backupNameTemplate = `{${TEMPLATE_PART_PAGE_NAME}}-{${TEMPLATE_PART_DATE}}.zip`,
       versionFileTemplate = 'VERSION-v{packageversion}-{currentDate}.json',
       buildInputFolder,
       dateFormat = (date: Date) => date.toISOString().replace(/:/g, '-').replace(/\..*$/, ''),
       nextBuild,
+      maxBackups = DEFAULT_MAX_BACKUPS,
+      buildTimeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
+      metaDir,
     } = syncOptions || {};
 
     this.root = root;
@@ -149,36 +236,70 @@ export class DistService {
     this.backupNameTemplate = backupNameTemplate;
     this.dateFormat = dateFormat;
 
-    this.distZipFolder = distZipFolder;
-    this.distZipFilename = normalizeRelativeOutputPath(distZipFilename, 'ZIP output file name');
     this.versionFileTemplate = normalizeRelativeOutputPath(versionFileTemplate, 'VERSION file name template');
     this.buildInputFolder = buildInputFolder;
     this.nextBuild = nextBuild;
-
-    this.syncMeta();
+    this.maxBackups =
+      typeof maxBackups === 'number' && Number.isInteger(maxBackups) && maxBackups > 0 ? maxBackups : Infinity;
+    this.buildTimeoutMs = buildTimeoutMs;
+    // It was `.pp-dev-meta` two folders above the package files: `node_modules/.pp-dev-meta` with
+    // npm, but with pnpm inside the shared store (one meta for every project on that pp-dev
+    // version) and with `npm link` in the global prefix.
+    this.metaDir = metaDir === undefined ? path.join(this.backupFolder, '.pp-dev-meta') : path.resolve(root, metaDir);
 
     this.logger = createLogger();
+
+    // Read in the background, but awaited by everything that uses the meta (see meta()): a
+    // constructor can't await, and the meta must not be used before it is read.
+    this.metaLoaded = this.loadMeta();
+  }
+
+  /**
+   * Stops the build running for a sync, and refuses any later one: the dev server this service
+   * belongs to is shutting down. A sync still fetching assets or saving a backup would otherwise
+   * build and upload afterwards, maybe next to a restarted server, which has a service of its own.
+   */
+  stopBuilds() {
+    this.builds.abort();
   }
 
   async checkMeta() {
+    // Recursive: a backups folder such as `.pp-dev/backups` may not have its parent yet.
+    await fs.mkdir(this.metaDir, { recursive: true });
+    await fs.mkdir(this.backupFolder, { recursive: true });
+  }
+
+  /** Reads the sync meta file. A missing, unreadable or corrupt one starts an empty meta. */
+  private async loadMeta() {
     try {
-      await fs.stat(metaDirPath);
-    } catch {
-      await fs.mkdir(metaDirPath);
+      const parsed = JSON.parse(await this.readMetaFile());
+
+      this.currentMeta = parsed && typeof parsed === 'object' ? parsed : ({} as SyncMeta);
+    } catch (error) {
+      this.logger.warn(
+        colors.yellow(
+          `[DistService] Could not read the sync meta (${error instanceof Error ? error.message : String(error)}); starting a new one`,
+        ),
+      );
+      this.currentMeta = {} as SyncMeta;
+    }
+  }
+
+  private async meta(): Promise<SyncMeta> {
+    await this.metaLoaded;
+
+    if (!this.currentMeta) {
+      this.currentMeta = {} as SyncMeta;
     }
 
-    try {
-      await fs.stat(this.backupFolder);
-    } catch {
-      await fs.mkdir(this.backupFolder);
-    }
+    return this.currentMeta;
   }
 
   async readMetaFile() {
     await this.checkMeta();
 
     return await fs
-      .readFile(metaFilePath, {
+      .readFile(path.join(this.metaDir, metaFileName), {
         encoding: 'utf-8',
       })
       .catch(() => '{}');
@@ -187,21 +308,18 @@ export class DistService {
   async writeMetaFile(meta: SyncMeta) {
     await this.checkMeta();
 
-    return await fs.writeFile(metaFilePath, JSON.stringify(meta, null, 2), {
+    return await fs.writeFile(path.join(this.metaDir, metaFileName), JSON.stringify(meta, null, 2), {
       encoding: 'utf-8',
     });
   }
 
+  /** Writes the sync meta to its file. */
   async syncMeta() {
-    if (!this.currentMeta) {
-      this.currentMeta = JSON.parse(await this.readMetaFile());
-    } else {
-      await this.writeMetaFile(this.currentMeta);
-    }
+    await this.writeMetaFile(await this.meta());
   }
 
   async getLatestSavedBackup() {
-    const { lastBackupName } = this.currentMeta!;
+    const { lastBackupName } = await this.meta();
 
     if (!lastBackupName) {
       return null;
@@ -218,14 +336,91 @@ export class DistService {
     }
   }
 
-  backupName(pageName: string, date: Date = new Date()) {
+  /**
+   * The backup's file name. `copy` (2, 3, …) goes after the date, for a backup made in the same
+   * second as one already there: the default date has seconds, and the second backup took the
+   * first one's name and overwrote it. A template without `{date}` has one name only.
+   */
+  backupName(pageName: string, date: Date = new Date(), copy = 1) {
     return this.backupNameTemplate
       .replace(`{${TEMPLATE_PART_PAGE_NAME}}`, pageName)
-      .replace(`{${TEMPLATE_PART_DATE}}`, this.dateFormat(date));
+      .replace(`{${TEMPLATE_PART_DATE}}`, this.dateFormat(date) + (copy > 1 ? `-${copy}` : ''));
+  }
+
+  /** A backup name for `date` that no file in the backups folder has yet (see {@link backupName}). */
+  private async freeBackupName(date: Date): Promise<string> {
+    let name = this.backupName(this.pageName, date);
+
+    for (let copy = 2; ; copy += 1) {
+      try {
+        await fs.access(path.resolve(this.backupFolder, name));
+      } catch {
+        return name;
+      }
+
+      const next = this.backupName(this.pageName, date, copy);
+
+      // A template without `{date}`: the same name again, which the backup replaces as before.
+      if (next === name) {
+        return name;
+      }
+
+      name = next;
+    }
   }
 
   getBackupMeta() {
     return this.currentMeta;
+  }
+
+  /**
+   * Deletes this page's oldest backups beyond `maxBackups`. Only files named after the backup
+   * template for this page count; the backup just saved (the one the meta points at) is never
+   * deleted. Failing to prune never fails the sync.
+   */
+  private async pruneBackups(justSaved: string) {
+    if (!Number.isFinite(this.maxBackups)) {
+      return;
+    }
+
+    try {
+      const pattern = backupNamePattern(this.backupNameTemplate, this.pageName, this.dateFormat(new Date()));
+      // `saveBackup` points the meta at `justSaved` before pruning, so it is the only one to keep.
+      const protectedNames = new Set([justSaved]);
+      const entries = await fs.readdir(this.backupFolder, { withFileTypes: true });
+      const backups = await Promise.all(
+        entries
+          .filter((entry) => entry.isFile() && pattern.test(entry.name))
+          .map(async (entry) => ({
+            name: entry.name,
+            mtimeMs: (await fs.stat(path.resolve(this.backupFolder, entry.name))).mtimeMs,
+          })),
+      );
+
+      // The protected backups take their places first: with a skewed clock, an old backup can be
+      // dated after the one just saved, and must not push the total over the limit.
+      const newestFirst = backups.sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name));
+      const protectedCount = newestFirst.filter((backup) => protectedNames.has(backup.name)).length;
+      const excess = newestFirst
+        .filter((backup) => !protectedNames.has(backup.name))
+        .slice(Math.max(0, this.maxBackups - protectedCount));
+
+      for (const backup of excess) {
+        await fs.unlink(path.resolve(this.backupFolder, backup.name));
+      }
+
+      if (excess.length > 0) {
+        this.logger.info(
+          colors.gray(`[DistService] Deleted ${excess.length} old backup(s), keeping the latest ${this.maxBackups}`),
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        colors.yellow(
+          `[DistService] Could not delete old backups: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
   }
 
   private pathToPosix(filePath: string): string {
@@ -439,7 +634,6 @@ export class DistService {
       const normalizedManifestFiles: Record<string, string> = {};
       let templateVariables: TemplateVariablesBackupInfo | null = null;
       let manifestChecksum: string | null = null;
-      const manifestFileActualHashes: Record<string, string> = {};
       let versionManifestHashMismatches: VersionManifestHashMismatch[] = [];
 
       if (versionManifestPath) {
@@ -486,8 +680,6 @@ export class DistService {
 
           const actualHash = crypto.createHash('sha256').update(fileData).digest('hex');
 
-          manifestFileActualHashes[relativePath] = actualHash;
-
           if (actualHash !== expectedHash) {
             versionManifestHashMismatches.push({ relativePath, expected: expectedHash, actual: actualHash });
           }
@@ -511,8 +703,6 @@ export class DistService {
         }
       }
 
-      const mismatchedManifestPaths = new Set(versionManifestHashMismatches.map((m) => m.relativePath));
-
       const fingerprintFiles: Record<string, string> = {};
       const unknownFiles: string[] = [];
 
@@ -525,23 +715,16 @@ export class DistService {
           continue;
         }
 
-        if (versionManifestPath && Object.prototype.hasOwnProperty.call(fingerprintFiles, relativePath)) {
-          continue;
-        }
-
         const absolutePath = path.join(contentRootDir, relativePath);
         const fileData = await fs.readFile(absolutePath);
-        const actualHash = crypto.createHash('sha256').update(fileData).digest('hex');
 
-        if (versionManifestPath && Object.prototype.hasOwnProperty.call(normalizedManifestFiles, relativePath)) {
-          fingerprintFiles[relativePath] = mismatchedManifestPaths.has(relativePath)
-            ? manifestFileActualHashes[relativePath]!
-            : normalizedManifestFiles[relativePath]!;
-        } else if (versionManifestPath) {
-          fingerprintFiles[relativePath] = UNKNOWN_FILE_PLACEHOLDER_HASH;
+        // Every file by its content, listed in VERSION or not. A file VERSION doesn't list went in
+        // as a placeholder: a change to such a file then gave the fingerprint of the last backup,
+        // and no backup was saved before the sync overwrote it.
+        fingerprintFiles[relativePath] = crypto.createHash('sha256').update(fileData).digest('hex');
+
+        if (versionManifestPath && !Object.prototype.hasOwnProperty.call(normalizedManifestFiles, relativePath)) {
           unknownFiles.push(relativePath);
-        } else {
-          fingerprintFiles[relativePath] = actualHash;
         }
       }
 
@@ -571,7 +754,6 @@ export class DistService {
         unknownFiles,
         templateVariables,
         mainHash: manifestChecksum,
-        allFilesInMeta: Boolean(versionManifestPath && unknownFiles.length === 0),
         buildManifestMismatch,
         versionManifestHashMismatches,
       };
@@ -581,8 +763,9 @@ export class DistService {
   }
 
   async analyzeBackup(backupFile: Buffer): Promise<BackupAnalysis> {
-    // Verify if the backup file is an ZIP file (magic number)
-    if (backupFile.toString('utf-8').slice(0, 4) !== 'PK\x03\x04') {
+    // A ZIP file starts with its local file header signature. Compared as bytes: decoding the
+    // whole backup as UTF-8 to read four of them copied it once more for nothing.
+    if (!ZIP_SIGNATURE.equals(backupFile.subarray(0, ZIP_SIGNATURE.length))) {
       throw new Error('Backup file is not a ZIP file');
     }
 
@@ -611,7 +794,9 @@ export class DistService {
     const templateVariablesPath = path.resolve(this.root, 'public', TEMPLATE_VARIABLES_FILE_NAME);
 
     await fs.mkdir(path.dirname(templateVariablesPath), { recursive: true });
-    await fs.writeFile(templateVariablesPath, content);
+    // Written aside and renamed over the old file: the dev server serves this one, and a write that
+    // failed halfway (a full disk, a crash) left it truncated.
+    await writeFileAtomic(templateVariablesPath, content);
 
     return templateVariablesPath;
   }
@@ -620,50 +805,37 @@ export class DistService {
     const resolvedAnalysis = precomputedAnalysis ?? (await this.analyzeBackup(backupFile));
     const resolvedBackupFileHash = resolvedAnalysis.backupFingerprint;
     const lastSavedBackup = await this.getLatestSavedBackup();
+    const meta = await this.meta();
 
-    if (lastSavedBackup) {
-      const { lastBackupHash, lastMainHash } = this.currentMeta!;
+    // Only the fingerprint, of every file's content, says whether MI's assets changed since the last
+    // backup. The VERSION checksum used to be enough to skip: it is the checksum of the last build,
+    // which a page edited in MI keeps, so the one backup that mattered (of that edit, before the
+    // sync overwrote it) was the one skipped.
+    if (lastSavedBackup && meta.lastBackupHash === resolvedBackupFileHash) {
+      this.logger.info(
+        colors.yellow(
+          `[DistService] Backup skipped: same backup fingerprint as last saved (${resolvedBackupFileHash.slice(0, 12)}...)`,
+        ),
+      );
 
-      if (lastBackupHash === resolvedBackupFileHash) {
-        this.logger.info(
-          colors.yellow(
-            `[DistService] Backup skipped: same backup fingerprint as last saved (${resolvedBackupFileHash.slice(0, 12)}...)`,
-          ),
-        );
-
-        return;
-      }
-
-      if (resolvedAnalysis.allFilesInMeta && resolvedAnalysis.mainHash && lastMainHash === resolvedAnalysis.mainHash) {
-        this.logger.info(
-          colors.yellow(
-            `[DistService] Backup skipped: same VERSION manifest checksum (main hash) and all files listed in VERSION`,
-          ),
-        );
-
-        return;
-      }
+      return;
     }
 
     const backupDate = new Date();
 
-    const filename = this.backupName(this.pageName, backupDate);
+    const filename = await this.freeBackupName(backupDate);
 
-    this.currentMeta!.lastBackupName = filename;
-    this.currentMeta!.lastBackupHash = resolvedBackupFileHash;
-    this.currentMeta!.lastBackupDate = backupDate.toISOString();
-
-    if (resolvedAnalysis.mainHash) {
-      this.currentMeta!.lastMainHash = resolvedAnalysis.mainHash;
-    } else {
-      delete this.currentMeta!.lastMainHash;
-    }
+    meta.lastBackupName = filename;
+    meta.lastBackupHash = resolvedBackupFileHash;
+    meta.lastBackupDate = backupDate.toISOString();
+    delete meta.lastMainHash;
 
     await this.syncMeta();
 
-    return await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile).finally(() => {
-      this.logger.info(`Backup saved to ${filename}`);
-    });
+    await fs.writeFile(path.resolve(this.backupFolder, filename), backupFile);
+    this.logger.info(`Backup saved to ${filename}`);
+
+    await this.pruneBackups(filename);
   }
 
   async buildNewAssets(): Promise<Buffer> {
@@ -672,60 +844,40 @@ export class DistService {
       return await this.buildNextAssets();
     }
 
-    const buildCommand = new Promise<string>((resolve, reject) => {
-      let data = '';
+    this.logger.info(colors.cyan('[DistService] Build started'));
 
-      // Colorized log output with message about build start
-      this.logger.info(colors.cyan('[DistService] Build started'));
-
-      const proc = child_process.spawn('node', [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'], {
+    // This process's Node, as the Next build does: `node` from PATH is another Node, or none, under
+    // a dev server an IDE or a launcher started.
+    const buildCommand = runBuildProcess(
+      'pp-dev build',
+      process.execPath,
+      [path.resolve(pluginPath, './bin/pp-dev.js'), 'build'],
+      {
         cwd: this.root,
         env: Object.assign({}, process.env, { NODE_ENV: 'production' }),
-        stdio: 'inherit',
-      });
-
-      proc.on('message', (msg) => {
-        data += msg;
-      });
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`build command exited with code ${code}`));
-
-          return;
-        }
-
-        resolve(data);
-      });
-
-      proc.on('error', (err) => {
-        reject(err);
-      });
-    });
+        timeoutMs: this.buildTimeoutMs,
+        signal: this.builds.signal,
+      },
+    );
 
     try {
-      await buildCommand.finally(() => {
-        // Colorized log output with message about build end
-        this.logger.info(colors.cyan('[DistService] Build finished'));
-      });
+      await this.logBuild('Build', buildCommand);
 
-      if (this.buildInputFolder) {
-        const buildInputPath = path.resolve(this.root, this.buildInputFolder);
-
-        if (!(await this.isDirectory(buildInputPath))) {
-          throw new Error(`Build input directory ${buildInputPath} not found`);
-        }
-
-        return await zipDirectoryToBuffer(buildInputPath);
+      if (!this.buildInputFolder) {
+        throw new Error('The sync has no build directory to zip (build.outDir or build.zip.inDir)');
       }
 
-      const assetFile = path.resolve(this.root, this.distZipFolder, this.distZipFilename);
+      const buildInputPath = path.resolve(this.root, this.buildInputFolder);
 
-      if (!(await fs.stat(assetFile))) {
-        throw new Error(`File ${assetFile} not found`);
+      if (!(await this.isDirectory(buildInputPath))) {
+        throw new Error(`Build input directory ${buildInputPath} not found`);
       }
 
-      return await fs.readFile(assetFile);
+      const zip = await zipDirectoryToBuffer(buildInputPath);
+
+      this.throwIfStopped('pp-dev build');
+
+      return zip;
     } catch (e) {
       this.logger.error(e instanceof Error ? (e.stack ?? e.message) : String(e));
 
@@ -743,31 +895,115 @@ export class DistService {
    * Build a Next.js app via `next build` (static export) and return a ZIP of the
    * export directory, with VERSION/BUILD-MANIFEST written in for parity with the
    * Vite build so backup analysis behaves consistently.
+   *
+   * Built apart from the dev server, which keeps writing under `<distDir>/dev`: with
+   * `output: 'export'` and a custom `distDir`, `next build` empties that `distDir` for its export,
+   * and took the dev server's manifests and cache with it. So the build is given Next's default
+   * `distDir` (`.next`, exported to `out`), which `withPPDev()` applies; a `next.config` without it
+   * builds in place, as a plain `next build` would.
    */
   private async buildNextAssets(): Promise<Buffer> {
-    const { projectRoot, distDir } = this.nextBuild!;
+    const { projectRoot, distDir, buildDistDir = distDir, output, configWrapped } = this.nextBuild!;
+    const exportDirName = configWrapped || buildDistDir === SYNC_BUILD_DIST_DIR ? SYNC_BUILD_EXPORT_DIR : buildDistDir;
+    const outDir = path.resolve(projectRoot, exportDirName);
+
+    // `next build` empties the export directory: the dev server's own files must not be in it.
+    if (configWrapped && isSameOrInside(path.resolve(projectRoot, distDir), outDir)) {
+      throw new Error(
+        `The app's distDir (${distDir}) is inside the sync's export directory (${exportDirName}), which next build empties: set another distDir in next.config.`,
+      );
+    }
+
+    // The dev server's route types: under a custom distDir, `next build` type-checks them next to
+    // its own, which declare the same globals (the step `pp-dev next-build` takes too). The dev
+    // server writes them again on its next start.
+    const removedDevTypes = removeStaleDevTypes(projectRoot, { output, distDir });
+
+    if (removedDevTypes) {
+      this.logger.info(
+        colors.dim(`[DistService] Removed stale dev route types: ${path.relative(projectRoot, removedDevTypes)}`),
+      );
+    }
+
+    if (!configWrapped && exportDirName === distDir) {
+      this.logger.warn(
+        colors.yellow(
+          `⚠️  next.config is not wrapped with withPPDev(): the sync's build exports into ${distDir} and removes the dev server's ${path.join(distDir, 'dev')}; restart pp-dev next after the sync`,
+        ),
+      );
+    }
+
+    // What a previous sync exported: a build that exports nothing (`output: 'export'` dropped from
+    // next.config since) left it there, and the sync uploaded it again as this build's.
+    if (configWrapped) {
+      await fs.rm(outDir, { recursive: true, force: true });
+    }
 
     this.logger.info(colors.cyan('[DistService] Next.js build started'));
 
-    await runNextBuildProcess(projectRoot);
-
-    this.logger.info(colors.cyan('[DistService] Next.js build finished'));
-
-    const outDir = path.resolve(projectRoot, distDir);
+    await this.logBuild(
+      'Next.js build',
+      runNextBuildProcess(projectRoot, {
+        timeoutMs: this.buildTimeoutMs,
+        signal: this.builds.signal,
+        distDir: configWrapped ? SYNC_BUILD_DIST_DIR : undefined,
+      }),
+    );
 
     if (!(await this.isDirectory(outDir))) {
-      throw new Error(`Next.js build output directory not found: ${outDir}`);
+      throw new Error(
+        `Next.js build output directory not found: ${outDir}. The sync needs "output: 'export'" in next.config (static export).`,
+      );
     }
 
-    writeBuildVersionManifest({
+    // The steps after the build take a while too (the manifest hashes the whole output): a server
+    // stopped meanwhile mustn't get assets to upload.
+    this.throwIfStopped('next build');
+
+    await writeBuildVersionManifest({
       outDir,
+      // The branch name comes from `git` in the project, not in whatever directory the dev server
+      // was started from.
+      root: projectRoot,
       packageVersion: this.nextBuild!.packageVersion,
       versionFileTemplate: this.versionFileTemplate,
       packageRepositoryUrl: this.nextBuild!.packageRepositoryUrl,
       packageBranchName: this.nextBuild!.packageBranchName,
     });
 
-    return await zipDirectoryToBuffer(outDir);
+    this.throwIfStopped('next build');
+
+    const zip = await zipDirectoryToBuffer(outDir);
+
+    this.throwIfStopped('next build');
+
+    return zip;
+  }
+
+  /** Whether {@link stopBuilds} was called: the dev server this service belongs to is shutting down. */
+  get stopped(): boolean {
+    return this.builds.signal.aborted;
+  }
+
+  private throwIfStopped(label: string): void {
+    if (this.stopped) {
+      throw new Error(`${label} was stopped`);
+    }
+  }
+
+  /** Logs how a build ended: "finished" was printed for a stopped or failed one too. */
+  private async logBuild(label: string, build: Promise<void>): Promise<void> {
+    try {
+      await build;
+    } catch (error) {
+      const stopped = this.builds.signal.aborted;
+
+      this.logger.info(colors.yellow(`[DistService] ${label} ${stopped ? 'stopped' : 'failed'}`));
+
+      throw error;
+    }
+
+    this.logger.info(colors.cyan(`[DistService] ${label} finished`));
   }
 
   private async isDirectory(target: string): Promise<boolean> {

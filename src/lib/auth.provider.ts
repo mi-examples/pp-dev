@@ -3,11 +3,18 @@
  *
  * This provider manages the global authentication state across the application.
  * It provides a centralized way to track and manage authentication status.
+ *
+ * The state is the original user's page-data login, one per process: it is not per host or per saved
+ * user (those are tracked by the user registry and `session-users.ts`). pp-dev itself uses
+ * `getState`, `setRedirected`, `updateState` and `reset`; the rest stays because the package exports
+ * the provider.
  */
+import { createLogger } from './logger.js';
 
 export interface AuthState {
   isAuthenticated: boolean;
   isRedirected: boolean;
+  /** When the state was last updated by `setAuthenticated` or `updateState` (ms since epoch), 0 before. */
   lastChecked: number;
 }
 
@@ -106,7 +113,10 @@ class AuthProvider {
       try {
         listener(this.getState());
       } catch (error) {
-        console.error('Error in auth state listener:', error);
+        // Through pp-dev's logger, like the rest of its output (level, format, the Vite logger).
+        createLogger().error(
+          `Error in auth state listener: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
       }
     });
   }

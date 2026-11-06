@@ -6,29 +6,15 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from './storage.js';
 import { createPanelStateController, type PanelStateController } from './panel-state.js';
 import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
+import { initUsersPanel } from './users-panel.js';
 import { initTheme } from './theme.js';
-import { createPopupElement, type InfoPopupOptions } from './popup.js';
+import { createPopupElement, startAutoDismiss, type InfoPopupOptions } from './popup.js';
+import { initSyncButton, type ConfirmModalOptions } from './sync-button.js';
+import { initReloadVariables } from './reload-variables.js';
 
 // Applied unconditionally (even if the panel itself is hidden) — this is what makes the
 // override affect the whole injected panel, not just its own markup.
 initTheme();
-
-interface SyncActionRequiredPayload {
-  requestId: string;
-  title: string;
-  content: string;
-  confirmText: string;
-  cancelText: string;
-}
-
-interface ConfirmModalOptions {
-  title: string;
-  content: string;
-  confirmText: string;
-  cancelText: string;
-}
-
-type PageVariablesReloadResponsePayload = { ok: true; count: number; skipped: boolean } | { error: string };
 
 let activePopups = 0;
 const POPUP_OFFSET = 10;
@@ -57,7 +43,6 @@ function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
 
 let panelController: PanelStateController | null = null;
 let startReloadVariablesFlow: (() => void) | null = null;
-let pendingReloadVariablesPopup: { close: () => void } | null = null;
 
 function updatePopupPositions() {
   const popups = document.querySelectorAll<HTMLElement>('.pp-dev-info-namespace:not(.pp-dev-info)');
@@ -119,7 +104,19 @@ function infoPopup(opts: InfoPopupOptions): { close: () => void } {
   const $popup = createPopupElement(opts);
   const $closeButton = $popup.querySelector('.pp-dev-info__popup-title-close');
 
+  let removed = false;
+  let stopAutoDismiss: (() => void) | undefined;
+
+  // Once only: closing it by hand used to leave its timer running, which removed it again and
+  // counted it out of `activePopups` twice.
   const removePopup = async () => {
+    if (removed) {
+      return;
+    }
+
+    removed = true;
+    stopAutoDismiss?.();
+
     await animatePopup($popup, 'exit');
 
     $popup.remove();
@@ -144,41 +141,7 @@ function infoPopup(opts: InfoPopupOptions): { close: () => void } {
   const duration = opts.duration ?? 10000;
 
   if (duration > 0) {
-    let remainingTime = duration;
-    let lastUpdate = Date.now();
-    let isVisible = true;
-
-    const scheduleDismiss = () => {
-      if (!isVisible) {
-        return;
-      }
-
-      const now = Date.now();
-      const elapsed = now - lastUpdate;
-
-      remainingTime -= elapsed;
-      lastUpdate = now;
-
-      if (remainingTime <= 0) {
-        removePopup();
-
-        return;
-      }
-
-      requestAnimationFrame(scheduleDismiss);
-    };
-
-    // Handle visibility change
-    document.addEventListener('visibilitychange', () => {
-      isVisible = !document.hidden;
-
-      if (isVisible) {
-        lastUpdate = Date.now();
-        requestAnimationFrame(scheduleDismiss);
-      }
-    });
-
-    requestAnimationFrame(scheduleDismiss);
+    stopAutoDismiss = startAutoDismiss(duration, removePopup);
   }
 
   return { close: removePopup };
@@ -299,6 +262,8 @@ if ($infoPanel) {
     onReloadVariablesClick: () => startReloadVariablesFlow?.(),
   });
 
+  initUsersPanel($infoPanel, { onOpenChange: (open) => autoHide.keepPeeked(open) });
+
   panelController.onChange((state) => {
     if (!state.autoHide) {
       $infoPanel.classList.remove('is-peeking');
@@ -355,144 +320,11 @@ if (hot) {
     window.location.href = data.url;
   });
 
-  hot.on('client:config:update', (data: { config: { [key: string]: any } }) => {
-    if (typeof data.config?.canSync === 'boolean') {
-      if (data.config.canSync) {
-        const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
-
-        if ($syncButton) {
-          $syncButton.disabled = false;
-          $syncButton.classList.remove('disabled');
-          $syncButton.title = 'Sync template';
-        }
-      } else {
-        const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
-
-        if ($syncButton) {
-          $syncButton.disabled = true;
-          $syncButton.classList.add('disabled');
-          $syncButton.title = 'Sync is unavailable on this instance';
-        }
-      }
-    }
-  });
-
   const $syncButton = document.getElementById('sync-template') as HTMLButtonElement | null;
 
   if ($syncButton) {
-    hot.on('template:sync:action-required', async (payload: SyncActionRequiredPayload) => {
-      // Keep the sync spinner running while a confirmation modal is shown — the sync
-      // process is still in progress and only ends on `template:sync:response`.
-      const approved = await confirmModal({
-        title: payload.title,
-        content: payload.content,
-        confirmText: payload.confirmText,
-        cancelText: payload.cancelText,
-      });
-
-      hot.send('template:sync:action-response', {
-        requestId: payload.requestId,
-        approved,
-      });
-    });
-
-    hot.on(
-      'template:sync:response',
-      (
-        payload:
-          | { syncedAt: string; currentHash: string; backupFilename: string }
-          | { error: string; config?: { [p: string]: any }; refresh?: boolean }
-          | { cancelled: boolean; message: string },
-      ) => {
-        closeAllConfirmModals();
-        $syncButton.classList.remove('syncing');
-
-        if ('cancelled' in payload && payload.cancelled) {
-          infoPopup({
-            title: 'Sync cancelled',
-            content: payload.message,
-            type: 'warning',
-          });
-        } else if ('error' in payload && typeof payload.error !== 'undefined') {
-          infoPopup({
-            title: 'Sync error',
-            content: payload.error,
-            type: 'danger',
-          });
-
-          if (payload.refresh) {
-            setTimeout(() => {
-              window.location.reload();
-            });
-          } else {
-            $syncButton.disabled = true;
-            $syncButton.classList.add('disabled');
-            $syncButton.title = 'Sync is unavailable on this instance';
-          }
-        } else if ('syncedAt' in payload && typeof payload.syncedAt !== 'undefined') {
-          infoPopup({
-            title: 'Sync success',
-            content: `Synced at ${new Date(payload.syncedAt).toLocaleString()}.\nBackup filename: ${
-              payload.backupFilename
-            }`,
-            type: 'success',
-          });
-        }
-      },
-    );
-
-    $syncButton.addEventListener('click', (ev: Event) => {
-      ev.preventDefault();
-
-      $syncButton.classList.add('syncing');
-
-      hot.send('template:sync', {});
-    });
+    initSyncButton(hot, $syncButton, { infoPopup, confirmModal, closeAllConfirmModals });
   }
 
-  hot.on('page-variables:reload:response', (payload: PageVariablesReloadResponsePayload) => {
-    pendingReloadVariablesPopup?.close();
-    pendingReloadVariablesPopup = null;
-
-    if ('error' in payload) {
-      infoPopup({
-        title: 'Reload variables error',
-        content: payload.error,
-        type: 'danger',
-      });
-
-      return;
-    }
-
-    if (payload.skipped) {
-      infoPopup({
-        title: 'Nothing to reload',
-        content: 'This page has no template variables to refresh.',
-        type: 'warning',
-      });
-
-      return;
-    }
-
-    infoPopup({
-      title: 'Variables reloaded',
-      content: `Refetched ${payload.count} variable(s) from MI. Reloading the page…`,
-      type: 'success',
-      duration: 1200,
-    });
-
-    setTimeout(() => window.location.reload(), 600);
-  });
-
-  startReloadVariablesFlow = () => {
-    pendingReloadVariablesPopup?.close();
-    pendingReloadVariablesPopup = infoPopup({
-      title: 'Reloading variables',
-      content: 'Refetching live values from MI…',
-      type: 'info',
-      duration: 0,
-    });
-
-    hot.send('page-variables:reload', {});
-  };
+  startReloadVariablesFlow = initReloadVariables(hot, { infoPopup });
 }

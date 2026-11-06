@@ -1,19 +1,24 @@
 import { InlineConfig, PluginOption } from 'vite';
 import { execSync } from 'child_process';
-import type { NormalizedVitePPDevOptions } from './plugin.js';
-import { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+import type { NormalizedVitePPDevOptions } from './lib/pp-dev-config.js';
+// Not from ./plugin.js: that module loads the dev server (express, axios, the proxy, …), and
+// withPPDev() runs while Next.js evaluates next.config.
+import { normalizePPDevConfig, validatePPDevConfig } from './lib/pp-dev-config.js';
 import { clientInjectionPlugin, miTopBarPlugin } from './plugins/index.js';
 import header from './banner/header.js';
 import type { NextConfig } from 'next';
 import { safeNextImport } from './lib/next-import.js';
 import { loadPPDevEnv } from './lib/env.js';
+import { recordWithPPDevHandoff } from './lib/next-config-handoff.js';
 import { getConfig, getPkg } from './config.js';
-import type { PPDevConfig } from './plugin.js';
+import type { PPDevConfig } from './lib/pp-dev-config.js';
 import {
   PATH_PAGE_PREFIX,
   PATH_TEMPLATE_PREFIX,
   PATH_TEMPLATE_LOCAL_PREFIX,
+  PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR,
   PP_DEV_NEXT_BUILD_ENV_VAR,
+  PP_DEV_PROJECT_ROOT_ENV_VAR,
 } from './constants.js';
 import { createLogger } from './lib/logger.js';
 import { colors } from './lib/helpers/color.helper.js';
@@ -23,6 +28,7 @@ import {
   ResolvedBuildCliOverrides,
 } from './lib/build-cli-overrides.js';
 import { createDefaultZipFileName } from './lib/output-path.js';
+import { exactAllowedHosts } from './lib/helpers/origin-guard.js';
 
 export type { ResolvedBuildCliOverrides } from './lib/build-cli-overrides.js';
 
@@ -39,8 +45,8 @@ export type {
   MiInclude,
   AppType,
   VersionPluginOptions,
-} from './plugin.js';
-export { normalizePPDevConfig, validatePPDevConfig } from './plugin.js';
+} from './lib/pp-dev-config.js';
+export { normalizePPDevConfig, validatePPDevConfig } from './lib/pp-dev-config.js';
 export { defineConfig } from './helpers.js';
 
 declare module 'vite' {
@@ -53,10 +59,26 @@ declare module 'next' {
   interface NextConfig {
     /** PP-Dev config. Prefer pp-dev.config.js to avoid Next.js validation warnings. */
     ppDev?: PPDevConfig;
+    /**
+     * Set by `withPPDev()` on the config it returns (non-enumerable, as `ppDev`): `pp-dev next`
+     * reads it to tell a wrapped config from a plain one that carries `ppDev` itself, since only a
+     * wrapped one takes the build-directory override of a template sync.
+     */
+    ppDevWrapped?: true;
   }
 }
 
-const PP_DEV_CONFIG_GROUPS = new Set(['mi', 'app', 'proxy', 'build', 'sync', 'inspector', 'devPanel']);
+const PP_DEV_CONFIG_GROUPS = new Set([
+  'mi',
+  'app',
+  'proxy',
+  'build',
+  'sync',
+  'inspector',
+  'devPanel',
+  'users',
+  'server',
+]);
 
 function mergePPDevConfigs(...configs: Array<PPDevConfig | undefined>): PPDevConfig {
   const merged: PPDevConfig = {};
@@ -178,13 +200,13 @@ export async function getViteConfig(
 
   const pkg = getPkg(projectRoot);
 
-  const templateName = pkg.name;
-
   const ppDevConfig = await getConfig(projectRoot);
 
-  validatePPDevConfig(ppDevConfig, templateName);
+  validatePPDevConfig(ppDevConfig, pkg.name);
 
-  const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, templateName);
+  const normalizedPPDevConfig = normalizePPDevConfig(ppDevConfig, pkg.name);
+  // `app.name`, else package.json's `name`: the one name for the base path, the ZIP and the plugin.
+  const { templateName } = normalizedPPDevConfig;
 
   if (overrides) {
     normalizedPPDevConfig.distZip = applyDistZipOverride(
@@ -200,7 +222,8 @@ export async function getViteConfig(
 
   const plugins: InlineConfig['plugins'] = [vitePPDev(normalizedPPDevConfig), clientInjectionPlugin()];
 
-  const { outDir, distZip, versionPlugin, imageOptimizer, templateLess, integrateMiTopBar } = normalizedPPDevConfig;
+  const { outDir, distZip, versionPlugin, imageOptimizer, templateLess, integrateMiTopBar, allowedHosts } =
+    normalizedPPDevConfig;
 
   if (integrateMiTopBar) {
     plugins.push(miTopBarPlugin(integrateMiTopBar));
@@ -244,6 +267,9 @@ export async function getViteConfig(
     base: templateLess ? `${PATH_PAGE_PREFIX}/${templateName}` : `${PATH_TEMPLATE_PREFIX}/${templateName}`,
     server: {
       port: 3000,
+      // `server.allowedHosts` from the pp-dev config: Vite checks Host itself under `pp-dev`, before
+      // pp-dev's own middleware. Merged with the Vite config's own list (`true` wins).
+      ...(allowedHosts === true || allowedHosts.length > 0 ? { allowedHosts } : {}),
     },
     build: {
       minify: false,
@@ -356,8 +382,10 @@ export function withPPDev(
         );
       }
 
-      const config = await getConfig();
-      const pkg = getPkg();
+      // The root the pp-dev command was given, when there is one: Next passes none on.
+      const projectRoot = process.env[PP_DEV_PROJECT_ROOT_ENV_VAR] || process.cwd();
+      const config = await getConfig(projectRoot);
+      const pkg = getPkg(projectRoot);
       const templateName = pkg.name;
 
       // Resolve the Next.js configuration
@@ -396,11 +424,32 @@ export function withPPDev(
       // and the CLI's config?.ppDev lookup can still read it directly.
       const result = Object.assign({}, baseConfig, nextConfiguration);
 
+      // Next refuses its dev resources, HMR among them, to pages on any other host unless
+      // allowedDevOrigins names it: a page through a tunnel named in server.allowedHosts is one.
+      // Exact names only, as for pp-dev's own API (see exactAllowedHosts). Next reads them from
+      // this config, not from the one `pp-dev next` passes it.
+      const tunnelOrigins = exactAllowedHosts(normalized.allowedHosts);
+
+      if (isDevelopment && tunnelOrigins.length > 0) {
+        result.allowedDevOrigins = [...(result.allowedDevOrigins ?? []), ...tunnelOrigins];
+      }
+
+      // A build pp-dev started for a template sync asks for a distDir of its own, so that its
+      // static export does not replace the running dev server's files (DistService.buildNextAssets).
+      const buildDistDir = process.env[PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR];
+
+      if (phase === PHASE_PRODUCTION_BUILD && buildDistDir) {
+        result.distDir = buildDistDir;
+      }
+
       Object.defineProperty(result, 'ppDev', {
         value: mergedConfig,
         enumerable: false,
         configurable: true,
       });
+      Object.defineProperty(result, 'ppDevWrapped', { value: true, enumerable: false, configurable: true });
+      // Out of band too: Next 13 and 14 rebuild the config from its enumerable keys and drop both.
+      recordWithPPDevHandoff({ ppDev: mergedConfig, wrapped: true });
 
       return result;
     } catch (error) {

@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { startMockMiServer } from './server.js';
+import { pointConfigAt } from '../e2e/helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
@@ -82,162 +83,159 @@ const cleanup = async () => {
 };
 
 try {
-// 2. Patch config to point at mock server
-const patched = originalConfig.replace(
-  /url:\s*['"]https?:\/\/[^'"]+['"]/,
-  `url: '${mockMi.url}'`,
-);
-if (patched === originalConfig) {
-  throw new Error('Could not patch mi.url in pp-dev.config.ts — check the regex.');
-}
-fs.writeFileSync(CONFIG_PATH, patched);
-configPatched = true;
-log(`Patched pp-dev.config.ts → mi.url = ${mockMi.url}`);
+  // 2. Patch config to point at mock server
+  pointConfigAt(CONFIG_PATH, mockMi.url);
+  configPatched = true;
+  log(`Patched pp-dev.config.ts → mi.url = ${mockMi.url}`);
 
-if (!MI_ACCESS_TOKEN) {
-  log(
-    'Warning: MI_ACCESS_TOKEN / REAL_MI_TOKEN not set — authenticated MI endpoints will not be recorded.\n' +
-      '         Set MI_ACCESS_TOKEN=<your-pat> to capture template API calls automatically.',
+  if (!MI_ACCESS_TOKEN) {
+    log(
+      'Warning: MI_ACCESS_TOKEN / REAL_MI_TOKEN not set — authenticated MI endpoints will not be recorded.\n' +
+        '         Set MI_ACCESS_TOKEN=<your-pat> to capture template API calls automatically.',
+    );
+  }
+
+  // 3. Start pp-dev next directly (no shell wrapper to avoid pipe latency on Windows)
+  log('Starting pp-dev next...');
+  const child = spawn(
+    process.execPath,
+    [PP_DEV_JS, 'next', '--host', 'localhost', '--port', String(PP_PORT), '--strictPort'],
+    {
+      cwd: TEST_APP_DIR,
+      env: { ...process.env, NO_COLOR: '1', MI_ACCESS_TOKEN },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
   );
-}
+  ppdev = child;
 
-// 3. Start pp-dev next directly (no shell wrapper to avoid pipe latency on Windows)
-log('Starting pp-dev next...');
-const child = spawn(process.execPath, [PP_DEV_JS, 'next', '--host', 'localhost', '--port', String(PP_PORT), '--strictPort'], {
-  cwd: TEST_APP_DIR,
-  env: { ...process.env, NO_COLOR: '1', MI_ACCESS_TOKEN },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-ppdev = child;
+  child.stdout?.pipe(process.stdout);
+  child.stderr?.pipe(process.stderr);
 
-child.stdout?.pipe(process.stdout);
-child.stderr?.pipe(process.stderr);
-
-// 4. Wait for startup
-await new Promise<void>((resolve, reject) => {
-  const timer = setTimeout(
-    () => reject(new Error(`pp-dev startup timed out after ${STARTUP_TIMEOUT}ms`)),
-    STARTUP_TIMEOUT,
-  );
-  const onData = (data: Buffer) => {
-    if (/pp-dev Next\.js server running/i.test(data.toString())) {
+  // 4. Wait for startup
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`pp-dev startup timed out after ${STARTUP_TIMEOUT}ms`)),
+      STARTUP_TIMEOUT,
+    );
+    const onData = (data: Buffer) => {
+      if (/pp-dev Next\.js server running/i.test(data.toString())) {
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', onData);
+    child.once('exit', (code) => {
       clearTimeout(timer);
-      resolve();
-    }
-  };
-  child.stdout?.on('data', onData);
-  child.stderr?.on('data', onData);
-  child.once('exit', (code) => {
-    clearTimeout(timer);
-    reject(new Error(`pp-dev exited early with code ${code}`));
+      reject(new Error(`pp-dev exited early with code ${code}`));
+    });
   });
-});
 
-log('pp-dev is ready. Making requests to capture MI API calls...');
+  log('pp-dev is ready. Making requests to capture MI API calls...');
 
-// 5. Make requests to trigger MI API calls (auth check, template vars, etc.)
-const paths = ['/', '/pl/pp-dev-test-template/', '/data/page/index/auth/info'];
+  // 5. Make requests to trigger MI API calls (auth check, template vars, etc.)
+  const paths = ['/', '/pl/pp-dev-test-template/', '/data/page/index/auth/info'];
 
-for (const p of paths) {
-  try {
-    const res = await fetch(`${PP_BASE}${p}`, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-    });
-    log(`  ${p} → ${res.status}`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`  ${p} → error: ${msg}`);
-  }
-}
-
-// 6. Fetch template API endpoints directly from mock-mi to record them.
-//    These are used during template:sync (download + upload flow). We request
-//    them through the mock-mi proxy so it records the real MI responses without
-//    needing to trigger a full next build.
-if (APP_ID !== null && MI_ACCESS_TOKEN) {
-  const authHeaders: Record<string, string> = { Authorization: `Bearer ${MI_ACCESS_TOKEN}` };
-
-  log(`Fetching page data to discover template ID (app ${APP_ID})...`);
-  let templateId: number | null = null;
-  try {
-    const pageRes = await fetch(`${mockMi.url}/api/page/id/${APP_ID}`, {
-      headers: authHeaders,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-    });
-    if (pageRes.ok) {
-      const json = (await pageRes.json()) as { page?: { template_id?: number } };
-      templateId = json?.page?.template_id ?? null;
-      log(`  Discovered template_id: ${templateId}`);
-    } else {
-      log(`  /api/page/id/${APP_ID} → ${pageRes.status}`);
-    }
-  } catch (err) {
-    log(`  /api/page/id/${APP_ID} → error: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  if (templateId !== null) {
-    // Template metadata
+  for (const p of paths) {
     try {
-      const infoRes = await fetch(`${mockMi.url}/api/page_template/id/${templateId}`, {
+      const res = await fetch(`${PP_BASE}${p}`, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+      });
+      log(`  ${p} → ${res.status}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`  ${p} → error: ${msg}`);
+    }
+  }
+
+  // 6. Fetch template API endpoints directly from mock-mi to record them.
+  //    These are used during template:sync (download + upload flow). We request
+  //    them through the mock-mi proxy so it records the real MI responses without
+  //    needing to trigger a full next build.
+  if (APP_ID !== null && MI_ACCESS_TOKEN) {
+    const authHeaders: Record<string, string> = { Authorization: `Bearer ${MI_ACCESS_TOKEN}` };
+
+    log(`Fetching page data to discover template ID (app ${APP_ID})...`);
+    let templateId: number | null = null;
+    try {
+      const pageRes = await fetch(`${mockMi.url}/api/page/id/${APP_ID}`, {
         headers: authHeaders,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT),
       });
-      log(`  /api/page_template/id/${templateId} → ${infoRes.status}`);
+      if (pageRes.ok) {
+        const json = (await pageRes.json()) as { page?: { template_id?: number } };
+        templateId = json?.page?.template_id ?? null;
+        log(`  Discovered template_id: ${templateId}`);
+      } else {
+        log(`  /api/page/id/${APP_ID} → ${pageRes.status}`);
+      }
     } catch (err) {
-      log(`  /api/page_template/id/${templateId} → error: ${err instanceof Error ? err.message : String(err)}`);
+      log(`  /api/page/id/${APP_ID} → error: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Template ZIP download is skipped: server.ts rewrites its cassette entry to a synthetic
-    // 404 during save, so fetching the (possibly large) archive here would only be discarded.
-  }
+    if (templateId !== null) {
+      // Template metadata
+      try {
+        const infoRes = await fetch(`${mockMi.url}/api/page_template/id/${templateId}`, {
+          headers: authHeaders,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+        });
+        log(`  /api/page_template/id/${templateId} → ${infoRes.status}`);
+      } catch (err) {
+        log(`  /api/page_template/id/${templateId} → error: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
-  // Variables Editor: page list + live values, for both the current page and a second page
-  // (so the "import values from another page" flow has a real cross-page pair to replay).
-  log('Fetching page list + live variable values for the Variables Editor...');
-  let otherPageId: number | null = null;
-  try {
-    const pagesRes = await fetch(`${mockMi.url}/api/page`, {
-      headers: authHeaders,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-    });
-    log(`  /api/page → ${pagesRes.status}`);
-    if (pagesRes.ok) {
-      const json = (await pagesRes.json()) as { pages?: { id?: number; template_id?: number | null }[] };
-      const others = (json?.pages ?? []).filter((p) => p.id !== undefined && p.id !== APP_ID);
-      // Prefer a page sharing the current template, so the recorded pair also covers the
-      // "pages using this template" grouping — falls back to any other page otherwise.
-      const sameTemplate = templateId !== null ? others.find((p) => p.template_id === templateId) : undefined;
-
-      otherPageId = (sameTemplate ?? others[0])?.id ?? null;
-      log(`  Picked other page id for cross-page import: ${otherPageId ?? '(none found)'}`);
+      // Template ZIP download is skipped: server.ts rewrites its cassette entry to a synthetic
+      // 404 during save, so fetching the (possibly large) archive here would only be discarded.
     }
-  } catch (err) {
-    log(`  /api/page → error: ${err instanceof Error ? err.message : String(err)}`);
-  }
 
-  for (const pageId of [APP_ID, otherPageId].filter((id): id is number => id !== null)) {
+    // Variables Editor: page list + live values, for both the current page and a second page
+    // (so the "import values from another page" flow has a real cross-page pair to replay).
+    log('Fetching page list + live variable values for the Variables Editor...');
+    let otherPageId: number | null = null;
     try {
-      const varsRes = await fetch(`${mockMi.url}/api/page_variable?page_id=${pageId}`, {
+      const pagesRes = await fetch(`${mockMi.url}/api/page`, {
         headers: authHeaders,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT),
       });
-      log(`  /api/page_variable?page_id=${pageId} → ${varsRes.status}`);
+      log(`  /api/page → ${pagesRes.status}`);
+      if (pagesRes.ok) {
+        const json = (await pagesRes.json()) as { pages?: { id?: number; template_id?: number | null }[] };
+        const others = (json?.pages ?? []).filter((p) => p.id !== undefined && p.id !== APP_ID);
+        // Prefer a page sharing the current template, so the recorded pair also covers the
+        // "pages using this template" grouping — falls back to any other page otherwise.
+        const sameTemplate = templateId !== null ? others.find((p) => p.template_id === templateId) : undefined;
+
+        otherPageId = (sameTemplate ?? others[0])?.id ?? null;
+        log(`  Picked other page id for cross-page import: ${otherPageId ?? '(none found)'}`);
+      }
     } catch (err) {
-      log(`  /api/page_variable?page_id=${pageId} → error: ${err instanceof Error ? err.message : String(err)}`);
+      log(`  /api/page → error: ${err instanceof Error ? err.message : String(err)}`);
     }
+
+    for (const pageId of [APP_ID, otherPageId].filter((id): id is number => id !== null)) {
+      try {
+        const varsRes = await fetch(`${mockMi.url}/api/page_variable?page_id=${pageId}`, {
+          headers: authHeaders,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+        });
+        log(`  /api/page_variable?page_id=${pageId} → ${varsRes.status}`);
+      } catch (err) {
+        log(`  /api/page_variable?page_id=${pageId} → error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  } else if (APP_ID !== null) {
+    log('Skipping template API fetch (no MI_ACCESS_TOKEN).');
   }
-} else if (APP_ID !== null) {
-  log('Skipping template API fetch (no MI_ACCESS_TOKEN).');
-}
 
-// Give pending proxy responses time to be captured
-await new Promise((r) => setTimeout(r, 2_000));
+  // Give pending proxy responses time to be captured
+  await new Promise((r) => setTimeout(r, 2_000));
 
-// 7. Save cassette explicitly before teardown
-mockMi.save?.();
+  // 7. Save cassette explicitly before teardown
+  mockMi.save?.();
 
-log('Done.');
+  log('Done.');
 } finally {
   await cleanup();
 }

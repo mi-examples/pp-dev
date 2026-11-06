@@ -1,0 +1,46 @@
+import { mergeConfig, optimizeDeps, resolveConfig } from 'vite';
+import { createLogger } from '../../lib/logger.js';
+import { colors } from '../../lib/helpers/color.helper.js';
+import type { CAC } from 'cac';
+import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
+import { loadCommandViteConfig } from '../vite-config.js';
+
+export function registerOptimizeCommand(cli: CAC): void {
+  cli
+    .command('optimize [root]', 'pre-bundle dependencies')
+    .option('--force', `[boolean] force the optimizer to ignore the cache and re-bundle`)
+    .action(async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
+      filterDuplicateOptions(options);
+      try {
+        // As Vite's own `optimize` resolves it: `serve`, and its mode, `development` without `--mode`.
+        // The config file and the pp-dev env are loaded in the mode `resolveConfig` falls back to below
+        // (a `mode` the file sets still wins there, as in Vite).
+        const mode = options.mode || 'development';
+        const { config } = await loadCommandViteConfig({
+          root,
+          mode,
+          command: 'serve',
+          configFile: options.config,
+          logLevel: options.logLevel,
+        });
+
+        const optimizeConfig = await resolveConfig(
+          mergeConfig(config, {
+            root,
+            base: options.base,
+            // The file is in `config` already (see loadCommandViteConfig).
+            configFile: false,
+            logLevel: options.logLevel,
+            mode: options.mode,
+          }),
+          'serve',
+        );
+
+        await optimizeDeps(optimizeConfig, options.force, true);
+      } catch (e: any) {
+        createLogger(options.logLevel).error(colors.red(`error when optimizing deps:\n${e.stack}`), { error: e });
+
+        process.exit(1);
+      }
+    });
+}

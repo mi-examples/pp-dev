@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
 
 // Only `fs.promises.readFile` is intercepted (and only for the __template_variables.json
 // path); everything else falls through to the real implementation so DistService's own
@@ -23,6 +25,14 @@ vi.mock('fs', async (orig) => {
 const { DistService, TEMPLATE_VARIABLES_FILE_NAME } = await import('../../../src/lib/dist.service.js');
 const fsModule = await import('fs');
 
+// The sync meta and backups of these services, outside the repository.
+const stateDir = fsModule.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-template-variables-'));
+const state = { backupFolder: path.join(stateDir, 'backups'), metaDir: path.join(stateDir, '.pp-dev-meta') };
+
+afterAll(() => {
+  fsModule.rmSync(stateDir, { recursive: true, force: true });
+});
+
 function passthroughOtherPaths(filePath: unknown, ...rest: any[]) {
   return actualReadFile.fn(filePath, ...rest);
 }
@@ -41,7 +51,7 @@ describe('DistService#readPublicTemplateVariablesFile', () => {
       return passthroughOtherPaths(filePath, ...rest);
     });
 
-    const result = await new DistService('test-app').readPublicTemplateVariablesFile();
+    const result = await new DistService('test-app', state).readPublicTemplateVariablesFile();
 
     expect(result).toBeNull();
   });
@@ -57,8 +67,30 @@ describe('DistService#readPublicTemplateVariablesFile', () => {
       return passthroughOtherPaths(filePath, ...rest);
     });
 
-    const result = await new DistService('test-app').readPublicTemplateVariablesFile();
+    const result = await new DistService('test-app', state).readPublicTemplateVariablesFile();
 
     expect(result).toEqual(content);
+  });
+});
+
+describe('DistService#saveTemplateVariablesFile', () => {
+  // The dev server serves this file: a write that failed halfway left it truncated.
+  it('writes the file whole, through a temporary file it does not leave behind', async () => {
+    const root = fsModule.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-template-variables-root-'));
+
+    try {
+      const service = new DistService('test-app', { ...state, root });
+      const file = path.join(root, 'public', TEMPLATE_VARIABLES_FILE_NAME);
+
+      fsModule.mkdirSync(path.dirname(file), { recursive: true });
+      fsModule.writeFileSync(file, '{"tags":[]}');
+
+      await service.saveTemplateVariablesFile(Buffer.from('{"tags":[{"name":"greeting"}]}'));
+
+      expect(fsModule.readFileSync(file, 'utf8')).toBe('{"tags":[{"name":"greeting"}]}');
+      expect(fsModule.readdirSync(path.dirname(file))).toEqual([TEMPLATE_VARIABLES_FILE_NAME]);
+    } finally {
+      fsModule.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

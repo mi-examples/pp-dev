@@ -1,6 +1,6 @@
-import { readFileSync, readdirSync, writeFileSync } from 'fs';
+import { readFile, readdir, writeFile } from 'fs/promises';
 import path from 'path';
-import { JSDOM } from 'jsdom';
+import { getJSDOM } from './jsdom.helper.js';
 
 /**
  * MI re-serializes every uploaded SVG server-side on ingest — confirmed empirically (PP-4123)
@@ -19,6 +19,7 @@ import { JSDOM } from 'jsdom';
  * Returns the input unchanged if it doesn't parse as a single root `<svg>` element.
  */
 export function normalizeSvgLikeMi(svgText: string): string {
+  const JSDOM = getJSDOM();
   const dom = new JSDOM(`<!doctype html><html><body>${svgText}</body></html>`);
   const document = dom.window.document;
   const svg = document.querySelector('svg');
@@ -35,18 +36,18 @@ export function normalizeSvgLikeMi(svgText: string): string {
 }
 
 /** Normalizes every `.svg` file found under `dir` in place, overwriting changed files only. */
-export function normalizeSvgFilesInDir(dir: string): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+export async function normalizeSvgFilesInDir(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      normalizeSvgFilesInDir(fullPath);
+      await normalizeSvgFilesInDir(fullPath);
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.svg')) {
-      const original = readFileSync(fullPath, 'utf-8');
+      const original = await readFile(fullPath, 'utf-8');
       const normalized = normalizeSvgLikeMi(original);
 
       if (normalized !== original) {
-        writeFileSync(fullPath, normalized, 'utf-8');
+        await writeFile(fullPath, normalized, 'utf-8');
       }
     }
   }

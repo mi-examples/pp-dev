@@ -273,6 +273,16 @@ describe('normalizePPDevConfig', () => {
     });
   });
 
+  describe('users normalization', () => {
+    it('does not keep users between runs by default', () => {
+      expect(normalizePPDevConfig({}, 'app').persistUsers).toBe(false);
+    });
+
+    it('maps users.persist', () => {
+      expect(normalizePPDevConfig({ users: { persist: true } }, 'app').persistUsers).toBe(true);
+    });
+  });
+
   describe('Complete configuration', () => {
     it('normalizes a full config correctly', () => {
       const config: PPDevConfig = {
@@ -322,6 +332,78 @@ describe('validatePPDevConfig', () => {
 
   it('throws if templateName is empty', () => {
     expect(() => validatePPDevConfig({}, '')).toThrow('app.name is required');
+  });
+
+  it('accepts app.name when package.json has no name, as its error message says', () => {
+    const config: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { name: 'my-page', id: 7 } };
+
+    expect(() => validatePPDevConfig(config, undefined)).not.toThrow();
+    expect(normalizePPDevConfig(config, undefined).templateName).toBe('my-page');
+  });
+
+  it('refuses to normalize without any name, instead of building paths from an empty one', () => {
+    expect(() => normalizePPDevConfig({}, undefined)).toThrow('app.name is required');
+  });
+
+  it.each<number | false>([0, 1, 20, false])('accepts sync.maxBackups %j', (maxBackups) => {
+    const config: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 }, sync: { maxBackups } };
+
+    expect(() => validatePPDevConfig(config, 'app')).not.toThrow();
+  });
+
+  it.each([
+    ['"20" (a string from a JSON config)', '20'],
+    ['2.5', 2.5],
+    ['-1', -1],
+    ['NaN', Number.NaN],
+    ['true', true],
+  ])('refuses sync.maxBackups %s instead of silently keeping every backup', (_name, maxBackups) => {
+    const config = {
+      mi: { url: 'https://mi.example.com' },
+      app: { id: 7 },
+      sync: { maxBackups },
+    } as unknown as PPDevConfig;
+
+    expect(() => validatePPDevConfig(config, 'app')).toThrow('sync.maxBackups must be a whole number');
+  });
+
+  // A sync's build is stopped after 10 minutes; a large `next build` on a slow machine had no way
+  // to get more time.
+  it('accepts sync.buildTimeoutMs up to the longest Node timer delay', () => {
+    const config: PPDevConfig = {
+      mi: { url: 'https://mi.example.com' },
+      app: { id: 7 },
+      sync: { buildTimeoutMs: 2_147_483_647 },
+    };
+
+    expect(() => validatePPDevConfig(config, 'app')).not.toThrow();
+  });
+
+  it('passes sync.buildTimeoutMs on, and leaves it unset by default', () => {
+    const base: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 } };
+
+    expect(normalizePPDevConfig({ ...base, sync: { buildTimeoutMs: 1_800_000 } }, 'app').syncBuildTimeoutMs).toBe(
+      1_800_000,
+    );
+    expect(normalizePPDevConfig(base, 'app').syncBuildTimeoutMs).toBeUndefined();
+  });
+
+  it.each([
+    ['"600000" (a string from a JSON config)', '600000'],
+    ['0', 0],
+    ['-1', -1],
+    ['1.5', 1.5],
+    ['NaN', Number.NaN],
+    // Over the longest Node timer delay, `setTimeout` would fire after 1 ms.
+    ['2147483648', 2_147_483_648],
+  ])('refuses sync.buildTimeoutMs %s', (_name, buildTimeoutMs) => {
+    const config = {
+      mi: { url: 'https://mi.example.com' },
+      app: { id: 7 },
+      sync: { buildTimeoutMs },
+    } as unknown as PPDevConfig;
+
+    expect(() => validatePPDevConfig(config, 'app')).toThrow('sync.buildTimeoutMs must be a whole number');
   });
 
   it('throws if mi.include is set with embedding mode', () => {
@@ -407,5 +489,39 @@ describe('validatePPDevConfig', () => {
         'app',
       ),
     ).not.toThrow();
+  });
+});
+
+describe('server.allowedHosts', () => {
+  const base: PPDevConfig = { mi: { url: 'https://mi.example.com' }, app: { id: 7 } };
+
+  it('defaults to no extra hosts', () => {
+    expect(normalizePPDevConfig(base, 'app').allowedHosts).toEqual([]);
+  });
+
+  it('keeps the names lowercased and trimmed, and true as is', () => {
+    expect(
+      normalizePPDevConfig({ ...base, server: { allowedHosts: [' My-App.Ngrok.App', '.TryCloudflare.com'] } }, 'app')
+        .allowedHosts,
+    ).toEqual(['my-app.ngrok.app', '.trycloudflare.com']);
+    expect(normalizePPDevConfig({ ...base, server: { allowedHosts: true } }, 'app').allowedHosts).toBe(true);
+  });
+
+  it.each<[true | string[]]>([[[]], [['my-app.ngrok.app', '.trycloudflare.com']], [true]])(
+    'accepts %j',
+    (allowedHosts) => {
+      expect(() => validatePPDevConfig({ ...base, server: { allowedHosts } }, 'app')).not.toThrow();
+    },
+  );
+
+  it.each([
+    ['a single name instead of a list', 'my-app.ngrok.app'],
+    ['false', false],
+    ['an empty name', ['']],
+    ['a number', [3000]],
+  ])('refuses %s', (_name, allowedHosts) => {
+    expect(() => validatePPDevConfig({ ...base, server: { allowedHosts: allowedHosts as never } }, 'app')).toThrow(
+      'server.allowedHosts must be a list of host names or true',
+    );
   });
 });

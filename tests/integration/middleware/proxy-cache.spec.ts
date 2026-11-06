@@ -5,7 +5,7 @@ describe('Proxy Cache Middleware', () => {
   let mockDevServer: any;
   let mockReq: any;
   let mockRes: any;
-  let nextFn: ReturnType<typeof vi.fn>;
+  let nextFn: ReturnType<typeof vi.fn<(error?: unknown) => void>>;
 
   beforeEach(() => {
     mockDevServer = {
@@ -35,7 +35,7 @@ describe('Proxy Cache Middleware', () => {
       once: vi.fn(),
     };
 
-    nextFn = vi.fn();
+    nextFn = vi.fn<(error?: unknown) => void>();
   });
 
   afterEach(() => {
