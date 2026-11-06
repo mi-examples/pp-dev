@@ -194,7 +194,18 @@ export function startInspector({ pollIntervalMs = 2000 }: InspectorOptions = {})
   };
 
   const clearAll = async () => {
-    await fetch('/@api/requests', { method: 'DELETE' });
+    // A dev server that is restarting answers nothing (or an error): the list stays as the server
+    // has it, and the next poll shows it. Unhandled, the failure was a rejection in the console,
+    // and an error answer emptied the list here while the server kept every request.
+    try {
+      const response = await fetch('/@api/requests', { method: 'DELETE' });
+
+      if (!response.ok) {
+        return;
+      }
+    } catch {
+      return;
+    }
 
     allRequests = [];
     filteredRequests = [];

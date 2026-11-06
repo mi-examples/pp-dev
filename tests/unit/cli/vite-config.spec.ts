@@ -183,6 +183,32 @@ describe('loadCommandViteConfig', () => {
       expect(process.env.NODE_ENV).toBe('development');
     });
 
+    // The default set for the load was taken back whatever the file did with it: a config that
+    // sets NODE_ENV itself (`development` for a development-style build) lost it, and Vite, no
+    // longer loading the file again, built for production.
+    it('keeps a NODE_ENV the config file sets itself', async () => {
+      const own = mkdtempSync(path.join(tmpdir(), 'pp-dev-vite-config-own-env-'));
+
+      try {
+        writeFileSync(
+          path.join(own, 'vite.config.mjs'),
+          ["process.env.NODE_ENV = 'development';", 'export default {};', ''].join('\n'),
+        );
+
+        await loadCommandViteConfig({
+          root: own,
+          mode: 'production',
+          command: 'build',
+          configFile: undefined,
+          logLevel: 'silent',
+        });
+
+        expect(process.env.NODE_ENV).toBe('development');
+      } finally {
+        rmSync(own, { recursive: true, force: true });
+      }
+    });
+
     it('tells the file of an SSR build', async () => {
       expect(JSON.parse(String((await load({ command: 'build', ssr: true })).config.define?.__SSR__))).toBe(true);
       expect(JSON.parse(String((await load({ command: 'build' })).config.define?.__SSR__))).toBe(false);

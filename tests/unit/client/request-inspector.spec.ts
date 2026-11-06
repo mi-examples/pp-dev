@@ -271,6 +271,20 @@ describe('Request Inspector page', () => {
     expect($('#req-count')!.textContent).toBe('0 requests');
   });
 
+  // A dev server that is restarting answers nothing: the failure was an unhandled rejection, and an
+  // error answer emptied the list here while the server kept every request.
+  it.each([
+    ['answers nothing', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['answers an error', () => Promise.resolve(new Response('{"error":"x"}', { status: 500 }))],
+  ])('keeps the list when the dev server %s to Clear', async (_name, answer) => {
+    fetchMock.mockImplementationOnce(answer);
+    click($('[data-action="clear"]'));
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledWith('/@api/requests', { method: 'DELETE' });
+    expect(document.querySelectorAll('.req-item')).toHaveLength(2);
+  });
+
   it('switches the theme and remembers it', () => {
     click($('[data-theme-choice="dark"]'));
 

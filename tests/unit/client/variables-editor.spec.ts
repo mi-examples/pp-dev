@@ -974,6 +974,221 @@ describe('Variables Editor page', () => {
 
       dom.close();
     });
+
+    const schemaResponse = {
+      ok: true,
+      json: async () => ({
+        exists: true,
+        raw: '{"tags":[{"name":"a","tag_type":"text"}]}',
+        schema: { tags: [{ name: 'a', tag_type: 'text' }] },
+      }),
+    };
+
+    // A reload that failed emptied the tab (the state and rows zeroed, a skeleton painted): what
+    // was typed meanwhile was gone, with the tab still dirty.
+    it('keeps the values edits made while a reload that fails was in flight', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      click('[data-action="refresh"]');
+      enter('#content .ve-values-detail input', 'typed meanwhile');
+      pending[1]!({ ok: false, json: async () => ({ error: 'MI is not reachable.' }) });
+      await flush();
+
+      expect(banner()).toContain('MI is not reachable.');
+      expect(find<HTMLInputElement>('#content .ve-values-detail input').value).toBe('typed meanwhile');
+
+      dom.close();
+    });
+
+    it('keeps the schema edits made while a reload that fails was in flight', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`);
+
+      pending[0]!(schemaResponse);
+      await flush();
+
+      click('[data-action="refresh"]');
+      enter('#content input[data-field="name"]', 'renamed');
+      pending[1]!({ ok: false, json: async () => ({ error: 'no dist service' }) });
+      await flush();
+
+      expect(banner()).toContain('no dist service');
+      expect(find<HTMLInputElement>('#content input[data-field="name"]').value).toBe('renamed');
+
+      dom.close();
+    });
+
+    it('still empties a tab that was not edited when its reload fails', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      click('[data-action="refresh"]');
+      pending[1]!({ ok: false, json: async () => ({ error: 'MI is not reachable.' }) });
+      await flush();
+
+      expect(document.querySelector('#content .ve-values-detail input')).toBeNull();
+
+      dom.close();
+    });
+
+    // The error banner re-rendered the tab, and the textarea was made again from the last loaded
+    // rows: the whole draft was gone for one missing bracket.
+    it('keeps a values JSON draft that is not valid when Save refuses it', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values&mode=json`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      const draft = '[{"name":"title","value":"typed but broken"';
+
+      enter('#values-raw-editor', draft);
+      click('#save-btn');
+
+      expect(banner()).toContain('Raw JSON is not valid');
+      expect(find<HTMLTextAreaElement>('#values-raw-editor').value).toBe(draft);
+
+      dom.close();
+    });
+
+    // While a save's PUT ran, Save stayed on: a second one diffed against the baseline the first
+    // was about to replace, and sent a second full replacement.
+    it('turns Save off while a save and its reload run', async () => {
+      const { dom, pending, fetch } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      enter('#content .ve-values-detail input', 'edited');
+      click('#save-btn');
+      click('.ve-modal-ok');
+
+      expect(find<HTMLButtonElement>('#save-btn').disabled).toBe(true);
+      click('#save-btn');
+      expect(document.querySelector('.ve-modal-diff')).toBeNull();
+
+      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
+      await flush();
+      pending[2]!(valuesResponse('edited'));
+      await flush();
+
+      expect(find<HTMLButtonElement>('#save-btn').disabled).toBe(false);
+      const calls = fetch.mock.calls as unknown as Array<[string, RequestInit | undefined]>;
+
+      expect(calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+
+      dom.close();
+    });
+
+    // A save that ended with newer edits left the baseline as it was before the save: the next
+    // diff showed the lines just saved as changes again.
+    it('compares the next save with what the last one saved, also with newer edits', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      const input = () => find<HTMLInputElement>('#content .ve-values-detail input');
+
+      enter(input(), 'submitted');
+      click('#save-btn');
+      click('.ve-modal-ok');
+      enter(input(), 'newer');
+      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
+      await flush();
+
+      expect(banner()).toContain('Newer edits remain unsaved.');
+
+      click('#save-btn');
+
+      const removed = Array.from(document.querySelectorAll('.ve-diff-line.is-remove')).map((el) => el.textContent);
+
+      expect(removed.join('\n')).toContain('submitted');
+      expect(removed.join('\n')).not.toContain('initial');
+
+      dom.close();
+    });
+
+    // The save sent the table's rows themselves: typed while the PUT ran, the newer value became
+    // the saved baseline, and JSON mode no longer flagged it as changed.
+    it('records what was saved, not what was typed while the save ran', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!({
+        ok: true,
+        json: async () => ({
+          schema: { tags: [{ name: 'title', tag_type: 'text' }] },
+          live: [],
+          combined: [{ name: 'title', value: 'initial' }],
+        }),
+      });
+      await flush();
+
+      const field = () =>
+        find<HTMLInputElement>('#content .ve-values-detail textarea, #content .ve-values-detail input');
+
+      enter(field(), 'submitted');
+      click('#save-btn');
+      click('.ve-modal-ok');
+      enter(field(), 'newer');
+      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
+      await flush();
+
+      expect(banner()).toContain('Newer edits remain unsaved.');
+
+      click('[data-action="toggle-values-raw-mode"]');
+
+      expect(find('.ve-json-issues').textContent).toContain('title');
+
+      dom.close();
+    });
+
+    // additional_options text that isn't JSON was kept as a string; raw mode serialized it as a
+    // valid JSON string, and the rows it made back were no longer marked: `{bad` was saved.
+    it('keeps raw mode closed while an additional_options text is not JSON', async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`);
+
+      pending[0]!(schemaResponse);
+      await flush();
+
+      enter('#ao-raw-0', '{bad');
+      click('[data-action="toggle-raw-mode"]');
+
+      expect(banner()).toContain('additional_options must be valid JSON for "a"');
+      expect(document.querySelector('#raw-editor')).toBeNull();
+      expect(find<HTMLTextAreaElement>('#ao-raw-0').value).toBe('{bad');
+
+      dom.close();
+    });
+
+    // The keys were heard on the overlay only: a click on the diff's text put the focus on <body>,
+    // and Escape did nothing; Tab left the dialog for the page behind it.
+    it("hears the diff dialog's keys with the focus outside it, and keeps Tab inside", async () => {
+      const { dom, pending } = openWithPendingFetches(`http://localhost${VARIABLES_EDITOR_PATH}?tab=values`);
+
+      pending[0]!(valuesResponse('initial'));
+      await flush();
+
+      enter('#content .ve-values-detail input', 'edited');
+      click('#save-btn');
+
+      const ok = find<HTMLButtonElement>('.ve-modal-ok');
+
+      expect(document.activeElement).toBe(ok);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+      expect(document.activeElement).toBe(find('.ve-modal-close'));
+
+      (document.activeElement as HTMLElement).blur();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+      expect(document.querySelector('.ve-modal-diff')).toBeNull();
+
+      dom.close();
+    });
   });
 
   describe('client: values tab controls', () => {

@@ -215,6 +215,12 @@ export function registerVariablesEditorRoutes(
         warnings.push(`"${tag.name}" has an unrecognized tag_type "${tag.tag_type}".`);
       }
 
+      // A string is what the editor keeps of additional_options text that isn't JSON (`{bad`):
+      // saved as is, MI's editor gets a string where it reads an object or a list.
+      if (typeof tag.additional_options === 'string' && tag.additional_options.trim() !== '') {
+        warnings.push(`"${tag.name}" has additional_options that are text, not JSON (an object or a list).`);
+      }
+
       // MI's own "Create/Edit Variable" form blocks names outside this pattern; here it's a
       // warning, not a hard block, since this endpoint also has to accept legacy/imported data.
       if (!NAME_FORMAT_REGEX.test(tag.name)) {
