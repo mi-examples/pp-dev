@@ -157,6 +157,12 @@ export function registerNextCommand(cli: CAC): void {
             (importConfig as any)['module.exports'].default ||
             (importConfig as any).default;
 
+          // As `next dev` sets it, whatever it was (a test runner's `test`): Next's own code in this
+          // process goes by it, not only the bundles' define. Under another value the tsconfig include
+          // Next writes for the route types was the build's (`<distDir>/dev/types`, i.e.
+          // `dist/dev/dev/types`), added to the app's tsconfig on every start.
+          Object.assign(process.env, { NODE_ENV: 'development' });
+
           // As `serve` and `next-build` resolve it: `join` took an absolute root for a relative one.
           const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
 
