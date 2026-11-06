@@ -106,7 +106,10 @@ async function loadViteConfigFile(opts: CommandViteConfigOptions) {
       opts.logLevel,
     );
   } finally {
-    if (setNodeEnv) {
+    // Only the default set here, as the file left it: a value the file assigned itself
+    // (`development` for a development-style build) is its own, and Vite, which no longer loads
+    // the file, would otherwise build for production.
+    if (setNodeEnv && process.env.NODE_ENV === defaultNodeEnv) {
       Reflect.deleteProperty(process.env, 'NODE_ENV');
     }
   }
