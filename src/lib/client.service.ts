@@ -18,6 +18,21 @@ export { SYNC_IN_PROGRESS_CODE };
 
 const DEFAULT_SYNC_ACTION_TIMEOUT_MS = 120_000;
 
+/** What MI answered an upload with, for the error message: its JSON, or the head of a text body. */
+function describeUploadAnswer(answer: unknown): string {
+  if (typeof answer === 'string') {
+    const text = answer.replace(/\s+/g, ' ').trim();
+
+    return `with a non-JSON body: "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`;
+  }
+
+  if (answer && typeof answer === 'object') {
+    return `with ${JSON.stringify(answer).slice(0, 200)}`;
+  }
+
+  return `with ${String(answer)}`;
+}
+
 /** Why a sync's dialog ended without a confirmation: the user's answer, or none that could come. */
 export type SyncCancelReason = 'cancelled' | 'timeout' | 'disconnected' | 'shutdown';
 
@@ -236,94 +251,9 @@ export class ClientService {
           }
         }
 
-        const currentAssets = await miAPI?.getAssets().catch(async (err) => {
-          if (isAxiosError(err)) {
-            // Use the token helper for better error handling
-            const errorInfo = getTokenErrorInfo(err);
-
-            if (errorInfo.code === 'SESSION_EXPIRED') {
-              this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
-
-              // Try to validate credentials to get more specific error information
-              try {
-                const validation = await miAPI?.validateCredentials();
-
-                if (validation && !validation.isValid) {
-                  this.logger.error(colors.red(`Authentication error: ${validation.error}`));
-                  this.sendSyncResponse(client, {
-                    error: validation.error ?? 'Authentication failed',
-                    code: validation.code,
-                    refresh: true,
-                  });
-                } else {
-                  this.logger.info(colors.yellow('Session expired'));
-                  this.sendSyncResponse(client, {
-                    error: 'Session expired',
-                    code: 'SESSION_EXPIRED',
-                    refresh: true,
-                  });
-                }
-              } catch (validationError) {
-                this.logger.info(colors.yellow('Session expired'));
-                this.sendSyncResponse(client, {
-                  error: 'Session expired',
-                  code: 'SESSION_EXPIRED',
-                  refresh: true,
-                });
-              }
-
-              return err;
-            }
-
-            // Get Address Info error (server in maintenance mode, VPN connection is needed or no internet connection)
-            if (
-              err.cause instanceof Error &&
-              ((err.cause as { code: string } & Error).code === 'ECONNRESET' ||
-                (err.cause as { code: string } & Error).code === 'ENOTFOUND')
-            ) {
-              this.logger.info(
-                colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
-              );
-
-              this.sendSyncResponse(client, {
-                error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-                code: 'CONNECTION_ERROR',
-              });
-
-              return err;
-            }
-
-            // HTTP gateway / maintenance (explicit status)
-            const httpStatus = err.response?.status;
-
-            if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
-              this.logger.info(
-                colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),
-              );
-
-              this.sendSyncResponse(client, {
-                error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-                code: 'CONNECTION_ERROR',
-              });
-
-              return err;
-            }
-          }
-
-          // PageAPI / PageTemplateAPI: 200 + HTML / non-JSON → plain Error (not axios)
-          if (isUnavailableJsonApiError(err)) {
-            this.logger.info(
-              colors.yellow(
-                'Server in maintenance mode or non-JSON page / page-template API response (unavailable HTML body)',
-              ),
-            );
-
-            this.sendSyncResponse(client, {
-              error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
-              code: 'CONNECTION_ERROR',
-            });
-
-            return err;
+        const currentAssets = await miAPI.getAssets().catch(async (err: unknown) => {
+          if (await this.reportMiFailure(client, err)) {
+            return err as Error;
           }
 
           throw err;
@@ -495,7 +425,19 @@ export class ClientService {
             return;
           }
 
-          const updateResult = await miAPI?.updateAssets(newAssets);
+          let updateResult: Awaited<ReturnType<MiAPI['updateAssets']>>;
+
+          try {
+            updateResult = await miAPI.updateAssets(newAssets);
+          } catch (error) {
+            // An MI session that expired during a long build, or MI gone down meanwhile, is reported
+            // as it is for the download, not as a bare "Request failed with status code 412".
+            if (await this.reportMiFailure(client, error)) {
+              return;
+            }
+
+            throw error;
+          }
 
           if (updateResult?.status === 'OK') {
             // The meta is `{}` until a first backup is saved (a page with no assets on MI yet).
@@ -510,11 +452,12 @@ export class ClientService {
 
             this.logger.info(colors.green('Template synced'));
           } else {
-            this.sendSyncResponse(client, {
-              error: 'Failed to update assets',
-            });
+            // A 200 without the `{ status: 'OK' }` an upload ends with: MI's maintenance page (HTML)
+            // or a JSON error of its own. The answer is the only clue, so it goes along.
+            const error = `Failed to update assets: MI answered ${describeUploadAnswer(updateResult)}`;
 
-            this.logger.error(colors.red('Failed to update assets'));
+            this.sendSyncResponse(client, { error });
+            this.logger.error(colors.red(error));
           }
         } else {
           if (newAssets instanceof Error) {
@@ -556,6 +499,103 @@ export class ClientService {
 
       return;
     }
+  }
+
+  /**
+   * Tells the panel about an MI request that failed for a reason the sync can't help: credentials
+   * that expired (with `refresh`), MI down or in maintenance (also behind a 200 with an HTML body).
+   * `false` when it is none of those, and the caller reports it as a failed sync.
+   */
+  private async reportMiFailure(client: WebSocketClient, err: unknown): Promise<boolean> {
+    if (isAxiosError(err)) {
+      const errorInfo = getTokenErrorInfo(err);
+
+      if (errorInfo.code === 'SESSION_EXPIRED') {
+        this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
+
+        // Try to validate credentials to get more specific error information
+        try {
+          const validation = await this.opts.miAPI?.validateCredentials();
+
+          if (validation && !validation.isValid) {
+            this.logger.error(colors.red(`Authentication error: ${validation.error}`));
+            this.sendSyncResponse(client, {
+              error: validation.error ?? 'Authentication failed',
+              code: validation.code,
+              refresh: true,
+            });
+          } else {
+            this.logger.info(colors.yellow('Session expired'));
+            this.sendSyncResponse(client, {
+              error: 'Session expired',
+              code: 'SESSION_EXPIRED',
+              refresh: true,
+            });
+          }
+        } catch {
+          this.logger.info(colors.yellow('Session expired'));
+          this.sendSyncResponse(client, {
+            error: 'Session expired',
+            code: 'SESSION_EXPIRED',
+            refresh: true,
+          });
+        }
+
+        return true;
+      }
+
+      // Get Address Info error (server in maintenance mode, VPN connection is needed or no internet connection)
+      if (
+        err.cause instanceof Error &&
+        ((err.cause as { code: string } & Error).code === 'ECONNRESET' ||
+          (err.cause as { code: string } & Error).code === 'ENOTFOUND')
+      ) {
+        this.logger.info(
+          colors.yellow('Server in maintenance mode, VPN connection is needed or no internet connection'),
+        );
+
+        this.sendSyncResponse(client, {
+          error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+          code: 'CONNECTION_ERROR',
+        });
+
+        return true;
+      }
+
+      // HTTP gateway / maintenance (explicit status)
+      const httpStatus = err.response?.status;
+
+      if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
+        this.logger.info(
+          colors.yellow(`Server in maintenance mode or unreachable (HTTP ${httpStatus}); VPN may be required`),
+        );
+
+        this.sendSyncResponse(client, {
+          error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+          code: 'CONNECTION_ERROR',
+        });
+
+        return true;
+      }
+    }
+
+    // PageAPI / PageTemplateAPI: 200 + HTML / non-JSON → plain Error (not axios)
+    if (isUnavailableJsonApiError(err)) {
+      this.logger.info(
+        colors.yellow(
+          'Server in maintenance mode or non-JSON page / page-template API response (unavailable HTML body)',
+        ),
+      );
+
+      this.sendSyncResponse(client, {
+        error: 'Server in maintenance mode, VPN connection is needed or no internet connection',
+        code: 'CONNECTION_ERROR',
+      });
+
+      return true;
+    }
+
+    return false;
   }
 
   /**

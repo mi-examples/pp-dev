@@ -19,6 +19,7 @@ import { checkUserToken, type TokenCheck } from './mi-identity.js';
 import type { MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
+import { writeFileAtomicSync } from './helpers/atomic-file.helper.js';
 
 const STORE_VERSION = 1;
 
@@ -71,12 +72,10 @@ export function readStoredUsers(file: string): StoredUser[] {
 /** Writes `users` to `file`, readable by its owner only (where file modes apply: not on Windows). */
 export function writeStoredUsers(file: string, users: StoredUser[], meta: { project: string; miUrl: string }): void {
   const content: StoreFile = { version: STORE_VERSION, ...meta, users };
-  const tmp = `${file}.${process.pid}.tmp`;
 
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   // Written aside and renamed over the old file, so a crash never leaves half a file.
-  fs.writeFileSync(tmp, `${JSON.stringify(content, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  writeFileAtomicSync(file, `${JSON.stringify(content, null, 2)}\n`, { mode: 0o600 });
   // `mode` only applies to new files; an older file keeps whatever it had.
   fs.chmodSync(file, 0o600);
 }

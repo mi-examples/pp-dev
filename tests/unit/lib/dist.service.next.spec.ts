@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vites
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
 import JSZip from 'jszip';
 
@@ -206,6 +207,59 @@ describe('DistService — Next.js build strategy', () => {
     const zip = await JSZip.loadAsync(buf);
 
     expect(zip.file('index.html')).toBeTruthy();
+  });
+
+  // `git` ran in the directory the dev server was started from: `pp-dev next <dir>` from another
+  // checkout recorded that checkout's branch in VERSION.
+  it("records the project's git branch in VERSION, not the one of the directory pp-dev runs in", async () => {
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-next-cwd-'));
+    const originalCwd = process.cwd();
+
+    // CI names the branch through the environment, ahead of git.
+    for (const name of [
+      'GITHUB_HEAD_REF',
+      'GITHUB_REF_NAME',
+      'CI_COMMIT_REF_NAME',
+      'BITBUCKET_BRANCH',
+      'BUILD_SOURCEBRANCHNAME',
+      'BRANCH_NAME',
+      'TRAVIS_BRANCH',
+      'CIRCLE_BRANCH',
+      'BUILDKITE_BRANCH',
+      'VERCEL_GIT_COMMIT_REF',
+    ]) {
+      vi.stubEnv(name, '');
+    }
+
+    try {
+      git('init', '-q');
+      git('symbolic-ref', 'HEAD', 'refs/heads/sync-from-here');
+      git(
+        '-c',
+        'user.name=pp-dev',
+        '-c',
+        'user.email=pp-dev@example.com',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-q',
+        '--allow-empty',
+        '-m',
+        'init',
+      );
+      process.chdir(elsewhere);
+
+      const zip = await JSZip.loadAsync(await createService().buildNewAssets());
+      const versionFile = Object.keys(zip.files).find((name) => name.startsWith('VERSION-'))!;
+      const manifest = JSON.parse(await zip.file(versionFile)!.async('string'));
+
+      expect(manifest.branchName).toBe('sync-from-here');
+    } finally {
+      process.chdir(originalCwd);
+      vi.unstubAllEnvs();
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
   });
 
   it('includes VERSION and BUILD-MANIFEST files in the zip for sync parity', async () => {

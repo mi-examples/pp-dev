@@ -131,12 +131,6 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
               buildTimeoutMs: syncBuildTimeoutMs,
               buildInputFolder: typeof distZip === 'object' ? (distZip.inDir ?? outDir) : outDir,
             },
-            typeof distZip === 'object'
-              ? {
-                  distZipFolder: distZip.outDir,
-                  distZipFilename: distZip.outFileName,
-                }
-              : undefined,
             typeof versionPlugin === 'object'
               ? {
                   versionFileTemplate: versionPlugin.versionFileTemplate,

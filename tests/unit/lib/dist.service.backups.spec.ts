@@ -20,7 +20,7 @@ import {
  */
 
 const analysis = (fingerprint: string) =>
-  ({ backupFingerprint: fingerprint, mainHash: null, allFilesInMeta: false }) as unknown as BackupAnalysis;
+  ({ backupFingerprint: fingerprint, mainHash: null }) as unknown as BackupAnalysis;
 
 describe('DistService — start-up and backups', () => {
   let root: string;
