@@ -10,12 +10,11 @@ import { initUsersPanel } from './users-panel.js';
 import { initTheme } from './theme.js';
 import { createPopupElement, startAutoDismiss, type InfoPopupOptions } from './popup.js';
 import { initSyncButton, type ConfirmModalOptions } from './sync-button.js';
+import { initReloadVariables } from './reload-variables.js';
 
 // Applied unconditionally (even if the panel itself is hidden) — this is what makes the
 // override affect the whole injected panel, not just its own markup.
 initTheme();
-
-type PageVariablesReloadResponsePayload = { ok: true; count: number; skipped: boolean } | { error: string };
 
 let activePopups = 0;
 const POPUP_OFFSET = 10;
@@ -44,7 +43,6 @@ function teardownConfirmModal(overlay: HTMLDivElement, result: boolean) {
 
 let panelController: PanelStateController | null = null;
 let startReloadVariablesFlow: (() => void) | null = null;
-let pendingReloadVariablesPopup: { close: () => void } | null = null;
 
 function updatePopupPositions() {
   const popups = document.querySelectorAll<HTMLElement>('.pp-dev-info-namespace:not(.pp-dev-info)');
@@ -328,49 +326,5 @@ if (hot) {
     initSyncButton(hot, $syncButton, { infoPopup, confirmModal, closeAllConfirmModals });
   }
 
-  hot.on('page-variables:reload:response', (payload: PageVariablesReloadResponsePayload) => {
-    pendingReloadVariablesPopup?.close();
-    pendingReloadVariablesPopup = null;
-
-    if ('error' in payload) {
-      infoPopup({
-        title: 'Reload variables error',
-        content: payload.error,
-        type: 'danger',
-      });
-
-      return;
-    }
-
-    if (payload.skipped) {
-      infoPopup({
-        title: 'Nothing to reload',
-        content: 'This page has no template variables to refresh.',
-        type: 'warning',
-      });
-
-      return;
-    }
-
-    infoPopup({
-      title: 'Variables reloaded',
-      content: `Refetched ${payload.count} variable(s) from MI. Reloading the page…`,
-      type: 'success',
-      duration: 1200,
-    });
-
-    setTimeout(() => window.location.reload(), 600);
-  });
-
-  startReloadVariablesFlow = () => {
-    pendingReloadVariablesPopup?.close();
-    pendingReloadVariablesPopup = infoPopup({
-      title: 'Reloading variables',
-      content: 'Refetching live values from MI…',
-      type: 'info',
-      duration: 0,
-    });
-
-    hot.send('page-variables:reload', {});
-  };
+  startReloadVariablesFlow = initReloadVariables(hot, { infoPopup });
 }

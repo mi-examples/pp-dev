@@ -343,17 +343,33 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
 
       const name = editing;
       const $form = ev.currentTarget as HTMLFormElement;
+      const $save = $form.querySelector<HTMLButtonElement>('button[type="submit"]');
 
-      if (!name) {
+      // One request at a time, as the Add form does: Enter twice sent a second PATCH, which a
+      // rename answered with 404, shown as "not found" although the rename had gone through.
+      if (!name || $form.dataset.submitting === 'true') {
         return;
       }
 
       const newName = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')?.value.trim() ?? '';
       const token = $form.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-token')?.value.trim() ?? '';
+
+      $form.dataset.submitting = 'true';
+
+      if ($save) {
+        $save.disabled = true;
+      }
+
       const response = await request('PATCH', `${USERS_API}/${encodeURIComponent(name)}`, {
         name: newName,
         ...(token ? { token } : {}),
       });
+
+      delete $form.dataset.submitting;
+
+      if ($save) {
+        $save.disabled = false;
+      }
 
       if (!response) {
         return;

@@ -444,6 +444,35 @@ describe('initUsersPanel', () => {
       );
     });
 
+    // Enter twice sent a second PATCH, which a rename answered with 404 ("not found") although
+    // the rename had gone through.
+    it('sends one request for a form submitted twice while it runs', async () => {
+      const $panel = await openPopover();
+
+      $panel.querySelector<HTMLButtonElement>('[data-edit="viewer"]')!.click();
+      $panel.querySelector<HTMLInputElement>('.pp-dev-info__users-edit-name')!.value = 'reader';
+
+      let answer: (response: Response) => void = () => {};
+
+      fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => (answer = resolve)));
+
+      const $form = $panel.querySelector<HTMLFormElement>('.pp-dev-info__users-edit')!;
+
+      $form.requestSubmit();
+      $form.dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+
+      const patches = () => fetchMock.mock.calls.filter(([, init]) => (init as RequestInit)?.method === 'PATCH');
+
+      expect(patches()).toHaveLength(1);
+      expect($form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+
+      answer(json(200, { user: { name: 'reader', kind: 'token', origin: 'o' } }));
+      await flush();
+
+      expect(patches()).toHaveLength(1);
+    });
+
     it('sends a new token when one is typed', async () => {
       const $panel = await openPopover();
 
