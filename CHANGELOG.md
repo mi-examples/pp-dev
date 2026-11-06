@@ -41,6 +41,7 @@
 - Values saves send MI only names and values, refuse a name listed twice, and accept select options given as plain strings.
 - The process shuts down gracefully on `SIGHUP` and exits with `1` after a crash. An unhandled rejection is now only logged instead of stopping the server.
 - `migrate --dry-run` now prints the migrated config.
+- `pp-dev optimize` loads the config file and the `.env` files in the mode it runs the optimizer in, `development` without `--mode`, as Vite's `optimize` does. It loaded them for `production` before.
 - Type declarations for the `/plugin` and `/helpers` subpaths are now published.
 - `pp-dev next-build` resolves `build.zip.inDir` from the project root. `withPPDev()` now merges `server` and `users` field by field and reads the root the command was given.
 - `app.name` is now used for the base path, ZIP and sync everywhere, and an `MI_ACCESS_TOKEN` set in the shell is kept across config reloads.
