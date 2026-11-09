@@ -12,8 +12,10 @@ export function registerOptimizeCommand(cli: CAC): void {
     .action(async (root: string, options: { force?: boolean } & GlobalCLIOptions) => {
       filterDuplicateOptions(options);
       try {
-        const mode = options.mode || 'production';
-        // As Vite's own `optimize` resolves it: a config function that goes by `command` saw `build`.
+        // As Vite's own `optimize` resolves it: `serve`, and its mode, `development` without `--mode`.
+        // The config file and the pp-dev env are loaded in the mode `resolveConfig` falls back to below
+        // (a `mode` the file sets still wins there, as in Vite).
+        const mode = options.mode || 'development';
         const { config } = await loadCommandViteConfig({
           root,
           mode,
