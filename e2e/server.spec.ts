@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
 
-const testType = process.env.TEST_TYPE;
-
 test('is redirected to the page', async ({ page, baseURL }) => {
   if (!baseURL) {
     throw new Error('baseURL is not set');
@@ -48,8 +46,5 @@ test('pp-dev toolbar is available', async ({ page, baseURL }) => {
   await page.goto(baseURL);
 
   // Helper class name "pp-dev-info"
-
-  test.skip(testType?.includes('nextjs') ?? false, 'Skipping toolbar test for Next.js');
-
   await expect(page.locator('.pp-dev-info')).toBeVisible();
 });

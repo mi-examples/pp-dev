@@ -1,8 +1,9 @@
 import { createHash } from 'crypto';
-import { execSync } from 'child_process';
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { execFile } from 'child_process';
+import { mkdir, readdir, readFile, stat, writeFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
 import { normalizeRelativeOutputPath, resolveOutputFilePath } from './output-path.js';
 import { normalizeSvgFilesInDir } from './helpers/svg-mi-normalize.helper.js';
 
@@ -18,7 +19,18 @@ import { normalizeSvgFilesInDir } from './helpers/svg-mi-normalize.helper.js';
  * hash never matches what MI actually stores once synced, regardless of source content
  * (PP-4123). This is the one place shared by both build paths, so it's the natural
  * choke point to keep the manifest honest about what will really end up on MI.
+ *
+ * Asynchronous throughout (file I/O, `git`): under `pp-dev next` it runs inside the dev server
+ * after a sync's `next build`, where synchronous hashing of the whole output blocked the proxy and
+ * the dev panel's WebSocket until it finished.
  */
+
+const execFileAsync = promisify(execFile);
+
+/** `stat` that answers `undefined` for a path that doesn't exist. */
+async function statIfExists(target: string) {
+  return await stat(target).catch(() => undefined);
+}
 
 export interface VersionManifestConfig {
   outDir: string;
@@ -60,8 +72,8 @@ export const BUILD_MANIFEST_SCHEMA_VERSION = 1;
 export const BUILD_MANIFEST_FILE_NAME = 'BUILD-MANIFEST.json';
 export const DEFAULT_VERSION_FILE_TEMPLATE = 'VERSION-v{packageversion}-{currentDate}.json';
 
-function walkDir(dir: string, baseDir: string, excludeFiles: ReadonlySet<string> = new Set()): string[] {
-  const entries = readdirSync(dir, { withFileTypes: true });
+async function walkDir(dir: string, baseDir: string, excludeFiles: ReadonlySet<string> = new Set()): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
 
   for (const entry of entries) {
@@ -69,7 +81,7 @@ function walkDir(dir: string, baseDir: string, excludeFiles: ReadonlySet<string>
     const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
 
     if (entry.isDirectory()) {
-      files.push(...walkDir(fullPath, baseDir, excludeFiles));
+      files.push(...(await walkDir(fullPath, baseDir, excludeFiles)));
     } else if (entry.isFile() && !excludeFiles.has(relativePath)) {
       files.push(fullPath);
     }
@@ -78,8 +90,8 @@ function walkDir(dir: string, baseDir: string, excludeFiles: ReadonlySet<string>
   return files;
 }
 
-function sha256OfContent(filePath: string): string {
-  const content = readFileSync(filePath);
+async function sha256OfContent(filePath: string): Promise<string> {
+  const content = await readFile(filePath);
 
   return createHash('sha256').update(content).digest('hex');
 }
@@ -140,17 +152,17 @@ function normalizeRepositoryUrl(url: string): string {
   return stripUrlUserInfo(normalizedUrl);
 }
 
-function resolveHelperVersion(): string {
+async function resolveHelperVersion(): Promise<string> {
   const modulePath = fileURLToPath(import.meta.url);
   let currentDir = path.dirname(modulePath);
 
   while (true) {
     const packageJsonPath = path.join(currentDir, 'package.json');
-    const packageStat = statSync(packageJsonPath, { throwIfNoEntry: false });
+    const packageStat = await statIfExists(packageJsonPath);
 
     if (packageStat?.isFile()) {
       try {
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { version?: unknown };
+        const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8')) as { version?: unknown };
 
         if (typeof packageJson.version === 'string') {
           return packageJson.version;
@@ -170,7 +182,7 @@ function resolveHelperVersion(): string {
   }
 }
 
-function resolveBranchName(configBranchName?: string): string | undefined {
+async function resolveBranchName(configBranchName: string | undefined, cwd: string): Promise<string | undefined> {
   if (typeof configBranchName === 'string' && configBranchName.trim()) {
     return configBranchName.trim();
   }
@@ -197,10 +209,12 @@ function resolveBranchName(configBranchName?: string): string | undefined {
   }
 
   try {
-    const currentBranchName = execSync('git rev-parse --abbrev-ref HEAD', {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+      windowsHide: true,
+    });
+    const currentBranchName = stdout.trim();
 
     if (currentBranchName && currentBranchName !== 'HEAD') {
       return currentBranchName;
@@ -216,7 +230,7 @@ function resolveBranchName(configBranchName?: string): string | undefined {
  * Generate and write `VERSION-*.json` + `BUILD-MANIFEST.json` into `config.outDir`.
  * No-op when `config.enabled === false` or `outDir` is not an existing directory.
  */
-export function writeBuildVersionManifest(config: VersionManifestConfig): void {
+export async function writeBuildVersionManifest(config: VersionManifestConfig): Promise<void> {
   if (config.enabled === false) {
     return;
   }
@@ -224,11 +238,11 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
   const { outDir, root = process.cwd(), versionFileTemplate, packageVersion } = config;
   const outDirResolved = path.resolve(root, outDir);
 
-  if (!statSync(outDirResolved, { throwIfNoEntry: false })?.isDirectory()) {
+  if (!(await statIfExists(outDirResolved))?.isDirectory()) {
     return;
   }
 
-  normalizeSvgFilesInDir(outDirResolved);
+  await normalizeSvgFilesInDir(outDirResolved);
 
   const now = new Date();
   const manifestDate = now.toISOString();
@@ -240,19 +254,19 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
   );
   const manifestPath = resolveOutputFilePath(outDirResolved, versionFileName, 'VERSION output file name');
 
-  const allPaths = walkDir(outDirResolved, outDirResolved, new Set([versionFileName, BUILD_MANIFEST_FILE_NAME]));
+  const allPaths = await walkDir(outDirResolved, outDirResolved, new Set([versionFileName, BUILD_MANIFEST_FILE_NAME]));
   const files: Record<string, string> = {};
 
   for (const filePath of allPaths) {
     const relativePath = path.relative(outDirResolved, filePath).replace(/\\/g, '/');
 
-    files[relativePath] = sha256OfContent(filePath);
+    files[relativePath] = await sha256OfContent(filePath);
   }
 
   const checksum = computeChecksum(files);
   const buildFingerprint = computeBuildFingerprint(files);
-  const helperVersion = resolveHelperVersion();
-  const branchName = resolveBranchName(config.packageBranchName);
+  const helperVersion = await resolveHelperVersion();
+  const branchName = await resolveBranchName(config.packageBranchName, root);
 
   const manifest: VersionManifest = {
     schemaVersion: VERSION_FILE_SCHEMA_VERSION,
@@ -279,7 +293,7 @@ export function writeBuildVersionManifest(config: VersionManifestConfig): void {
     },
   };
 
-  mkdirSync(path.dirname(manifestPath), { recursive: true });
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
-  writeFileSync(buildManifestPath, JSON.stringify(buildManifest, null, 2), 'utf-8');
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+  await writeFile(buildManifestPath, JSON.stringify(buildManifest, null, 2), 'utf-8');
 }

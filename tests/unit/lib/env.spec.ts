@@ -61,4 +61,26 @@ describe('loadPPDevEnv', () => {
     expect(process.env.MI_BACKEND_URL).toBe('https://a.example.com');
     expect(process.env.UNRELATED_VALUE).toBe('keep-me');
   });
+
+  it('keeps MI_ values set in the real environment across loads (e.g. MI_ACCESS_TOKEN in CI)', () => {
+    process.env.MI_ACCESS_TOKEN = 'from-ci';
+    fs.writeFileSync(path.join(rootA, '.env'), 'MI_BACKEND_URL=https://a.example.com\n');
+
+    loadPPDevEnv('development', rootA);
+    loadPPDevEnv('development', rootA);
+    loadPPDevEnv('development', rootB);
+
+    expect(process.env.MI_ACCESS_TOKEN).toBe('from-ci');
+    expect(process.env.MI_BACKEND_URL).toBeUndefined();
+  });
+
+  it('lets the real environment win over an env file', () => {
+    process.env.MI_ACCESS_TOKEN = 'from-ci';
+    fs.writeFileSync(path.join(rootA, '.env'), 'MI_ACCESS_TOKEN=from-file\n');
+
+    loadPPDevEnv('development', rootA);
+    loadPPDevEnv('development', rootA);
+
+    expect(process.env.MI_ACCESS_TOKEN).toBe('from-ci');
+  });
 });

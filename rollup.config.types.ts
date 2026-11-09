@@ -7,10 +7,7 @@ import { builtinModules } from 'module';
 
 const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
 
-const externalDeps = [
-  ...Object.keys(pkg.dependencies || {}),
-  ...Object.keys(pkg.peerDependencies || {}),
-];
+const externalDeps = [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.peerDependencies || {})];
 
 const nodeBuiltins = new Set(builtinModules.flatMap((mod) => [mod, `node:${mod}`]));
 const additionalExternal = new Set(['postcss', 'rollup', 'vite', 'estree']);
@@ -22,8 +19,15 @@ const isExternal = (id) => {
   return externalDeps.some((dep) => id.startsWith(`${dep}/`));
 };
 
+// One entry per subpath in package.json `exports` with a `types` target: with `index` alone, the
+// published `dist/types/` held one file, and `@metricinsights/pp-dev/plugin` and `/helpers` had no
+// types for their users (TS7016).
 export default defineConfig({
-  input: 'src/index.ts',
+  input: {
+    index: 'src/index.ts',
+    plugin: 'src/plugin.ts',
+    helpers: 'src/helpers.ts',
+  },
   plugins: [
     dts({
       tsconfig: './tsconfig.types.json',

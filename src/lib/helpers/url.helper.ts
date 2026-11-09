@@ -1,29 +1,58 @@
 import { URL } from 'url';
 import type { ServerResponse } from 'http';
 
-export const stringIsAValidUrl = (s: string, protocols: string[]) => {
-  try {
-    const parsed = new URL(s);
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    if (protocols) {
-      return parsed.protocol ? protocols.map((x) => `${x.toLowerCase()}:`).includes(parsed.protocol) : false;
-    }
+/** Compiled once per host: {@link urlReplacer} runs over every proxied text body. */
+const urlReplaceRegExps = new Map<string, RegExp>();
 
-    return true;
-  } catch (err) {
-    return false;
+/** Compiled once per host, see {@link getOriginRegExp}. */
+const originRegExps = new Map<string, RegExp>();
+
+/** Matches an origin on {@link host} (either scheme) at the start of a URL, such as a `Referer`. */
+export function getOriginRegExp(host: string): RegExp {
+  let regExp = originRegExps.get(host);
+
+  if (!regExp) {
+    regExp = new RegExp(`^https?://${escapeRegExp(host)}(?=[/?#]|$)`, 'i');
+    originRegExps.set(host, regExp);
   }
-};
 
+  return regExp;
+}
+
+type UrlReplaceGroups = { keep?: string; url: string; secure?: string; slashes: string; port?: string };
+
+/**
+ * Points the absolute URLs on `originalHost` in `content` (either scheme, and JSON's `\/` slashes) at
+ * `destinationHost`, over http. `!!` before a URL keeps it as it is, without the marker.
+ *
+ * A port written after a host that has none belongs to the URL's origin: the scheme's default
+ * (`https://mi.example.com:443`) is the same origin and is replaced with it, and any other is
+ * another origin, left alone. Both became `http://<destination>:<port>`, which no server answers.
+ */
 export const urlReplacer = (originalHost: string, destinationHost: string, content: string) => {
-  const urlReplaceRegExp = new RegExp(`(!!)?(https?(:(\\\\)?/(\\\\)?/)${originalHost})`, 'gi');
+  let urlReplaceRegExp = urlReplaceRegExps.get(originalHost);
 
-  return content.replace(urlReplaceRegExp, (substring, ...args) => {
-    if (substring.startsWith('!!')) {
-      return args[1];
+  if (!urlReplaceRegExp) {
+    // A port ends the host; an IPv6 host (`[2001:db8::1]`) has colons of its own and ends with `]`.
+    const port = /:\d+$/.test(originalHost) ? '' : '(?::(?<port>\\d+))?';
+
+    urlReplaceRegExp = new RegExp(
+      `(?<keep>!!)?(?<url>http(?<secure>s)?(?<slashes>:(?:\\\\)?/(?:\\\\)?/)${escapeRegExp(originalHost)}${port})`,
+      'gi',
+    );
+    urlReplaceRegExps.set(originalHost, urlReplaceRegExp);
+  }
+
+  return content.replace(urlReplaceRegExp, (...args) => {
+    const { keep, url, secure, slashes, port } = args.at(-1) as UrlReplaceGroups;
+
+    if (keep || (port && port !== (secure ? '443' : '80'))) {
+      return url;
     }
 
-    return `http${args[2]}${destinationHost}`;
+    return `http${slashes}${destinationHost}`;
   });
 };
 
@@ -47,12 +76,6 @@ export const redirect = (res: ServerResponse, url: string, statusCode?: number) 
 
 export function cutUrlParams(url: string) {
   const urlParts = url.split('?');
-
-  return urlParts[0];
-}
-
-export function cutUrlHash(url: string) {
-  const urlParts = url.split('#');
 
   return urlParts[0];
 }

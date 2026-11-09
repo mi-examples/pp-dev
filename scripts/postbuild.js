@@ -1,60 +1,26 @@
 import path from 'path';
 import fs from 'fs';
 
-const appDirectory = fs.realpathSync(process.cwd());
-const packageJsonPath = path.resolve(appDirectory, 'package.json');
+/**
+ * Marks each build format for Node: `dist/esm/*.js` is ESM and `dist/cjs/*.js` is CommonJS, in a
+ * package whose own `type` is one of the two. A `package.json` with the matching `type` in each
+ * folder is all that takes; the full package.json copied here before (bin, exports, dependencies)
+ * and the README/CHANGELOG copies only made the tarball bigger.
+ */
+const distPath = path.resolve(fs.realpathSync(process.cwd()), 'dist');
 
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-const distPath = path.resolve(appDirectory, 'dist');
+for (const [folder, type] of [
+  ['esm', 'module'],
+  ['cjs', 'commonjs'],
+]) {
+  const dir = path.resolve(distPath, folder);
 
-const distEsmPath = path.resolve(distPath, 'esm');
-const distCjsPath = path.resolve(distPath, 'cjs');
-
-const distEsmPackageJsonPath = path.resolve(distEsmPath, 'package.json');
-const distCjsPackageJsonPath = path.resolve(distCjsPath, 'package.json');
-
-// Create package.json files for each format
-const esmPackageJson = {
-  ...packageJson,
-  type: 'module',
-  // Remove unnecessary fields for distribution
-  scripts: undefined,
-  devDependencies: undefined,
-  private: false,
-};
-
-const cjsPackageJson = {
-  ...packageJson,
-  type: 'commonjs',
-  // Remove unnecessary fields for distribution
-  scripts: undefined,
-  devDependencies: undefined,
-  private: false,
-};
-
-// Ensure directories exist
-if (!fs.existsSync(distEsmPath)) {
-  fs.mkdirSync(distEsmPath, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.resolve(dir, 'package.json'), `${JSON.stringify({ type }, null, 2)}\n`);
 }
-if (!fs.existsSync(distCjsPath)) {
-  fs.mkdirSync(distCjsPath, { recursive: true });
-}
-
-fs.writeFileSync(distEsmPackageJsonPath, JSON.stringify(esmPackageJson, null, 2));
-fs.writeFileSync(distCjsPackageJsonPath, JSON.stringify(cjsPackageJson, null, 2));
-
-// Copy README and LICENSE to dist for better package distribution
-const filesToCopy = ['README.md', 'LICENSE.md', 'CHANGELOG.md'];
-filesToCopy.forEach((file) => {
-  const sourcePath = path.resolve(appDirectory, file);
-  const targetPath = path.resolve(distPath, file);
-  if (fs.existsSync(sourcePath)) {
-    fs.copyFileSync(sourcePath, targetPath);
-  }
-});
 
 console.log('✅ Post-build processing completed successfully');
-console.log(`📦 ESM build: ${distEsmPath}`);
-console.log(`📦 CJS build: ${distCjsPath}`);
+console.log(`📦 ESM build: ${path.resolve(distPath, 'esm')}`);
+console.log(`📦 CJS build: ${path.resolve(distPath, 'cjs')}`);
 console.log(`📦 Types: ${path.resolve(distPath, 'types')}`);
 console.log(`📦 Client: ${path.resolve(distPath, 'client')}`);

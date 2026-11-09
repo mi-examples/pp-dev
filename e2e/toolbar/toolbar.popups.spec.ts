@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const testType = process.env.TEST_TYPE;
-
 test.describe('Toolbar Popup Notifications', () => {
-  // Skip toolbar tests for Next.js
-  test.skip(testType?.includes('nextjs') ?? false, 'Skipping toolbar tests for Next.js');
-
   test('should show popup with correct structure when triggered', async ({ page, baseURL }) => {
     if (!baseURL) {
       throw new Error('baseURL is not set');

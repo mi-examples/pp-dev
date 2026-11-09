@@ -4,9 +4,11 @@ import { cutUrlParams, redirect } from './helpers/url.helper.js';
 import { Headers, MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
+import { isTokenError } from './helpers/token.helper.js';
 import { ServerResponse } from 'http';
 import { cache, onProxyCacheInvalidate } from './proxy-cache.middleware.js';
 import { authProvider } from './auth.provider.js';
+import { getUserNameFromHost, userRegistry } from './user-registry.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 type IncomingMessage = Connect.IncomingMessage;
@@ -22,19 +24,40 @@ interface LoadPPDataOptions {
   timeout?: number;
 }
 
-// Performance optimization: Simple cache for API responses
-const apiResponseCache = new Map<string, { timestamp: number; data: any }>();
+/**
+ * The page data loads made, per MiAPI: a load belongs to the instance that made it, which is the
+ * one holding the template and variables it brought. A dev server restarted in process (`pp-dev`
+ * on a config change, or Vite's own restart) builds a new chain with a new MiAPI; served from a
+ * load the old one made, the new one had no template to build the page with, and the dev panel's
+ * MI calls went without the headers a page load stores.
+ */
+const apiResponseCaches = new WeakMap<MiAPI, Map<string, { timestamp: number; epoch: number; data: any }>>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
-function getCachedResponse(key: string): any | null {
-  const cached = apiResponseCache.get(key);
+/** Bumped to forget every load at once, whichever MiAPI made it. */
+let cacheEpoch = 0;
+
+function cacheOf(mi: MiAPI): Map<string, { timestamp: number; epoch: number; data: any }> {
+  let cache = apiResponseCaches.get(mi);
+
+  if (!cache) {
+    cache = new Map();
+    apiResponseCaches.set(mi, cache);
+  }
+
+  return cache;
+}
+
+function getCachedResponse(mi: MiAPI, key: string): any | null {
+  const cache = cacheOf(mi);
+  const cached = cache.get(key);
 
   if (!cached) {
     return null;
   }
 
-  if (Date.now() - cached.timestamp > CACHE_TTL) {
-    apiResponseCache.delete(key);
+  if (cached.epoch !== cacheEpoch || Date.now() - cached.timestamp > CACHE_TTL) {
+    cache.delete(key);
 
     return null;
   }
@@ -42,15 +65,49 @@ function getCachedResponse(key: string): any | null {
   return cached.data;
 }
 
-function setCachedResponse(key: string, data: any): void {
-  apiResponseCache.set(key, { timestamp: Date.now(), data });
+function setCachedResponse(mi: MiAPI, key: string, data: any): void {
+  cacheOf(mi).set(key, { timestamp: Date.now(), epoch: cacheEpoch, data });
 }
 
 // A cached "page data loaded" belongs to the MI session that loaded it.
-onProxyCacheInvalidate(() => apiResponseCache.clear());
+onProxyCacheInvalidate(() => {
+  cacheEpoch += 1;
+});
+
+/**
+ * Whether the last page data load succeeded. One that succeeds after none did, or after one failed,
+ * is a login: what the proxy cached before it was answered to a logged-out browser. A load repeated
+ * only because {@link apiResponseCache} expired is not, and must not drop every user's cached
+ * responses (session changes already drop theirs through `invalidateProxyCache`).
+ */
+let pageDataLoaded = false;
+
+function onPageDataLoaded(logger: ReturnType<typeof createLogger>): void {
+  if (pageDataLoaded) {
+    return;
+  }
+
+  pageDataLoaded = true;
+  logger.info(colors.blue('Clearing proxy cache after successful login'));
+  cache.clear();
+}
+
+function onPageDataLoadFailed(): void {
+  pageDataLoaded = false;
+  authProvider.reset();
+}
 
 // Constants
 const DEFAULT_REDIRECT_URL = '/home?proxyRedirect=';
+
+/**
+ * Where the browser goes when MI refuses the page data for want of a session or token: MI's home,
+ * proxied, which sends a visitor without a session to its login page (where the proxy adds the
+ * Token Login form), and a logged-in one back here to `/home`, which loads the page data again and
+ * then redirects to the app. The same for every MI version: a v7 instance's app was sent to its
+ * own base path instead, and asked for the page data again there, without end.
+ */
+const AUTH_FAILURE_REDIRECT_URL = `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`;
 
 /**
  * Whether the request is a top-level HTML document navigation (as opposed to an
@@ -71,11 +128,37 @@ function isHtmlDocumentRequest(req: IncomingMessage): boolean {
 }
 
 /**
- * Whether the request path is served by this dev app (under its base path).
- * An empty/`/` base means the app is served from the root.
+ * The headers page data is loaded with. MiAPI keeps them for the dev panel's own MI calls (sync,
+ * page variables), which always go as the original user, so a saved user's host doesn't pass its
+ * credentials on: its MI session cookie, or a token the page sends (`Authorization`, or MI's
+ * `Token`), which MiAPI would use instead of the original user's. Neither does localhost while a
+ * saved user is the default: its page sends that user's tokens, though its cookies are still yours.
  */
-function isUnderBase(requestPath: string, base?: string): boolean {
-  if (!base || base === '/') {
+function getPageDataHeaders(req: IncomingMessage): Headers {
+  const headers = (req.headers ?? {}) as Headers;
+  const onUserHost = Boolean(getUserNameFromHost(req.headers?.host));
+
+  if (!onUserHost && !userRegistry.resolve(req)?.user) {
+    return headers;
+  }
+
+  const { cookie, authorization: _authorization, token: _token, ...rest } = headers;
+
+  return onUserHost || cookie === undefined ? rest : { ...rest, cookie };
+}
+
+/**
+ * Whether the request path is served by this dev app (under its base path). A `/` base means the
+ * app is served from the root. Without a base, nothing is: taken for "everything", a navigation to
+ * any proxied MI page (`/login` first of all) loaded the page data, and with an expired session the
+ * auth failure sent the browser back to MI, which sent it to `/login` again, without end.
+ */
+export function isUnderBase(requestPath: string, base?: string): boolean {
+  if (!base) {
+    return false;
+  }
+
+  if (base === '/') {
     return true;
   }
 
@@ -93,7 +176,7 @@ export function initLoadPPData(
   mi: MiAPI,
   opts: Partial<NormalizedVitePPDevOptions> & { base?: string; appBase?: string },
 ): NextHandleFunction {
-  const { templateLess = false, miHudLess = false, appId, base, appBase, v7Features } = opts;
+  const { templateLess = false, miHudLess = false, appId, base, appBase } = opts;
 
   const logger = createLogger();
 
@@ -132,33 +215,30 @@ export function initLoadPPData(
       ) {
         logger.info(colors.blue('Trying to authenticate and redirect to base'));
 
+        // The loads report an error that is not about authorization (MI down, a 5xx) through
+        // `next(error)`. Kept here, it is passed on below instead of being taken for a success.
+        let loadError: unknown;
+        const recordLoadError = (error?: unknown) => {
+          loadError = error;
+        };
+
         try {
           if (!isNeedTemplateLoad) {
             await handlePageInfoOnly(
               mi,
-              {
-                templateLess,
-                miHudLess,
-                appId: appId!,
-                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-              },
+              { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
               req,
               res,
-              () => {},
+              recordLoadError,
               logger,
             );
           } else {
             await handleTemplateLoad(
               mi,
-              {
-                templateLess,
-                miHudLess,
-                appId: appId!,
-                redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-              },
+              { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
               req,
               res,
-              () => {},
+              recordLoadError,
               logger,
             );
           }
@@ -169,6 +249,10 @@ export function initLoadPPData(
           // login loop.
           if (res.headersSent || res.writableEnded) {
             return;
+          }
+
+          if (loadError) {
+            return next(loadError);
           }
 
           authProvider.setRedirected(true);
@@ -194,12 +278,7 @@ export function initLoadPPData(
       if (!isNeedTemplateLoad) {
         const result = await handlePageInfoOnly(
           mi,
-          {
-            templateLess,
-            miHudLess,
-            appId: appId!,
-            redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-          },
+          { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
           req,
           res,
           next,
@@ -211,12 +290,7 @@ export function initLoadPPData(
 
       const result = await handleTemplateLoad(
         mi,
-        {
-          templateLess,
-          miHudLess,
-          appId: appId!,
-          redirectUrl: v7Features && base ? `${base}` : `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
-        },
+        { templateLess, miHudLess, appId: appId!, redirectUrl: AUTH_FAILURE_REDIRECT_URL },
         req,
         res,
         next,
@@ -231,7 +305,7 @@ export function initLoadPPData(
         ),
       );
 
-      authProvider.reset();
+      onPageDataLoadFailed();
 
       return next(error);
     }
@@ -259,14 +333,14 @@ async function handlePageInfoOnly(
     return next(error);
   }
 
-  const headers = (req.headers ?? {}) as Headers;
+  const headers = getPageDataHeaders(req);
 
   logger.info(colors.green('Start loading page info'));
 
   try {
     // Performance optimization: Check cache first
     const cacheKey = `pageInfo:${appId}`;
-    const cachedData = getCachedResponse(cacheKey);
+    const cachedData = getCachedResponse(mi, cacheKey);
 
     if (cachedData) {
       logger.info(colors.green('Page info loaded from cache'));
@@ -276,11 +350,10 @@ async function handlePageInfoOnly(
 
     await mi.getPageInfo(appId, headers);
 
-    logger.info(colors.blue('Clearing proxy cache after successful login'));
-    cache.clear();
+    onPageDataLoaded(logger);
 
     // Cache the successful response
-    setCachedResponse(cacheKey, { success: true });
+    setCachedResponse(mi, cacheKey, { success: true });
 
     authProvider.updateState({ isAuthenticated: true });
 
@@ -288,12 +361,12 @@ async function handlePageInfoOnly(
 
     return next();
   } catch (error) {
-    authProvider.reset();
+    onPageDataLoadFailed();
 
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+      redirectUrl || AUTH_FAILURE_REDIRECT_URL,
       res,
       next,
       logger,
@@ -314,14 +387,14 @@ async function handleTemplateLoad(
   logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
   const { templateLess, appId, redirectOnAuthFailure, redirectUrl } = options;
-  const headers = (req.headers ?? {}) as Headers;
+  const headers = getPageDataHeaders(req);
 
   logger.info(colors.green('Start loading page data'));
 
   try {
     // Performance optimization: Check cache first
     const cacheKey = `pageData:${templateLess}:${appId}`;
-    const cachedData = getCachedResponse(cacheKey);
+    const cachedData = getCachedResponse(mi, cacheKey);
 
     if (cachedData) {
       logger.info(colors.green('Page data loaded from cache'));
@@ -334,22 +407,21 @@ async function handleTemplateLoad(
 
     await loadPageData;
 
-    logger.info(colors.blue('Clearing proxy cache after successful login'));
-    cache.clear();
+    onPageDataLoaded(logger);
 
     // Cache the successful response
-    setCachedResponse(cacheKey, { success: true });
+    setCachedResponse(mi, cacheKey, { success: true });
 
     logger.info(colors.green('Page data loaded successfully'));
 
     return next();
   } catch (error) {
-    authProvider.reset();
+    onPageDataLoadFailed();
 
     return handleLoadError(
       error,
       redirectOnAuthFailure ?? true,
-      redirectUrl || `${DEFAULT_REDIRECT_URL}${encodeURIComponent('/')}`,
+      redirectUrl || AUTH_FAILURE_REDIRECT_URL,
       res,
       next,
       logger,
@@ -393,20 +465,20 @@ function handleLoadError(
 }
 
 /**
- * Type guard to check if error is an authorization error
+ * Whether MI refused the request for want of a valid session or token (401, 403, 412), which
+ * logging in again can fix.
+ *
+ * Any other answer must not send the browser to the login flow: a 5xx or an HTML error page from
+ * MI (maintenance, a proxy in between) used to count as "not authorized" here, and the redirect to
+ * `/home?proxyRedirect=` led straight back to the page, which failed again — an endless loop that
+ * hid the real error.
  */
 function isAuthError(error: unknown): boolean {
-  return error !== null && typeof error === 'object' && 'response' in error && error.response !== undefined;
+  return error !== null && typeof error === 'object' && isTokenError(error);
 }
 
-// Export cache management for external use
+/** Forgets every page data load, as at startup: the next successful one counts as a login. */
 export function clearAPICache(): void {
-  apiResponseCache.clear();
-}
-
-export function getAPICacheStats(): { size: number; entries: string[] } {
-  return {
-    size: apiResponseCache.size,
-    entries: Array.from(apiResponseCache.keys()),
-  };
+  cacheEpoch += 1;
+  pageDataLoaded = false;
 }

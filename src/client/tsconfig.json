@@ -9,11 +9,12 @@
     "strict": true,
     "target": "esnext",
     "outDir": "../../dist/client",
+    "rootDir": "..",
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": false,
     "emitDeclarationOnly": false
   },
-  "include": ["./**/*"],
+  "include": ["./**/*", "../shared/**/*"],
   "exclude": ["dist", "node_modules"]
 }

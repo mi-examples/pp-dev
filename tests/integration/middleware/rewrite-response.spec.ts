@@ -4,7 +4,7 @@ import { initRewriteResponse } from '../../../src/lib/rewrite-response.middlewar
 describe('Rewrite Response Middleware', () => {
   let mockReq: any;
   let mockRes: any;
-  let nextFn: ReturnType<typeof vi.fn>;
+  let nextFn: ReturnType<typeof vi.fn<(error?: unknown) => void>>;
 
   beforeEach(() => {
     mockReq = {
@@ -30,13 +30,13 @@ describe('Rewrite Response Middleware', () => {
       removeListener: vi.fn(),
     };
 
-    nextFn = vi.fn();
+    nextFn = vi.fn<(error?: unknown) => void>();
   });
 
   describe('Initialization', () => {
     it('should create middleware function with url matcher and transformer', () => {
       const urlMatcher = (url: string) => url.endsWith('.html');
-      const transformer = (body: string) => Buffer.from(body.toUpperCase());
+      const transformer = (body: Buffer) => Buffer.from(body.toString('utf8').toUpperCase());
 
       const middleware = initRewriteResponse(urlMatcher, transformer);
 
@@ -48,7 +48,7 @@ describe('Rewrite Response Middleware', () => {
     it('should apply transformer when URL matches', () => {
       // The actual middleware passes url, req, and res to the matcher
       const urlMatcher = vi.fn((url: string, _req: any, _res: any) => url.endsWith('index.html'));
-      const transformer = vi.fn((body: string) => Buffer.from(body));
+      const transformer = vi.fn((body: Buffer) => Buffer.from(body));
 
       const middleware = initRewriteResponse(urlMatcher, transformer);
 
@@ -63,7 +63,7 @@ describe('Rewrite Response Middleware', () => {
 
     it('should not apply transformer when URL does not match', () => {
       const urlMatcher = vi.fn((url: string) => url.endsWith('index.html'));
-      const transformer = vi.fn((body: string) => Buffer.from(body));
+      const transformer = vi.fn((body: Buffer) => Buffer.from(body));
 
       const middleware = initRewriteResponse(urlMatcher, transformer);
 
@@ -101,7 +101,7 @@ describe('Rewrite Response Middleware', () => {
   describe('Transformer Function', () => {
     it('should support Buffer return from transformer', () => {
       const urlMatcher = () => true;
-      const transformer = (body: string) => Buffer.from(body.replace('old', 'new'));
+      const transformer = (body: Buffer) => Buffer.from(body.toString('utf8').replace('old', 'new'));
 
       const middleware = initRewriteResponse(urlMatcher, transformer);
 

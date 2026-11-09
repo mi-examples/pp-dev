@@ -1,7 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test';
 
-const testType = process.env.TEST_TYPE;
-
 async function waitForPanelTransition(minimizeBtn: Locator): Promise<void> {
   await minimizeBtn.evaluate(async (button) => {
     const panel = button.closest('.pp-dev-info');
@@ -11,9 +9,6 @@ async function waitForPanelTransition(minimizeBtn: Locator): Promise<void> {
 }
 
 test.describe('Toolbar Minimize Functionality', () => {
-  // Skip toolbar tests for Next.js
-  test.skip(testType?.includes('nextjs') ?? false, 'Skipping toolbar tests for Next.js');
-
   test('should minimize toolbar when minimize button is clicked', async ({ page, baseURL }) => {
     if (!baseURL) {
       throw new Error('baseURL is not set');

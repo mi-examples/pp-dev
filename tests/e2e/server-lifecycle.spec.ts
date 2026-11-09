@@ -5,149 +5,116 @@
  * VPN-only MI instance during startup.
  */
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { spawn, execSync, type ChildProcess } from 'child_process';
+import * as http from 'http';
+import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs';
+import { randomBytes } from 'crypto';
+import { gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
-import { startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
-
-// On Windows, proc.kill('SIGTERM') only kills the shell (npm.cmd), not the
-// node/next child processes. POSIX uses a detached process group for the same reason.
-function killTree(proc: ChildProcess): void {
-  if (!proc.pid) return;
-  if (process.platform === 'win32') {
-    try { execSync(`taskkill /PID ${proc.pid} /T /F`, { stdio: 'ignore' }); } catch { /* already gone */ }
-  } else {
-    try { process.kill(-proc.pid, 'SIGTERM'); } catch { proc.kill('SIGTERM'); }
-  }
-}
+import { MOCK_REQUESTS_PATH, startMockMiServer, type MockMiServer } from '../mock-mi/server.js';
+import { pointConfigAt, startDevServer, type DevServerProcess } from './helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_APP_DIR = path.resolve(__dirname, '../test-nextjs');
 const CONFIG_PATH = path.join(TEST_APP_DIR, 'pp-dev.config.ts');
+/**
+ * The main suite's port, given to the server: on Next's default 3000 another server running there
+ * (a developer's own `pp-dev`) answered the requests, or Next moved to 3001 and the suite talked to
+ * the wrong one. Apart from the Playwright runner's (3105–3107) and the other suites' ports.
+ */
+const PORT_WITH_BACKEND = 3101;
 
-// ── ProcOutput — persistent line accumulator so no data event is missed ──
-
-interface ProcOutput {
-  lines: string[];
-  waitForLine(pattern: RegExp, timeoutMs?: number): Promise<string>;
-  kill(): void;
-}
-
-function startPPDev(extraEnv?: Record<string, string>): ProcOutput {
+function startPPDev(extraEnv?: Record<string, string>, args: string[] = []): DevServerProcess {
   // Use npm run dev so npm resolves the node binary via nvm4w correctly.
   // process.execPath on nvm4w points to a shim that breaks chokidar's native watcher.
-  const proc: ChildProcess = spawn('npm', ['run', 'dev'], {
+  return startDevServer('npm', ['run', 'dev', ...(args.length ? ['--', ...args] : [])], {
     cwd: TEST_APP_DIR,
-    env: { ...process.env, NO_COLOR: '1', ...extraEnv },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    env: extraEnv,
     shell: true,
-    detached: process.platform !== 'win32',
+    echo: true,
   });
+}
 
-  const lines: string[] = [];
-  const listeners: Array<(line: string) => void> = [];
-  let lineBuffer = '';
+/** A GET to the dev server with the given `Host` (fetch can't set it), as a rebinding page would send. */
+function getWithHost(port: number, urlPath: string, host: string) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const request = http.get({ host: 'localhost', port, path: urlPath, agent: false, headers: { host } }, (res) => {
+      const chunks: Buffer[] = [];
 
-  const onData = (data: Buffer) => {
-    const text = data.toString();
-    process.stdout.write(text);
-    lineBuffer += text;
-    const parts = lineBuffer.split(/\r?\n/);
-    lineBuffer = parts.pop() ?? '';
-    for (const raw of parts) {
-      const line = raw.trim();
-      if (!line) continue;
-      lines.push(line);
-      for (const fn of [...listeners]) fn(line);
-    }
-  };
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+    });
 
-  proc.stdout?.on('data', onData);
-  proc.stderr?.on('data', onData);
+    request.setTimeout(30_000, () => request.destroy(new Error(`GET ${urlPath} timed out`)));
+    request.on('error', reject);
+  });
+}
 
-  return {
-    lines,
+/**
+ * The status line the dev server answers a WebSocket upgrade to `urlPath` with, from a page on
+ * `host` (or on `origin`, through a tunnel that rewrites Host); `'closed'` when it closes the
+ * connection without one. Rejects when it doesn't answer.
+ */
+function upgradeStatusWithHost(port: number, urlPath: string, host: string, origin = `http://${host}`) {
+  return new Promise<string>((resolve, reject) => {
+    const socket = net.connect({ host: 'localhost', port });
+    let received = '';
 
-    waitForLine(pattern: RegExp, timeoutMs = 30_000): Promise<string> {
-      // Check already-buffered lines first
-      const buffered = lines.find((l) => pattern.test(l));
-      if (buffered) return Promise.resolve(buffered);
+    socket.setTimeout(10_000, () => socket.destroy(new Error(`upgrade ${urlPath} timed out`)));
+    socket.on('data', (chunk: Buffer) => {
+      received += chunk.toString('latin1');
 
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          const idx = listeners.indexOf(onLine);
-          if (idx !== -1) listeners.splice(idx, 1);
-          reject(new Error(`Timeout (${timeoutMs}ms) waiting for: ${pattern}`));
-        }, timeoutMs);
-
-        const onLine = (line: string) => {
-          if (pattern.test(line)) {
-            clearTimeout(timer);
-            const idx = listeners.indexOf(onLine);
-            if (idx !== -1) listeners.splice(idx, 1);
-            resolve(line);
-          }
-        };
-        listeners.push(onLine);
-
-        // Re-check in case lines arrived between the buffered check and listener registration
-        const recheck = lines.find((l) => pattern.test(l));
-        if (recheck) {
-          clearTimeout(timer);
-          const idx = listeners.indexOf(onLine);
-          if (idx !== -1) listeners.splice(idx, 1);
-          resolve(recheck);
-        }
-      });
-    },
-
-    kill: () => killTree(proc),
-  };
+      if (received.includes('\r\n')) {
+        socket.destroy();
+        resolve(received.split('\r\n')[0]);
+      }
+    });
+    socket.on('close', () => resolve(received ? received.split('\r\n')[0] : 'closed'));
+    socket.on('error', reject);
+    socket.write(
+      [
+        `GET ${urlPath} HTTP/1.1`,
+        `Host: ${host}`,
+        `Origin: ${origin}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        // Generated: a literal key reads like a credential to secret scanners.
+        `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+        'Sec-WebSocket-Version: 13',
+        '',
+        '',
+      ].join('\r\n'),
+    );
+  });
 }
 
 // ── Suite ─────────────────────────────────────────────────────────────────
 
 describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
-  let ppdev: ProcOutput;
+  let ppdev: DevServerProcess;
   let mockMi: MockMiServer;
-  let originalConfig: string;
+  let config: { restore(): void } | undefined;
 
   beforeAll(async () => {
     mockMi = await startMockMiServer({ mode: 'replay', cassetteName: 'startup' });
-    originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    const patchedConfig = originalConfig.replace(
-      /url:\s*['"]https?:\/\/[^'"]+['"]/,
-      `url: '${mockMi.url}'`,
-    );
-
-    if (patchedConfig === originalConfig) {
-      throw new Error('Could not patch test pp-dev config to use mock-mi');
-    }
-
-    fs.writeFileSync(CONFIG_PATH, patchedConfig);
-
     // Start pp-dev against mock-mi so CI never depends on the VPN-only MI instance.
-    ppdev = startPPDev();
+    config = pointConfigAt(CONFIG_PATH, mockMi.url);
+    ppdev = startPPDev(undefined, ['--port', String(PORT_WITH_BACKEND)]);
     // Wait for the very last startup log so all startup lines are in ppdev.lines
-    await ppdev.waitForLine(/Process event handlers registered/i, 60_000);
+    await ppdev.waitForLine(/Config file watcher started/i, 60_000);
   }, 90_000);
 
   afterAll(async () => {
     ppdev?.kill();
-    // Ensure config was not left modified by any test
-    const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    const restored = (originalConfig ?? content).replace(/\n\/\/ restart-trigger\n/g, '');
-    if (restored !== content) fs.writeFileSync(CONFIG_PATH, restored);
+    config?.restore();
     await mockMi?.close();
   });
 
   // ── 1: Clean startup ──────────────────────────────────────────────────
 
   it('starts cleanly without errors', () => {
-    const errors = ppdev.lines.filter((l) =>
-      /\[ERROR\]|esbuild error|unhandled exception/i.test(l),
-    );
+    const errors = ppdev.lines.filter((l) => /\[ERROR\]|esbuild error|unhandled exception/i.test(l));
     expect(errors, `Unexpected errors:\n${errors.join('\n')}`).toHaveLength(0);
     // Verify server reached the ready state
     expect(ppdev.lines.some((l) => /pp-dev Next\.js server running/i.test(l))).toBe(true);
@@ -163,7 +130,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   // ── 3: HTTP sanity-check ──────────────────────────────────────────────
 
   it('serves HTTP responses', async () => {
-    const res = await fetch('http://localhost:3000/', {
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/`, {
       redirect: 'manual',
       signal: AbortSignal.timeout(10_000),
     });
@@ -172,8 +139,9 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   });
 
   it('loads page data from mock-mi cassette', async () => {
-    const res = await fetch('http://localhost:3000/pl/pp-dev-test-template/', {
-      signal: AbortSignal.timeout(10_000),
+    // The first request compiles the page in Next.js dev: 9-10 s on a cold `.next` cache.
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/pl/pp-dev-test-template/`, {
+      signal: AbortSignal.timeout(30_000),
     });
 
     expect(res.status).toBeLessThan(500);
@@ -182,7 +150,7 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
   });
 
   it('proxies MI data requests through mock-mi cassette', async () => {
-    const res = await fetch('http://localhost:3000/data/page/index/auth/info', {
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/data/page/index/auth/info`, {
       signal: AbortSignal.timeout(10_000),
     });
 
@@ -190,5 +158,232 @@ describe('pp-dev server lifecycle', { timeout: 60_000 }, () => {
     // Asserts shape, not MI's exact auth-info schema (which has changed under us before) — this
     // is only here to prove the proxy round-trips a real cassette response for this path.
     expect(await res.json()).toMatchObject({ user: expect.any(Object) });
+  });
+
+  // Next.js 16 flushes the headers, the rendered page's Content-Length among them, before it writes
+  // the page: the rewritten page (template, dev panel) is longer and was cut short at that length.
+  // It was also captured gzip-compressed, and the Request Inspector showed those bytes as text.
+  // Without compression accepted (curl, Node clients), Next.js's compression middleware writes the
+  // stale length itself; with gzip it drops the header, so a browser never saw the cut.
+  it.each([
+    ['without compression', {}],
+    ['with gzip', { 'accept-encoding': 'gzip' }],
+  ])(
+    'serves the whole rewritten page %s, and the Request Inspector shows it unpacked',
+    async (_name, encodingHeaders: Record<string, string>) => {
+      const page = await new Promise<{ headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+        const request = http.get(
+          {
+            host: 'localhost',
+            port: PORT_WITH_BACKEND,
+            path: '/pl/pp-dev-test-template/',
+            agent: false,
+            headers: encodingHeaders,
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => resolve({ headers: res.headers, body: Buffer.concat(chunks) }));
+          },
+        );
+
+        request.setTimeout(30_000, () => request.destroy(new Error('page request timed out')));
+        request.on('error', reject);
+      });
+      const html = (page.headers['content-encoding'] === 'gzip' ? gunzipSync(page.body) : page.body).toString('utf8');
+
+      if (page.headers['content-length'] !== undefined) {
+        expect(Number(page.headers['content-length'])).toBe(page.body.length);
+      }
+
+      expect(html.trimEnd()).toMatch(/<\/html>$/);
+      expect(html).toContain('pp-dev-info');
+
+      const list = (await (
+        await fetch(`http://localhost:${PORT_WITH_BACKEND}/@api/requests?search=/pl/pp-dev-test-template/`, {
+          signal: AbortSignal.timeout(10_000),
+        })
+      ).json()) as { requests: { id: string; url: string }[] };
+      // The list runs oldest first, and earlier tests loaded the page too: the request just made is last.
+      const captured = list.requests.findLast((entry) => entry.url === '/pl/pp-dev-test-template/');
+
+      expect(captured).toBeDefined();
+
+      const details = (await (
+        await fetch(`http://localhost:${PORT_WITH_BACKEND}/@api/requests/${captured!.id}`, {
+          signal: AbortSignal.timeout(10_000),
+        })
+      ).json()) as { responseBody: string };
+
+      expect(Buffer.from(details.responseBody, 'base64').toString('utf8')).toContain('</html>');
+    },
+  );
+
+  // DNS rebinding: a page on evil.example:3000 whose name now points at 127.0.0.1 is same-origin
+  // with the dev server, so the Origin check let it use the API and the dev-panel WebSocket (a
+  // template sync uploads to MI with the developer's token). Its Host is still evil.example:3000.
+  it('refuses requests and WebSocket upgrades for a host it was not started for', async () => {
+    for (const urlPath of ['/', '/@api/users', '/@pp-dev/inspector']) {
+      const res = await getWithHost(PORT_WITH_BACKEND, urlPath, `evil.example:${PORT_WITH_BACKEND}`);
+
+      expect(res.status, urlPath).toBe(403);
+      expect(res.body).toContain('this host ("evil.example") is not allowed');
+    }
+
+    expect(await upgradeStatusWithHost(PORT_WITH_BACKEND, '/@pp-dev-hmr', `evil.example:${PORT_WITH_BACKEND}`)).toBe(
+      'HTTP/1.1 403 Forbidden',
+    );
+    expect(await upgradeStatusWithHost(PORT_WITH_BACKEND, '/_next/hmr', `evil.example:${PORT_WITH_BACKEND}`)).toBe(
+      'HTTP/1.1 403 Forbidden',
+    );
+  });
+
+  it('still answers localhost and IP addresses', async () => {
+    expect((await getWithHost(PORT_WITH_BACKEND, '/@api/users', `localhost:${PORT_WITH_BACKEND}`)).status).toBe(200);
+    expect((await getWithHost(PORT_WITH_BACKEND, '/@api/users', `127.0.0.1:${PORT_WITH_BACKEND}`)).status).toBe(200);
+    expect(await upgradeStatusWithHost(PORT_WITH_BACKEND, '/@pp-dev-hmr', `localhost:${PORT_WITH_BACKEND}`)).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+  });
+
+  // The pages carry no icon link, so the browser asks for /favicon.ico at the root, where Next serves
+  // no icon (only under the base path): it got Next's 404. Under `pp-dev` MI answers it through the
+  // proxy; the cassette has MI's icon.
+  it('proxies /favicon.ico to MI, as under pp-dev', async () => {
+    const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}/favicon.ico`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/x-icon');
+    expect(res.headers.get('x-pp-proxy')).toBe('1');
+
+    const received = (await (await fetch(`${mockMi.url}${MOCK_REQUESTS_PATH}`)).json()) as { path: string }[];
+
+    expect(received.map((request) => request.path)).toContain('/favicon.ico');
+  });
+
+  // The page rewrite went by path alone, so the app's own icon under the base path was read as text
+  // and sent corrupted (25 931 bytes became 30 079).
+  it("serves the app's own files under the base path byte for byte", async () => {
+    for (const [urlPath, file] of [
+      ['/pl/pp-dev-test-template/favicon.ico', 'src/app/favicon.ico'],
+      ['/pl/pp-dev-test-template/next.svg', 'public/next.svg'],
+    ]) {
+      const res = await fetch(`http://localhost:${PORT_WITH_BACKEND}${urlPath}`, {
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      expect(res.status, urlPath).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer()).equals(fs.readFileSync(path.join(TEST_APP_DIR, file))), urlPath).toBe(
+        true,
+      );
+    }
+  });
+});
+
+// A standalone page with no backend: no `mi.url`, no `app.id`. `pp-dev next` used to make up a
+// backend (`http://localhost:8080`) for it; without one, it first failed to start ("Custom App ID is
+// required…"), then started without serving the Request Inspector it prints, whose routes were only
+// mounted along with the MI middleware.
+describe('pp-dev next without a backend', { timeout: 60_000 }, () => {
+  const PORT = 3100;
+  let ppdev: DevServerProcess;
+  let originalConfig: string;
+
+  beforeAll(async () => {
+    originalConfig = fs.readFileSync(CONFIG_PATH, 'utf-8');
+    fs.writeFileSync(
+      CONFIG_PATH,
+      [
+        "import { defineConfig } from '@metricinsights/pp-dev';",
+        '',
+        'export default defineConfig({',
+        "  mi: { mode: 'standalone', apiVersion: 7 },",
+        "  app: { type: 'page' },",
+        "  server: { allowedHosts: ['my-app.tunnel.test'] },",
+        '});',
+        '',
+      ].join('\n'),
+    );
+
+    ppdev = startPPDev({ MI_BACKEND_URL: '' }, ['--port', String(PORT)]);
+    await ppdev.waitForLine(/Config file watcher started|Custom App ID is required/i, 60_000);
+  }, 90_000);
+
+  afterAll(() => {
+    ppdev?.kill();
+
+    if (originalConfig !== undefined) {
+      fs.writeFileSync(CONFIG_PATH, originalConfig);
+    }
+  });
+
+  it('starts', () => {
+    const errors = ppdev.lines.filter((l) => /\[ERROR\]|Custom App ID is required|unhandled exception/i.test(l));
+
+    expect(errors, `Unexpected errors:\n${errors.join('\n')}`).toHaveLength(0);
+    expect(ppdev.lines.some((l) => /pp-dev Next\.js server running/i.test(l))).toBe(true);
+    expect(ppdev.lines.some((l) => /Backend URL/i.test(l))).toBe(false);
+  });
+
+  // Before any request Next has no upgrade listener on the server yet, and the Host check has
+  // nowhere to pass an allowed upgrade on to: an open tab's HMR reconnecting after a restart hung.
+  // Runs before the first HTTP request of this suite.
+  it('closes an upgrade it cannot take yet, instead of leaving it hanging', async () => {
+    expect(await upgradeStatusWithHost(PORT, '/p/pp-dev-test-template/_next/hmr', `localhost:${PORT}`)).toBe('closed');
+  });
+
+  it('serves the Request Inspector it advertises', async () => {
+    expect(ppdev.lines.some((l) => /Request Inspector/i.test(l))).toBe(true);
+
+    const page = await fetch(`http://localhost:${PORT}/@pp-dev/inspector`, { signal: AbortSignal.timeout(10_000) });
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toMatch(/text\/html/);
+
+    const list = await fetch(`http://localhost:${PORT}/@api/requests`, { signal: AbortSignal.timeout(10_000) });
+
+    expect(list.status).toBe(200);
+    expect(await list.json()).toMatchObject({ requests: expect.any(Array) });
+  });
+
+  it('answers a host named in server.allowedHosts, and no other', async () => {
+    expect((await getWithHost(PORT, '/@api/requests', `my-app.tunnel.test:${PORT}`)).status).toBe(200);
+    expect((await getWithHost(PORT, '/@api/requests', `other.tunnel.test:${PORT}`)).status).toBe(403);
+  });
+
+  // Without a backend the only other upgrade listener is the one Next adds to the server on its
+  // first request: it answered with its own "Unauthorized", or not at all, instead of the 403.
+  it('refuses WebSocket upgrades for a host it was not started for', async () => {
+    // The fixture's page base path (app.type 'page', package name pp-dev-test-template).
+    for (const urlPath of ['/p/pp-dev-test-template/_next/hmr', '/_next/hmr']) {
+      expect(await upgradeStatusWithHost(PORT, urlPath, `evil.example:${PORT}`), urlPath).toBe(
+        'HTTP/1.1 403 Forbidden',
+      );
+    }
+  });
+
+  // Next refuses its dev resources to a page on another host unless allowedDevOrigins names it: HMR
+  // through a tunnel in server.allowedHosts got Next's "Unauthorized", the Host check passing it.
+  it("opens Next's HMR to a page on a host named in server.allowedHosts, through any tunnel", async () => {
+    const hmr = '/p/pp-dev-test-template/_next/hmr';
+    const tunnelPage = 'https://my-app.tunnel.test';
+
+    // The page first, as a browser loads it before HMR: Next adds its upgrade listener then.
+    expect((await getWithHost(PORT, '/p/pp-dev-test-template/', `localhost:${PORT}`)).status).toBe(200);
+
+    // A tunnel that keeps its name in Host, and one that rewrites Host to localhost.
+    expect(await upgradeStatusWithHost(PORT, hmr, `my-app.tunnel.test:${PORT}`, tunnelPage)).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+    expect(await upgradeStatusWithHost(PORT, hmr, `localhost:${PORT}`, tunnelPage)).toBe(
+      'HTTP/1.1 101 Switching Protocols',
+    );
+    // Another site's page still gets Next's own refusal.
+    expect(await upgradeStatusWithHost(PORT, hmr, `localhost:${PORT}`, 'https://other.tunnel.test')).toBe(
+      'Unauthorized',
+    );
   });
 });

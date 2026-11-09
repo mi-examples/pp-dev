@@ -1,6 +1,6 @@
 # `__template_variables.json` schema (MI reference)
 
-This file is what Metric Insights (MI) writes/reads for a Portal Page **template**'s variables — its definitions (types, defaults, per-field config) live here, while the *live* values a page currently has are stored separately on the page itself (see below). pp-dev's standalone [Variables Editor](./README.md#variables-editor) page (`src/lib/variables-editor.ts`, backed by `src/lib/page-variables-diff.ts`) reads and writes this file's contents; the older backup/sync flow (`src/lib/dist.service.ts`, `TEMPLATE_VARIABLES_FILE_NAME`) only ever tracked it as an opaque blob (hash) for diffing, never parsing it.
+This file is what Metric Insights (MI) writes/reads for a Portal Page **template**'s variables — its definitions (types, defaults, per-field config) live here, while the _live_ values a page currently has are stored separately on the page itself (see below). pp-dev's standalone [Variables Editor](./README.md#variables-editor) page (`src/lib/variables-editor.ts`, backed by `src/lib/page-variables-diff.ts`) reads and writes this file's contents; the older backup/sync flow (`src/lib/dist.service.ts`, `TEMPLATE_VARIABLES_FILE_NAME`) only ever tracked it as an opaque blob (hash) for diffing, never parsing it.
 
 ## File location
 
@@ -12,12 +12,12 @@ This file is what Metric Insights (MI) writes/reads for a Portal Page **template
 
 ```jsonc
 {
-  "tags": [ /* TemplateVariableTag[] — see below */ ],
+  "tags": [/* TemplateVariableTag[] — see below */],
   "settings": {
     "image_capture_timeout": 0,
     "image_capture_on_event": "...",
-    "image_capture_css_selector": "..."
-  }
+    "image_capture_css_selector": "...",
+  },
 }
 ```
 
@@ -25,23 +25,23 @@ This file is what Metric Insights (MI) writes/reads for a Portal Page **template
 
 ## `TemplateVariableTag` fields
 
-| Field | Type | Notes |
-|---|---|---|
-| `name` | `string` | Unique variable name. This is the key that appears in the live page's `tags` (`{name, value}[]`, see below) and in `[VarName]` placeholders substituted by `pp.middleware.ts#buildPage()`. |
-| `uid` | `string` | Stable md5 identifier, survives renames across syncs. |
-| `tag_type` | `enum` | One of: `text`, `select`, `multiselect`, `file`, `list`, `color`, `boolean`. (`boolean` is a newer addition — older templates may not have it.) |
-| `tag_source` | `enum` | One of: `static`, `page`, `element`, `folder`, `segment`, `dataset`, `dataset_data`, `announcement`, `group`, `category`, `custom_attribute`, `page_entity`. Describes where the value/options come from, not the value's shape. |
-| `default_value` | `string` | Default value for the variable. For `tag_type: "list"`, this is a **JSON-encoded array** (string-of-JSON, not a nested array). |
-| `additional_options` | `array \| object \| string` | Decoded JSON in the exported file (re-stringified on ingest). Shape depends on `tag_type` and, for `select`/`multiselect`, on `tag_source` — see the dedicated section below for the full per-source breakdown. Always absent/unused for `boolean`. |
-| `description` | `string` | Markdown, rendered as such in MI's editor UI. |
-| `use_hmtl_editor_ind` | `'Y' \| 'N'` | Whether the value is edited via a rich HTML editor. |
-| `use_raw_html_ind` | `'Y' \| 'N'` | When `'Y'`, MI skips XSS-encoding the value on save (see caveat below). |
-| `use_json_editor_ind` | `'Y' \| 'N'` | Whether the value is edited via a JSON editor. |
-| `javascript_code` | `string \| null` | Optional JS snippet, with `[value]` substituted at render time. |
-| `display_order` | `number` | Present explicitly in real exports (not just implied by array index) — matches the tag's position in `tags`. |
-| `portal_page_template_tag_id` | `number` | MI's internal row id for this tag. Not needed to write a schema by hand — MI regenerates it. |
-| `portal_page_template_id` | `number` | The owning template's id — same for every tag in one file. |
-| `use_js_code_ind` | `'Y' \| 'N'` | Companion flag for `javascript_code` (whether it's active), seen alongside `use_hmtl_editor_ind`/`use_raw_html_ind`/`use_json_editor_ind` in real exports. |
+| Field                         | Type                        | Notes                                                                                                                                                                                                                                               |
+| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                        | `string`                    | Unique variable name. This is the key that appears in the live page's `tags` (`{name, value}[]`, see below) and in `[VarName]` placeholders substituted by `pp.middleware.ts#buildPage()`.                                                          |
+| `uid`                         | `string`                    | Stable md5 identifier, survives renames across syncs.                                                                                                                                                                                               |
+| `tag_type`                    | `enum`                      | One of: `text`, `select`, `multiselect`, `file`, `list`, `color`, `boolean`. (`boolean` is a newer addition — older templates may not have it.)                                                                                                     |
+| `tag_source`                  | `enum`                      | One of: `static`, `page`, `element`, `folder`, `segment`, `dataset`, `dataset_data`, `announcement`, `group`, `category`, `custom_attribute`, `page_entity`. Describes where the value/options come from, not the value's shape.                    |
+| `default_value`               | `string`                    | Default value for the variable. For `tag_type: "list"`, this is a **JSON-encoded array** (string-of-JSON, not a nested array).                                                                                                                      |
+| `additional_options`          | `array \| object \| string` | Decoded JSON in the exported file (re-stringified on ingest). Shape depends on `tag_type` and, for `select`/`multiselect`, on `tag_source` — see the dedicated section below for the full per-source breakdown. Always absent/unused for `boolean`. |
+| `description`                 | `string`                    | Markdown, rendered as such in MI's editor UI.                                                                                                                                                                                                       |
+| `use_hmtl_editor_ind`         | `'Y' \| 'N'`                | Whether the value is edited via a rich HTML editor.                                                                                                                                                                                                 |
+| `use_raw_html_ind`            | `'Y' \| 'N'`                | When `'Y'`, MI skips XSS-encoding the value on save (see caveat below).                                                                                                                                                                             |
+| `use_json_editor_ind`         | `'Y' \| 'N'`                | Whether the value is edited via a JSON editor.                                                                                                                                                                                                      |
+| `javascript_code`             | `string \| null`            | Optional JS snippet, with `[value]` substituted at render time.                                                                                                                                                                                     |
+| `display_order`               | `number`                    | Present explicitly in real exports (not just implied by array index) — matches the tag's position in `tags`.                                                                                                                                        |
+| `portal_page_template_tag_id` | `number`                    | MI's internal row id for this tag. Not needed to write a schema by hand — MI regenerates it.                                                                                                                                                        |
+| `portal_page_template_id`     | `number`                    | The owning template's id — same for every tag in one file.                                                                                                                                                                                          |
+| `use_js_code_ind`             | `'Y' \| 'N'`                | Companion flag for `javascript_code` (whether it's active), seen alongside `use_hmtl_editor_ind`/`use_raw_html_ind`/`use_json_editor_ind` in real exports.                                                                                          |
 
 There is **no** `label` or `required` field, and no generic `options`/`enum` key — option lists live inside `additional_options`.
 
@@ -67,10 +67,10 @@ A `list` variable isn't limited to flat strings. When `additional_options` is a 
 
 ```ts
 interface ListItemFieldConfig {
-  name: string;                 // becomes the object key on each list item
+  name: string; // becomes the object key on each list item
   type: 'textarea' | 'color' | 'select' | 'multi-select' | 'file';
-  source?: string;               // select/multi-select only — where THIS field's options come from
-  additional_options?: string;   // not actually read for select/multi-select — see below
+  source?: string; // select/multi-select only — where THIS field's options come from
+  additional_options?: string; // not actually read for select/multi-select — see below
   options?: (string | { id?: string; text?: string })[]; // select/multi-select only — the option list itself
 }
 ```
@@ -106,7 +106,7 @@ None of this is server-enforced (see below) — it's purely what the authoring f
 
 ## `additional_options` per `tag_type`/`tag_source` — what MI's options-loading endpoint actually reads
 
-The create-form's field visibility above is about what a human can *type into*; this is about what MI's backend actually *reads back out* when it needs to list a `select`/`multiselect` variable's options. The two don't always agree:
+The create-form's field visibility above is about what a human can _type into_; this is about what MI's backend actually _reads back out_ when it needs to list a `select`/`multiselect` variable's options. The two don't always agree:
 
 - **`select`/`multiselect`, `tag_source: "static"`**: `additional_options` **is** the option list — an array where each entry is either a plain string, or an object with `id`/`text`: `[{"id":"1","text":"One"},"Two"]`. A plain string entry uses itself as both the stored value and the label.
 - **`select`/`multiselect`, `tag_source: "dataset_data"`**: `{dataset_id, key_column, text_column}` — MI pulls id/label pairs live from that dataset, using `key_column` for the id and `text_column` for the label.

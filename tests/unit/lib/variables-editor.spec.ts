@@ -1,10 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { registerVariablesEditorRoutes, VARIABLES_EDITOR_PATH } from '../../../src/lib/variables-editor.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 function makeApp() {
-  const handlers = new Map<string, (req: any, res: any) => any>();
+  const handlers = new Map<string, (req: any, res: any, next?: () => void) => any>();
 
   const app = {
     handlers,
@@ -13,6 +16,9 @@ function makeApp() {
     },
     put(path: string, handler: (req: any, res: any) => any) {
       handlers.set(`PUT ${path}`, handler);
+    },
+    post(path: string, handler: (req: any, res: any) => any) {
+      handlers.set(`POST ${path}`, handler);
     },
   };
 
@@ -152,6 +158,25 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body.raw).toBe('not json');
       expect(res.body.parseError).toBeTruthy();
     });
+
+    // The editor used to get any JSON as the schema (`{}` showed an empty table whose save dropped
+    // the rest of the file), while the values routes ignored it: both now read it one way.
+    it.each([['{}'], ['[]'], ['{"tags":"x"}']])('reports %s as not a schema, still returning raw text', async (raw) => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(Buffer.from(raw)),
+      } as unknown as DistService;
+      const app = register({ distService, miAPI: {} as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/schema')!({}, res);
+
+      expect(res.body).toEqual({
+        exists: true,
+        schema: null,
+        raw,
+        parseError: 'The root value must be a JSON object with a "tags" array.',
+      });
+    });
   });
 
   describe('PUT /@api/variables/schema', () => {
@@ -229,6 +254,41 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.body.ok).toBe(true);
       expect(res.body.warnings).toEqual([expect.stringContaining('"has$special!chars" contains a character')]);
     });
+
+    // What the editor keeps of additional_options text that isn't JSON is that text, as a string:
+    // saved without a word, MI's editor got a string where it reads an object or a list.
+    it('warns (without blocking) on additional_options that are text, not JSON', async () => {
+      const { app } = setup();
+      const raw = JSON.stringify({
+        tags: [
+          { name: 'bad', additional_options: '{bad' },
+          { name: 'empty', additional_options: '' },
+          { name: 'list', additional_options: [{ name: 'id' }] },
+        ],
+      });
+
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/schema')!({ body: { raw } }, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.warnings).toEqual([expect.stringContaining('"bad" has additional_options that are text')]);
+    });
+
+    it('answers with JSON when the file cannot be written', async () => {
+      const { app, saveTemplateVariablesFile } = setup();
+      const res = makeRes();
+
+      saveTemplateVariablesFile.mockRejectedValue(new Error("EACCES: permission denied, open 'public/x'"));
+
+      await app.handlers.get('PUT /@api/variables/schema')!({ body: { raw: '{"tags":[]}' } }, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({
+        error: 'Failed to write __template_variables.json.',
+        details: "EACCES: permission denied, open 'public/x'",
+      });
+    });
   });
 
   describe('GET /@api/variables/values', () => {
@@ -253,6 +313,38 @@ describe('registerVariablesEditorRoutes', () => {
           { name: 'title', value: 'Live Title' },
         ]),
       );
+    });
+
+    it('leaves out a schema tag without a name, which no value can be saved for', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi
+          .fn()
+          .mockResolvedValue(Buffer.from(JSON.stringify({ tags: [{ default_value: 'x' }, { name: 'named' }] }))),
+      } as unknown as DistService;
+      const miAPI = { getLivePageVariables: vi.fn().mockResolvedValue([]) } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/values')!({}, res);
+
+      expect(res.body.schema).toEqual({ tags: [{ name: 'named' }] });
+      expect(res.body.combined).toEqual([{ name: 'named', value: '' }]);
+    });
+
+    it('sends what the local pages show along, to compare with MI', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
+      const miAPI = {
+        getLivePageVariables: vi.fn().mockResolvedValue([{ name: 'Region', value: 'EMEA' }]),
+        localPageVariables: [{ name: 'Region', value: 'US' }],
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/values')!({}, res);
+
+      expect(res.body.local).toEqual([{ name: 'Region', value: 'US' }]);
     });
 
     it('502s when fetching live variables fails', async () => {
@@ -281,6 +373,68 @@ describe('registerVariablesEditorRoutes', () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it.each([
+      [undefined],
+      [null],
+      ['tags'],
+      [{ tags: 'x' }],
+      [{ tags: [null] }],
+      [{ tags: [{ name: '', value: '' }] }],
+    ])('400s on the body %j', async (body) => {
+      const applyPageVariables = vi.fn();
+      const app = register({ miAPI: { applyPageVariables } as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!({ body }, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(applyPageVariables).not.toHaveBeenCalled();
+    });
+
+    // MI keeps one value per name: the replacement went through, and one of the two was gone.
+    it('400s on a name listed twice, without saving', async () => {
+      const applyPageVariables = vi.fn();
+      const app = register({ miAPI: { applyPageVariables } as unknown as MiAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!(
+        {
+          body: {
+            tags: [
+              { name: 'a', value: '1' },
+              { name: 'b', value: '2' },
+              { name: 'a', value: '3' },
+            ],
+          },
+        },
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Variable "a" is listed more than once.' });
+      expect(applyPageVariables).not.toHaveBeenCalled();
+    });
+
+    // Anything else an entry carried went to MI, which stores it.
+    it('sends MI only the name and value of each entry', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
+      const applyPageVariables = vi.fn().mockResolvedValue(undefined);
+      const miAPI = { applyPageVariables, reloadPageVariables: vi.fn().mockResolvedValue([]) } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!(
+        { body: { tags: [{ name: 'Region', value: 'US', uid: 'x', __proto__: { injected: true }, extra: 1 }] } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(applyPageVariables).toHaveBeenCalledWith([{ name: 'Region', value: 'US' }]);
+      expect(Object.keys(applyPageVariables.mock.calls[0][0][0])).toEqual(['name', 'value']);
+    });
+
     it('saves and returns non-blocking warnings from validateValueAgainstTag', async () => {
       const distService = {
         readPublicTemplateVariablesFile: vi
@@ -302,6 +456,42 @@ describe('registerVariablesEditorRoutes', () => {
       expect(applyPageVariables).toHaveBeenCalledWith([{ name: 'flag', value: 'not-a-bool' }]);
     });
 
+    it('updates what the local pages show after saving', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
+      const miAPI = {
+        applyPageVariables: vi.fn().mockResolvedValue(undefined),
+        reloadPageVariables: vi.fn().mockResolvedValue([]),
+        localPageVariables: [{ name: 'x', value: 'y' }],
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x', value: 'y' }] } }, res);
+
+      expect(miAPI.reloadPageVariables).toHaveBeenCalledOnce();
+      expect(res.body).toMatchObject({ ok: true, local: [{ name: 'x', value: 'y' }] });
+      expect(res.body.localError).toBeUndefined();
+    });
+
+    it('still saves when the local pages cannot be updated, and says so', async () => {
+      const distService = {
+        readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
+      } as unknown as DistService;
+      const miAPI = {
+        applyPageVariables: vi.fn().mockResolvedValue(undefined),
+        reloadPageVariables: vi.fn().mockRejectedValue(new Error('timeout')),
+      } as unknown as MiAPI;
+      const app = register({ distService, miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('PUT /@api/variables/values')!({ body: { tags: [{ name: 'x', value: 'y' }] } }, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ ok: true, localError: 'timeout' });
+    });
+
     it('502s when applyPageVariables throws', async () => {
       const distService = {
         readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(null),
@@ -318,30 +508,42 @@ describe('registerVariablesEditorRoutes', () => {
     });
   });
 
-  describe('GET /@api/variables/new-uid', () => {
-    it('returns a 32-char lowercase hex md5-shaped uid', async () => {
-      const app = register({ miAPI: {} as unknown as MiAPI });
+  describe('POST /@api/variables/values/local', () => {
+    it('reloads the values the local pages show from MI', async () => {
+      const miAPI = {
+        reloadPageVariables: vi.fn().mockResolvedValue([]),
+        localPageVariables: [{ name: 'Region', value: 'EMEA' }],
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
       const res = makeRes();
 
-      await app.handlers.get('GET /@api/variables/new-uid')!({}, res);
+      await app.handlers.get('POST /@api/variables/values/local')!({}, res);
 
-      expect(res.body.uid).toMatch(/^[0-9a-f]{32}$/);
+      expect(miAPI.reloadPageVariables).toHaveBeenCalledOnce();
+      expect(res.body).toEqual({ local: [{ name: 'Region', value: 'EMEA' }] });
     });
 
-    it('returns a fresh uid on every call', async () => {
-      const app = register({ miAPI: {} as unknown as MiAPI });
-      const res1 = makeRes();
-      const res2 = makeRes();
+    it('502s when MI cannot be asked', async () => {
+      const miAPI = { reloadPageVariables: vi.fn().mockRejectedValue(new Error('boom')) } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
 
-      await app.handlers.get('GET /@api/variables/new-uid')!({}, res1);
-      await app.handlers.get('GET /@api/variables/new-uid')!({}, res2);
+      await app.handlers.get('POST /@api/variables/values/local')!({}, res);
 
-      expect(res1.body.uid).not.toBe(res2.body.uid);
+      expect(res.statusCode).toBe(502);
     });
   });
 
   describe('GET /@api/variables/pages', () => {
-    function page(overrides: Partial<{ id: number; name: string; internal_name: string; template_id: number | null; template: string | null }>) {
+    function page(
+      overrides: Partial<{
+        id: number;
+        name: string;
+        internal_name: string;
+        template_id: number | null;
+        template: string | null;
+      }>,
+    ) {
       return {
         id: 1,
         name: 'Page',
@@ -357,11 +559,13 @@ describe('registerVariablesEditorRoutes', () => {
     it('excludes the current page and flags pages sharing its template first', async () => {
       const miAPI = {
         internalPageName: 'sales-q3',
-        listPages: vi.fn().mockResolvedValue([
-          page({ id: 1, name: 'Sales Dashboard (Q3)', internal_name: 'sales-q3', template_id: 313 }),
-          page({ id: 2, name: 'Sales Dashboard (Q1)', internal_name: 'sales-q1', template_id: 313 }),
-          page({ id: 3, name: 'Marketing Overview', internal_name: 'marketing', template_id: 99 }),
-        ]),
+        listPages: vi
+          .fn()
+          .mockResolvedValue([
+            page({ id: 1, name: 'Sales Dashboard (Q3)', internal_name: 'sales-q3', template_id: 313 }),
+            page({ id: 2, name: 'Sales Dashboard (Q1)', internal_name: 'sales-q1', template_id: 313 }),
+            page({ id: 3, name: 'Marketing Overview', internal_name: 'marketing', template_id: 99 }),
+          ]),
       } as unknown as MiAPI;
       const app = register({ miAPI });
       const res = makeRes();
@@ -378,10 +582,12 @@ describe('registerVariablesEditorRoutes', () => {
     it('falls back to comparing template internal_name when template_id is absent', async () => {
       const miAPI = {
         internalPageName: 'current',
-        listPages: vi.fn().mockResolvedValue([
-          page({ id: 1, internal_name: 'current', template_id: null, template: 'shared-template' }),
-          page({ id: 2, internal_name: 'other', template_id: null, template: 'shared-template' }),
-        ]),
+        listPages: vi
+          .fn()
+          .mockResolvedValue([
+            page({ id: 1, internal_name: 'current', template_id: null, template: 'shared-template' }),
+            page({ id: 2, internal_name: 'other', template_id: null, template: 'shared-template' }),
+          ]),
       } as unknown as MiAPI;
       const app = register({ miAPI });
       const res = makeRes();
@@ -389,6 +595,28 @@ describe('registerVariablesEditorRoutes', () => {
       await app.handlers.get('GET /@api/variables/pages')!({}, res);
 
       expect(res.body.pages).toEqual([{ id: 2, name: 'Page', internal_name: 'other', sameTemplate: true }]);
+    });
+
+    // The internal name is only known once a v7 page load ran: without it, the current page was
+    // listed as a page to import values from.
+    it('excludes the current page by its id when its internal name is not known', async () => {
+      const miAPI = {
+        pageId: 1,
+        internalPageName: undefined,
+        listPages: vi
+          .fn()
+          .mockResolvedValue([
+            page({ id: 1, name: 'Current', internal_name: 'current', template_id: 313 }),
+            page({ id: 2, name: 'Sibling', internal_name: 'sibling', template_id: 313 }),
+          ]),
+      } as unknown as MiAPI;
+      const app = register({ miAPI });
+      const res = makeRes();
+
+      await app.handlers.get('GET /@api/variables/pages')!({}, res);
+
+      expect(res.body.currentPageName).toBe('Current');
+      expect(res.body.pages).toEqual([{ id: 2, name: 'Sibling', internal_name: 'sibling', sameTemplate: true }]);
     });
 
     it('502s when listPages throws', async () => {
@@ -453,262 +681,68 @@ describe('registerVariablesEditorRoutes', () => {
     });
   });
 
+  // The page was a template literal built on every request; it is now built from
+  // src/client/variables-editor into dist/client, and served from there.
   describe(`GET ${VARIABLES_EDITOR_PATH}`, () => {
-    it('serves an HTML page', async () => {
-      const app = register({ miAPI: {} as unknown as MiAPI });
-      const res = makeRes();
+    let clientDir: string;
 
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      expect(res.headers['Content-Type']).toContain('text/html');
-      expect(typeof res.body).toBe('string');
-      expect(res.body).toContain('Variables Editor');
-    });
-
-    it('shows an info message with no tabs/Save when the page is templateLess', async () => {
-      const app = register({ miAPI: { isTemplateLess: true } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      expect(res.body).toContain('no associated template');
-      expect(res.body).not.toContain('id="tab-schema"');
-      expect(res.body).not.toContain('id="save-btn"');
-    });
-
-    // Every `<script>` block is built via string concatenation inside one giant template
-    // literal — a backslash-escaping mistake there (e.g. a regex like /\\/) is invisible to
-    // `tsc`/eslint (it's just characters inside a string) and only breaks at runtime when the
-    // browser parses it, which none of the tests above would ever catch. `new Function` parses
-    // without executing, so this fails fast on any embedded-script SyntaxError.
-    it('embeds syntactically valid client-side JavaScript in every <script> block', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const html = res.body as string;
-      const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-
-      expect(scripts.length).toBeGreaterThan(0);
-
-      for (const script of scripts) {
-        expect(() => new Function(script)).not.toThrow();
-      }
-    });
-
-    // Same template-literal backslash pitfall as above, but silent rather than a SyntaxError:
-    // a bare \s in the source collapses to a literal "s", so the embedded regex still parses
-    // fine but silently stops matching whitespace — the "Contains a character..." hint would
-    // then fire on every name containing a space. Extract the actual embedded regex text so a
-    // future regression here fails a test instead of only showing up as a UI bug report.
-    it('embeds a client-side NAME_FORMAT_REGEX that still allows whitespace in names', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const html = res.body as string;
-      const match = html.match(/const NAME_FORMAT_REGEX = (\/.*\/);/);
-
-      expect(match).not.toBeNull();
-
-      const re = new Function(`return ${match![1]};`)();
-
-      expect(re.test('Connection Report Meta')).toBe(true);
-      expect(re.test('bad$name')).toBe(false);
-    });
-
-    it('keeps the newest values response when overlapping loads resolve out of order', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
-      });
-      const pending: Array<(response: { ok: boolean; json: () => Promise<unknown> }) => void> = [];
-      const fetch = vi.fn(
-        () =>
-          new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
-            pending.push(resolve);
-          }),
+    beforeEach(() => {
+      clientDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-editor-client-'));
+      fs.copyFileSync(
+        path.resolve(__dirname, '../../../src/client/variables-editor/variables-editor.html'),
+        path.join(clientDir, 'variables-editor.html'),
       );
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      expect(fetch).toHaveBeenCalledTimes(1);
-
-      (dom.window as unknown as { refresh: () => void }).refresh();
-      expect(fetch).toHaveBeenCalledTimes(2);
-
-      pending[1]!({
-        ok: true,
-        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'newer' }] }),
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      pending[0]!({
-        ok: true,
-        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'older' }] }),
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
-
-      expect(valueInput?.value).toBe('newer');
-
-      dom.window.close();
+      fs.writeFileSync(path.join(clientDir, 'variables-editor.css'), 'body{}');
     });
 
-    it('shows an error banner instead of hanging when the initial values fetch rejects', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
-
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
-
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
-      });
-      const fetch = vi.fn().mockRejectedValue(new Error('network down'));
-
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
-        'Failed to load values: network down',
-      );
-
-      dom.window.close();
+    afterEach(() => {
+      fs.rmSync(clientDir, { recursive: true, force: true });
     });
 
-    it('does not save malformed additional_options text as a string', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
+    const servePage = (isTemplateLess: boolean) => {
+      const app = makeApp();
       const res = makeRes();
 
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+      registerVariablesEditorRoutes(app, { miAPI: { isTemplateLess } as unknown as MiAPI }, clientDir);
 
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=schema`,
+      return new Promise<typeof res>((resolve) => {
+        res.end = (payload?: unknown) => {
+          res.body = payload;
+          resolve(res);
+        };
+        app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
       });
-      const fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          exists: true,
-          raw: '{"tags":[]}',
-          schema: {
-            tags: [{ additional_options: [], name: 'choice', tag_source: 'static', tag_type: 'select' }],
-          },
-        }),
-      });
+    };
 
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
+    it('serves the built page, saying whether it has a template', async () => {
+      const page = await servePage(false);
 
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const editorWindow = dom.window as unknown as {
-        save: () => void;
-        updateSchemaAdditionalOptions: (index: number, value: string) => void;
-      };
-
-      editorWindow.updateSchemaAdditionalOptions(0, 'not valid JSON');
-      editorWindow.save();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
-        'additional_options must be valid JSON',
-      );
-
-      dom.window.close();
+      expect(page.headers['Content-Type']).toBe('text/html; charset=utf-8');
+      expect(page.body).toContain('<body data-template-less="false">');
+      expect(page.body).toContain('<script type="module" src="/@pp-dev/variables-editor/variables-editor.js">');
+      expect((await servePage(true)).body).toContain('<body data-template-less="true">');
     });
 
-    it('preserves value edits made while a save request is pending', async () => {
-      const app = register({ miAPI: { isTemplateLess: false } as unknown as MiAPI });
-      const res = makeRes();
+    it("serves the page's styles and nothing else from the folder", async () => {
+      const app = makeApp();
 
-      app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}`)!({}, res);
+      registerVariablesEditorRoutes(app, { miAPI: {} as unknown as MiAPI }, clientDir);
 
-      const { JSDOM } = await import('jsdom');
-      const dom = new JSDOM(res.body as string, {
-        runScripts: 'outside-only',
-        url: `http://localhost${VARIABLES_EDITOR_PATH}?tab=values`,
-      });
-      const pending: Array<(response: { ok: boolean; json: () => Promise<unknown> }) => void> = [];
-      const fetch = vi.fn(
-        () =>
-          new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
-            pending.push(resolve);
-          }),
-      );
+      const get = (file: string) =>
+        new Promise<string | 'next'>((resolve) => {
+          const res = makeRes();
 
-      Object.defineProperty(dom.window, 'fetch', { configurable: true, value: fetch });
-
-      const scripts = [...(res.body as string).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-
-      dom.window.eval(scripts.at(-1)!);
-      pending[0]!({
-        ok: true,
-        json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'initial' }] }),
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const editorWindow = dom.window as unknown as {
-        refresh: () => void;
-        save: () => void;
-        updateValueField: (index: number, value: string) => void;
-      };
-      const valueInputBeforeSave = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input')!;
-
-      valueInputBeforeSave.value = 'submitted';
-      editorWindow.updateValueField(0, 'submitted');
-      editorWindow.save();
-      // save() now opens a confirmation diff modal instead of saving immediately — confirm it.
-      dom.window.document.querySelector<HTMLButtonElement>('.ve-modal-ok')!.click();
-      expect(fetch).toHaveBeenCalledTimes(2);
-
-      valueInputBeforeSave.value = 'newer unsaved edit';
-      editorWindow.updateValueField(0, 'newer unsaved edit');
-      pending[1]!({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      if (pending[2]) {
-        pending[2]({
-          ok: true,
-          json: async () => ({ schema: null, live: [], combined: [{ name: 'title', value: 'submitted' }] }),
+          res.end = (payload?: unknown) => resolve(String(payload));
+          app.handlers.get(`GET ${VARIABLES_EDITOR_PATH}/:file`)!({ params: { file } }, res, () => resolve('next'));
         });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
 
-      const valueInput = dom.window.document.querySelector<HTMLInputElement>('#content .ve-values-detail input');
+      expect(await get('variables-editor.css')).toBe('body{}');
+      expect(await get('variables-editor.html')).toBe('next');
+      expect(await get('../package.json')).toBe('next');
+    });
 
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(valueInput?.value).toBe('newer unsaved edit');
-      expect(dom.window.document.querySelector('#content > .banner')?.textContent).toContain(
-        'Newer edits remain unsaved.',
-      );
-
-      editorWindow.refresh();
-      expect(dom.window.document.querySelector('.ve-modal-title')?.textContent).toBe('Discard unsaved changes?');
-
-      dom.window.close();
+    it('no longer has the new-uid route: the page makes uids with the browser crypto', () => {
+      expect(register({ miAPI: {} as unknown as MiAPI }).handlers.has('GET /@api/variables/new-uid')).toBe(false);
     });
   });
 });

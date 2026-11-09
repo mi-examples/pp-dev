@@ -49,8 +49,14 @@ const defaultConfig = {
   },
   logLevel: 'info', // Reduced from debug for cleaner output
   onwarn(warning, warn) {
+    // An import cycle in src fails the build (tests/unit/lib/import-graph.spec.ts checks the same);
+    // those inside dependencies are not ours to fix.
     if (warning.code === 'CIRCULAR_DEPENDENCY') {
-      return;
+      if (warning.ids?.some((id) => id.includes('node_modules'))) {
+        return;
+      }
+
+      throw new Error(warning.message);
     }
 
     if (warning.code === 'UNUSED_EXTERNAL_IMPORT') {
@@ -63,11 +69,25 @@ const defaultConfig = {
   context: 'globalThis',
 };
 
+/**
+ * `npm run build:analyze` (`--environment ANALYZE`): a treemap of the ESM build in `dist/stats.html`.
+ * Passed with `--configPlugin`, the visualizer only saw the bundle of this config file, not the build.
+ */
+const analyzePlugins = process.env.ANALYZE
+  ? [
+      (await import('rollup-plugin-visualizer')).visualizer({
+        filename: 'dist/stats.html',
+        gzipSize: true,
+      }),
+    ]
+  : [];
+
 const configs = [
   // ESM Build
   defineConfig({
     ...defaultConfig,
     plugins: [
+      ...analyzePlugins,
       typescript({
         tsconfig: './tsconfig.esm.json',
         declaration: false,
@@ -83,7 +103,6 @@ const configs = [
         compress: {
           drop_console: false, // Keep console logs for debugging
           drop_debugger: true,
-          pure_funcs: ['console.log'], // Remove console.log in production
         },
         mangle: {
           properties: false, // Don't mangle property names
@@ -110,9 +129,11 @@ const configs = [
     preserveEntrySignatures: 'strict',
   }),
 
-  // CJS Build
+  // CJS Build: the entries a `require()` reaches. The CLI is run from `bin/pp-dev.js`, which loads
+  // the ESM one; its CJS build was dead weight in the package.
   defineConfig({
     ...defaultConfig,
+    input: Object.fromEntries(Object.entries(defaultConfig.input).filter(([name]) => name !== 'cli')),
     plugins: [
       typescript({
         tsconfig: './tsconfig.cjs.json',
@@ -129,7 +150,6 @@ const configs = [
         compress: {
           drop_console: false,
           drop_debugger: true,
-          pure_funcs: ['console.log'],
         },
         mangle: {
           properties: false,
@@ -158,7 +178,6 @@ const configs = [
     external: isExternal,
     preserveEntrySignatures: 'strict',
   }),
-
 ];
 
 export default configs;

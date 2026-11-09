@@ -1,8 +1,9 @@
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startMockMiServer, type MockMiServer, type MockMode } from '../tests/mock-mi/server.js';
+import { killTree, pointConfigAt } from '../tests/e2e/helpers/pp-dev-process.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -17,10 +18,7 @@ const fixtureDirs = {
 function unquoteEnvValue(value: string): string {
   const trimmed = value.trim();
 
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
     return trimmed.slice(1, -1);
   }
 
@@ -55,6 +53,13 @@ const defaultPlaywrightArgs = hasWorkerArg ? [] : ['--workers=1'];
 const mockMode = (process.env.PP_DEV_E2E_MOCK_MODE ?? 'replay') as MockMode;
 const cassetteName = process.env.PP_DEV_E2E_CASSETTE ?? 'startup';
 const realMiUrl = process.env.REAL_MI_URL;
+
+// Working as other users needs your own API token. The replay mock accepts any, so replay always
+// runs with a placeholder: the multi-user tests run in CI too (no fixture .env, or an empty secret),
+// and a real token exported in the shell never reaches the mock or its request log.
+if (mockMode === 'replay') {
+  process.env.MI_ACCESS_TOKEN = 'e2e-original-token';
+}
 
 if (mockMode !== 'record' && mockMode !== 'replay') {
   throw new Error(`Unsupported PP_DEV_E2E_MOCK_MODE "${mockMode}". Expected "record" or "replay".`);
@@ -133,33 +138,18 @@ async function waitForExit(proc: ChildProcess, timeoutMs: number): Promise<boole
   });
 }
 
-async function killTree(proc: ChildProcess): Promise<void> {
-  if (!proc.pid) return;
+/**
+ * Stops `proc` with everything it started (the E2E suites' {@link killTree}), and kills what is
+ * still running after 5 s on POSIX, where SIGTERM can be ignored (taskkill /F already forces it).
+ */
+async function stopTree(proc: ChildProcess): Promise<void> {
+  killTree(proc, 'SIGTERM');
 
-  if (process.platform === 'win32') {
-    try {
-      execSync(`taskkill /PID ${proc.pid} /T /F`, { stdio: 'ignore' });
-    } catch {
-      // already stopped
-    }
+  if (process.platform === 'win32' || (await waitForExit(proc, 5_000))) {
     return;
   }
 
-  try {
-    process.kill(-proc.pid, 'SIGTERM');
-  } catch {
-    proc.kill('SIGTERM');
-  }
-
-  if (await waitForExit(proc, 5_000)) {
-    return;
-  }
-
-  try {
-    process.kill(-proc.pid, 'SIGKILL');
-  } catch {
-    proc.kill('SIGKILL');
-  }
+  killTree(proc, 'SIGKILL');
 }
 
 function spawnCommand(
@@ -229,23 +219,20 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
   let server: ChildProcess | undefined;
   const configPath = path.join(fixture.dir, fixture.configFile);
   const baseURL = `http://localhost:${fixture.port}`;
-  const originalConfig = fs.readFileSync(configPath, 'utf-8');
+  const config = pointConfigAt(configPath, mockMi.url);
 
   try {
-    const patchedConfig = originalConfig.replace(
-      /url:\s*['"]https?:\/\/[^'"]+['"]/,
-      `url: '${mockMi.url}'`,
-    );
-
-    if (patchedConfig === originalConfig) {
-      throw new Error(`Could not patch ${fixture.testType} pp-dev config to use mock-mi`);
-    }
-
-    fs.writeFileSync(configPath, patchedConfig);
-
     server = spawnCommand(
       process.execPath,
-      [ppDevBinFor(fixture.dir), ...fixture.commandArgs, '--host', 'localhost', '--port', String(fixture.port), '--strictPort'],
+      [
+        ppDevBinFor(fixture.dir),
+        ...fixture.commandArgs,
+        '--host',
+        'localhost',
+        '--port',
+        String(fixture.port),
+        '--strictPort',
+      ],
       {
         cwd: fixture.dir,
         env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: undefined },
@@ -260,15 +247,18 @@ async function runFixture(fixture: FixtureConfig, mockMi: MockMiServer): Promise
       env: {
         ...process.env,
         BASE_URL: baseURL,
+        // Replay only: the users tests send made-up tokens and read the replay mock's request log.
+        ...(mockMode === 'replay' ? { MOCK_MI_URL: mockMi.url } : {}),
         TEST_TYPE: fixture.testType,
         FORCE_COLOR: undefined,
       },
     });
   } finally {
     if (server) {
-      await killTree(server);
+      await stopTree(server);
     }
-    fs.writeFileSync(configPath, originalConfig);
+
+    config.restore();
   }
 }
 

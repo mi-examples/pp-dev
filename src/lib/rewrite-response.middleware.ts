@@ -6,44 +6,279 @@ import { createLogger } from './logger.js';
 type NextHandleFunction = Connect.NextHandleFunction;
 type IncomingMessage = Connect.IncomingMessage;
 
+export interface RewriteResponseOptions {
+  /**
+   * Which of the matched responses to rewrite, by their `Content-Type`, as soon as it is known (at
+   * `writeHead`, the first `write`, `flushHeaders` or `end`). The others are passed on as they come,
+   * neither held nor buffered: a route handler's stream under the page's path (server-sent events,
+   * chunked JSON) used to be kept back whole until it ended, which a never-ending one never did.
+   * Without this option every matched response is rewritten.
+   */
+  contentType?: (contentType: string) => boolean;
+}
+
+function asEncoding(value: unknown): BufferEncoding | undefined {
+  return typeof value === 'string' ? (value as BufferEncoding) : undefined;
+}
+
+function toBuffer(chunk: unknown, encoding?: BufferEncoding): Buffer | null {
+  if (typeof chunk === 'string') {
+    return Buffer.from(chunk, encoding);
+  }
+
+  // A copy, not a view: once a write is acknowledged, its producer may reuse the buffer, and the
+  // bytes are needed until `end()`.
+  if (chunk instanceof Uint8Array) {
+    return Buffer.from(chunk);
+  }
+
+  return null;
+}
+
+/**
+ * Sets the headers given to `writeHead()` on the response, as `writeHead()` would (over earlier
+ * `setHeader()` calls): an object, or Node's raw form, a flat list of names and values in which a
+ * name may repeat (Set-Cookie).
+ */
+function setHeadHeaders(res: ServerResponse, headers: unknown) {
+  if (Array.isArray(headers)) {
+    const byName = new Map<string, { name: string; values: string[] }>();
+
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      const name = String(headers[i]);
+      const entry = byName.get(name.toLowerCase()) ?? { name, values: [] };
+
+      entry.values.push(String(headers[i + 1]));
+      byName.set(name.toLowerCase(), entry);
+    }
+
+    for (const { name, values } of byName.values()) {
+      res.setHeader(name, values.length === 1 ? values[0] : values);
+    }
+
+    return;
+  }
+
+  if (headers && typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (value !== undefined) {
+        res.setHeader(name, value as number | string | readonly string[]);
+      }
+    }
+  }
+}
+
 /**
  * Rewrite response middleware
  *
  * @param predicate Check if need to rewrite response data
  * @param rewrite Rewrite response content handler
+ * @param options See {@link RewriteResponseOptions}
  */
 export function initRewriteResponse(
   predicate: (url: string, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Promise<boolean> | boolean,
   rewrite: (response: Buffer, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Buffer,
+  options: RewriteResponseOptions = {},
 ): NextHandleFunction {
   return async (req, res, next) => {
     if (await predicate(req.url ?? '', req, res)) {
       const logger = createLogger();
 
-      logger.info(`Rewrite response for ${req.url}`);
+      // The renderer answers an If-None-Match that matches its ETag with a 304 and no body (Vite's
+      // send(), Next's sendRenderResult), and that ETag is of the page before the rewrite: the
+      // browser then kept the rewritten page it held, with the variable values of that time, through
+      // "Reload variables" and a reload. A page is always sent whole, and without that ETag.
+      // Only for a request that asks for a page (a navigation accepts HTML): under `pp-dev next` the
+      // path predicate also matches the app's files and routes under its base, which pass through
+      // as they are and keep their validators and preconditions.
+      if ((req.method === 'GET' || req.method === 'HEAD') && (req.headers.accept ?? '').includes('text/html')) {
+        delete req.headers['if-none-match'];
+      }
 
       const end = res.end;
 
+      // A HEAD response has no body to rewrite: the renderer sends the GET page's Content-Length
+      // and ends without one. That length is not the rewritten page's, and rewriting an empty body
+      // would not give it either, so the header is dropped.
+      if (req.method === 'HEAD') {
+        res.end = function (chunk?: any, encoding?: any, cb?: any) {
+          const callback = [chunk, encoding, cb].find((arg) => typeof arg === 'function');
+          // Only a page's: a file under the base (`pp-dev next`) keeps its length, as its GET does.
+          const contentType = res.getHeader('content-type');
+          const isPage =
+            !options.contentType || options.contentType(contentType === undefined ? '' : String(contentType));
+
+          if (!res.headersSent && isPage) {
+            res.removeHeader('content-length');
+          }
+
+          (end as (this: ServerResponse, cb?: () => void) => ServerResponse).call(this, callback);
+
+          return this;
+        };
+
+        next();
+
+        return;
+      }
+
+      logger.info(`Rewrite response for ${req.url}`);
+
       const buffers: Buffer[] = [];
 
-      res.write = function (body) {
-        buffers.push(body);
+      // The headers, the page's Content-Length among them, are held back until end(): sent before
+      // it, they could no longer give the rewritten body's length, and the page was cut short.
+      // Next.js flushes them before it writes the first chunk (pipe-readable.js), and its
+      // compression middleware, wrapping end() over this one, writes them (writeHead) before it
+      // passes the page on when the client accepts no compression.
+      // Its headers are set now, so the rewrite reads them (Content-Encoding) and end() can give
+      // the length; only the status waits.
+      const write = res.write;
+      const writeHead = res.writeHead;
+      const flushHeaders = res.flushHeaders;
+      let heldHead: [number, string?] | null = null;
+      /** The response is passed on as it comes: every override only forwards from now on. */
+      let passing = false;
+
+      /**
+       * Lets the response through as it is: what was held or buffered goes out now, the rest is
+       * forwarded. For a response the `contentType` option rules out.
+       *
+       * The overrides stay in place and forward: Next.js wraps them in turn (its compression
+       * middleware's end(), and on-headers' writeHead that adds `Content-Encoding`), and putting the
+       * originals back would drop those wrappers, sending a gzipped body with no such header.
+       */
+      const passThrough = () => {
+        passing = true;
+
+        if (heldHead && !res.headersSent) {
+          (writeHead as (...args: unknown[]) => ServerResponse).apply(res, heldHead);
+        }
+
+        heldHead = null;
+
+        for (const buffer of buffers.splice(0)) {
+          (write as (this: ServerResponse, chunk: Buffer) => boolean).call(res, buffer);
+        }
+      };
+
+      /**
+       * Whether the response is passed through: already, or now that its Content-Type is known. At
+       * `end()` a type still absent is final and goes to the filter as `''`: a file from `public/`
+       * without an extension has none (`send` sets no type for it), and was rewritten as a page.
+       */
+      const passes = (atEnd = false) => {
+        if (passing) {
+          return true;
+        }
+
+        if (!options.contentType) {
+          return false;
+        }
+
+        const contentType = res.getHeader('content-type');
+
+        if (contentType === undefined && !atEnd) {
+          return false;
+        }
+
+        if (options.contentType(contentType === undefined ? '' : String(contentType))) {
+          return false;
+        }
+
+        passThrough();
 
         return true;
       };
 
-      res.end = function (chunk?: any, encoding?: BufferEncoding | (() => void), cb?: () => void) {
-        if (typeof chunk === 'string') {
-          buffers.push(Buffer.from(chunk));
+      res.flushHeaders = function () {
+        if (passes()) {
+          flushHeaders.call(this);
+        }
+      };
+
+      res.writeHead = function (this: ServerResponse, statusCode: number, ...rest: unknown[]) {
+        if (passing) {
+          return (writeHead as (...args: unknown[]) => ServerResponse).call(this, statusCode, ...rest);
         }
 
-        const contentEncoding = res.getHeader('content-encoding') as string;
-        const content = decodeContent(Buffer.from(Buffer.concat(buffers)), contentEncoding);
+        const statusMessage = typeof rest[0] === 'string' ? rest[0] : undefined;
 
-        const bufferEncoding = typeof encoding !== 'function' && encoding ? encoding : 'utf-8';
+        setHeadHeaders(this, statusMessage === undefined ? rest[0] : rest[1]);
+        this.statusCode = statusCode;
+        heldHead = statusMessage === undefined ? [statusCode] : [statusCode, statusMessage];
+
+        passes();
+
+        return this;
+      };
+
+      res.write = function (chunk: any, encoding?: any, cb?: any) {
+        if (passes()) {
+          return (write as (...args: unknown[]) => boolean).call(this, chunk, encoding, cb);
+        }
+
+        const buffer = toBuffer(chunk, asEncoding(encoding));
+
+        if (buffer) {
+          buffers.push(buffer);
+        }
+
+        const callback = typeof encoding === 'function' ? encoding : cb;
+
+        // Asynchronously, as a real response calls it: a producer that writes its next chunk from
+        // the callback would otherwise recurse on one stack for the whole body.
+        if (typeof callback === 'function') {
+          process.nextTick(callback);
+        }
+
+        return true;
+      };
+
+      res.end = function (chunk?: any, encoding?: any, cb?: any) {
+        if (passes(true)) {
+          return (end as (...args: unknown[]) => ServerResponse).call(this, chunk, encoding, cb);
+        }
+
+        if (typeof chunk === 'function') {
+          cb = chunk;
+          chunk = undefined;
+        }
+
+        const buffer = toBuffer(chunk, asEncoding(encoding));
+
+        if (buffer) {
+          buffers.push(buffer);
+        }
+
         const endCallback = typeof encoding === 'function' ? encoding : cb;
 
-        end.call(this, encodeContent(rewrite(content, req, res), contentEncoding), bufferEncoding, endCallback);
+        const contentEncoding = res.getHeader('content-encoding') as string | undefined;
+        const content = decodeContent(Buffer.concat(buffers), contentEncoding);
+        const output = encodeContent(rewrite(content, req, res), contentEncoding);
+
+        // Next.js sets `Content-Length` for the page it rendered before calling `end`
+        // (send-payload.js). The rewritten body is longer, and a stale length makes browsers
+        // cut the page short and Node clients fail with HPE_INVALID_CONSTANT. Vite sets none.
+        if (res.getHeader('content-length') !== undefined) {
+          if (res.headersSent) {
+            logger.warn(`Rewrite response for ${req.url}: headers already sent, Content-Length left as is`);
+          } else {
+            res.setHeader('content-length', output.length);
+          }
+        }
+
+        if (!res.headersSent) {
+          res.removeHeader('etag');
+        }
+
+        res.writeHead = writeHead;
+
+        if (heldHead && !res.headersSent) {
+          (writeHead as (...args: unknown[]) => ServerResponse).apply(this, heldHead);
+        }
+
+        end.call(this, output, endCallback);
 
         return this;
       };

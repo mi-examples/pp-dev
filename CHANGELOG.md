@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.5.0](https://github.com/mi-examples/pp-dev/compare/v1.4.7...v1.5.0) (2026-11-06)
+
+### Features
+
+- You can work as other MI users: each saved user gets its own host, `<name>.localhost:<port>`, and the proxy sends that host's requests to MI as that user, with its own cookies and cache.
+- The dev panel has a Users section where you can add a user by API token or by username and password, and edit, open, log in, remove or make a user the default for `localhost`. Logging out on a user's host removes that user.
+- New `users.persist` option keeps the users added with an API token between dev server runs, in `~/.pp-dev/users/` (readable by you only).
+- New internal REST endpoints manage saved users: `GET`, `POST`, `PATCH` and `DELETE` under `/@api/users`.
+- New `server.allowedHosts` option (Vite's syntax) lists host names the dev server answers, for tunnels. It is passed to Vite, and in development `withPPDev()` adds the exact names to Next's `allowedDevOrigins`.
+- A sync keeps the 20 newest backups of the page and deletes this page's older ones. The new `sync.maxBackups` option sets another number; `false` or `0` keeps them all.
+- New `sync.buildTimeoutMs` option gives a sync's build more than the default 10 minutes.
+- The Variables Editor shows variable descriptions as markdown, as MI does.
+- Saving in the Values tab also updates the variable values the local pages show. An "Update local pages" button appears when the local copy differs from MI.
+- The Request Inspector shows which saved user made each request and lets you filter by user. It shows gzip, br and deflate responses unpacked and stores credentials as `<redacted>`.
+- Under `pp-dev next`, a bare `--host` listens on all addresses and `--logLevel` is applied. `--https`, `--open`, `--cors`, `--strictPort` and `--force` now warn that they have no effect.
+
+### Bug fixes
+
+- The internal API, the Request Inspector and the `pp-dev next` dev-panel WebSocket now refuse requests from other sites' pages, which could otherwise act with your MI token.
+- `pp-dev next` answers only requests and WebSocket upgrades whose `Host` is an IP address, `localhost`, a `*.localhost` name, the `--host` name or a name in `server.allowedHosts`, as Vite does. A tunnel's name goes into `server.allowedHosts`.
+- `proxy.tls.allowSelfSigned` now relaxes certificate checks only for MI requests, not for every HTTPS call in the process.
+- `pp-dev next` restarts its server in a new process when a config file changes, so changes to `withPPDev()` and `next.config.*` take effect. A config edit no longer kills the dev server.
+- Config changes cause one restart under both commands. Edits to `.js`/`.mjs`/`.cjs` configs are picked up, and config and `.env*` files created later are watched too.
+- A config that fails to load now keeps the running server.
+- The project's `vite.config.*` is loaded once, so arrays are no longer doubled and config functions no longer run twice. A `NODE_ENV` the file sets itself is kept.
+- Pages served by `pp-dev next` are no longer cut short or sent with a wrong `Content-Length`. The app's binary files under the base path are no longer corrupted, and `/favicon.ico` is proxied to MI.
+- Next's HMR now works on hosts listed in `server.allowedHosts`. `pp-dev next` no longer nests `distDir` under `<distDir>/dev/dev` or adds wrong route-type paths to `tsconfig.json`.
+- MI's redirects now stay on the dev server, including when `mi.url` or the link spells out a port or uses an IPv6 host. Large, streamed and binary MI responses are sent on as they arrive and no longer corrupted.
+- MI errors and maintenance pages are shown instead of looping through the login redirect, and the v7 auth-failure redirect loop is fixed.
+- A failed proxy request answers 502 without leaking a stack trace.
+- Only one template sync runs at a time, and the sync button recovers after a failed sync.
+- A sync dialog closed with its tab cancels the sync, and the panel shows why a sync ended.
+- Sync builds stop on timeout or when the dev server stops, including the processes they started. Nothing is uploaded from a stopped server.
+- Under `pp-dev next`, the sync builds into `.next`/`out` apart from the running dev server, instead of wiping its `dist/dev`.
+- A backup is now saved for every change made on MI, and two backups made in the same second no longer overwrite each other.
+- Upload failures report their reason, and a sync made before any backup exists is reported as a success.
+- The Variables Editor shows every failed save and keeps edits made during a reload or a failed reload. It runs one save at a time and no longer flags just-saved values as changed.
+- In the Variables Editor, Enter, Escape and Tab now behave correctly in dialogs, and list items can be removed again. Schema field names are shown as written, not uppercased.
+- Values saves send MI only names and values, refuse a name listed twice, and accept select options given as plain strings.
+- The process shuts down gracefully on `SIGHUP` and exits with `1` after a crash. An unhandled rejection is now only logged instead of stopping the server.
+- `migrate --dry-run` now prints the migrated config.
+- `pp-dev optimize` loads the config file and the `.env` files in the mode it runs the optimizer in, `development` without `--mode`, as Vite's `optimize` does. It loaded them for `production` before.
+- Type declarations for the `/plugin` and `/helpers` subpaths are now published.
+- `pp-dev next-build` resolves `build.zip.inDir` from the project root. `withPPDev()` now merges `server` and `users` field by field and reads the root the command was given.
+- `app.name` is now used for the base path, ZIP and sync everywhere, and an `MI_ACCESS_TOKEN` set in the shell is kept across config reloads.
+- `pp-dev next` takes `app.id` from the pp-dev config only: the undocumented `MI_APP_ID` and `MI_PORTAL_PAGE_ID` variables and the silent `app.id` of `1` are gone. Without `mi.url` it runs without a backend, as `pp-dev` does, instead of assuming `http://localhost:8080`.
+- A port in use or an invalid `--port` is reported clearly, and a dev shortcut that throws no longer disables the other keys.
+- The token login form is added only to MI's login page and no longer breaks MI pages that declare a `host` variable.
+- The Request Inspector keeps at most 10,000 requests and no longer fails on a repeated query parameter.
+
+### Other changes
+
+- Startup is faster, for example `pp-dev --version` takes about half the time, because heavy modules are loaded only when used.
+- The sync meta is now kept in the backups folder, so the first sync after the update saves its backup again.
+- `typescript`, `rollup`, `deepmerge-ts` and `winston` are no longer installed with pp-dev.
+- Runtime dependencies are updated for security advisories in `follow-redirects`, `qs`, `glob`, `minimatch`, `body-parser`, `undici`, `ip-address` and `serialize-javascript`.
+
 ## [1.4.7](https://github.com/mi-examples/pp-dev/compare/v1.4.6...v1.4.7) (2026-10-22)
 
 ### Other changes

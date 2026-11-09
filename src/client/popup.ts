@@ -88,3 +88,60 @@ export function createPopupElement(opts: InfoPopupOptions): HTMLDivElement {
 
   return $popup;
 }
+
+/**
+ * Calls `onElapsed` once the page has been visible for `duration` ms in all (time in a hidden tab
+ * doesn't count). Returns a function that stops waiting, which also removes the page's
+ * `visibilitychange` listener: one used to stay behind for every popup ever shown.
+ */
+export function startAutoDismiss(duration: number, onElapsed: () => void): () => void {
+  let remaining = duration;
+  let lastUpdate = Date.now();
+  let visible = true;
+  let frame: number | undefined;
+
+  const tick = () => {
+    frame = undefined;
+
+    if (!visible) {
+      return;
+    }
+
+    const now = Date.now();
+
+    remaining -= now - lastUpdate;
+    lastUpdate = now;
+
+    if (remaining <= 0) {
+      stop();
+      onElapsed();
+
+      return;
+    }
+
+    frame = requestAnimationFrame(tick);
+  };
+
+  const onVisibilityChange = () => {
+    visible = !document.hidden;
+
+    if (visible) {
+      lastUpdate = Date.now();
+      frame ??= requestAnimationFrame(tick);
+    }
+  };
+
+  const stop = () => {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+
+    if (frame !== undefined) {
+      cancelAnimationFrame(frame);
+      frame = undefined;
+    }
+  };
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  frame = requestAnimationFrame(tick);
+
+  return stop;
+}

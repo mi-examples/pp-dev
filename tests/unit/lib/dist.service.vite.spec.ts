@@ -47,12 +47,15 @@ describe('DistService — Vite in-memory sync archive', () => {
   it('zips the build directory even when no persistent ZIP is configured', async () => {
     const service = new DistService('test-app', {
       backupFolder: backupDir,
+      metaDir: path.join(rootDir, '.pp-dev-meta'),
       buildInputFolder: buildDir,
     });
     const buffer = await service.buildNewAssets();
     const zip = await JSZip.loadAsync(buffer);
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
+    // This process's Node: `node` from PATH is another one, or none, under an IDE's dev server.
+    expect(spawnMock.mock.calls[0][0]).toBe(process.execPath);
     expect(zip.file('index.html')).toBeTruthy();
     expect(zip.file('assets/app.js')).toBeTruthy();
   });
