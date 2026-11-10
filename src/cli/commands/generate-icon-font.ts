@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { createLogger } from '../../lib/logger.js';
 import { colors } from '../../lib/helpers/color.helper.js';
-import { IconFontGenerator } from '../../lib/icon-font-generator.js';
+import { IconFontGenerator, SvgToFontMissingError } from '../../lib/icon-font-generator.js';
 import type { CAC } from 'cac';
 import { type GlobalCLIOptions, filterDuplicateOptions } from '../options.js';
 
@@ -40,7 +40,17 @@ export function registerGenerateIconFontCommand(cli: CAC): void {
 
       logger.info(`Generating icon font from SVG files in ${colors.dim(fullSourceDir)}`);
 
-      await iconFontGenerator.generate();
+      try {
+        await iconFontGenerator.generate();
+      } catch (error) {
+        if (error instanceof SvgToFontMissingError) {
+          logger.error(colors.red(error.message));
+
+          process.exit(1);
+        }
+
+        throw error;
+      }
 
       logger.info(`Icon font generated and saved to ${colors.dim(fullDestDir)}`);
     });
