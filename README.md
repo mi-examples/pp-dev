@@ -36,6 +36,8 @@ npm install next@^16
 
 **Note**: pp-dev accepts Next.js 13 to 16 (`peerDependencies`: `>= 13 < 17`); the test apps run on Next.js 16. It is a peer dependency, so it isn't installed with pp-dev.
 
+`svgtofont` is an optional peer dependency too. Only `pp-dev generate-icon-font` uses it — see [Icon Font Generation](#icon-font-generation).
+
 ### Bundled build tools
 
 pp-dev installs `sass` (SCSS in a portal page), and `sharp` and `svgo` (image optimization, `build.imageOptimisations`): a page uses them without listing them itself. A page that pins its own version of one lists it in its `package.json`.
@@ -510,6 +512,23 @@ pp-dev generate-icon-font [source] [destination] [options]
 | `--source <path>`      | -           | Source directory with SVG icons |
 | `--destination <path>` | -           | Output directory                |
 | `--fontName <name>`    | `icon-font` | Font name                       |
+
+The command needs [`svgtofont`](https://www.npmjs.com/package/svgtofont), which is not installed with pp-dev. Add it to the project that generates icon fonts:
+
+```bash
+npm install --save-dev svgtofont
+```
+
+`svgtofont` 6.5.3 depends on `glob` and `minimatch` versions that `npm audit` reports ([GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249), both moderate), and no `svgtofont` release fixes that yet. Until one does, a project that installs it can add these `overrides` to its `package.json` and run `npm install` again:
+
+```json
+{
+  "overrides": {
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.4"
+  }
+}
+```
 
 ## Next.js Integration
 

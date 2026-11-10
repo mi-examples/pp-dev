@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.1](https://github.com/mi-examples/pp-dev/compare/v1.5.0...v1.5.1) (2026-11-10)
+
+### Bug fixes
+
+- Installing `pp-dev` no longer pulls in the `glob` and `minimatch` versions that `npm audit` reports as moderate vulnerabilities. They only came in through `svgtofont`, which is now an optional dependency.
+
+### Other changes
+
+- `svgtofont` is no longer installed with `pp-dev`. If you use `pp-dev generate-icon-font`, add it to the project with `npm install --save-dev svgtofont`; without it the command exits with a message saying what to install.
+
 ## [1.5.0](https://github.com/mi-examples/pp-dev/compare/v1.4.7...v1.5.0) (2026-11-06)
 
 ### Features

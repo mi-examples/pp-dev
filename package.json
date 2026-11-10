@@ -1,7 +1,7 @@
 {
   "name": "@metricinsights/pp-dev",
   "type": "module",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Portal Page dev build tool",
   "bin": {
     "pp-dev": "bin/pp-dev.js"
@@ -91,12 +91,17 @@
     }
   },
   "peerDependencies": {
-    "next": ">= 13 < 17"
+    "next": ">= 13 < 17",
+    "svgtofont": "^6.5.3"
   },
   "peerDependenciesMeta": {
     "next": {
       "optional": true,
       "description": "Required for Next.js development server functionality"
+    },
+    "svgtofont": {
+      "optional": true,
+      "description": "Required for the generate-icon-font command"
     }
   },
   "dependencies": {
@@ -117,7 +122,6 @@
     "sass": "^1.105.2",
     "sharp": "^0.35.5",
     "svgo": "^4.1.0",
-    "svgtofont": "^6.5.3",
     "vite": "^8.3.4",
     "vite-plugin-image-optimizer": "^2.0.3",
     "vite-plugin-zip-pack": "^1.2.4",
@@ -143,6 +147,7 @@
     "rollup-plugin-dts": "^6.5.1",
     "rollup-plugin-scss": "^4.0.1",
     "rollup-plugin-visualizer": "7.1.1",
+    "svgtofont": "^6.5.3",
     "tslib": "^2.8.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
