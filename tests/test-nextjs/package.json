@@ -24,9 +24,5 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
     "typescript": "^6"
-  },
-  "overrides": {
-    "glob": "^14.0.3",
-    "minimatch": "11.0.4"
   }
 }
