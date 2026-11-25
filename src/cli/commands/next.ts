@@ -335,6 +335,10 @@ export function registerNextCommand(cli: CAC): void {
           logger.info(colors.blue(`🔧 Base path configured: ${base}`));
 
           if (backendBaseURL) {
+            if (_normalized.envName) {
+              logger.info(colors.blue(`🧭 MI environment: ${_normalized.envName}`));
+            }
+
             logger.info(colors.blue(`🌐 Backend URL: ${backendBaseURL}`));
             logger.info(colors.blue(`🆔 Custom App ID: ${appId}`));
           }
@@ -461,6 +465,7 @@ export function registerNextCommand(cli: CAC): void {
             templateName,
             internalServer,
             backendBaseURL,
+            envName: _normalized.envName,
             mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
             inspector: {
               enabled: inspectorEnabled !== false,
@@ -488,6 +493,7 @@ export function registerNextCommand(cli: CAC): void {
                 // Inject the dev panel before host-rewriting so its `!!`-prefixed backend
                 // links are handled by urlReplacer like the rest of the page.
                 const withPanel = injectDevPanel(page, base, {
+                  envName: _normalized.envName,
                   backendBaseURL,
                   templateLess,
                   appId,

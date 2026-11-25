@@ -131,9 +131,33 @@ export interface ServerConfig {
   allowedHosts?: string[] | true;
 }
 
+/**
+ * A named MI environment (`envs.<name>`): another MI instance, or another page on the same one.
+ * What it leaves out comes from the top-level `mi` and `app`, except the token.
+ */
+export interface EnvConfig {
+  /** MI instance base URL. Falls back to `MI_BACKEND_URL_<NAME>`, then to the top-level `mi.url`. */
+  url?: string;
+  /** Portal page / app ID on that instance. Falls back to the top-level `app.id`. */
+  appId?: number;
+  /**
+   * Personal Access Token. Falls back to `MI_ACCESS_TOKEN_<NAME>`, never to `mi.token` or
+   * `MI_ACCESS_TOKEN`: those may belong to another instance. Without one, log in to MI on localhost.
+   */
+  token?: string;
+}
+
 export interface PPDevConfig {
   mi?: MiConfig;
   app?: AppConfig;
+  /**
+   * Named MI environments, chosen with `--env <name>` or `MI_ENV`. The top-level `mi` and `app`
+   * are the `default` one. `<NAME>` in their variables is the name in upper case, with anything
+   * other than a letter or digit as `_` (`staging-eu` reads `MI_ACCESS_TOKEN_STAGING_EU`).
+   */
+  envs?: Record<string, EnvConfig>;
+  /** The environment used when neither `--env` nor `MI_ENV` names one. @default 'default' */
+  defaultEnv?: string;
   proxy?: ProxyConfig;
   build?: BuildConfig;
   sync?: SyncConfig;
@@ -161,6 +185,8 @@ export interface VersionPluginOptions {
 /** @internal — used by the Vite plugin and CLI; not part of the public API. */
 export interface NormalizedVitePPDevOptions {
   templateName: string;
+  /** The named MI environment in use (`envs`); `undefined` for the top-level settings. */
+  envName?: string;
   backendBaseURL?: string;
   appId?: number;
   templateLess: boolean;
@@ -196,6 +222,114 @@ const DEV_PANEL_POSITIONS: readonly DevPanelPosition[] = ['top-left', 'top-right
 /** The longest delay `setTimeout` takes (2³¹ − 1 ms, about 24.8 days). */
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
+// ─── MI environments ──────────────────────────────────────────────────────────
+
+/** The name the top-level `mi` and `app` settings go by in `--env`, `MI_ENV` and `defaultEnv`. */
+export const DEFAULT_ENV_NAME = 'default';
+
+/** Also a folder name (`backups/<name>`): no path separators, no dots. */
+const ENV_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** The suffix of an environment's variables: `staging-eu` → `STAGING_EU` (`MI_ACCESS_TOKEN_STAGING_EU`). */
+export function envVariableSuffix(name: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+}
+
+/** The MI instance, page and token of the environment in use. */
+export interface ResolvedMiEnvironment {
+  /** The named environment (`envs`); `undefined` for the top-level settings. */
+  name?: string;
+  url?: string;
+  appId?: number;
+  token?: string;
+  /** A named environment with no URL of its own (`url`, `MI_BACKEND_URL_<NAME>`): the top-level one. */
+  sharesUrl?: boolean;
+}
+
+/**
+ * The environment `MI_ENV` (which `--env` sets), else `defaultEnv`, else the top-level settings
+ * name. A name that isn't defined is an error, never the default: that would be another MI instance.
+ */
+export function resolveMiEnvironment(
+  config: PPDevConfig,
+  env: Record<string, string | undefined> = process.env,
+): ResolvedMiEnvironment {
+  const envs: Record<string, EnvConfig> = config.envs ?? {};
+
+  if (typeof envs !== 'object' || Array.isArray(envs)) {
+    throw new Error('[pp-dev] envs must be an object of named environments');
+  }
+
+  const names = Object.keys(envs);
+  const bySuffix = new Map<string, string>();
+
+  for (const name of names) {
+    if (name === DEFAULT_ENV_NAME) {
+      throw new Error(
+        `[pp-dev] envs.${DEFAULT_ENV_NAME} is reserved: the top-level mi and app settings are the default environment`,
+      );
+    }
+
+    if (!ENV_NAME_REGEXP.test(name)) {
+      throw new Error(
+        `[pp-dev] envs.${name}: an environment name takes letters, digits, "-" and "_", and starts with a letter or digit`,
+      );
+    }
+
+    const entry: unknown = envs[name];
+
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`[pp-dev] envs.${name} must be an object ({ url, appId, token })`);
+    }
+
+    const suffix = envVariableSuffix(name);
+    const other = bySuffix.get(suffix);
+
+    if (other !== undefined) {
+      throw new Error(`[pp-dev] envs.${other} and envs.${name} would both read MI_ACCESS_TOKEN_${suffix}: rename one`);
+    }
+
+    bySuffix.set(suffix, name);
+  }
+
+  const defined = [DEFAULT_ENV_NAME, ...names].join(', ');
+  const isDefined = (name: string) => name === DEFAULT_ENV_NAME || Object.prototype.hasOwnProperty.call(envs, name);
+
+  if (config.defaultEnv !== undefined && (typeof config.defaultEnv !== 'string' || !isDefined(config.defaultEnv))) {
+    throw new Error(
+      `[pp-dev] defaultEnv ${JSON.stringify(config.defaultEnv)} is not an environment. Defined: ${defined}`,
+    );
+  }
+
+  const fromVariable = env.MI_ENV?.trim();
+  const name = fromVariable || config.defaultEnv || DEFAULT_ENV_NAME;
+
+  if (!isDefined(name)) {
+    throw new Error(`[pp-dev] Unknown MI environment "${name}" (--env or MI_ENV). Defined: ${defined}`);
+  }
+
+  if (name === DEFAULT_ENV_NAME) {
+    return {
+      url: config.mi?.url ?? env.MI_BACKEND_URL,
+      appId: config.app?.id,
+      token: config.mi?.token ?? env.MI_ACCESS_TOKEN,
+    };
+  }
+
+  const entry = envs[name];
+  const suffix = envVariableSuffix(name);
+  const ownUrl = entry.url ?? env[`MI_BACKEND_URL_${suffix}`];
+
+  return {
+    name,
+    url: ownUrl ?? config.mi?.url ?? env.MI_BACKEND_URL,
+    ...(ownUrl === undefined ? { sharesUrl: true } : {}),
+    appId: entry.appId ?? config.app?.id,
+    // Never the top-level token: it may belong to another instance, and would be sent there.
+    token: entry.token ?? env[`MI_ACCESS_TOKEN_${suffix}`],
+  };
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 /**
@@ -206,7 +340,11 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
   const miMode = config.mi?.mode ?? 'standalone';
   const appType = config.app?.type ?? 'template';
   const apiVersion = config.mi?.apiVersion ?? 7;
-  const miUrl = config.mi?.url ?? process.env.MI_BACKEND_URL;
+  const environment = resolveMiEnvironment(config);
+  const miUrl = environment.url;
+  const appId = environment.appId;
+  // Where a named environment's settings go too.
+  const inEnv = (key: string) => (environment.name ? ` (or envs.${environment.name}.${key})` : '');
 
   if (!(config.app?.name ?? templateName)) {
     throw new Error('[pp-dev] app.name is required (or set package.json#name)');
@@ -238,9 +376,19 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
     throw new Error('[pp-dev] mi.include requires mi.mode to be "standalone"');
   }
 
+  // Meant for another page on the same instance, or a URL left out of the `.env` file by mistake: the
+  // dev server then works with (and a sync writes to) the default environment's MI.
+  if (environment.sharesUrl && miUrl) {
+    console.warn(
+      `[pp-dev] envs.${environment.name} has no URL of its own (url, or MI_BACKEND_URL_${envVariableSuffix(environment.name!)}): it uses ${miUrl}, the default environment's MI`,
+    );
+  }
+
   if (!miUrl) {
     if (miMode === 'embedding' || appType === 'template') {
-      throw new Error('[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"');
+      throw new Error(
+        `[pp-dev] mi.url${inEnv('url')} is required when mi.mode is "embedding" or app.type is "template"`,
+      );
     }
 
     if (miMode === 'standalone' && appType === 'page') {
@@ -248,14 +396,16 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
     }
   }
 
-  if (appType === 'template' && !config.app?.id) {
-    throw new Error('[pp-dev] app.id is required when app.type is "template"');
+  if (appType === 'template' && !appId) {
+    throw new Error(`[pp-dev] app.id${inEnv('appId')} is required when app.type is "template"`);
   }
 
   const requiresPageAppId = appType === 'page' && miUrl && (miMode === 'standalone' || apiVersion >= 7);
 
-  if (requiresPageAppId && !config.app?.id) {
-    throw new Error('[pp-dev] app.id is required when backend page data is loaded for app.type "page"');
+  if (requiresPageAppId && !appId) {
+    throw new Error(
+      `[pp-dev] app.id${inEnv('appId')} is required when backend page data is loaded for app.type "page"`,
+    );
   }
 
   if (config.devPanel?.position !== undefined && !DEV_PANEL_POSITIONS.includes(config.devPanel.position)) {
@@ -363,10 +513,14 @@ export function normalizePPDevConfig(
     imageOptimizer = imgCfg;
   }
 
+  const environment = resolveMiEnvironment(config);
+  const backupsDir = sync.backupsDir ?? 'backups';
+
   return {
     templateName: resolvedName,
-    backendBaseURL: mi.url ?? process.env.MI_BACKEND_URL,
-    appId: app.id,
+    envName: environment.name,
+    backendBaseURL: environment.url,
+    appId: environment.appId,
     templateLess,
     miHudLess,
     integrateMiTopBar,
@@ -377,11 +531,13 @@ export function normalizePPDevConfig(
     outDir: build.outDir ?? 'dist',
     distZip,
     versionPlugin,
-    syncBackupsDir: sync.backupsDir ?? 'backups',
+    // A named environment's backups apart: the changelog compares a build with the latest one, which
+    // must be of the same page on the same instance. The default one's stay where they always were.
+    syncBackupsDir: environment.name ? `${backupsDir.replace(/[\\/]+$/, '')}/${environment.name}` : backupsDir,
     syncMaxBackups: sync.maxBackups,
     syncBuildTimeoutMs: sync.buildTimeoutMs,
     v7Features: apiVersion >= 7,
-    personalAccessToken: mi.token ?? process.env.MI_ACCESS_TOKEN,
+    personalAccessToken: environment.token,
     inspectorEnabled: inspector.enabled ?? true,
     inspectorMaxMemory: inspector.maxMemory ?? 1 * 1024 * 1024 * 1024,
     inspectorCaptureLimit: inspector.captureLimit ?? 10 * 1024 * 1024,

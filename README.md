@@ -259,6 +259,63 @@ export default defineConfig({
 });
 ```
 
+### `envs` — Several MI environments
+
+A page is often developed against more than one MI instance (a dev instance, a staging or customer
+one). Name each one in `envs` and choose it when you start pp-dev. The top-level `mi` and `app`
+settings are the `default` environment, so a config without `envs` works as before.
+
+| Field               | Type     | Default                                | Description                                                                   |
+| ------------------- | -------- | -------------------------------------- | ----------------------------------------------------------------------------- |
+| `envs.<name>.url`   | `string` | `MI_BACKEND_URL_<NAME>`, then `mi.url` | URL of that environment's MI instance                                         |
+| `envs.<name>.appId` | `number` | `app.id`                               | The page's ID on that instance                                                |
+| `envs.<name>.token` | `string` | `MI_ACCESS_TOKEN_<NAME>`               | Personal access token there. Never `mi.token` or `MI_ACCESS_TOKEN`: see below |
+| `defaultEnv`        | `string` | `'default'`                            | The environment used when neither `--env` nor `MI_ENV` names one              |
+
+```ts
+export default defineConfig({
+  mi: { url: 'https://dev.mi.example.com' }, // the default environment
+  app: { id: 7 },
+  envs: {
+    staging: { url: 'https://staging.mi.example.com', appId: 42 },
+    customer: { appId: 9 }, // its URL in MI_BACKEND_URL_CUSTOMER, out of git
+  },
+});
+```
+
+```bash
+# .env.local (not in git)
+MI_ACCESS_TOKEN=...          # the default environment
+MI_ACCESS_TOKEN_STAGING=...
+MI_ACCESS_TOKEN_CUSTOMER=...
+MI_BACKEND_URL_CUSTOMER=https://mi.customer.example.com
+```
+
+```bash
+pp-dev --env staging          # or MI_ENV=staging, in the shell or in .env.local
+pp-dev next --env customer
+pp-dev build --changelog --env staging
+```
+
+- **Choosing.** `--env <name>` wins, then `MI_ENV` (from the shell, then from the `.env` files),
+  then `defaultEnv`, then `default`. `--env` sets `MI_ENV`, so the Next.js server process and the
+  build a sync runs use the same environment. A name that isn't defined stops pp-dev with the list of
+  defined ones: it never falls back to `default`, which is another MI instance.
+- **Names.** Letters, digits, `-` and `_`, starting with a letter or digit. In the variables, the name
+  is in upper case and anything other than a letter or digit is `_` (`staging-eu` →
+  `MI_ACCESS_TOKEN_STAGING_EU`). Two names that give the same variables, and `envs.default`, are
+  refused.
+- **Tokens.** A named environment takes only its own token. Without one, pp-dev doesn't send the
+  default environment's token to another instance: log in to MI on `localhost` instead.
+- **Kept apart.** Switching environments drops the proxy cache and the page data (a `pp-dev`
+  restart runs in the same process). A named environment keeps its sync backups in
+  `<sync.backupsDir>/<name>/`, so `pp-dev build --changelog --env <name>` compares the build with
+  that environment's latest backup; the default one's stay in `sync.backupsDir`. The users you add
+  belong to the MI instance: two environments on one instance share them, saved ones included.
+- **The dev panel** names the environment in use (none for `default`).
+- A login on `localhost` is one cookie for every instance (browsers keep cookies by host, not by
+  port): after a switch to another instance, log in again there.
+
 ### Validation
 
 pp-dev validates your config at startup and reports problems clearly:
@@ -273,12 +330,18 @@ pp-dev validates your config at startup and reports problems clearly:
 | `app.name` missing and no `package.json#name`                             | error     |
 | `devPanel.position` not one of the four corners                           | error     |
 | `server.allowedHosts` neither a list of host names nor `true`             | error     |
+| `--env` / `MI_ENV` / `defaultEnv` naming an environment not in `envs`     | error     |
+| `envs.default`, an invalid name, or two names with the same variables     | error     |
 
 ### Environment Variables
 
 | Variable                       | Description                                                                       |
 | ------------------------------ | --------------------------------------------------------------------------------- |
 | `MI_ACCESS_TOKEN`              | Default value for `mi.token` when not set in config                               |
+| `MI_BACKEND_URL`               | Default value for `mi.url` when not set in config                                 |
+| `MI_ENV`                       | The MI environment to use (`envs`); `--env` sets it                               |
+| `MI_ACCESS_TOKEN_<NAME>`       | Token of the environment `<name>` when `envs.<name>.token` isn't set              |
+| `MI_BACKEND_URL_<NAME>`        | URL of the environment `<name>` when `envs.<name>.url` isn't set                  |
 | `PP_DEV_DIST_ZIP`              | `true`/`false` — override `build.zip` for `pp-dev build` / `pp-dev next-build`    |
 | `PP_DEV_DIST_ZIP_DIR`          | Override the ZIP output directory (`build.zip.outDir`)                            |
 | `PP_DEV_DIST_ZIP_FILENAME`     | Override the ZIP file name (`build.zip.fileName`)                                 |
@@ -343,13 +406,14 @@ The command detects flat 0.x configs and legacy `pp-watch.config.*` files, conve
 
 ### Global Options
 
-| Option                   | Description                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                       |
-| `--base <path>`          | Public base path (default: `/`)                                                |
-| `-l, --logLevel <level>` | Log level: `info`, `warn`, `error`, `silent` (default: `info`)                 |
-| `--clearScreen`          | Clear screen before logging                                                    |
-| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`) |
+| Option                   | Description                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                                 |
+| `--base <path>`          | Public base path (default: `/`)                                                          |
+| `-l, --logLevel <level>` | Log level: `info`, `warn`, `error`, `silent` (default: `info`)                           |
+| `--clearScreen`          | Clear screen before logging                                                              |
+| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`)           |
+| `--env <name>`           | MI environment from `envs` (sets `MI_ENV`; see [`envs`](#envs--several-mi-environments)) |
 
 ### Development Server
 

@@ -5,6 +5,8 @@ import { getDevPanelAssetPaths, renderDevPanelMarkup } from '../lib/dev-panel.js
 import type { DevPanelPosition } from '../plugin.js';
 
 export interface ClientInjectionPluginOpts {
+  /** The named MI environment (`envs`) in use; the panel names it. */
+  envName?: string;
   backendBaseURL?: string;
   templateLess: boolean;
   appId?: number;

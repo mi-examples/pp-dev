@@ -126,10 +126,12 @@ describe('dev server setup', () => {
       });
     });
 
-    it('takes the token from MI_ACCESS_TOKEN when the config has none', () => {
+    // PP-4840: the config resolves the token (MI_ACCESS_TOKEN for the default environment only). A
+    // named environment without a token of its own must not get MI_ACCESS_TOKEN here, sent to its MI.
+    it('does not take the token from MI_ACCESS_TOKEN when the config resolved none', () => {
       vi.stubEnv('MI_ACCESS_TOKEN', 'env-token');
 
-      expect(getMiAPIOptions('https://mi.example.com', { templateLess: true }).personalAccessToken).toBe('env-token');
+      expect(getMiAPIOptions('https://mi.example.com', { templateLess: true }).personalAccessToken).toBeUndefined();
     });
   });
 

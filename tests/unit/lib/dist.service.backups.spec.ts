@@ -102,6 +102,29 @@ describe('DistService — start-up and backups', () => {
     );
   });
 
+  // PP-4840: a named MI environment keeps its backups, and its sync meta, in `backups/<name>/`.
+  it("keeps a named environment's backups apart, and the default one's pruning leaves them", async () => {
+    const staging = new DistService('page', { root, backupFolder: 'backups/staging', maxBackups: 1 });
+
+    await staging.saveBackup(Buffer.from('staging'), analysis('staging'));
+
+    const stagingBackup = staging.getBackupMeta()!.lastBackupName;
+
+    expect(fs.readdirSync(path.join(root, 'backups', 'staging')).sort()).toEqual(
+      ['.pp-dev-meta', stagingBackup].sort(),
+    );
+
+    const defaultEnv = new DistService('page', { root, backupFolder: 'backups', maxBackups: 1 });
+
+    await defaultEnv.saveBackup(Buffer.from('one'), analysis('one'));
+    await defaultEnv.saveBackup(Buffer.from('two'), analysis('two'));
+
+    expect(fs.readdirSync(path.join(root, 'backups')).sort()).toEqual(
+      ['.pp-dev-meta', 'staging', defaultEnv.getBackupMeta()!.lastBackupName].sort(),
+    );
+    expect(fs.existsSync(path.join(root, 'backups', 'staging', stagingBackup))).toBe(true);
+  });
+
   it('keeps the sync meta in the given folder, relative to the root or absolute', async () => {
     const relative = new DistService('page', { root, metaDir: 'state/meta', backupFolder: 'backups' });
 

@@ -16,6 +16,7 @@ export * from './lib/pp-dev-config.js';
 function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   const {
     templateName,
+    envName,
     templateLess,
     backendBaseURL,
     miHudLess,
@@ -58,6 +59,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     },
     config: (config) => {
       config.clientInjectionPlugin = {
+        envName,
         backendBaseURL,
         appId,
         templateLess,
@@ -99,6 +101,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         templateName,
         internalServer,
         backendBaseURL,
+        envName,
         mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
         inspector: {
           enabled: inspectorEnabled !== false,
@@ -117,6 +120,10 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
 
       if (backendBaseURL && chain.mi) {
         const mi = chain.mi;
+
+        if (envName) {
+          server.config.logger.info(colors.blue(`🧭 MI environment: ${envName}`));
+        }
 
         server.config.logger.info(colors.blue(`🌐 Backend URL: ${backendBaseURL}`));
         server.config.logger.info(colors.blue(`🆔 Custom App ID: ${appId}`));

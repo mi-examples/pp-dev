@@ -20,6 +20,7 @@ const NON_VITE_FLAGS = [
   'filter',
   'm',
   'mode',
+  'env',
   // Vite takes it as `optimizeDeps.force`, set separately.
   'force',
   'w',
@@ -36,6 +37,26 @@ const NON_VITE_FLAGS = [
 ] as const;
 
 type NonViteFlag = (typeof NON_VITE_FLAGS)[number];
+
+/**
+ * `--env <name>`: the MI environment (`envs` in pp-dev.config), passed on as `MI_ENV`, so what
+ * pp-dev starts (the Next.js server process, the build a sync runs) uses it too. Over `MI_ENV` from
+ * the shell or a `.env` file. Runs before anything reads the config.
+ */
+export function applyEnvOption(value: unknown, env: Record<string, string | undefined> = process.env): void {
+  if (value === undefined) {
+    return;
+  }
+
+  // cac reads `--env 2` as a number, and a bare `--env` as `true`.
+  const name = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+
+  if (!name) {
+    throw new Error('--env needs the name of an environment (envs in pp-dev.config, or "default")');
+  }
+
+  env.MI_ENV = name;
+}
 
 /**
  * The command's own flags, as a Vite `server` or `build` config: without the global and pp-dev

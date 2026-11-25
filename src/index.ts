@@ -36,6 +36,7 @@ export type { PPDevConfig } from './config.js';
 export type {
   MiConfig,
   AppConfig,
+  EnvConfig,
   ProxyConfig,
   BuildConfig,
   SyncConfig,
@@ -78,6 +79,8 @@ const PP_DEV_CONFIG_GROUPS = new Set([
   'devPanel',
   'users',
   'server',
+  // By name: an environment given later replaces an earlier one of the same name whole.
+  'envs',
 ]);
 
 function mergePPDevConfigs(...configs: Array<PPDevConfig | undefined>): PPDevConfig {
