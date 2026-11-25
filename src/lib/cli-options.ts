@@ -2,6 +2,8 @@
  * Turning the CLI's flags into what Vite and Next.js are given. Kept apart from `cli.ts`, which
  * starts the CLI when imported, so these can be tested.
  */
+import path from 'node:path';
+import { PP_DEV_CONFIG_FILE_ENV_VAR } from '../constants.js';
 
 /** Flags of every command, or of pp-dev itself: never part of a Vite `server` / `build` config. */
 const NON_VITE_FLAGS = [
@@ -21,6 +23,8 @@ const NON_VITE_FLAGS = [
   'm',
   'mode',
   'env',
+  'ppConfig',
+  'pp-config',
   // Vite takes it as `optimizeDeps.force`, set separately.
   'force',
   'w',
@@ -56,6 +60,28 @@ export function applyEnvOption(value: unknown, env: Record<string, string | unde
   }
 
   env.MI_ENV = name;
+}
+
+/**
+ * `--pp-config <file>`: the pp-dev config to load in place of a `pp-dev.config.*` in the project
+ * root, relative to the current directory. Passed on as `PP_DEV_CONFIG` (absolute), as `--env` is.
+ */
+export function applyPPConfigOption(
+  value: unknown,
+  env: Record<string, string | undefined> = process.env,
+  cwd = process.cwd(),
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  const file = typeof value === 'string' ? value.trim() : '';
+
+  if (!file) {
+    throw new Error('--pp-config needs the path of a pp-dev config file');
+  }
+
+  env[PP_DEV_CONFIG_FILE_ENV_VAR] = path.resolve(cwd, file);
 }
 
 /**

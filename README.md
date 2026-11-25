@@ -72,6 +72,16 @@ Create a configuration file named `pp-dev.config` with one of these extensions:
 
 Alternatively, you can define configuration in your `package.json` using the `pp-dev` key.
 
+To use a config of another name or in another place, pass it with `--pp-config <file>` (relative to
+the current directory; `.ts`, `.cts`, `.mts`, `.js`, `.cjs`, `.mjs` or `.json`). It replaces the
+`pp-dev.config.*` in the root and `package.json`'s `pp-dev`, and must exist. `--pp-config` sets the
+`PP_DEV_CONFIG` variable, so the Next.js server process, the build a sync runs and `withPPDev()` in
+`next.config` load the same file, and a change to it restarts the dev server.
+
+```bash
+pp-dev --pp-config configs/pp-dev.staging.config.ts
+```
+
 ### Configuration Examples
 
 #### TypeScript (recommended)
@@ -346,6 +356,7 @@ pp-dev validates your config at startup and reports problems clearly:
 | `MI_ACCESS_TOKEN`              | Default value for `mi.token` when not set in config                               |
 | `MI_BACKEND_URL`               | Default value for `mi.url` when not set in config                                 |
 | `MI_ENV`                       | The MI environment to use (`envs`); `--env` sets it                               |
+| `PP_DEV_CONFIG`                | The pp-dev config file to use; `--pp-config` sets it                              |
 | `MI_ACCESS_TOKEN_<NAME>`       | Token of the environment `<name>` when `envs.<name>.token` isn't set              |
 | `MI_BACKEND_URL_<NAME>`        | URL of the environment `<name>` when `envs.<name>.url` isn't set                  |
 | `PP_DEV_DIST_ZIP`              | `true`/`false` — override `build.zip` for `pp-dev build` / `pp-dev next-build`    |
@@ -412,14 +423,15 @@ The command detects flat 0.x configs and legacy `pp-watch.config.*` files, conve
 
 ### Global Options
 
-| Option                   | Description                                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------- |
-| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                                 |
-| `--base <path>`          | Public base path (default: `/`)                                                          |
-| `-l, --logLevel <level>` | Log level: `info`, `warn`, `error`, `silent` (default: `info`)                           |
-| `--clearScreen`          | Clear screen before logging                                                              |
-| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`)           |
-| `--env <name>`           | MI environment from `envs` (sets `MI_ENV`; see [`envs`](#envs--several-mi-environments)) |
+| Option                   | Description                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `-c, --config <file>`    | Path to configuration file (default: `pp-dev.config.js`)                                                                                 |
+| `--base <path>`          | Public base path (default: `/`)                                                                                                          |
+| `-l, --logLevel <level>` | Log level: `info`, `warn`, `error`, `silent` (default: `info`)                                                                           |
+| `--clearScreen`          | Clear screen before logging                                                                                                              |
+| `--mode <mode>`          | Environment mode: `development`, `production`, `test` (default: `development`)                                                           |
+| `--env <name>`           | MI environment from `envs` (sets `MI_ENV`; see [`envs`](#envs--several-mi-environments))                                                 |
+| `--pp-config <file>`     | pp-dev config file to use instead of `pp-dev.config.*` in the root (sets `PP_DEV_CONFIG`; see [Configuration File](#configuration-file)) |
 
 ### Development Server
 

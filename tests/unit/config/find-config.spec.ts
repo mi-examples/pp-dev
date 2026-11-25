@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearConfigCache, findConfig, getConfig } from '../../../src/config.js';
 
 /**
@@ -57,5 +57,59 @@ describe('findConfig', () => {
 
     await expect(findConfig(root)).resolves.toEqual({ config: {}, found: false });
     await expect(getConfig(root)).resolves.toEqual({});
+  });
+
+  // `--pp-config <file>`: a config of another name or place (one per environment, a shared one).
+  describe('a config named with --pp-config (PP_DEV_CONFIG)', () => {
+    beforeEach(() => {
+      fs.writeFileSync(path.join(root, 'package.json'), '{"name":"named-app"}');
+      fs.writeFileSync(path.join(root, 'pp-dev.config.mjs'), "export default { app: { id: 1, type: 'template' } };\n");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('loads that file in place of the one in the root', async () => {
+      const file = path.join(root, 'configs', 'staging.config.ts');
+
+      fs.mkdirSync(path.dirname(file));
+      fs.writeFileSync(file, "const id: number = 2;\nexport default { app: { id, type: 'page' } };\n");
+      vi.stubEnv('PP_DEV_CONFIG', file);
+
+      await expect(findConfig(root)).resolves.toEqual({ config: { app: { id: 2, type: 'page' } }, found: true });
+    });
+
+    it('loads a JSON file', async () => {
+      const file = path.join(root, 'pp.json');
+
+      fs.writeFileSync(file, '{"app":{"id":5}}');
+      vi.stubEnv('PP_DEV_CONFIG', file);
+
+      await expect(getConfig(root)).resolves.toEqual({ app: { id: 5 } });
+    });
+
+    it('refuses a file that is not there, rather than starting without a config', async () => {
+      vi.stubEnv('PP_DEV_CONFIG', path.join(root, 'missing.config.ts'));
+
+      await expect(findConfig(root)).rejects.toThrow(
+        `The pp-dev config ${path.join(root, 'missing.config.ts')} (--pp-config or PP_DEV_CONFIG) does not exist`,
+      );
+    });
+
+    it('refuses a file of another kind', async () => {
+      const file = path.join(root, 'config.yaml');
+
+      fs.writeFileSync(file, 'app: {}');
+      vi.stubEnv('PP_DEV_CONFIG', file);
+
+      await expect(findConfig(root)).rejects.toThrow('must be a .js, .cjs, .mjs, .ts, .cts, .mts or .json file');
+    });
+
+    it('takes the one in the root again once none is named', async () => {
+      vi.stubEnv('PP_DEV_CONFIG', '  ');
+
+      await expect(getConfig(root)).resolves.toEqual({ app: { id: 1, type: 'template' } });
+    });
   });
 });

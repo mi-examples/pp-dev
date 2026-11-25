@@ -1,6 +1,7 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
+import { PP_DEV_CONFIG_FILE_ENV_VAR } from '../constants.js';
 import {
   SUPERVISOR_READY_MESSAGE,
   SUPERVISOR_SHUTDOWN_MESSAGE,
@@ -233,9 +234,15 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         if (!watcher && !shuttingDown) {
           // The `.env` files of the mode pp-dev loads, and the development ones Next's dev server
           // loads itself, whatever `--mode` says.
+          // A pp-dev config named with `--pp-config` too, wherever it is.
+          const namedConfigFile = process.env[PP_DEV_CONFIG_FILE_ENV_VAR]?.trim();
+
           watcher = createWatcher(projectRoot, restart, logger.info, {
             mode,
-            files: envFilesForMode('development').map((name) => path.join(projectRoot, name)),
+            files: [
+              ...envFilesForMode('development').map((name) => path.join(projectRoot, name)),
+              ...(namedConfigFile ? [path.resolve(namedConfigFile)] : []),
+            ],
           });
         }
       });

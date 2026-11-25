@@ -145,6 +145,23 @@ describe('superviseNextServer', () => {
     );
   });
 
+  // `--pp-config <file>` names a config outside the files the watcher knows by name.
+  it('watches the pp-dev config named with --pp-config', () => {
+    vi.stubEnv('PP_DEV_CONFIG', path.resolve('/configs/staging.config.ts'));
+
+    try {
+      const { servers, createWatcher } = setup();
+
+      servers[0].ready();
+
+      const options = (createWatcher.mock.calls[0] as unknown[] | undefined)?.[3] as { files?: string[] };
+
+      expect(options.files).toContain(path.resolve('/configs/staging.config.ts'));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("exits with the server's code when the first start fails", async () => {
     const { servers, processRef, createWatcher } = setup();
 

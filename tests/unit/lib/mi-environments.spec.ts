@@ -9,7 +9,7 @@ import {
   validatePPDevConfig,
   type PPDevConfig,
 } from '../../../src/lib/pp-dev-config.js';
-import { applyEnvOption, cleanOptions } from '../../../src/lib/cli-options.js';
+import { applyEnvOption, applyPPConfigOption, cleanOptions } from '../../../src/lib/cli-options.js';
 import { onProxyCacheInvalidate, useMiEnvironment } from '../../../src/lib/proxy-cache.middleware.js';
 
 /**
@@ -284,7 +284,29 @@ describe('MI environments', () => {
     });
 
     it("stays out of Vite's server and build config", () => {
-      expect(cleanOptions({ env: 'staging', port: 1 })).toEqual({ port: 1 });
+      expect(cleanOptions({ env: 'staging', ppConfig: 'x.ts', 'pp-config': 'x.ts', port: 1 })).toEqual({ port: 1 });
+    });
+  });
+
+  describe('--pp-config', () => {
+    it('passes the file on as PP_DEV_CONFIG, resolved against the current directory', () => {
+      const env: Record<string, string | undefined> = {};
+
+      applyPPConfigOption(' configs/staging.config.ts ', env, path.resolve('/work/app'));
+
+      expect(env.PP_DEV_CONFIG).toBe(path.resolve('/work/app', 'configs/staging.config.ts'));
+    });
+
+    it('leaves PP_DEV_CONFIG without --pp-config', () => {
+      const env: Record<string, string | undefined> = { PP_DEV_CONFIG: '/x.ts' };
+
+      applyPPConfigOption(undefined, env);
+
+      expect(env.PP_DEV_CONFIG).toBe('/x.ts');
+    });
+
+    it.each([true, ''])('refuses --pp-config without a file (%j)', (value) => {
+      expect(() => applyPPConfigOption(value, {})).toThrow('--pp-config needs the path of a pp-dev config file');
     });
   });
 
