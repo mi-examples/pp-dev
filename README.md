@@ -651,7 +651,12 @@ Every saved user gets its own host: `<name>.localhost:<port>`. The browser sends
 
 ### Requirements
 
-- **Your own API token** (`mi.token` or `MI_ACCESS_TOKEN`): the dev panel works as you through it. Without it the popover explains why users can't be added.
+- **You, known to MI**: the dev panel works as you on every host, so pp-dev needs one of
+  - **your own API token** (`mi.token` or `MI_ACCESS_TOKEN`), or
+  - **your login on `localhost`** with your username and password, without a token. pp-dev keeps that MI session in memory (never on disk) and sends the dev panel's MI calls with it from any host. Logging in on `localhost` as another MI user makes that user the one the dev panel works as. When MI ends the session (or you log out on `localhost`), the popover says so and users can't be added until you log in on `localhost` again; a saved user's tab then asks you to do that instead of loading the page.
+
+  Without either, the popover explains why users can't be added.
+
 - **The dev server opened on `localhost`**: hosts like `<name>.localhost` don't exist on an IP address or a custom domain; there pp-dev works as before, without users.
 
 ### Adding users
@@ -669,7 +674,7 @@ Logging out on a user's host ends that user's MI session (or token) as it would 
 
 ### Keeping users between runs
 
-Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, outside the project so it never ends up in git or a build. The tokens are stored as plain text: on macOS and Linux the file is readable by you only (mode `0600`); Windows ignores file modes, so there it is as private as your user profile folder (by default readable by you, administrators and the system). Two dev servers on the same project and MI instance share the file: each keeps the users the other added. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as _API token turned down by MI_.
+Users live as long as the dev server. With `users: { persist: true }` the users added with an API token are kept in `~/.pp-dev/users/<hash>.json` — one file per project and MI instance, outside the project so it never ends up in git or a build. The tokens are stored as plain text: on macOS and Linux the file is readable by you only (mode `0600`); Windows ignores file modes, so there it is as private as your user profile folder (by default readable by you, administrators and the system). Two dev servers on the same project and MI instance share the file: each keeps the users the other added. Passwords and MI sessions are never written. On start, every kept token is checked with MI again; one MI turns down shows as _API token turned down by MI_. Keeping users needs your own API token: with only a login on `localhost`, users last as long as the dev server.
 
 ```typescript
 // pp-dev.config.ts
@@ -684,13 +689,13 @@ export default defineConfig({
 
 The popover uses a small JSON API:
 
-| Method   | Path                  | Description                                                                                                     |
-| -------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/@api/users`         | The users (name, kind, state, MI user, `origin`, `loginUrl`), the default user, and whether users are available |
-| `POST`   | `/@api/users`         | Add a user: `{ "name", "token" }`, or `{ "name", "kind": "session" }` to log in with a password                 |
-| `PUT`    | `/@api/users/default` | Make a user the default: `{ "name" }`, or `{ "name": null }` for you                                            |
-| `PATCH`  | `/@api/users/:name`   | Edit a user added with an API token: `{ "name" }` to rename it, `{ "token" }` to replace its token              |
-| `DELETE` | `/@api/users/:name`   | Remove a user                                                                                                   |
+| Method   | Path                  | Description                                                                                                                                                                                                                                                  |
+| -------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`    | `/@api/users`         | The users (name, kind, state, MI user, `origin`, `loginUrl`), the default user, whether users are available, and `original`: who the dev panel works as (`{ "kind": "token" }`, or `{ "kind": "session", "state", "miUser" }` for your login on `localhost`) |
+| `POST`   | `/@api/users`         | Add a user: `{ "name", "token" }`, or `{ "name", "kind": "session" }` to log in with a password                                                                                                                                                              |
+| `PUT`    | `/@api/users/default` | Make a user the default: `{ "name" }`, or `{ "name": null }` for you                                                                                                                                                                                         |
+| `PATCH`  | `/@api/users/:name`   | Edit a user added with an API token: `{ "name" }` to rename it, `{ "token" }` to replace its token                                                                                                                                                           |
+| `DELETE` | `/@api/users/:name`   | Remove a user                                                                                                                                                                                                                                                |
 
 Tokens and MI sessions are never sent back.
 

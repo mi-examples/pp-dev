@@ -20,6 +20,7 @@ import type { MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { writeFileAtomicSync } from './helpers/atomic-file.helper.js';
+import { originalSession } from './original-session.js';
 
 const STORE_VERSION = 1;
 
@@ -237,6 +238,8 @@ export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projec
     // Detach the old file first: dropping the old instance's users must not empty its store.
     stopKeeping(userRegistry);
     userRegistry.useContext(context);
+    // Your MI session on localhost belongs to the old instance too.
+    originalSession.clear();
   }
 
   if (!opts.persist) {
@@ -248,7 +251,10 @@ export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projec
   // Users can only be added with your own token, so without one there is nothing to restore.
   if (!opts.miAPI.personalAccessToken) {
     createLogger().warn(
-      colors.yellow('users.persist is on, but users need your own API token (mi.token or MI_ACCESS_TOKEN).'),
+      colors.yellow(
+        'users.persist is on, but keeping users needs your own API token (mi.token or MI_ACCESS_TOKEN). ' +
+          'Without it, users last as long as the dev server.',
+      ),
     );
 
     return;

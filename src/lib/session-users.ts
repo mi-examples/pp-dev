@@ -46,7 +46,7 @@ export function withoutSessionSetCookie(setCookie: string[] | undefined): string
   return others.length ? others : undefined;
 }
 
-interface ObservedResponse {
+export interface ObservedResponse {
   statusCode?: number;
   headers: IncomingMessage['headers'];
 }
@@ -55,7 +55,7 @@ interface ObservedResponse {
  * Whether MI turned a request away for not being logged in: a 401, a 412 (how MI answers an expired
  * session, see helpers/token.helper.ts), or a redirect to the login page.
  */
-function isLoggedOutResponse({ statusCode = 200, headers }: ObservedResponse): boolean {
+export function isLoggedOutResponse({ statusCode = 200, headers }: ObservedResponse): boolean {
   if (statusCode === 401 || statusCode === 412) {
     return true;
   }

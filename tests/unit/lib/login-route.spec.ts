@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { createInternalServer } from '../../../src/lib/internal.middleware.js';
 import { LOGIN_API_PATH, registerLoginRoute } from '../../../src/lib/login-route.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
+import { originalSession } from '../../../src/lib/original-session.js';
 
 /**
  * The token login behind the form pp-dev adds to MI's `/login` page. It lived in the Vite plugin
@@ -102,6 +103,48 @@ describe('registerLoginRoute', () => {
     expect(response.status).toBe(400);
     expect(JSON.parse(response.body)).toMatchObject({ code: 'INVALID_TOKEN_TYPE' });
     expect(get).not.toHaveBeenCalled();
+  });
+
+  describe('the original user from a login on localhost (PP-4602)', () => {
+    const owners = new Map([['RT-SESSION', { id: 7, username: 'dev' }]]);
+
+    beforeEach(() => {
+      originalSession.clear();
+      originalSession.useCheck(async (session) => owners.get(session));
+    });
+
+    // The session is the process's own: other specs in this worker must not find it.
+    afterAll(() => {
+      originalSession.clear();
+    });
+
+    it('follows the session a regular token login gives localhost', async () => {
+      get.mockResolvedValue({
+        data: { users: [{ user_id: 7, username: 'dev' }] },
+        headers: { 'set-cookie': ['metric_insights_session=RT-SESSION; path=/; httponly'] },
+      });
+
+      const response = await post(JSON.stringify({ token: 'rt-1', tokenType: 'regular' }), {
+        Host: 'localhost:3000',
+      });
+
+      expect(response.status).toBe(302);
+      await vi.waitFor(() => expect(originalSession.session).toBe('RT-SESSION'));
+    });
+
+    it('drops the session of a login on localhost once a personal access token is the original user', async () => {
+      await originalSession.observe(
+        { method: 'GET', url: '/home', headers: { cookie: 'metric_insights_session=RT-SESSION' } },
+        { statusCode: 200, headers: {} },
+      );
+      expect(originalSession.session).toBe('RT-SESSION');
+
+      get.mockResolvedValue({ data: { user: { user_id: 7, username: 'dev' } }, headers: {} });
+      await post(JSON.stringify({ token: 'pat-1', tokenType: 'personal' }), { Host: 'localhost:3000' });
+
+      expect(originalSession.state).toBe('none');
+      expect(originalSession.session).toBeUndefined();
+    });
   });
 
   it("refuses to change the original user's token from a saved user's host", async () => {

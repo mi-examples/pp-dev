@@ -1,7 +1,12 @@
 import type { Application, Request, Response } from 'express';
 import type { MiAPI } from './pp.middleware.js';
 import { SavedUser, UserRegistry, getUserNameError, getUserOrigin, userRegistry } from './user-registry.js';
-import { checkUserToken } from './mi-identity.js';
+import { type MiUser, checkUserToken } from './mi-identity.js';
+import {
+  OriginalSession,
+  type OriginalSessionState,
+  originalSession as sharedOriginalSession,
+} from './original-session.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
@@ -14,6 +19,8 @@ export const USERS_API_PATH = '/@api/users';
 interface UserRoutesDeps {
   miAPI: MiAPI;
   users?: UserRegistry;
+  /** The main host's MI session, the original user's without a token. @default the shared one */
+  originalSession?: OriginalSession;
 }
 
 const routeStates = new WeakMap<Application, { deps: UserRoutesDeps }>();
@@ -44,6 +51,31 @@ function toPublicUser(user: SavedUser, req: Request): PublicUser {
   };
 }
 
+/**
+ * The original user, the one the dev panel works as (never its token or MI session): `token` with an
+ * API token, otherwise `session`, whoever is logged in on localhost (PP-4602), with its state.
+ */
+export type PublicOriginal = { kind: 'token' } | { kind: 'session'; state: OriginalSessionState; miUser?: MiUser };
+
+function toPublicOriginal(miAPI: MiAPI, session: OriginalSession): PublicOriginal {
+  if (miAPI.personalAccessToken) {
+    return { kind: 'token' };
+  }
+
+  return { kind: 'session', state: session.state, ...(session.miUser ? { miUser: session.miUser } : {}) };
+}
+
+/** Why there is no original user to add users with, or `undefined` if there is one. */
+function getOriginalUserMissing(miAPI: MiAPI, session: OriginalSession): string | undefined {
+  if (miAPI.personalAccessToken || session.session) {
+    return undefined;
+  }
+
+  return session.state === 'expired'
+    ? 'Your MI session on localhost ended: log in again on localhost.'
+    : 'Adding users needs you logged in to MI on localhost, or your own API token (mi.token or MI_ACCESS_TOKEN).';
+}
+
 function sendError(res: Response, status: number, code: string, error: string) {
   res.status(status).json({ error, code });
 }
@@ -64,12 +96,16 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
   const logger = createLogger();
   const getUsers = () => current.deps.users ?? userRegistry;
 
+  const getOriginalSession = () => current.deps.originalSession ?? sharedOriginalSession;
+
   app.get(USERS_API_PATH, (req, res) => {
     const users = getUsers();
+    const { miAPI } = current.deps;
 
     res.json({
-      // Users can only be added with the original user's own token (the dev panel's user).
-      available: Boolean(current.deps.miAPI.personalAccessToken),
+      // Users can only be added while the original user (the dev panel's) is known.
+      available: !getOriginalUserMissing(miAPI, getOriginalSession()),
+      original: toPublicOriginal(miAPI, getOriginalSession()),
       users: users.list().map((user) => toPublicUser(user, req)),
       defaultUser: users.defaultUser?.name ?? null,
     });
@@ -119,14 +155,11 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
       return;
     }
 
-    // The dev panel always works as the original user, which multi-user mode needs a token for.
-    if (!miAPI.personalAccessToken) {
-      sendError(
-        res,
-        409,
-        'ORIGINAL_TOKEN_REQUIRED',
-        'Adding users needs your own API token: set mi.token or MI_ACCESS_TOKEN.',
-      );
+    // The dev panel always works as the original user: your API token, or your login on localhost.
+    const originalMissing = getOriginalUserMissing(miAPI, getOriginalSession());
+
+    if (originalMissing) {
+      sendError(res, 409, 'ORIGINAL_USER_REQUIRED', originalMissing);
 
       return;
     }

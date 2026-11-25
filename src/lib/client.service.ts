@@ -513,6 +513,12 @@ export class ClientService {
       if (errorInfo.code === 'SESSION_EXPIRED') {
         this.logger.info(colors.yellow('Session expired - attempting to validate credentials'));
 
+        // Without an API token the sync goes as your login on localhost (PP-4602), from any tab: a
+        // saved user's tab must not take "Session expired" for its own and log in there.
+        const localhostLogin = this.opts.miAPI?.personalAccessToken
+          ? undefined
+          : 'Your MI session on localhost ended: log in again on localhost, then sync again.';
+
         // Try to validate credentials to get more specific error information
         try {
           const validation = await this.opts.miAPI?.validateCredentials();
@@ -520,14 +526,14 @@ export class ClientService {
           if (validation && !validation.isValid) {
             this.logger.error(colors.red(`Authentication error: ${validation.error}`));
             this.sendSyncResponse(client, {
-              error: validation.error ?? 'Authentication failed',
+              error: localhostLogin ?? validation.error ?? 'Authentication failed',
               code: validation.code,
               refresh: true,
             });
           } else {
             this.logger.info(colors.yellow('Session expired'));
             this.sendSyncResponse(client, {
-              error: 'Session expired',
+              error: localhostLogin ?? 'Session expired',
               code: 'SESSION_EXPIRED',
               refresh: true,
             });
@@ -535,7 +541,7 @@ export class ClientService {
         } catch {
           this.logger.info(colors.yellow('Session expired'));
           this.sendSyncResponse(client, {
-            error: 'Session expired',
+            error: localhostLogin ?? 'Session expired',
             code: 'SESSION_EXPIRED',
             refresh: true,
           });
