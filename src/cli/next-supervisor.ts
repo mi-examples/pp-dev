@@ -130,7 +130,8 @@ export async function loadPPDevConfigAfresh(projectRoot: string, mode = 'develop
     return;
   }
 
-  validatePPDevConfig(config, getPkg(projectRoot).name);
+  // Partial: `withPPDev()` in `next.config` may add to it, an environment (`envs`) among the rest.
+  validatePPDevConfig(config, getPkg(projectRoot).name, { partial: true });
 }
 
 function describeError(error: unknown): string {

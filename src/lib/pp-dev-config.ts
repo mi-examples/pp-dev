@@ -347,28 +347,69 @@ export function envsWithoutUrl(config: PPDevConfig, env: Record<string, string |
     .map(([name]) => name);
 }
 
+/**
+ * A named environment's backups folder, inside `backupsDir` and as relative as it is: `''` (the
+ * project root) gives `staging`, not `/staging`.
+ */
+function joinBackupsDir(backupsDir: string, name: string): string {
+  const trimmed = backupsDir.replace(/[\\/]+$/, '');
+
+  if (!backupsDir) {
+    return name;
+  }
+
+  // Only separators (`/`, the root of the drive): kept, the name after it.
+  return trimmed ? `${trimmed}/${name}` : `${backupsDir.slice(0, 1)}${name}`;
+}
+
+/**
+ * Whether `config` defines the environment in use (`MI_ENV`, else `defaultEnv`): `default`, or one
+ * of its `envs`. A partial config (the standalone file of a project whose `next.config` adds to it)
+ * may leave it to another source.
+ */
+function definesSelectedEnv(config: PPDevConfig, env: Record<string, string | undefined> = process.env): boolean {
+  const name = env.MI_ENV?.trim() || config.defaultEnv || DEFAULT_ENV_NAME;
+
+  return name === DEFAULT_ENV_NAME || Object.prototype.hasOwnProperty.call(config.envs ?? {}, name);
+}
+
+export interface ValidateOptions {
+  /**
+   * `config` is only part of the config: the standalone file, which `withPPDev()` in `next.config`
+   * may add to. An environment it doesn't define (in `envs`, or named by `defaultEnv`) is left to the
+   * server process, which validates the merged config: refused here, no change to the file would
+   * ever restart the dev server.
+   */
+  partial?: boolean;
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 /**
  * @param templateName - package.json's `name`; `app.name` takes precedence over it, here and in
  *   {@link normalizePPDevConfig} (whose `templateName` is the one name to use from then on).
  */
-export function validatePPDevConfig(config: PPDevConfig, templateName: string | undefined): void {
+export function validatePPDevConfig(
+  config: PPDevConfig,
+  templateName: string | undefined,
+  options: ValidateOptions = {},
+): void {
   const miMode = config.mi?.mode ?? 'standalone';
-  const appType = config.app?.type ?? 'template';
-  const apiVersion = config.mi?.apiVersion ?? 7;
-  const environment = resolveMiEnvironment(config);
-  const miUrl = environment.url;
-  const appId = environment.appId;
-  // Where a named environment's settings go too.
-  const inEnv = (key: string) => (environment.name ? ` (or envs.${environment.name}.${key})` : '');
+  let environment: ResolvedMiEnvironment | undefined;
 
-  // The one in use was checked above; choosing one of these stops pp-dev the same way.
-  for (const name of envsWithoutUrl(config)) {
-    if (name !== environment.name) {
-      console.warn(
-        `[pp-dev] envs.${name} has no URL (envs.${name}.url or MI_BACKEND_URL_${envVariableSuffix(name)}): --env ${name} would stop with an error`,
-      );
+  if (options.partial && !definesSelectedEnv(config)) {
+    // The environments it does define are still checked (names, collisions), as if none were chosen.
+    resolveMiEnvironment({ ...config, defaultEnv: undefined }, { MI_ENV: DEFAULT_ENV_NAME });
+  } else {
+    environment = resolveMiEnvironment(config);
+
+    // The one in use was checked above; choosing one of these stops pp-dev the same way.
+    for (const name of envsWithoutUrl(config)) {
+      if (name !== environment.name) {
+        console.warn(
+          `[pp-dev] envs.${name} has no URL (envs.${name}.url or MI_BACKEND_URL_${envVariableSuffix(name)}): --env ${name} would stop with an error`,
+        );
+      }
     }
   }
 
@@ -402,6 +443,36 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
     throw new Error('[pp-dev] mi.include requires mi.mode to be "standalone"');
   }
 
+  if (environment) {
+    validateMiEnvironment(config, miMode, environment);
+  }
+
+  if (config.devPanel?.position !== undefined && !DEV_PANEL_POSITIONS.includes(config.devPanel.position)) {
+    throw new Error(`[pp-dev] devPanel.position must be one of: ${DEV_PANEL_POSITIONS.join(', ')}`);
+  }
+
+  const allowedHosts: unknown = config.server?.allowedHosts;
+
+  if (
+    allowedHosts !== undefined &&
+    allowedHosts !== true &&
+    !(Array.isArray(allowedHosts) && allowedHosts.every((host) => typeof host === 'string' && host.trim() !== ''))
+  ) {
+    throw new Error(
+      `[pp-dev] server.allowedHosts must be a list of host names or true, got ${JSON.stringify(allowedHosts)}`,
+    );
+  }
+}
+
+/** The environment in use: its URL and app id as the app's type and mode need them. */
+function validateMiEnvironment(config: PPDevConfig, miMode: MiMode, environment: ResolvedMiEnvironment): void {
+  const appType = config.app?.type ?? 'template';
+  const apiVersion = config.mi?.apiVersion ?? 7;
+  const miUrl = environment.url;
+  const appId = environment.appId;
+  // Where a named environment's settings go too.
+  const inEnv = (key: string) => (environment.name ? ` (or envs.${environment.name}.${key})` : '');
+
   if (!miUrl) {
     if (miMode === 'embedding' || appType === 'template') {
       throw new Error('[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"');
@@ -421,22 +492,6 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
   if (requiresPageAppId && !appId) {
     throw new Error(
       `[pp-dev] app.id${inEnv('appId')} is required when backend page data is loaded for app.type "page"`,
-    );
-  }
-
-  if (config.devPanel?.position !== undefined && !DEV_PANEL_POSITIONS.includes(config.devPanel.position)) {
-    throw new Error(`[pp-dev] devPanel.position must be one of: ${DEV_PANEL_POSITIONS.join(', ')}`);
-  }
-
-  const allowedHosts: unknown = config.server?.allowedHosts;
-
-  if (
-    allowedHosts !== undefined &&
-    allowedHosts !== true &&
-    !(Array.isArray(allowedHosts) && allowedHosts.every((host) => typeof host === 'string' && host.trim() !== ''))
-  ) {
-    throw new Error(
-      `[pp-dev] server.allowedHosts must be a list of host names or true, got ${JSON.stringify(allowedHosts)}`,
     );
   }
 }
@@ -549,7 +604,7 @@ export function normalizePPDevConfig(
     versionPlugin,
     // A named environment's backups apart: the changelog compares a build with the latest one, which
     // must be of the same page on the same instance. The default one's stay where they always were.
-    syncBackupsDir: environment.name ? `${backupsDir.replace(/[\\/]+$/, '')}/${environment.name}` : backupsDir,
+    syncBackupsDir: environment.name ? joinBackupsDir(backupsDir, environment.name) : backupsDir,
     syncMaxBackups: sync.maxBackups,
     syncBuildTimeoutMs: sync.buildTimeoutMs,
     v7Features: apiVersion >= 7,

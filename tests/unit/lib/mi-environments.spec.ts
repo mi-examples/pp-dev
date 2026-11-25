@@ -9,7 +9,7 @@ import {
   validatePPDevConfig,
   type PPDevConfig,
 } from '../../../src/lib/pp-dev-config.js';
-import { applyEnvOption, applyPPConfigOption, cleanOptions } from '../../../src/lib/cli-options.js';
+import { applyEnvOption, applyPPConfigOption, cleanOptions, lastFlagValue } from '../../../src/lib/cli-options.js';
 import { onProxyCacheInvalidate, useMiEnvironment } from '../../../src/lib/proxy-cache.middleware.js';
 
 /**
@@ -195,6 +195,17 @@ describe('MI environments', () => {
         'out/backups/staging',
       );
     });
+
+    // Review of #402: `''` (the project root) gave `/staging`, outside the project.
+    it.each([
+      ['', 'staging'],
+      ['.', './staging'],
+      ['/', '/staging'],
+    ])('keeps a sync.backupsDir of %j as relative as it is', (backupsDir, expected) => {
+      process.env.MI_ENV = 'staging';
+
+      expect(normalizePPDevConfig({ ...CONFIG, sync: { backupsDir } }, 'my-app').syncBackupsDir).toBe(expected);
+    });
   });
 
   describe('validatePPDevConfig', () => {
@@ -252,6 +263,44 @@ describe('MI environments', () => {
 
       expect(() => validatePPDevConfig(CONFIG, 'my-app')).toThrow('Unknown MI environment "prod"');
     });
+
+    // Review of #402: with `envs.staging` from `withPPDev()` in next.config, the supervisor's check of
+    // the standalone file refused every change to it, and the dev server was never restarted.
+    describe('a partial config (the standalone file next to withPPDev())', () => {
+      const standalone: PPDevConfig = { mi: { url: 'https://dev' }, app: { id: 7 } };
+
+      it('leaves an environment it does not define to the merged config', () => {
+        process.env.MI_ENV = 'staging';
+
+        expect(() => validatePPDevConfig(standalone, 'my-app', { partial: true })).not.toThrow();
+        expect(() => validatePPDevConfig(standalone, 'my-app')).toThrow('Unknown MI environment "staging"');
+      });
+
+      it('leaves a defaultEnv it does not define to the merged config', () => {
+        expect(() =>
+          validatePPDevConfig({ ...standalone, defaultEnv: 'staging' }, 'my-app', { partial: true }),
+        ).not.toThrow();
+      });
+
+      it('still checks the environments it defines, and the rest of the file', () => {
+        process.env.MI_ENV = 'staging';
+
+        expect(() =>
+          validatePPDevConfig({ ...standalone, envs: { 'eu-1': {}, eu_1: {} } }, 'my-app', { partial: true }),
+        ).toThrow('would both read MI_ACCESS_TOKEN_EU_1');
+        expect(() =>
+          validatePPDevConfig({ ...standalone, sync: { maxBackups: -1 } }, 'my-app', { partial: true }),
+        ).toThrow('sync.maxBackups');
+      });
+
+      it('checks an environment it defines in full', () => {
+        process.env.MI_ENV = 'staging';
+
+        expect(() =>
+          validatePPDevConfig({ ...standalone, envs: { staging: { appId: 3 } } }, 'my-app', { partial: true }),
+        ).toThrow('MI environment "staging" has no URL');
+      });
+    });
   });
 
   describe('--env', () => {
@@ -297,16 +346,69 @@ describe('MI environments', () => {
       expect(env.PP_DEV_CONFIG).toBe(path.resolve('/work/app', 'configs/staging.config.ts'));
     });
 
-    it('leaves PP_DEV_CONFIG without --pp-config', () => {
-      const env: Record<string, string | undefined> = { PP_DEV_CONFIG: '/x.ts' };
+    it('keeps the PP_DEV_CONFIG of the shell without --pp-config', () => {
+      const env: Record<string, string | undefined> = { PP_DEV_CONFIG: path.resolve('/x.ts') };
 
       applyPPConfigOption(undefined, env);
 
-      expect(env.PP_DEV_CONFIG).toBe('/x.ts');
+      expect(env.PP_DEV_CONFIG).toBe(path.resolve('/x.ts'));
+    });
+
+    // Review of #402: a sync's build runs in the project root, where a relative one names another file.
+    it('makes a relative PP_DEV_CONFIG of the shell absolute, for the processes pp-dev starts elsewhere', () => {
+      const env: Record<string, string | undefined> = { PP_DEV_CONFIG: './configs/staging.ts' };
+
+      applyPPConfigOption(undefined, env, path.resolve('/work'));
+
+      expect(env.PP_DEV_CONFIG).toBe(path.resolve('/work', 'configs/staging.ts'));
+    });
+
+    it('takes the last of a repeated --pp-config', () => {
+      const env: Record<string, string | undefined> = {};
+
+      applyPPConfigOption(['a.ts', 'b.ts'], env, path.resolve('/work'));
+
+      expect(env.PP_DEV_CONFIG).toBe(path.resolve('/work', 'b.ts'));
     });
 
     it.each([true, ''])('refuses --pp-config without a file (%j)', (value) => {
       expect(() => applyPPConfigOption(value, {})).toThrow('--pp-config needs the path of a pp-dev config file');
+    });
+  });
+
+  // Review of #402: cac turned `--env 01` into the number 1 (another environment's name), and a
+  // repeated flag (`npm run dev -- --env staging` over a script's `--env dev`) into an array.
+  describe('lastFlagValue', () => {
+    it.each<[string, string[], string | true | undefined]>([
+      ['a value that looks like a number, as typed', ['--env', '01'], '01'],
+      ['the last of a repeated flag', ['--env', 'dev', '--port', '1', '--env', 'staging'], 'staging'],
+      ['--name=value', ['--env=staging'], 'staging'],
+      ['true for a flag without a value', ['--env', '--port', '1'], true],
+      ['true for the last argument', ['serve', '--env'], true],
+      ['nothing without the flag', ['--environment', 'x'], undefined],
+      ['nothing after --', ['--', '--env', 'x'], undefined],
+    ])('reads %s', (_label, argv, expected) => {
+      expect(lastFlagValue(argv, ['env'])).toBe(expected);
+    });
+
+    it('reads any of the names, the last one written counting', () => {
+      expect(lastFlagValue(['--pp-config', 'a.ts', '--ppConfig', 'b.ts'], ['pp-config', 'ppConfig'])).toBe('b.ts');
+    });
+
+    it('gives --env the last value, kept as a string', () => {
+      const env: Record<string, string | undefined> = {};
+
+      applyEnvOption(lastFlagValue(['--env', 'dev', '--env', '01'], ['env']), env);
+
+      expect(env.MI_ENV).toBe('01');
+    });
+
+    it('takes the last of an array --env', () => {
+      const env: Record<string, string | undefined> = {};
+
+      applyEnvOption(['dev', 'staging'], env);
+
+      expect(env.MI_ENV).toBe('staging');
     });
   });
 

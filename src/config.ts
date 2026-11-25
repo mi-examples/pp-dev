@@ -175,7 +175,9 @@ async function loadBundledConfig<T extends object>(filePath: string, projectRoot
   const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const fileNameTmp = `${fileBase}.${isESM ? 'mjs' : 'cjs'}`;
-  const tempFilePath = path.resolve(projectRoot, fileNameTmp);
+  // Beside the config, not in the project root: a config named with `--pp-config` elsewhere imports
+  // the packages installed next to it.
+  const tempFilePath = path.resolve(path.dirname(filePath), fileNameTmp);
   const fileUrl = pathToFileURL(tempFilePath).toString();
 
   writeFileSync(tempFilePath, code);

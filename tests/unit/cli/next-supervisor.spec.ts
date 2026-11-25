@@ -469,6 +469,24 @@ describe("the supervisor's config check", () => {
     await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
   });
 
+  // Review of #402: with `envs.staging` from `withPPDev()`, `pp-dev next --env staging` started, but
+  // the check of the standalone file refused every change to it ("Unknown MI environment").
+  it('passes a standalone config without the environment that withPPDev() adds', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-env-elsewhere-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"split-app"}');
+    fs.writeFileSync(
+      path.join(root, 'pp-dev.config.mjs'),
+      "export default { mi: { url: 'https://mi.example.com' }, app: { id: 1, type: 'template' } };\n",
+    );
+    vi.stubEnv('MI_ENV', 'staging');
+
+    try {
+      await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   // A config file that exports nothing counted as no config: the check passed, the working server
   // was stopped, and the new one refused the empty config.
   it('refuses a config file that exports nothing', async () => {

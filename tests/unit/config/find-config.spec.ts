@@ -80,6 +80,34 @@ describe('findConfig', () => {
       await expect(findConfig(root)).resolves.toEqual({ config: { app: { id: 2, type: 'page' } }, found: true });
     });
 
+    // Review of #402: the bundle was written into the project root, where the config's own
+    // packages are not installed.
+    it('resolves the packages a config elsewhere imports from beside it', async () => {
+      const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-named-config-'));
+
+      try {
+        const pkg = path.join(elsewhere, 'node_modules', 'shared-pp-settings');
+
+        fs.mkdirSync(pkg, { recursive: true });
+        fs.writeFileSync(path.join(pkg, 'package.json'), '{"name":"shared-pp-settings","main":"index.js"}');
+        fs.writeFileSync(path.join(pkg, 'index.js'), 'module.exports = { appId: 8 };\n');
+
+        const file = path.join(elsewhere, 'pp-dev.shared.config.cjs');
+
+        fs.writeFileSync(
+          file,
+          "const { appId } = require('shared-pp-settings');\nmodule.exports = { app: { id: appId } };\n",
+        );
+        vi.stubEnv('PP_DEV_CONFIG', file);
+
+        await expect(getConfig(root)).resolves.toEqual({ app: { id: 8 } });
+        // The temporary bundle beside it is gone.
+        expect(fs.readdirSync(elsewhere).sort()).toEqual(['node_modules', 'pp-dev.shared.config.cjs']);
+      } finally {
+        fs.rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
     it('loads a JSON file', async () => {
       const file = path.join(root, 'pp.json');
 
