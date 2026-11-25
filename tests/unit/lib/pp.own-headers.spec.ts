@@ -78,4 +78,34 @@ describe('MiAPI — the token on its own MI calls before any page data load', ()
     expect(headersOf(download.mock.calls[0])).toMatchObject({ cookie: 'session=abc', authorization: 'Bearer DEV-PAT' });
     expect(headersOf(download.mock.calls[0])).not.toHaveProperty('host');
   });
+
+  // Review of #401: the token added to a call was stored with the headers, so once a regular token
+  // login cleared `personalAccessToken`, the sync and the Variables Editor still went as its owner.
+  it('stops sending the token once it is cleared', async () => {
+    const mi = makeMi();
+    const download = vi.spyOn(mi['assetsApi'], 'downloadPageAssets').mockResolvedValue(Buffer.alloc(0) as never);
+
+    await mi.getAssets();
+    expect(headersOf(download.mock.calls[0])).toMatchObject({ authorization: 'Bearer DEV-PAT' });
+
+    mi.personalAccessToken = undefined;
+    await mi.getAssets();
+
+    expect(headersOf(download.mock.calls[1])).not.toHaveProperty('authorization');
+  });
+
+  it("keeps a token the caller sent in the stored headers, which isn't MiAPI's own", async () => {
+    const mi = makeMi();
+
+    vi.spyOn(mi['pageApi'], 'get').mockResolvedValue({ name: 'Sales', template: 'tpl', tags: '[]' } as never);
+    vi.spyOn(mi, 'getPageTemplate').mockResolvedValue('<html></html>' as never);
+    await mi.getPageVariables(7, { authorization: 'Bearer PAGE-TOKEN' });
+    mi.personalAccessToken = undefined;
+
+    const download = vi.spyOn(mi['assetsApi'], 'downloadPageAssets').mockResolvedValue(Buffer.alloc(0) as never);
+
+    await mi.getAssets();
+
+    expect(headersOf(download.mock.calls[0])).toMatchObject({ authorization: 'Bearer PAGE-TOKEN' });
+  });
 });

@@ -193,7 +193,10 @@ export class MiAPI {
 
     Object.keys(obj).forEach((key) => obj[key] === undefined && delete obj[key]);
 
-    this.#headers = obj;
+    // Stored before the token is added: a token the caller sent stays, but the one added here must
+    // not outlive `personalAccessToken` (a regular token login clears it), or every later call
+    // would still go as its owner.
+    this.#headers = { ...obj };
 
     if (!obj.authorization && this.#personalAccessToken) {
       obj.authorization = `Bearer ${this.#personalAccessToken}`;
