@@ -518,6 +518,8 @@ export class ClientService {
         const localhostLogin = this.opts.miAPI?.personalAccessToken
           ? undefined
           : 'Your MI session on localhost ended: log in again on localhost, then sync again.';
+        // Reloading this tab doesn't log in on localhost, and would take the message away at once.
+        const refresh = localhostLogin === undefined;
 
         // Try to validate credentials to get more specific error information
         try {
@@ -528,14 +530,14 @@ export class ClientService {
             this.sendSyncResponse(client, {
               error: localhostLogin ?? validation.error ?? 'Authentication failed',
               code: validation.code,
-              refresh: true,
+              refresh,
             });
           } else {
             this.logger.info(colors.yellow('Session expired'));
             this.sendSyncResponse(client, {
               error: localhostLogin ?? 'Session expired',
               code: 'SESSION_EXPIRED',
-              refresh: true,
+              refresh,
             });
           }
         } catch {
@@ -543,7 +545,7 @@ export class ClientService {
           this.sendSyncResponse(client, {
             error: localhostLogin ?? 'Session expired',
             code: 'SESSION_EXPIRED',
-            refresh: true,
+            refresh,
           });
         }
 

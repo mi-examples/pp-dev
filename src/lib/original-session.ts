@@ -172,11 +172,20 @@ export class OriginalSession {
     return undefined;
   }
 
-  /** A logout on the main host ends the session at once, before MI's answer is checked. */
+  /**
+   * A logout on the main host ends the session at once, before MI's answer is checked. Not logged
+   * in yet (or any more), it drops a check still running or waiting for the session logged out: its
+   * late answer must not make that dead session the login.
+   */
   loggedOut(): void {
     if (this.#state === 'active') {
       this.#expire('logged out on localhost');
+
+      return;
     }
+
+    this.#checking = undefined;
+    this.#unverified = undefined;
   }
 
   /**

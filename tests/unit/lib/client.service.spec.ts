@@ -823,7 +823,8 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     });
 
     // PP-4602: without a token the sync goes as your login on localhost, whichever tab started it.
-    it('says to log in again on localhost when the session of your login there expired', async () => {
+    // Review of #401: reloading the tab doesn't log in on localhost, and took the message away at once.
+    it('says to log in again on localhost, without reloading the tab, when your login there expired', async () => {
       const { sync, responses, miAPI } = setup({});
 
       miAPI.personalAccessToken = undefined;
@@ -839,7 +840,7 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
         {
           error: 'Your MI session on localhost ended: log in again on localhost, then sync again.',
           code: 'SESSION_EXPIRED',
-          refresh: true,
+          refresh: false,
         },
       ]);
     });

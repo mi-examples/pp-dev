@@ -159,6 +159,36 @@ describe('OriginalSession', () => {
     expect(original.session).toBe('S2');
   });
 
+  // Review of #401: a logout before the check of the session it ended was answered let that late
+  // answer make the dead session the login, and the dev panel went with it until MI refused a call.
+  it('does not take a session still being checked when it is logged out', async () => {
+    let release!: () => void;
+
+    check.mockImplementationOnce((session) => new Promise((resolve) => (release = () => resolve(owners.get(session)))));
+
+    const pending = original.observe(request('S1'), response());
+
+    original.loggedOut();
+    release();
+    await pending;
+
+    expect(original.state).toBe('none');
+    expect(original.session).toBeUndefined();
+  });
+
+  it('does not check again a session MI could not answer for once it is logged out', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    check.mockRejectedValueOnce(new Error('MI is down'));
+
+    await original.observe(request('S1'), response());
+    original.loggedOut();
+
+    vi.setSystemTime(Date.now() + 6000);
+
+    expect(original.observe(request(), response())).toBeUndefined();
+    expect(original.state).toBe('none');
+  });
+
   it('takes a check MI could not answer for no verdict, and asks again later', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     check.mockRejectedValueOnce(new Error('MI is down'));
