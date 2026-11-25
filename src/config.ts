@@ -107,6 +107,29 @@ const moduleLocationPlugin: import('esbuild').Plugin = {
 };
 
 /**
+ * Whether Node reads a `.js` file at this path as ESM: the `type` of the nearest package.json above it
+ * (its package scope). That is the project's own for a config in the project, but not for one named
+ * with `--pp-config` in another package.
+ */
+function isInModulePackage(filePath: string): boolean {
+  let dir = path.dirname(path.resolve(filePath));
+
+  for (;;) {
+    if (existsSync(path.join(dir, 'package.json'))) {
+      return getPackageJson(dir).type === 'module';
+    }
+
+    const parent = path.dirname(dir);
+
+    if (parent === dir) {
+      return false;
+    }
+
+    dir = parent;
+  }
+}
+
+/**
  * Loads a JS or TS config file: bundles it (local imports included, packages left external) into a
  * temporary module with a unique name, and imports that.
  *
@@ -131,10 +154,7 @@ async function loadBundledConfig<T extends object>(filePath: string, projectRoot
   } else if (/\.c[jt]s$/.test(filePath)) {
     isESM = false;
   } else {
-    // Performance optimization: Use cached package.json
-    const pkg = getPackageJson(projectRoot);
-
-    isESM = !!pkg && pkg.type === 'module';
+    isESM = isInModulePackage(filePath);
   }
 
   const esbuild = await getEsbuild();

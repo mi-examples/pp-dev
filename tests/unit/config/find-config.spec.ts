@@ -108,6 +108,25 @@ describe('findConfig', () => {
       }
     });
 
+    // Review of #402: a `.js` / `.ts` config was bundled in the format of the project's package.json,
+    // so one from an ESM package with top-level await failed in a CommonJS project.
+    it('bundles a config elsewhere in the module format of its own package', async () => {
+      const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-named-config-'));
+
+      try {
+        fs.writeFileSync(path.join(elsewhere, 'package.json'), '{"name":"shared-configs","type":"module"}');
+
+        const file = path.join(elsewhere, 'pp-dev.shared.config.ts');
+
+        fs.writeFileSync(file, 'const id: number = await Promise.resolve(9);\nexport default { app: { id } };\n');
+        vi.stubEnv('PP_DEV_CONFIG', file);
+
+        await expect(getConfig(root)).resolves.toEqual({ app: { id: 9 } });
+      } finally {
+        fs.rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
     it('loads a JSON file', async () => {
       const file = path.join(root, 'pp.json');
 
