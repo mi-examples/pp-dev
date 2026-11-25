@@ -206,6 +206,85 @@ describe('OriginalSession', () => {
     expect(original.session).toBeUndefined();
   });
 
+  // Review of #401: a late answer to a request sent before a newer login brought the older login
+  // back, and the dev panel then wrote to MI as the wrong MI user.
+  describe('sessions a newer login left behind', () => {
+    beforeEach(async () => {
+      owners.set('S1b', DEV);
+      await original.observe(request('S1'), response());
+      await original.observe(request('G1', '/login'), response(302, 'A1'));
+      check.mockClear();
+    });
+
+    it('does not bring back the older login on a late answer to a request sent with it', () => {
+      expect(original.isLeftBehindRequest(request('S1'))).toBe(true);
+      expect(original.observe(request('S1'), response())).toBeUndefined();
+
+      expect(check).not.toHaveBeenCalled();
+      expect(original.session).toBe('A1');
+    });
+
+    it("does not take MI's rotation of a session left behind", () => {
+      expect(original.observe(request('S1'), response(200, 'S1b'))).toBeUndefined();
+
+      expect(check).not.toHaveBeenCalled();
+      expect(original.session).toBe('A1');
+    });
+
+    it('does not end the newer login on a refused late request', () => {
+      original.observe(request('S1', '/api/page'), response(401));
+
+      expect(original.session).toBe('A1');
+    });
+
+    it('takes any login once logged out, the older one included', async () => {
+      original.loggedOut();
+      await original.observe(request('S1'), response());
+
+      expect(original.session).toBe('S1');
+    });
+
+    it('remembers the sessions it left behind, also once the login ended', () => {
+      original.loggedOut();
+
+      expect(original.hasLeft('S1')).toBe(true);
+      expect(original.hasLeft('A1')).toBe(true);
+      expect(original.hasLeft('OTHER')).toBe(false);
+    });
+  });
+
+  // Review of #401: an ended login noticed through a dev panel call sent no new session to the
+  // browser, so nothing dropped what was cached for it.
+  describe('change listeners', () => {
+    let changed: ReturnType<typeof vi.fn<() => void>>;
+
+    beforeEach(() => {
+      changed = vi.fn<() => void>();
+      original.onChange(changed);
+    });
+
+    it('tells of a login, a login as another MI user and an ended login', async () => {
+      await original.observe(request('S1'), response());
+      expect(changed).toHaveBeenCalledTimes(1);
+
+      await original.observe(request('S1'), response(200, 'A1'));
+      expect(changed).toHaveBeenCalledTimes(2);
+
+      owners.delete('A1');
+      await original.recheck('A1');
+      expect(original.state).toBe('expired');
+      expect(changed).toHaveBeenCalledTimes(3);
+    });
+
+    it('says nothing when MI only rotates the session of the same MI user', async () => {
+      await original.observe(request('S1'), response());
+      await original.observe(request('S1'), response(200, 'S2'));
+
+      expect(original.session).toBe('S2');
+      expect(changed).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('recheck after MI refused a dev panel call', () => {
     beforeEach(async () => {
       await original.observe(request('S1'), response());

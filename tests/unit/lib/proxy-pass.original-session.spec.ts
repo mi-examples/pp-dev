@@ -58,6 +58,9 @@ describe('proxy — the original user from a login on localhost', () => {
         res.statusCode = 302;
         res.setHeader('location', '/home');
         res.setHeader('set-cookie', 'metric_insights_session=S1; path=/; httponly');
+      } else if (req.url?.startsWith('/set?session=')) {
+        // MI handing out (rotating to) the session the test names.
+        res.setHeader('set-cookie', `metric_insights_session=${req.url.slice(13)}; path=/; httponly`);
       } else if (req.url?.startsWith('/auth/index/logout')) {
         res.statusCode = 302;
         res.setHeader('location', '/login');
@@ -167,6 +170,23 @@ describe('proxy — the original user from a login on localhost', () => {
     });
 
     expect(check).not.toHaveBeenCalled();
+  });
+
+  // Review of #401: a late answer to a request sent with an older session must not move the main
+  // host's browser back to it, nor the dev panel.
+  it('keeps the session MI hands out for a session left behind from the browser', async () => {
+    owners.set('S2', { id: 1, username: 'admin' });
+    owners.set('S3', { id: 7, username: 'dev' });
+
+    await request(port, '/home', 'localhost:3000', 'S1');
+    await vi.waitFor(() => expect(original.session).toBe('S1'));
+    await request(port, '/set?session=S2', 'localhost:3000', 'S1');
+    await vi.waitFor(() => expect(original.session).toBe('S2'));
+
+    const late = await request(port, '/set?session=S3', 'localhost:3000', 'S1');
+
+    expect(late.headers['set-cookie'] ?? []).not.toContainEqual(expect.stringContaining('metric_insights_session'));
+    expect(original.session).toBe('S2');
   });
 
   it('ends the session on a logout on the main host', async () => {

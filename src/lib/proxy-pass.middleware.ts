@@ -582,6 +582,10 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         // An IP address or a custom domain goes as the original user too, but has its own cookies.
         // A request with credentials of its own (a page sending a bearer or MI `Token` header) is
         // answered as their owner, with a new session each time: it says nothing about the login.
+        // A request sent with a session the login already left behind (answered late) keeps what MI
+        // hands out for it from the browser, which holds the newer one.
+        let originalLeftBehind = false;
+
         if (
           identity &&
           !identity.user &&
@@ -590,7 +594,10 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
           !req.headers.authorization &&
           !req.headers.token
         ) {
-          if (LOGOUT_PATH_REGEXP.test(req.url ?? '')) {
+          // Decided before the tracker looks at the response, which may change the session.
+          originalLeftBehind = originalSession.isLeftBehindRequest(req);
+
+          if (LOGOUT_PATH_REGEXP.test(req.url ?? '') && !originalLeftBehind) {
             originalSession.loggedOut();
           }
 
@@ -632,7 +639,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
         const savedUser = identity?.user;
         // Whether the MI session MI hands out here may reach the browser.
-        let passSession = true;
+        let passSession = !originalLeftBehind;
 
         if (savedUser && users.get(savedUser.name) !== savedUser) {
           // Removed, or removed and added again, while the request was in flight: its session belongs

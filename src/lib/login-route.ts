@@ -226,6 +226,9 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
 
       invalidateProxyCache('logged in with a token');
 
+      // No personal token any more: the users stop being kept (see startKeepingUsers).
+      startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl });
+
       redirect(res, '/', 302);
     } else {
       sendErrorResponse(

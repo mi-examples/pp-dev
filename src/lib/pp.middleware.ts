@@ -16,7 +16,7 @@ import { createLogger } from './logger.js';
 import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
 import { MI_SESSION_COOKIE, getRequestCookie } from './helpers/cookie.helper.js';
 import { originalSession } from './original-session.js';
-import { withSessionCookie } from './session-users.js';
+import { withSessionCookie, withoutSessionCookie } from './session-users.js';
 import { Logger } from 'vite';
 
 export type Headers = Record<string, string | undefined>;
@@ -209,13 +209,29 @@ export class MiAPI {
    * copy: the stored headers must not keep a session after it ends.
    */
   #withOriginalSession(headers: Headers): Headers {
-    const session = originalSession.session;
-
-    if (!session || headers.authorization || this.#personalAccessToken) {
+    if (headers.authorization || this.#personalAccessToken) {
       return headers;
     }
 
-    return { ...headers, cookie: withSessionCookie(headers.cookie, session) };
+    const session = originalSession.session;
+
+    if (session) {
+      return { ...headers, cookie: withSessionCookie(headers.cookie, session) };
+    }
+
+    // Once the login ended, headers kept from an earlier page load on localhost may still carry a
+    // session of it: that one must not stand in for a new login. A session of another host's own
+    // (an IP address, a custom domain) is left alone.
+    const carried = getRequestCookie(headers.cookie, MI_SESSION_COOKIE);
+
+    if (carried === undefined || !originalSession.hasLeft(carried)) {
+      return headers;
+    }
+
+    const { cookie: _cookie, ...rest } = headers;
+    const otherCookies = withoutSessionCookie(headers.cookie);
+
+    return otherCookies ? { ...rest, cookie: otherCookies } : rest;
   }
 
   /**
