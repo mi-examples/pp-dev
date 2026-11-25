@@ -265,12 +265,12 @@ A page is often developed against more than one MI instance (a dev instance, a s
 one). Name each one in `envs` and choose it when you start pp-dev. The top-level `mi` and `app`
 settings are the `default` environment, so a config without `envs` works as before.
 
-| Field               | Type     | Default                                | Description                                                                   |
-| ------------------- | -------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| `envs.<name>.url`   | `string` | `MI_BACKEND_URL_<NAME>`, then `mi.url` | URL of that environment's MI instance                                         |
-| `envs.<name>.appId` | `number` | `app.id`                               | The page's ID on that instance                                                |
-| `envs.<name>.token` | `string` | `MI_ACCESS_TOKEN_<NAME>`               | Personal access token there. Never `mi.token` or `MI_ACCESS_TOKEN`: see below |
-| `defaultEnv`        | `string` | `'default'`                            | The environment used when neither `--env` nor `MI_ENV` names one              |
+| Field               | Type     | Default                  | Description                                                                   |
+| ------------------- | -------- | ------------------------ | ----------------------------------------------------------------------------- |
+| `envs.<name>.url`   | `string` | `MI_BACKEND_URL_<NAME>`  | URL of that environment's MI instance. Required (here or in the variable)     |
+| `envs.<name>.appId` | `number` | `app.id`                 | The page's ID on that instance                                                |
+| `envs.<name>.token` | `string` | `MI_ACCESS_TOKEN_<NAME>` | Personal access token there. Never `mi.token` or `MI_ACCESS_TOKEN`: see below |
+| `defaultEnv`        | `string` | `'default'`              | The environment used when neither `--env` nor `MI_ENV` names one              |
 
 ```ts
 export default defineConfig({
@@ -305,6 +305,10 @@ pp-dev build --changelog --env staging
   is in upper case and anything other than a letter or digit is `_` (`staging-eu` →
   `MI_ACCESS_TOKEN_STAGING_EU`). Two names that give the same variables, and `envs.default`, are
   refused.
+- **URLs.** A named environment needs its own URL, even for another page on the default instance
+  (give it the same URL as `mi.url`). Choosing one without a URL stops pp-dev: a URL left out of
+  `.env.local` would otherwise point the environment, and a sync from it, at the default MI. Any
+  other environment without a URL gets a warning at startup.
 - **Tokens.** A named environment takes only its own token. Without one, pp-dev doesn't send the
   default environment's token to another instance: log in to MI on `localhost` instead.
 - **Kept apart.** Switching environments drops the proxy cache and the page data (a `pp-dev`
@@ -320,18 +324,20 @@ pp-dev build --changelog --env staging
 
 pp-dev validates your config at startup and reports problems clearly:
 
-| Condition                                                                 | Behaviour |
-| ------------------------------------------------------------------------- | --------- |
-| `mi.include` set + `mi.mode !== 'standalone'`                             | error     |
-| `mi.url` missing + `mi.mode === 'embedding'` or `app.type === 'template'` | error     |
-| `mi.url` missing + `mi.mode === 'standalone'` + `app.type === 'page'`     | warning   |
-| `app.type === 'template'` without `app.id`                                | error     |
-| `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id`       | error     |
-| `app.name` missing and no `package.json#name`                             | error     |
-| `devPanel.position` not one of the four corners                           | error     |
-| `server.allowedHosts` neither a list of host names nor `true`             | error     |
-| `--env` / `MI_ENV` / `defaultEnv` naming an environment not in `envs`     | error     |
-| `envs.default`, an invalid name, or two names with the same variables     | error     |
+| Condition                                                                      | Behaviour |
+| ------------------------------------------------------------------------------ | --------- |
+| `mi.include` set + `mi.mode !== 'standalone'`                                  | error     |
+| `mi.url` missing + `mi.mode === 'embedding'` or `app.type === 'template'`      | error     |
+| `mi.url` missing + `mi.mode === 'standalone'` + `app.type === 'page'`          | warning   |
+| `app.type === 'template'` without `app.id`                                     | error     |
+| `app.type === 'page'` + `mi.mode === 'standalone'` without `app.id`            | error     |
+| `app.name` missing and no `package.json#name`                                  | error     |
+| `devPanel.position` not one of the four corners                                | error     |
+| `server.allowedHosts` neither a list of host names nor `true`                  | error     |
+| `--env` / `MI_ENV` / `defaultEnv` naming an environment not in `envs`          | error     |
+| `envs.default`, an invalid name, or two names with the same variables          | error     |
+| The environment in use has no URL (`envs.<name>.url`, `MI_BACKEND_URL_<NAME>`) | error     |
+| Another environment in `envs` has no URL                                       | warning   |
 
 ### Environment Variables
 

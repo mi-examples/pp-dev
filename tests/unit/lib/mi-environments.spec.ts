@@ -84,25 +84,36 @@ describe('MI environments', () => {
       ).toBeUndefined();
     });
 
-    it('takes the URL from MI_BACKEND_URL_<NAME>, else the top-level one, and the app id from the top level', () => {
+    it('takes the URL from MI_BACKEND_URL_<NAME>, and the app id from the top level', () => {
       expect(
         resolveMiEnvironment(CONFIG, { MI_ENV: 'customer-eu', MI_BACKEND_URL_CUSTOMER_EU: 'https://eu.example.com' }),
       ).toMatchObject({ name: 'customer-eu', url: 'https://eu.example.com', appId: 9 });
-
-      expect(resolveMiEnvironment(CONFIG, { MI_ENV: 'customer-eu' })).toMatchObject({
-        url: 'https://dev.mi.example.com',
-      });
 
       const sameInstance: PPDevConfig = { ...CONFIG, envs: { other: { url: 'https://o' } } };
 
       expect(resolveMiEnvironment(sameInstance, { MI_ENV: 'other' }).appId).toBe(7);
     });
 
+    // Review: a URL left out of `.env.local` pointed the environment, and a sync from it, at the
+    // default MI. Another page on the default instance names that URL itself.
+    it.each([
+      ['none', {}],
+      ['an empty MI_BACKEND_URL_<NAME>', { MI_BACKEND_URL_CUSTOMER_EU: '' }],
+    ])('refuses a named environment with no URL of its own (%s), never taking mi.url', (_label, variables) => {
+      expect(() =>
+        resolveMiEnvironment(CONFIG, { MI_ENV: 'customer-eu', MI_BACKEND_URL: 'https://x', ...variables }),
+      ).toThrow(
+        'MI environment "customer-eu" has no URL: set envs.customer-eu.url or MI_BACKEND_URL_CUSTOMER_EU (the same URL as mi.url for another page on the default instance)',
+      );
+    });
+
     it('takes defaultEnv when MI_ENV names none, and MI_ENV over it', () => {
       const config: PPDevConfig = { ...CONFIG, defaultEnv: 'staging' };
 
       expect(resolveMiEnvironment(config, {}).name).toBe('staging');
-      expect(resolveMiEnvironment(config, { MI_ENV: 'customer-eu' }).name).toBe('customer-eu');
+      expect(
+        resolveMiEnvironment(config, { MI_ENV: 'customer-eu', MI_BACKEND_URL_CUSTOMER_EU: 'https://eu' }).name,
+      ).toBe('customer-eu');
       expect(resolveMiEnvironment(config, { MI_ENV: 'default' }).name).toBeUndefined();
     });
 
@@ -203,16 +214,27 @@ describe('MI environments', () => {
       ).not.toThrow();
     });
 
-    // A URL left out of `.env.local` by mistake points the environment, and its sync, at the default MI.
-    it('warns when a named environment has no URL of its own', () => {
+    // A URL left out of `.env.local` by mistake would point the environment, and its sync, at the default MI.
+    it('refuses a named environment with no URL of its own, as the dev server start does', () => {
+      process.env.MI_ENV = 'customer-eu';
+
+      expect(() => validatePPDevConfig(CONFIG, 'my-app')).toThrow('MI environment "customer-eu" has no URL');
+
+      process.env.MI_BACKEND_URL_CUSTOMER_EU = 'https://eu.example.com';
+
+      expect(() => validatePPDevConfig(CONFIG, 'my-app')).not.toThrow();
+    });
+
+    // Not chosen, it doesn't stop the start: a warning says it would.
+    it('warns about the other environments with no URL of their own', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
       try {
-        process.env.MI_ENV = 'customer-eu';
         validatePPDevConfig(CONFIG, 'my-app');
 
+        expect(warn).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledWith(
-          "[pp-dev] envs.customer-eu has no URL of its own (url, or MI_BACKEND_URL_CUSTOMER_EU): it uses https://dev.mi.example.com, the default environment's MI",
+          '[pp-dev] envs.customer-eu has no URL (envs.customer-eu.url or MI_BACKEND_URL_CUSTOMER_EU): --env customer-eu would stop with an error',
         );
 
         warn.mockClear();

@@ -136,7 +136,11 @@ export interface ServerConfig {
  * What it leaves out comes from the top-level `mi` and `app`, except the token.
  */
 export interface EnvConfig {
-  /** MI instance base URL. Falls back to `MI_BACKEND_URL_<NAME>`, then to the top-level `mi.url`. */
+  /**
+   * MI instance base URL. Falls back to `MI_BACKEND_URL_<NAME>`; one of the two is required, also for
+   * another page on the default instance (never the top-level `mi.url`: a URL left out of a `.env`
+   * file would point the environment, and its sync, at the default MI).
+   */
   url?: string;
   /** Portal page / app ID on that instance. Falls back to the top-level `app.id`. */
   appId?: number;
@@ -242,8 +246,6 @@ export interface ResolvedMiEnvironment {
   url?: string;
   appId?: number;
   token?: string;
-  /** A named environment with no URL of its own (`url`, `MI_BACKEND_URL_<NAME>`): the top-level one. */
-  sharesUrl?: boolean;
 }
 
 /**
@@ -318,16 +320,31 @@ export function resolveMiEnvironment(
 
   const entry = envs[name];
   const suffix = envVariableSuffix(name);
-  const ownUrl = entry.url ?? env[`MI_BACKEND_URL_${suffix}`];
+  const url = entry.url || env[`MI_BACKEND_URL_${suffix}`];
+
+  // Never the default one's: a URL left out of a `.env` file would point the environment, and a
+  // sync from it, at the default MI.
+  if (!url) {
+    throw new Error(
+      `[pp-dev] MI environment "${name}" has no URL: set envs.${name}.url or MI_BACKEND_URL_${suffix} ` +
+        '(the same URL as mi.url for another page on the default instance)',
+    );
+  }
 
   return {
     name,
-    url: ownUrl ?? config.mi?.url ?? env.MI_BACKEND_URL,
-    ...(ownUrl === undefined ? { sharesUrl: true } : {}),
+    url,
     appId: entry.appId ?? config.app?.id,
     // Never the top-level token: it may belong to another instance, and would be sent there.
     token: entry.token ?? env[`MI_ACCESS_TOKEN_${suffix}`],
   };
+}
+
+/** The named environments with no URL of their own, neither `envs.<name>.url` nor `MI_BACKEND_URL_<NAME>`. */
+export function envsWithoutUrl(config: PPDevConfig, env: Record<string, string | undefined> = process.env): string[] {
+  return Object.entries(config.envs ?? {})
+    .filter(([name, entry]) => !entry?.url && !env[`MI_BACKEND_URL_${envVariableSuffix(name)}`])
+    .map(([name]) => name);
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -345,6 +362,15 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
   const appId = environment.appId;
   // Where a named environment's settings go too.
   const inEnv = (key: string) => (environment.name ? ` (or envs.${environment.name}.${key})` : '');
+
+  // The one in use was checked above; choosing one of these stops pp-dev the same way.
+  for (const name of envsWithoutUrl(config)) {
+    if (name !== environment.name) {
+      console.warn(
+        `[pp-dev] envs.${name} has no URL (envs.${name}.url or MI_BACKEND_URL_${envVariableSuffix(name)}): --env ${name} would stop with an error`,
+      );
+    }
+  }
 
   if (!(config.app?.name ?? templateName)) {
     throw new Error('[pp-dev] app.name is required (or set package.json#name)');
@@ -376,19 +402,9 @@ export function validatePPDevConfig(config: PPDevConfig, templateName: string | 
     throw new Error('[pp-dev] mi.include requires mi.mode to be "standalone"');
   }
 
-  // Meant for another page on the same instance, or a URL left out of the `.env` file by mistake: the
-  // dev server then works with (and a sync writes to) the default environment's MI.
-  if (environment.sharesUrl && miUrl) {
-    console.warn(
-      `[pp-dev] envs.${environment.name} has no URL of its own (url, or MI_BACKEND_URL_${envVariableSuffix(environment.name!)}): it uses ${miUrl}, the default environment's MI`,
-    );
-  }
-
   if (!miUrl) {
     if (miMode === 'embedding' || appType === 'template') {
-      throw new Error(
-        `[pp-dev] mi.url${inEnv('url')} is required when mi.mode is "embedding" or app.type is "template"`,
-      );
+      throw new Error('[pp-dev] mi.url is required when mi.mode is "embedding" or app.type is "template"');
     }
 
     if (miMode === 'standalone' && appType === 'page') {
