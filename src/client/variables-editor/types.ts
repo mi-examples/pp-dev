@@ -106,6 +106,10 @@ export interface JsonIssue {
 export interface ErrorBody {
   error?: string;
   details?: string;
+  code?: string;
+  /** With `PROTECTED_ENVIRONMENT`: the environment's name, and what to send back as `confirmEnvironment`. */
+  environment?: string;
+  confirmation?: string;
 }
 
 /** `PUT /@api/variables/schema`. */

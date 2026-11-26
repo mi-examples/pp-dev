@@ -155,7 +155,11 @@ export function showCustomValueModal(title: string, initialValue: string, onDone
 
 // Same rationale as showCustomValueModal() — window.confirm() is unreliable in some embedded
 // webviews, so any "discard unsaved changes?" gate needs to go through this instead.
-export function showConfirmModal(message: string, onConfirm: () => void) {
+export function showConfirmModal(
+  message: string,
+  onConfirm: () => void,
+  options: { okText?: string; onCancel?: () => void } = {},
+) {
   const overlay = openOverlay(
     '<div class="ve-modal">' +
       '<div class="ve-modal-title">' +
@@ -163,7 +167,9 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
       '</div>' +
       '<div class="ve-modal-actions">' +
       '<button type="button" class="btn btn-sm ve-modal-cancel">Cancel</button>' +
-      '<button type="button" class="btn btn-sm btn-primary ve-modal-ok">OK</button>' +
+      '<button type="button" class="btn btn-sm btn-primary ve-modal-ok">' +
+      escapeHtml(options.okText ?? 'OK') +
+      '</button>' +
       '</div>' +
       '</div>',
   );
@@ -176,6 +182,8 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
 
     if (confirmed) {
       onConfirm();
+    } else {
+      options.onCancel?.();
     }
   }
 

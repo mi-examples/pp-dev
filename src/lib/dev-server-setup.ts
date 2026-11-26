@@ -12,6 +12,7 @@ import { registerVariablesEditorRoutes } from './variables-editor.js';
 import { registerUserRoutes } from './user-routes.js';
 import { registerLoginRoute } from './login-route.js';
 import { startKeepingUsers } from './user-store.js';
+import type { ProtectedEnvironment } from './protected-environment.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
@@ -77,6 +78,10 @@ export interface SyncAndUsersOptions {
   miUrl: string;
   /** The named MI environment; `undefined` for the top-level settings. */
   envName?: string;
+  /** The page's id on that MI instance, for the confirmation of a protected environment. */
+  appId?: number;
+  /** Sync and Variables Editor saves ask for a confirmation (`mi.protected`, `envs.<name>.protected`). */
+  envProtected?: boolean;
 }
 
 /**
@@ -86,10 +91,13 @@ export interface SyncAndUsersOptions {
  */
 export function startSyncAndUsers(opts: SyncAndUsersOptions): ClientService {
   const { distService, miAPI, persistUsers, projectRoot, miUrl, envName } = opts;
-  const clientService = new ClientService(opts.server, { distService, miAPI });
+  const protectedEnvironment: ProtectedEnvironment | undefined = opts.envProtected
+    ? { name: envName, url: miUrl, appId: opts.appId }
+    : undefined;
+  const clientService = new ClientService(opts.server, { distService, miAPI, protectedEnvironment });
 
   registerLoginRoute(opts.internalServer, { miAPI, persistUsers, projectRoot, miUrl, envName });
-  registerVariablesEditorRoutes(opts.internalServer, { distService, miAPI });
+  registerVariablesEditorRoutes(opts.internalServer, { distService, miAPI, protectedEnvironment });
   registerUserRoutes(opts.internalServer, { miAPI, envName });
   startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl, envName });
 
