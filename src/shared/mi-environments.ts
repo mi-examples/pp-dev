@@ -9,6 +9,12 @@ export function envVariableSuffix(name: string): string {
 }
 
 /**
+ * The code of the 409 a save of Variables Editor values gets in a `protected` environment until it is
+ * confirmed: the body has the question (`error`), and the `confirmation` to send back with the save.
+ */
+export const PROTECTED_ENVIRONMENT_CODE = 'PROTECTED_ENVIRONMENT';
+
+/**
  * Where the API token of an environment is set, for messages: `mi.token or MI_ACCESS_TOKEN` for the
  * top-level settings, the environment's own for a named one (it never falls back to those).
  */

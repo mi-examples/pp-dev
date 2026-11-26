@@ -653,6 +653,108 @@ describe('Variables Editor page', () => {
       dom.close();
     });
 
+    // PP-4840 phase 2: the server asks for a save to a protected environment, naming it.
+    describe('in a protected MI environment', () => {
+      const asked: FetchResponse = {
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        json: async () => ({
+          code: 'PROTECTED_ENVIRONMENT',
+          error:
+            'Saving writes the values to staging (https://mi.example.com, app 42). This environment is protected: save to it?',
+          environment: 'staging',
+          confirmation: 'staging https://mi.example.com 42',
+        }),
+      };
+      const puts = (fetch: ReturnType<typeof vi.fn>) =>
+        fetch.mock.calls.filter(([, init]) => init?.method === 'PUT').map(([, init]) => JSON.parse(init.body));
+
+      it("asks with the server's question, and sends the save again confirmed for that environment", async () => {
+        const fetch = vi
+          .fn()
+          .mockResolvedValueOnce(valuesResponse)
+          .mockResolvedValueOnce(asked)
+          .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, warnings: [] }) })
+          .mockResolvedValue(valuesResponse);
+        const { dom, confirmSave } = await openEditor('values', fetch);
+
+        enter('#content .ve-values-detail input', 'edited');
+        await confirmSave();
+
+        expect(find('.ve-modal-title').textContent).toBe(
+          'Saving writes the values to staging (https://mi.example.com, app 42). This environment is protected: save to it?',
+        );
+        expect(find('.ve-modal-ok').textContent).toBe('Save to staging');
+
+        click('.ve-modal-ok');
+        await flush();
+        await flush();
+
+        expect(puts(fetch)).toEqual([
+          { tags: [{ name: 'title', value: 'edited' }] },
+          { tags: [{ name: 'title', value: 'edited' }], confirmEnvironment: 'staging https://mi.example.com 42' },
+        ]);
+        expect(banner()).not.toContain('Not saved');
+
+        dom.close();
+      });
+
+      // The Enter that confirmed the diff before it must not confirm this one too.
+      it('is confirmed by a click only: the focus starts on Cancel and Enter does not confirm', async () => {
+        const fetch = vi.fn().mockResolvedValueOnce(valuesResponse).mockResolvedValueOnce(asked);
+        const { dom, confirmSave } = await openEditor('values', fetch);
+
+        enter('#content .ve-values-detail input', 'edited');
+        await confirmSave();
+
+        expect(document.activeElement).toBe(find('.ve-modal-cancel'));
+
+        find('.ve-modal-overlay').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await flush();
+
+        expect(document.querySelector('.ve-modal-overlay')).not.toBeNull();
+
+        // Review of #405: Enter on a focused "Save to staging" pressed it, as the browser presses
+        // a focused button on Enter.
+        const ok = find<HTMLButtonElement>('.ve-modal-ok');
+        const onOk = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+
+        ok.focus();
+        ok.dispatchEvent(onOk);
+        await flush();
+
+        expect(onOk.defaultPrevented).toBe(true);
+        expect(document.querySelector('.ve-modal-overlay')).not.toBeNull();
+        expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+
+        // Enter on Cancel is left to the button: it cancels.
+        const onCancel = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+
+        find('.ve-modal-cancel').dispatchEvent(onCancel);
+
+        expect(onCancel.defaultPrevented).toBe(false);
+
+        dom.close();
+      });
+
+      it('saves nothing and keeps the edits when the question is cancelled', async () => {
+        const fetch = vi.fn().mockResolvedValueOnce(valuesResponse).mockResolvedValueOnce(asked);
+        const { dom, confirmSave, asksToDiscard } = await openEditor('values', fetch);
+
+        enter('#content .ve-values-detail input', 'edited');
+        await confirmSave();
+        click('.ve-modal-cancel');
+        await flush();
+
+        expect(puts(fetch)).toHaveLength(1);
+        expect(banner()).toContain('Not saved: the MI environment is protected and the save was not confirmed.');
+        expect(asksToDiscard()).toBe(true);
+
+        dom.close();
+      });
+    });
+
     it('shows a network failure of a save instead of leaving it pending', async () => {
       const fetch = vi
         .fn()

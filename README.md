@@ -164,6 +164,7 @@ module.exports = defineConfig({
 | ------------ | ---------------------------------- | --------------------- | --------------------------------------------------------------- |
 | `url`        | `string`                           | —                     | URL of the Metric Insights instance                             |
 | `token`      | `string`                           | `MI_ACCESS_TOKEN` env | Personal access token for authentication                        |
+| `protected`  | `boolean`                          | `false`               | Sync and Variables Editor saves ask first (see `envs` below)    |
 | `mode`       | `'standalone' \| 'embedding'`      | `'standalone'`        | Standalone hides the MI navigation; embedding keeps it          |
 | `include`    | `'top-bar' \| 'shared-components'` | —                     | Bundle MI top-bar assets into the build (requires `standalone`) |
 | `apiVersion` | `6 \| 7`                           | `7`                   | MI API version to target                                        |
@@ -275,12 +276,13 @@ A page is often developed against more than one MI instance (a dev instance, a s
 one). Name each one in `envs` and choose it when you start pp-dev. The top-level `mi` and `app`
 settings are the `default` environment, so a config without `envs` works as before.
 
-| Field               | Type     | Default                  | Description                                                                   |
-| ------------------- | -------- | ------------------------ | ----------------------------------------------------------------------------- |
-| `envs.<name>.url`   | `string` | `MI_BACKEND_URL_<NAME>`  | URL of that environment's MI instance. Required (here or in the variable)     |
-| `envs.<name>.appId` | `number` | `app.id`                 | The page's ID on that instance                                                |
-| `envs.<name>.token` | `string` | `MI_ACCESS_TOKEN_<NAME>` | Personal access token there. Never `mi.token` or `MI_ACCESS_TOKEN`: see below |
-| `defaultEnv`        | `string` | `'default'`              | The environment used when neither `--env` nor `MI_ENV` names one              |
+| Field                   | Type      | Default                  | Description                                                                   |
+| ----------------------- | --------- | ------------------------ | ----------------------------------------------------------------------------- |
+| `envs.<name>.url`       | `string`  | `MI_BACKEND_URL_<NAME>`  | URL of that environment's MI instance. Required (here or in the variable)     |
+| `envs.<name>.appId`     | `number`  | `app.id`                 | The page's ID on that instance                                                |
+| `envs.<name>.token`     | `string`  | `MI_ACCESS_TOKEN_<NAME>` | Personal access token there. Never `mi.token` or `MI_ACCESS_TOKEN`: see below |
+| `envs.<name>.protected` | `boolean` | `mi.protected`           | Sync and Variables Editor saves ask first: see below                          |
+| `defaultEnv`            | `string`  | `'default'`              | The environment used when neither `--env` nor `MI_ENV` names one              |
 
 ```ts
 export default defineConfig({
@@ -288,7 +290,7 @@ export default defineConfig({
   app: { id: 7 },
   envs: {
     staging: { url: 'https://staging.mi.example.com', appId: 42 },
-    customer: { appId: 9 }, // its URL in MI_BACKEND_URL_CUSTOMER, out of git
+    customer: { appId: 9, protected: true }, // its URL in MI_BACKEND_URL_CUSTOMER, out of git
   },
 });
 ```
@@ -326,6 +328,14 @@ pp-dev build --changelog --env staging
   `<sync.backupsDir>/<name>/`, so `pp-dev build --changelog --env <name>` compares the build with
   that environment's latest backup; the default one's stay in `sync.backupsDir`. The users you add
   belong to the MI instance: two environments on one instance share them, saved ones included.
+- **Protected.** In an environment with `protected: true`, the writes to MI you start ask first,
+  naming the environment with its MI URL and page: **Sync** (before anything is read from MI or
+  backed up) and saving values in the **Variables Editor**. The question names the environment the
+  dev server works with now, not the one the tab was opened with: a save confirmed for one is asked
+  again after a restart into another. A named environment without a setting of its own takes
+  `mi.protected`, so `protected: false` leaves a test instance unprotected under a protected default.
+  Saving the variables schema writes only `public/__template_variables.json` and doesn't ask, nor
+  does the `[DEV PAGE. DO NOT DELETE]` page pp-dev creates once for a template with `mi.apiVersion: 6`.
 - **The dev panel** names the environment in use (none for `default`), next to Sync and next to
   you in the Users popover.
 - A login on `localhost` is one cookie for every instance (browsers keep cookies by host, not by
@@ -349,6 +359,7 @@ pp-dev validates your config at startup and reports problems clearly:
 | `envs.default`, an invalid name, or two names with the same variables          | error     |
 | The environment in use has no URL (`envs.<name>.url`, `MI_BACKEND_URL_<NAME>`) | error     |
 | Another environment in `envs` has no URL                                       | warning   |
+| `mi.protected` or `envs.<name>.protected` neither `true` nor `false`           | error     |
 
 ### Environment Variables
 

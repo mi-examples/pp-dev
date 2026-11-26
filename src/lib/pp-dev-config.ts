@@ -20,6 +20,12 @@ export interface MiConfig {
   url?: string;
   /** Personal Access Token. Falls back to process.env.MI_ACCESS_TOKEN. */
   token?: string;
+  /**
+   * Sync and Variables Editor saves (both write to MI) ask for a confirmation that names the MI
+   * environment. Named environments take it too, unless they set `envs.<name>.protected` themselves.
+   * @default false
+   */
+  protected?: boolean;
   /** How the page integrates into MI. @default 'standalone' */
   mode?: MiMode;
   /** Optional MI shared resources. Only valid when mode === 'standalone'. */
@@ -150,6 +156,11 @@ export interface EnvConfig {
    * `MI_ACCESS_TOKEN`: those may belong to another instance. Without one, log in to MI on localhost.
    */
   token?: string;
+  /**
+   * Sync and Variables Editor saves ask for a confirmation that names the environment. Falls back to
+   * `mi.protected`, so `false` here leaves a test instance unprotected under a protected default.
+   */
+  protected?: boolean;
 }
 
 export interface PPDevConfig {
@@ -192,6 +203,8 @@ export interface NormalizedVitePPDevOptions {
   templateName: string;
   /** The named MI environment in use (`envs`); `undefined` for the top-level settings. */
   envName?: string;
+  /** Sync and Variables Editor saves ask for a confirmation (`mi.protected`, `envs.<name>.protected`). */
+  envProtected: boolean;
   backendBaseURL?: string;
   appId?: number;
   templateLess: boolean;
@@ -244,6 +257,15 @@ export interface ResolvedMiEnvironment {
   url?: string;
   appId?: number;
   token?: string;
+  /** Sync and Variables Editor saves ask for a confirmation (`protected`). */
+  protected?: boolean;
+}
+
+/** A `protected` setting is `true` or `false`: a string such as `'true'` would leave it unprotected. */
+function checkProtected(value: unknown, setting: string): void {
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw new Error(`[pp-dev] ${setting} must be true or false, got ${JSON.stringify(value)}`);
+  }
 }
 
 /**
@@ -262,6 +284,8 @@ export function resolveMiEnvironment(
 
   const names = Object.keys(envs);
   const bySuffix = new Map<string, string>();
+
+  checkProtected(config.mi?.protected, 'mi.protected');
 
   for (const name of names) {
     if (name === DEFAULT_ENV_NAME) {
@@ -290,6 +314,7 @@ export function resolveMiEnvironment(
     }
 
     bySuffix.set(suffix, name);
+    checkProtected((entry as EnvConfig).protected, `envs.${name}.protected`);
   }
 
   const defined = [DEFAULT_ENV_NAME, ...names].join(', ');
@@ -313,6 +338,7 @@ export function resolveMiEnvironment(
       url: config.mi?.url ?? env.MI_BACKEND_URL,
       appId: config.app?.id,
       token: config.mi?.token ?? env.MI_ACCESS_TOKEN,
+      protected: config.mi?.protected,
     };
   }
 
@@ -335,6 +361,7 @@ export function resolveMiEnvironment(
     appId: entry.appId ?? config.app?.id,
     // Never the top-level token: it may belong to another instance, and would be sent there.
     token: entry.token ?? env[`MI_ACCESS_TOKEN_${suffix}`],
+    protected: entry.protected ?? config.mi?.protected,
   };
 }
 
@@ -588,6 +615,7 @@ export function normalizePPDevConfig(
   return {
     templateName: resolvedName,
     envName: environment.name,
+    envProtected: environment.protected ?? false,
     backendBaseURL: environment.url,
     appId: environment.appId,
     templateLess,

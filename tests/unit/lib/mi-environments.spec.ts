@@ -169,6 +169,54 @@ describe('MI environments', () => {
     expect(describeTokenSettings('staging-eu')).toBe('envs.staging-eu.token or MI_ACCESS_TOKEN_STAGING_EU');
   });
 
+  // PP-4840 phase 2: Sync and Variables Editor saves ask for a confirmation in a protected environment.
+  describe('protected', () => {
+    const config = (mi: boolean | undefined, staging: boolean | undefined): PPDevConfig => ({
+      mi: { url: 'https://dev', protected: mi },
+      app: { id: 7 },
+      envs: { staging: { url: 'https://staging', protected: staging }, dev: { url: 'https://dev2' } },
+    });
+    const protectedOf = (c: PPDevConfig, name?: string) =>
+      resolveMiEnvironment(c, name ? { MI_ENV: name } : {}).protected ?? false;
+
+    it('is off unless set', () => {
+      expect(protectedOf(CONFIG)).toBe(false);
+      expect(protectedOf(CONFIG, 'staging')).toBe(false);
+    });
+
+    it('protects the default environment with mi.protected, and the named ones that set nothing', () => {
+      expect(protectedOf(config(true, undefined))).toBe(true);
+      expect(protectedOf(config(true, undefined), 'dev')).toBe(true);
+    });
+
+    it("takes a named environment's own setting first, false included", () => {
+      expect(protectedOf(config(true, false), 'staging')).toBe(false);
+      expect(protectedOf(config(undefined, true), 'staging')).toBe(true);
+      expect(protectedOf(config(undefined, true))).toBe(false);
+    });
+
+    it.each([
+      [{ mi: { url: 'https://dev', protected: 'true' } }, 'mi.protected must be true or false, got "true"'],
+      [
+        { mi: { url: 'https://dev' }, envs: { staging: { url: 'https://s', protected: 1 } } },
+        'envs.staging.protected must be true or false, got 1',
+      ],
+    ])("refuses a value that isn't true or false: %j", (c, message) => {
+      // Any environment's: also one that isn't chosen.
+      expect(() => resolveMiEnvironment(c as unknown as PPDevConfig, {})).toThrow(message);
+    });
+
+    it('gives the server envProtected', () => {
+      process.env.MI_ENV = 'dev';
+
+      expect(normalizePPDevConfig(config(true, false), 'my-app').envProtected).toBe(true);
+
+      process.env.MI_ENV = 'staging';
+
+      expect(normalizePPDevConfig(config(true, false), 'my-app').envProtected).toBe(false);
+    });
+  });
+
   describe('normalizePPDevConfig', () => {
     it('leaves the top-level settings as they were', () => {
       const n = normalizePPDevConfig(CONFIG, 'my-app');

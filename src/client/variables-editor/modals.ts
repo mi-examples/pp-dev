@@ -155,7 +155,20 @@ export function showCustomValueModal(title: string, initialValue: string, onDone
 
 // Same rationale as showCustomValueModal() — window.confirm() is unreliable in some embedded
 // webviews, so any "discard unsaved changes?" gate needs to go through this instead.
-export function showConfirmModal(message: string, onConfirm: () => void) {
+export function showConfirmModal(
+  message: string,
+  onConfirm: () => void,
+  options: {
+    okText?: string;
+    onCancel?: () => void;
+    /**
+     * Not confirmed by Enter: the focus starts on Cancel, and Enter neither confirms from elsewhere
+     * nor presses a focused OK, so the Enter that closed the dialog before it (the diff) can't
+     * confirm this one too. A click, or Space on OK, confirms; Enter on Cancel still cancels.
+     */
+    deliberate?: boolean;
+  } = {},
+) {
   const overlay = openOverlay(
     '<div class="ve-modal">' +
       '<div class="ve-modal-title">' +
@@ -163,12 +176,14 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
       '</div>' +
       '<div class="ve-modal-actions">' +
       '<button type="button" class="btn btn-sm ve-modal-cancel">Cancel</button>' +
-      '<button type="button" class="btn btn-sm btn-primary ve-modal-ok">OK</button>' +
+      '<button type="button" class="btn btn-sm btn-primary ve-modal-ok">' +
+      escapeHtml(options.okText ?? 'OK') +
+      '</button>' +
       '</div>' +
       '</div>',
   );
 
-  find(overlay, '.ve-modal-ok').focus();
+  find(overlay, options.deliberate ? '.ve-modal-cancel' : '.ve-modal-ok').focus();
 
   function close(confirmed: boolean) {
     unbindKeys();
@@ -176,6 +191,8 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
 
     if (confirmed) {
       onConfirm();
+    } else {
+      options.onCancel?.();
     }
   }
 
@@ -187,10 +204,18 @@ export function showConfirmModal(message: string, onConfirm: () => void) {
     }
   });
 
+  const $ok = find(overlay, '.ve-modal-ok');
+
   const unbindKeys = bindModalKeys(overlay, (ev) => {
-    if (ev.key === 'Enter' && !isButton(ev.target)) {
+    if (ev.key === 'Enter' && options.deliberate && ev.target === $ok) {
+      // The browser would press the focused button on Enter.
       ev.preventDefault();
-      close(true);
+    } else if (ev.key === 'Enter' && !isButton(ev.target)) {
+      ev.preventDefault();
+
+      if (!options.deliberate) {
+        close(true);
+      }
     } else if (ev.key === 'Escape') {
       ev.preventDefault();
       close(false);

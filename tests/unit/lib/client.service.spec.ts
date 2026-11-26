@@ -482,6 +482,7 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     answers?: boolean[];
     build?: () => unknown;
     timeoutMs?: number;
+    protectedEnvironment?: { name?: string; url: string; appId?: number };
   }) {
     const handlers = new Map<string, (...args: any[]) => any>();
     const server = {
@@ -529,7 +530,12 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
       validateCredentials: vi.fn().mockResolvedValue({ isValid: true }),
     } as unknown as MiAPI;
 
-    new ClientService(server, { distService, miAPI, syncActionTimeoutMs: opts.timeoutMs ?? 5_000 });
+    new ClientService(server, {
+      distService,
+      miAPI,
+      syncActionTimeoutMs: opts.timeoutMs ?? 5_000,
+      protectedEnvironment: opts.protectedEnvironment,
+    });
 
     const sync = () => handlers.get('template:sync')!({}, client) as Promise<void>;
 
@@ -552,6 +558,60 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
     // Dated now, not by the last backup (the meta's date): a backup the same as the last one is
     // not saved again, and the panel then said "Synced at" that one's date.
     expect(Date.parse((responses[0] as { syncedAt: string }).syncedAt)).toBeGreaterThanOrEqual(before);
+  });
+
+  // PP-4840 phase 2: `protected` environments.
+  describe('a protected MI environment', () => {
+    const staging = { name: 'staging', url: 'https://mi.staging.example.com/', appId: 42 };
+
+    it('asks first, naming the environment with its MI and page, and syncs once confirmed', async () => {
+      const { sync, dialogs, responses, miAPI } = setup({ protectedEnvironment: staging, answers: [true] });
+
+      await sync();
+
+      expect(dialogs).toEqual([
+        expect.objectContaining({
+          title: 'Protected MI environment',
+          content:
+            'Sync uploads the template to staging (https://mi.staging.example.com, app 42). This environment is protected: sync to it?',
+          confirmText: 'Sync to staging',
+          cancelText: 'Cancel sync',
+        }),
+      ]);
+      expect(miAPI.updateAssets).toHaveBeenCalled();
+      expect(responses).toEqual([synced]);
+    });
+
+    it('names the default environment', async () => {
+      const { sync, dialogs } = setup({
+        protectedEnvironment: { url: 'https://mi.example.com', appId: 7 },
+        answers: [false],
+      });
+
+      await sync();
+
+      expect(dialogs[0]).toMatchObject({ confirmText: 'Sync to default' });
+      expect(dialogs[0]!.content).toContain('default (https://mi.example.com, app 7)');
+    });
+
+    it.each([
+      ['declined', [false], 'Sync cancelled by user.'],
+      ['not answered', [], 'Sync cancelled: its dialog was not answered within 1 s.'],
+    ])('reads, saves and uploads nothing when %s, and claims no backup', async (_case, answers, message) => {
+      const { sync, responses, distService, miAPI } = setup({
+        protectedEnvironment: staging,
+        answers,
+        timeoutMs: 1_000,
+      });
+
+      await sync();
+
+      expect(miAPI.getAssets).not.toHaveBeenCalled();
+      expect(distService.saveBackup).not.toHaveBeenCalled();
+      expect(distService.buildNewAssets).not.toHaveBeenCalled();
+      expect(miAPI.updateAssets).not.toHaveBeenCalled();
+      expect(responses).toEqual([{ cancelled: true, message }]);
+    });
   });
 
   it('tells the panel when its dialog was not answered in time, not that the user cancelled', async () => {

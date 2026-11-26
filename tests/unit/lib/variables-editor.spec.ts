@@ -51,7 +51,7 @@ function makeRes() {
   return res;
 }
 
-function register(deps: { distService?: DistService; miAPI: MiAPI }) {
+function register(deps: Parameters<typeof registerVariablesEditorRoutes>[1]) {
   const app = makeApp();
 
   registerVariablesEditorRoutes(app, deps);
@@ -364,6 +364,89 @@ describe('registerVariablesEditorRoutes', () => {
   });
 
   describe('PUT /@api/variables/values', () => {
+    // PP-4840 phase 2: a save to a protected environment is confirmed for the one the server works
+    // with now.
+    describe('in a protected MI environment', () => {
+      const staging = { name: 'staging', url: 'https://mi.staging.example.com/', appId: 42 };
+      const tags = [{ name: 'a', value: '1' }];
+
+      function setup(protectedEnvironment = staging) {
+        const miAPI = {
+          applyPageVariables: vi.fn().mockResolvedValue(undefined),
+          reloadPageVariables: vi.fn().mockResolvedValue(null),
+          localPageVariables: null,
+        } as unknown as MiAPI;
+        const deps = { miAPI, protectedEnvironment };
+        const app = register(deps);
+        const save = async (body: unknown) => {
+          const res = makeRes();
+
+          await app.handlers.get('PUT /@api/variables/values')!({ body }, res);
+
+          return res;
+        };
+
+        return { app, miAPI, save };
+      }
+
+      it('asks with a 409 that names the environment, without saving', async () => {
+        const { miAPI, save } = setup();
+        const res = await save({ tags });
+
+        expect(res.statusCode).toBe(409);
+        expect(res.body).toEqual({
+          code: 'PROTECTED_ENVIRONMENT',
+          error:
+            'Saving writes the values to staging (https://mi.staging.example.com, app 42). This environment is protected: save to it?',
+          environment: 'staging',
+          confirmation: 'staging https://mi.staging.example.com 42',
+        });
+        expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
+      });
+
+      it('saves once confirmed for that environment', async () => {
+        const { miAPI, save } = setup();
+        const { confirmation } = (await save({ tags })).body;
+        const res = await save({ tags, confirmEnvironment: confirmation });
+
+        expect(res.statusCode).toBe(200);
+        expect(miAPI.applyPageVariables).toHaveBeenCalledWith(tags);
+      });
+
+      it('asks again after a restart into another environment, whatever the tab confirmed', async () => {
+        const { app, miAPI, save } = setup();
+        const { confirmation } = (await save({ tags })).body;
+
+        // The same routes, given the new server's dependencies (an in-process restart): the same
+        // name on another MI instance.
+        registerVariablesEditorRoutes(app, {
+          miAPI,
+          protectedEnvironment: { name: 'staging', url: 'https://mi.prod.example.com', appId: 42 },
+        });
+
+        const res = await save({ tags, confirmEnvironment: confirmation });
+
+        expect(res.statusCode).toBe(409);
+        expect(res.body.error).toContain('staging (https://mi.prod.example.com, app 42)');
+        expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
+      });
+
+      it('saves without asking once the environment is no longer protected', async () => {
+        const { app, miAPI, save } = setup();
+
+        registerVariablesEditorRoutes(app, { miAPI });
+
+        expect((await save({ tags })).statusCode).toBe(200);
+        expect(miAPI.applyPageVariables).toHaveBeenCalledWith(tags);
+      });
+
+      it('checks the body before asking', async () => {
+        const { save } = setup();
+
+        expect((await save({ tags: [{ name: 'x' }] })).statusCode).toBe(400);
+      });
+    });
+
     it('400s on a malformed body', async () => {
       const app = register({ miAPI: { applyPageVariables: vi.fn() } as unknown as MiAPI });
       const res = makeRes();

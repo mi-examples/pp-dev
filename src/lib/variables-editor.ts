@@ -2,6 +2,9 @@ import type { Application } from 'express';
 import { DistService, TEMPLATE_VARIABLES_FILE_NAME } from './dist.service.js';
 import { MiAPI } from './pp.middleware.js';
 import { serveClientPage } from './client-page.js';
+import { type ProtectedEnvironment, describeEnvironment, getEnvironmentConfirmation } from './protected-environment.js';
+import { DEFAULT_ENV_NAME } from './pp-dev-config.js';
+import { PROTECTED_ENVIRONMENT_CODE } from '../shared/mi-environments.js';
 import {
   buildPageVariablesExport,
   isTemplateVariableTagType,
@@ -19,8 +22,15 @@ export const VARIABLES_EDITOR_PATH = '/@pp-dev/variables-editor';
 const NAME_FORMAT_REGEX = /^[A-Za-z0-9_\s-]+$/;
 const MISSING_DEPS_ERROR = 'Dist service or MiAPI is not defined';
 
+interface VariablesEditorDeps {
+  distService?: DistService;
+  miAPI: MiAPI;
+  /** Set when the environment is `protected`: saving values to MI asks for a confirmation. */
+  protectedEnvironment?: ProtectedEnvironment;
+}
+
 interface VariablesEditorRouteState {
-  deps: { distService?: DistService; miAPI: MiAPI };
+  deps: VariablesEditorDeps;
 }
 
 const routeStates = new WeakMap<Application, VariablesEditorRouteState>();
@@ -113,11 +123,7 @@ function readPageVariableEntries(body: unknown): PageVariableEntry[] | null {
   return entries;
 }
 
-export function registerVariablesEditorRoutes(
-  app: Application,
-  deps: { distService?: DistService; miAPI: MiAPI },
-  clientDir?: string,
-): void {
+export function registerVariablesEditorRoutes(app: Application, deps: VariablesEditorDeps, clientDir?: string): void {
   const existing = routeStates.get(app);
 
   if (existing) {
@@ -283,6 +289,26 @@ export function registerVariablesEditorRoutes(
       res.status(400).json({ error: `Variable "${duplicate}" is listed more than once.` });
 
       return;
+    }
+
+    // A protected environment: the editor asks with this text and sends the save again, confirmed for
+    // the environment the server works with now. One the tab confirmed before a restart into another
+    // is asked again.
+    const { protectedEnvironment } = current.deps;
+
+    if (protectedEnvironment) {
+      const confirmation = getEnvironmentConfirmation(protectedEnvironment);
+
+      if ((req.body as { confirmEnvironment?: unknown }).confirmEnvironment !== confirmation) {
+        res.status(409).json({
+          code: PROTECTED_ENVIRONMENT_CODE,
+          error: `Saving writes the values to ${describeEnvironment(protectedEnvironment)}. This environment is protected: save to it?`,
+          environment: protectedEnvironment.name ?? DEFAULT_ENV_NAME,
+          confirmation,
+        });
+
+        return;
+      }
     }
 
     try {

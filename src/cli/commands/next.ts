@@ -591,6 +591,8 @@ export function registerNextCommand(cli: CAC): void {
               projectRoot,
               miUrl: backendBaseURL,
               envName: _normalized.envName,
+              appId: _normalized.appId,
+              envProtected: _normalized.envProtected,
             });
 
             // Route HTTP upgrades: pp-dev WS to our server, everything else (Next.js HMR)

@@ -7,6 +7,8 @@ import { MiAPI } from './pp.middleware.js';
 import { Logger, ViteDevServer, WebSocketClient } from 'vite';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
+import { type ProtectedEnvironment, describeEnvironment } from './protected-environment.js';
+import { DEFAULT_ENV_NAME } from './pp-dev-config.js';
 import {
   SYNC_IN_PROGRESS_CODE,
   type SyncActionRequiredPayload,
@@ -48,6 +50,8 @@ export interface ClientServiceOptions {
    * @default 120_000
    */
   syncActionTimeoutMs?: number;
+  /** Set when the environment is `protected`: a sync asks for a confirmation that names it. */
+  protectedEnvironment?: ProtectedEnvironment;
 }
 
 export class ClientService {
@@ -139,11 +143,17 @@ export class ClientService {
     }
   }
 
-  /** Ends the sync on a dialog's answer that is not a confirmation. The backup was saved before any dialog. */
-  private cancelSync(client: WebSocketClient, reason: SyncCancelReason) {
+  /**
+   * Ends the sync on a dialog's answer that is not a confirmation. The backup is saved before the
+   * dialogs about it; the one of a protected environment comes before anything is read from MI.
+   */
+  private cancelSync(client: WebSocketClient, reason: SyncCancelReason, { backupSaved = true } = {}) {
     const description = this.describeSyncCancel(reason);
 
-    this.sendSyncResponse(client, { cancelled: true, message: `${description} Backup was saved.` });
+    this.sendSyncResponse(client, {
+      cancelled: true,
+      message: backupSaved ? `${description} Backup was saved.` : description,
+    });
     this.logger.info(colors.yellow(description));
   }
 
@@ -249,6 +259,31 @@ export class ClientService {
               },
             });
           }
+        }
+
+        // Before anything is read from MI or saved: the dialog names the environment this server works
+        // with now, whatever the tab was opened with.
+        const { protectedEnvironment } = this.opts;
+
+        if (protectedEnvironment) {
+          const where = describeEnvironment(protectedEnvironment);
+          const confirmed = await this.requestSyncAction(
+            {
+              title: 'Protected MI environment',
+              content: `Sync uploads the template to ${where}. This environment is protected: sync to it?`,
+              confirmText: `Sync to ${protectedEnvironment.name ?? DEFAULT_ENV_NAME}`,
+              cancelText: 'Cancel sync',
+            },
+            client,
+          );
+
+          if (!confirmed.approved) {
+            this.cancelSync(client, confirmed.reason, { backupSaved: false });
+
+            return;
+          }
+
+          this.logger.info(colors.yellow(`Sync to the protected MI environment ${where} confirmed`));
         }
 
         const currentAssets = await miAPI.getAssets().catch(async (err: unknown) => {

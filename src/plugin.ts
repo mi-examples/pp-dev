@@ -17,6 +17,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
   const {
     templateName,
     envName,
+    envProtected,
     templateLess,
     backendBaseURL,
     miHudLess,
@@ -155,6 +156,8 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           projectRoot: server.config.root || process.cwd(),
           miUrl: backendBaseURL,
           envName,
+          appId,
+          envProtected,
         });
 
         clientServices.set(server.environments.client, clientService);

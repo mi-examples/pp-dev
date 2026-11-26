@@ -4,6 +4,7 @@
 // import-modal.ts; its controls say what they do in `data-action`, handled here in one place.
 import { applyTheme, getStoredTheme, setTheme, type ThemeChoice } from '../theme.js';
 import { errorMessage, escapeHtml } from './html.js';
+import { PROTECTED_ENVIRONMENT_CODE } from '../../shared/mi-environments.js';
 import {
   importErrorHtml,
   importPickerBodyHtml,
@@ -1147,6 +1148,27 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     if (r.ok && data && typeof data === 'object') {
       return data;
+    }
+
+    // A protected MI environment (PP-4840): the server asks, naming the environment it works with now,
+    // and takes the save once it is confirmed for that one.
+    if (r.status === 409 && data?.code === PROTECTED_ENVIRONMENT_CODE && data.confirmation) {
+      const { confirmation } = data;
+      const confirmed = await new Promise<boolean>((resolve) =>
+        showConfirmModal(data.error || 'This MI environment is protected: save to it?', () => resolve(true), {
+          okText: 'Save to ' + (data.environment || 'it'),
+          onCancel: () => resolve(false),
+          deliberate: true,
+        }),
+      );
+
+      if (!confirmed) {
+        showBanner('warning', 'Not saved: the MI environment is protected and the save was not confirmed.', true);
+
+        return null;
+      }
+
+      return putSave<T>(url, { ...(body as object), confirmEnvironment: confirmation });
     }
 
     let message =
