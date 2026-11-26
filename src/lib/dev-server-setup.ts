@@ -75,6 +75,8 @@ export interface SyncAndUsersOptions {
   persistUsers: boolean;
   projectRoot: string;
   miUrl: string;
+  /** The named MI environment; `undefined` for the top-level settings. */
+  envName?: string;
 }
 
 /**
@@ -83,13 +85,13 @@ export interface SyncAndUsersOptions {
  * disposes of when it stops or restarts.
  */
 export function startSyncAndUsers(opts: SyncAndUsersOptions): ClientService {
-  const { distService, miAPI, persistUsers, projectRoot, miUrl } = opts;
+  const { distService, miAPI, persistUsers, projectRoot, miUrl, envName } = opts;
   const clientService = new ClientService(opts.server, { distService, miAPI });
 
-  registerLoginRoute(opts.internalServer, { miAPI, persistUsers, projectRoot, miUrl });
+  registerLoginRoute(opts.internalServer, { miAPI, persistUsers, projectRoot, miUrl, envName });
   registerVariablesEditorRoutes(opts.internalServer, { distService, miAPI });
-  registerUserRoutes(opts.internalServer, { miAPI });
-  startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl });
+  registerUserRoutes(opts.internalServer, { miAPI, envName });
+  startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl, envName });
 
   return clientService;
 }

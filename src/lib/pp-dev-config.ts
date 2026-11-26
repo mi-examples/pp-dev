@@ -7,6 +7,7 @@
  */
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
+import { envVariableSuffix } from '../shared/mi-environments.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -234,10 +235,7 @@ export const DEFAULT_ENV_NAME = 'default';
 /** Also a folder name (`backups/<name>`): no path separators, no dots. */
 const ENV_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-/** The suffix of an environment's variables: `staging-eu` → `STAGING_EU` (`MI_ACCESS_TOKEN_STAGING_EU`). */
-export function envVariableSuffix(name: string): string {
-  return name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-}
+export { envVariableSuffix };
 
 /** The MI instance, page and token of the environment in use. */
 export interface ResolvedMiEnvironment {
