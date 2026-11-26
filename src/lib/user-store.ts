@@ -21,6 +21,7 @@ import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { writeFileAtomicSync } from './helpers/atomic-file.helper.js';
 import { originalSession } from './original-session.js';
+import { describeTokenSettings } from '../shared/mi-environments.js';
 
 const STORE_VERSION = 1;
 
@@ -236,6 +237,8 @@ export function startKeepingUsers(opts: {
   miAPI: MiAPI;
   projectRoot: string;
   miUrl: string;
+  /** The named MI environment, for where its token is set; `undefined` for the top-level settings. */
+  envName?: string;
   /** Where the store lives; tests point it elsewhere. @default the user's home directory */
   homeDir?: string;
 }): void {
@@ -261,7 +264,7 @@ export function startKeepingUsers(opts: {
     stopKeeping(userRegistry);
     createLogger().warn(
       colors.yellow(
-        'users.persist is on, but keeping users needs your own API token (mi.token or MI_ACCESS_TOKEN). ' +
+        `users.persist is on, but keeping users needs your own API token (${describeTokenSettings(opts.envName)}). ` +
           'Without it, users last as long as the dev server.',
       ),
     );

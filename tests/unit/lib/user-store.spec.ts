@@ -12,6 +12,7 @@ import {
 import { UserRegistry, userRegistry } from '../../../src/lib/user-registry.js';
 import { checkUserToken, type TokenCheck } from '../../../src/lib/mi-identity.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
+import { createLogger } from '../../../src/lib/logger.js';
 
 /** PP-4600: token users kept between dev server runs, in a file in the home directory. */
 
@@ -361,5 +362,21 @@ describe('startKeepingUsers without your own token', () => {
     userRegistry.add({ name: 'admin', kind: 'token', token: 'admin-token' });
 
     expect(readStoredUsers(file).map((user) => user.name)).toEqual(['viewer']);
+  });
+
+  // PP-4840: a named environment never falls back to mi.token / MI_ACCESS_TOKEN.
+  it.each([
+    [undefined, 'mi.token or MI_ACCESS_TOKEN'],
+    ['staging', 'envs.staging.token or MI_ACCESS_TOKEN_STAGING'],
+  ])('names where the token of the environment %s is set', (envName, settings) => {
+    const warn = vi.spyOn(createLogger(), 'warn').mockImplementation(() => {});
+
+    try {
+      startKeepingUsers({ persist: true, miAPI: {} as MiAPI, projectRoot, miUrl: MI_URL, envName, homeDir: home });
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`needs your own API token (${settings})`));
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

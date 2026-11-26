@@ -229,10 +229,48 @@ describe('user routes', () => {
   it('says users are unavailable without the original token', async () => {
     miAPI.personalAccessToken = undefined;
 
-    expect((await call(port, 'GET', USERS_API_PATH)).body).toMatchObject({
-      available: false,
-      original: { kind: 'session', state: 'none' },
+    const listed = (await call(port, 'GET', USERS_API_PATH)).body;
+
+    expect(listed).toMatchObject({ available: false, original: { kind: 'session', state: 'none' } });
+    expect(listed).not.toHaveProperty('environment');
+
+    const res = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
+
+    expect(res.body.error).toContain('your own API token (mi.token or MI_ACCESS_TOKEN)');
+  });
+
+  // PP-4840: the environment is shown next to the original user, and its token never falls back to
+  // mi.token / MI_ACCESS_TOKEN, so those are not the settings to name.
+  it('names a named MI environment and its own token settings', async () => {
+    const app = createInternalServer();
+    const envMiAPI = { personalAccessToken: undefined, get: authInfo };
+
+    registerUserRoutes(app, {
+      miAPI: envMiAPI as unknown as MiAPI,
+      envName: 'staging-eu',
+      users: new UserRegistry(),
+      originalSession: new OriginalSession(),
     });
+
+    const envServer = http.createServer(app);
+
+    await new Promise<void>((resolve) => envServer.listen(0, '127.0.0.1', resolve));
+
+    try {
+      const envPort = (envServer.address() as AddressInfo).port;
+
+      expect((await call(envPort, 'GET', USERS_API_PATH)).body).toMatchObject({
+        available: false,
+        environment: 'staging-eu',
+      });
+
+      const res = await call(envPort, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
+
+      expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_USER_REQUIRED' } });
+      expect(res.body.error).toContain('your own API token (envs.staging-eu.token or MI_ACCESS_TOKEN_STAGING_EU)');
+    } finally {
+      await new Promise<void>((resolve) => envServer.close(() => resolve()));
+    }
   });
 
   describe('original user from a login on localhost (PP-4602)', () => {

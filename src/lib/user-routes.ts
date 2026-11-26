@@ -9,6 +9,7 @@ import {
 } from './original-session.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
+import { describeTokenSettings } from '../shared/mi-environments.js';
 
 /**
  * Saved users (PP-4592): `GET` lists them, `POST` adds one (by API token, or a session user that
@@ -18,6 +19,8 @@ export const USERS_API_PATH = '/@api/users';
 
 interface UserRoutesDeps {
   miAPI: MiAPI;
+  /** The named MI environment the dev server works with; `undefined` for the top-level settings. */
+  envName?: string;
   users?: UserRegistry;
   /** The main host's MI session, the original user's without a token. @default the shared one */
   originalSession?: OriginalSession;
@@ -66,14 +69,14 @@ function toPublicOriginal(miAPI: MiAPI, session: OriginalSession): PublicOrigina
 }
 
 /** Why there is no original user to add users with, or `undefined` if there is one. */
-function getOriginalUserMissing(miAPI: MiAPI, session: OriginalSession): string | undefined {
+function getOriginalUserMissing(miAPI: MiAPI, session: OriginalSession, envName?: string): string | undefined {
   if (miAPI.personalAccessToken || session.session) {
     return undefined;
   }
 
   return session.state === 'expired'
     ? 'Your MI session on localhost ended: log in again on localhost.'
-    : 'Adding users needs you logged in to MI on localhost, or your own API token (mi.token or MI_ACCESS_TOKEN).';
+    : `Adding users needs you logged in to MI on localhost, or your own API token (${describeTokenSettings(envName)}).`;
 }
 
 function sendError(res: Response, status: number, code: string, error: string) {
@@ -100,12 +103,14 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
 
   app.get(USERS_API_PATH, (req, res) => {
     const users = getUsers();
-    const { miAPI } = current.deps;
+    const { miAPI, envName } = current.deps;
 
     res.json({
       // Users can only be added while the original user (the dev panel's) is known.
       available: !getOriginalUserMissing(miAPI, getOriginalSession()),
       original: toPublicOriginal(miAPI, getOriginalSession()),
+      // The named MI environment, shown next to the original user; left out for the top-level one.
+      ...(envName ? { environment: envName } : {}),
       users: users.list().map((user) => toPublicUser(user, req)),
       defaultUser: users.defaultUser?.name ?? null,
     });
@@ -156,7 +161,7 @@ export function registerUserRoutes(app: Application, deps: UserRoutesDeps): void
     }
 
     // The dev panel always works as the original user: your API token, or your login on localhost.
-    const originalMissing = getOriginalUserMissing(miAPI, getOriginalSession());
+    const originalMissing = getOriginalUserMissing(miAPI, getOriginalSession(), current.deps.envName);
 
     if (originalMissing) {
       sendError(res, 409, 'ORIGINAL_USER_REQUIRED', originalMissing);

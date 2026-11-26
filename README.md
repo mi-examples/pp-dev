@@ -326,7 +326,8 @@ pp-dev build --changelog --env staging
   `<sync.backupsDir>/<name>/`, so `pp-dev build --changelog --env <name>` compares the build with
   that environment's latest backup; the default one's stay in `sync.backupsDir`. The users you add
   belong to the MI instance: two environments on one instance share them, saved ones included.
-- **The dev panel** names the environment in use (none for `default`).
+- **The dev panel** names the environment in use (none for `default`), next to Sync and next to
+  you in the Users popover.
 - A login on `localhost` is one cookie for every instance (browsers keep cookies by host, not by
   port): after a switch to another instance, log in again there.
 

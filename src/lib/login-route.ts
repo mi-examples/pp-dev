@@ -18,6 +18,8 @@ export interface LoginRouteOptions {
   persistUsers: boolean;
   projectRoot: string;
   miUrl: string;
+  /** The named MI environment; `undefined` for the top-level settings. */
+  envName?: string;
 }
 
 function sendErrorResponse(res: Response, status: number, error: string, details?: string, code?: string) {
@@ -43,7 +45,7 @@ function sendErrorResponse(res: Response, status: number, error: string, details
  * never got an answer.
  */
 export function registerLoginRoute(app: Application, opts: LoginRouteOptions): void {
-  const { miAPI, persistUsers, projectRoot, miUrl } = opts;
+  const { miAPI, persistUsers, projectRoot, miUrl, envName } = opts;
   const logger = createLogger();
 
   const handleTokenValidationError = (res: Response, error: unknown, tokenType: string) => {
@@ -177,7 +179,7 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
 
       // Users need your own token: with users.persist on but no token at start, keeping them
       // starts now.
-      startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl });
+      startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl, envName });
 
       redirect(res, '/', 302);
     } else if (tokenType === 'regular') {
@@ -227,7 +229,7 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
       invalidateProxyCache('logged in with a token');
 
       // No personal token any more: the users stop being kept (see startKeepingUsers).
-      startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl });
+      startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl, envName });
 
       redirect(res, '/', 302);
     } else {

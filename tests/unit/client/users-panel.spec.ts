@@ -566,6 +566,27 @@ describe('initUsersPanel', () => {
     expect($panel.querySelector<HTMLElement>('.pp-dev-info__users-add')!.hidden).toBe(true);
     expect($panel.querySelector('.pp-dev-info__users-unavailable')!.textContent).toContain('API token');
   });
+
+  // PP-4840: a named environment never falls back to mi.token / MI_ACCESS_TOKEN.
+  it("names the environment next to you, and its own token's settings", async () => {
+    fetchMock.mockImplementation(async () =>
+      json(200, {
+        ...usersResponse,
+        available: false,
+        original: { kind: 'session', state: 'none' },
+        environment: 'staging-eu',
+      }),
+    );
+
+    const $panel = await openPopover();
+
+    expect($panel.querySelector('.pp-dev-info__users-meta')!.textContent).toBe(
+      'original user on staging-eu · not logged in to MI on localhost',
+    );
+    expect($panel.querySelector('.pp-dev-info__users-unavailable')!.textContent).toBe(
+      'Adding users needs you logged in to MI on localhost, or your own API token (envs.staging-eu.token or MI_ACCESS_TOKEN_STAGING_EU).',
+    );
+  });
 });
 
 describe('getOriginalMeta (PP-4602)', () => {
@@ -590,6 +611,18 @@ describe('getOriginalMeta (PP-4602)', () => {
   it('says nobody is logged in on localhost yet', () => {
     expect(getOriginalMeta({ kind: 'session', state: 'none' })).toBe(
       'original user · not logged in to MI on localhost',
+    );
+  });
+
+  it('names the MI environment the dev server works with (PP-4840)', () => {
+    expect(getOriginalMeta({ kind: 'token' }, 'staging')).toBe(
+      'original user on staging · the dev panel always works as you',
+    );
+    expect(getOriginalMeta({ kind: 'session', state: 'active', miUser: { id: 7, username: 'dev' } }, 'staging')).toBe(
+      'original user (dev) on staging, logged in on localhost · the dev panel always works as you',
+    );
+    expect(getOriginalMeta({ kind: 'session', state: 'expired', miUser: { id: 7, username: 'dev' } }, 'staging')).toBe(
+      'original user (dev) on staging · your MI session ended: log in again on localhost',
     );
   });
 });

@@ -5,6 +5,7 @@
  */
 
 import { MAX_USER_NAME_LENGTH, USER_HOST_SUFFIX, USER_NAME_PATTERN, getUserNameError } from '../shared/user-names.js';
+import { describeTokenSettings } from '../shared/mi-environments.js';
 
 interface PublicUser {
   name: string;
@@ -24,6 +25,8 @@ interface UsersResponse {
   available: boolean;
   /** Missing from a dev server older than the panel. */
   original?: OriginalUser;
+  /** The named MI environment the dev server works with (PP-4840); missing for the top-level one. */
+  environment?: string;
   users: PublicUser[];
   defaultUser: string | null;
 }
@@ -43,21 +46,26 @@ const STATE_LABELS: Record<NonNullable<PublicUser['state']>, string> = {
   expired: 'session expired',
 };
 
-/** The line under "You": who the dev panel works as, and whether your login on localhost lasts. */
-export function getOriginalMeta(original: OriginalUser | undefined): string {
+/**
+ * The line under "You": who the dev panel works as, on which named MI environment, and whether your
+ * login on localhost lasts.
+ */
+export function getOriginalMeta(original: OriginalUser | undefined, environment?: string): string {
+  const on = environment ? ` on ${environment}` : '';
+
   if (original?.kind !== 'session') {
-    return 'original user · the dev panel always works as you';
+    return `original user${on} · the dev panel always works as you`;
   }
 
   const who = original.miUser?.username ? ` (${original.miUser.username})` : '';
 
   if (original.state === 'active') {
-    return `original user${who}, logged in on localhost · the dev panel always works as you`;
+    return `original user${who}${on}, logged in on localhost · the dev panel always works as you`;
   }
 
   return original.state === 'expired'
-    ? `original user${who} · your MI session ended: log in again on localhost`
-    : 'original user · not logged in to MI on localhost';
+    ? `original user${who}${on} · your MI session ended: log in again on localhost`
+    : `original user${on} · not logged in to MI on localhost`;
 }
 
 /** The saved user this tab belongs to, from its host; `undefined` on the main host. */
@@ -254,7 +262,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
           title="Make the main host (localhost) work as you" ${defaultUser ? '' : 'checked'} />
         <div class="pp-dev-info__users-who">
           <span class="pp-dev-info__users-name">You${currentUser ? '' : THIS_TAB_BADGE}</span>
-          <span class="pp-dev-info__users-meta">${escapeHtml(getOriginalMeta(data.original))}</span>
+          <span class="pp-dev-info__users-meta">${escapeHtml(getOriginalMeta(data.original, data.environment))}</span>
         </div>
         ${
           // The main host works as you only while no other user is the default; then that user's
@@ -454,7 +462,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
       reason =
         data.original?.kind === 'session' && data.original.state === 'expired'
           ? 'Your MI session on localhost ended: log in again on localhost to add users.'
-          : 'Adding users needs you logged in to MI on localhost, or your own API token (mi.token or MI_ACCESS_TOKEN).';
+          : `Adding users needs you logged in to MI on localhost, or your own API token (${describeTokenSettings(data.environment)}).`;
     }
 
     if ($form) {

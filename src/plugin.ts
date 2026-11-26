@@ -154,6 +154,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           persistUsers,
           projectRoot: server.config.root || process.cwd(),
           miUrl: backendBaseURL,
+          envName,
         });
 
         clientServices.set(server.environments.client, clientService);

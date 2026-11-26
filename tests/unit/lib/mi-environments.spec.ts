@@ -11,6 +11,7 @@ import {
 } from '../../../src/lib/pp-dev-config.js';
 import { applyEnvOption, applyPPConfigOption, cleanOptions, lastFlagValue } from '../../../src/lib/cli-options.js';
 import { onProxyCacheInvalidate, useMiEnvironment } from '../../../src/lib/proxy-cache.middleware.js';
+import { describeTokenSettings } from '../../../src/shared/mi-environments.js';
 
 /**
  * PP-4840: several named MI environments (server URL, app id, token), chosen with `--env` / `MI_ENV`.
@@ -160,6 +161,12 @@ describe('MI environments', () => {
   it('names the variables after the environment in upper case, other characters as _', () => {
     expect(envVariableSuffix('staging-eu')).toBe('STAGING_EU');
     expect(envVariableSuffix('Customer_2')).toBe('CUSTOMER_2');
+  });
+
+  // The users panel and its messages name these: a named environment's own, never the top-level ones.
+  it('names where the token of an environment is set', () => {
+    expect(describeTokenSettings()).toBe('mi.token or MI_ACCESS_TOKEN');
+    expect(describeTokenSettings('staging-eu')).toBe('envs.staging-eu.token or MI_ACCESS_TOKEN_STAGING_EU');
   });
 
   describe('normalizePPDevConfig', () => {
