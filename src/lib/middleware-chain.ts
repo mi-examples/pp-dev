@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect, ViteDevServer } from 'vite';
 import { MiAPI } from './pp.middleware.js';
 import { initPPRedirect } from './pp-redirect.middleware.js';
-import { initProxyCache } from './proxy-cache.middleware.js';
+import { initProxyCache, useMiEnvironment } from './proxy-cache.middleware.js';
 import proxyPassMiddleware from './proxy-pass.middleware.js';
 import { initLoadPPData } from './load-pp-data.middleware.js';
 import { initRewriteResponse, type RewriteResponseOptions } from './rewrite-response.middleware.js';
@@ -47,6 +47,8 @@ export interface MiddlewareChainOptions {
   internalServer: Application;
   /** MI; without it the chain has no proxy, no page data and no rewrite. */
   backendBaseURL?: string;
+  /** The named MI environment (`envs`) `backendBaseURL` is of; `undefined` for the top-level one. */
+  envName?: string;
   mi: {
     appId?: number;
     templateLess: boolean;
@@ -164,13 +166,16 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
       );
     }
 
+    // Whether or not the proxy cache is on: the page data is cached apart, and dropped with it.
+    const environment = useMiEnvironment({ name: options.envName, url: backendBaseURL, appId: options.mi.appId });
+
     const miConfig = getMiAPIOptions(backendBaseURL, options.mi);
 
     mi = new MiAPI(backendBaseURL, miConfig);
 
     if (proxy.cache) {
       proxyCacheTtl = resolveProxyCacheTtl(proxy.cacheTtl);
-      main.push(asChain(initProxyCache({ devServer: proxy.devServer, ttl: proxyCacheTtl })));
+      main.push(asChain(initProxyCache({ devServer: proxy.devServer, ttl: proxyCacheTtl, environment })));
     }
 
     // Before the proxy, so the v7 internal page name is there for the `/data/page/` rewrites.

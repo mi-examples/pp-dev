@@ -48,7 +48,14 @@
       </span>
     </div>
 
-    {% if (backendBaseURL) { %}
+    {% if (backendBaseURL && envName) { %}
+    <div class="pp-dev-info__section">
+      <span class="pp-dev-info__item">
+        <span class="pp-dev-info__label">Environment:</span>
+        <span class="pp-dev-info__value warning pp-dev-info__env">{%= envName %}</span>
+      </span>
+    </div>
+    {% } %} {% if (backendBaseURL) { %}
     <div class="pp-dev-info__section">
       <span class="pp-dev-info__item">
         <span class="pp-dev-info__label">Backend URL:</span>

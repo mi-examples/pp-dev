@@ -145,6 +145,23 @@ describe('superviseNextServer', () => {
     );
   });
 
+  // `--pp-config <file>` names a config outside the files the watcher knows by name.
+  it('watches the pp-dev config named with --pp-config', () => {
+    vi.stubEnv('PP_DEV_CONFIG', path.resolve('/configs/staging.config.ts'));
+
+    try {
+      const { servers, createWatcher } = setup();
+
+      servers[0].ready();
+
+      const options = (createWatcher.mock.calls[0] as unknown[] | undefined)?.[3] as { files?: string[] };
+
+      expect(options.files).toContain(path.resolve('/configs/staging.config.ts'));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("exits with the server's code when the first start fails", async () => {
     const { servers, processRef, createWatcher } = setup();
 
@@ -450,6 +467,24 @@ describe("the supervisor's config check", () => {
     fs.writeFileSync(path.join(root, 'next.config.mjs'), 'export default {};\n');
 
     await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+  });
+
+  // Review of #402: with `envs.staging` from `withPPDev()`, `pp-dev next --env staging` started, but
+  // the check of the standalone file refused every change to it ("Unknown MI environment").
+  it('passes a standalone config without the environment that withPPDev() adds', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-supervisor-env-elsewhere-'));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"split-app"}');
+    fs.writeFileSync(
+      path.join(root, 'pp-dev.config.mjs'),
+      "export default { mi: { url: 'https://mi.example.com' }, app: { id: 1, type: 'template' } };\n",
+    );
+    vi.stubEnv('MI_ENV', 'staging');
+
+    try {
+      await expect(loadPPDevConfigAfresh(root, 'development')).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   // A config file that exports nothing counted as no config: the check passed, the working server

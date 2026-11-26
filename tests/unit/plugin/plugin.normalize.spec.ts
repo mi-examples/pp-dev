@@ -9,6 +9,7 @@ describe('normalizePPDevConfig', () => {
     process.env = { ...originalEnv };
     delete process.env.MI_BACKEND_URL;
     delete process.env.MI_ACCESS_TOKEN;
+    delete process.env.MI_ENV;
   });
 
   afterEach(() => {
@@ -324,6 +325,7 @@ describe('validatePPDevConfig', () => {
     process.env = { ...originalEnv };
     delete process.env.MI_BACKEND_URL;
     delete process.env.MI_ACCESS_TOKEN;
+    delete process.env.MI_ENV;
   });
 
   afterEach(() => {

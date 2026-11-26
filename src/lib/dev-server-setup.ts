@@ -35,7 +35,8 @@ export function getMiAPIOptions(
     templateLess: settings.templateLess,
     disableSSLValidation: settings.disableSSLValidation,
     v7Features: settings.v7Features,
-    personalAccessToken: settings.personalAccessToken ?? process.env.MI_ACCESS_TOKEN,
+    // As the config resolved it: a named environment never falls back to `MI_ACCESS_TOKEN`.
+    personalAccessToken: settings.personalAccessToken,
   };
 }
 

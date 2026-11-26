@@ -261,4 +261,67 @@ describe('proxy cache — MI session', () => {
     expect(calls).toBe(1);
     expect(cache.keys()).toEqual([]);
   });
+
+  // PP-4840: a Vite restart into another MI environment makes the new server (which drops the
+  // cache) before it closes the old one, and the old one answers requests until then. What it
+  // caches is the old environment's and must not be served by the new server.
+  it("serves a server only the responses cached for its MI environment, not a restart's old server's", async () => {
+    handler = image;
+
+    const middlewareOf = (environment: string) => initProxyCache({ devServer: {} as never, environment });
+    const proxyMiddleware = initProxy({
+      baseURL: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
+      devServer: {} as never,
+      miAPI: miAPI as unknown as MiAPI,
+    });
+    const serverOf = (environment: string) => {
+      const middleware = middlewareOf(environment);
+
+      return http.createServer((req, res) =>
+        middleware(req as never, res, () =>
+          proxyMiddleware(req as never, res, () => {
+            res.statusCode = 404;
+            res.end();
+          }),
+        ),
+      );
+    };
+    const oldServer = serverOf('dev');
+    const newServer = serverOf('staging');
+    const oldPort = await listen(oldServer);
+    const newPort = await listen(newServer);
+    // Both as the browser sees them, on the dev server's one address (the cache keys by `Host`).
+    const get = (serverPort: number) =>
+      new Promise<http.IncomingMessage>((resolve, reject) => {
+        http
+          .get(
+            {
+              host: '127.0.0.1',
+              port: serverPort,
+              path: '/assets/logo.png',
+              headers: { host: 'localhost:3000', cookie: 'metric_insights_session=A' },
+            },
+            (res) => res.resume().on('end', () => resolve(res)),
+          )
+          .on('error', reject);
+      });
+
+    try {
+      await get(oldPort);
+      await tick();
+      expect(cache.keys()).toEqual(['localhost:3000:/assets/logo.png']);
+
+      expect((await get(newPort)).headers['x-pp-cache']).toBeUndefined();
+      expect(upstreamHits).toHaveLength(2);
+
+      await tick();
+
+      // Cached for the new environment now: its next request is answered from the cache.
+      expect((await get(newPort)).headers['x-pp-cache']).toBe('hit');
+      expect(upstreamHits).toHaveLength(2);
+    } finally {
+      await close(oldServer);
+      await close(newServer);
+    }
+  });
 });

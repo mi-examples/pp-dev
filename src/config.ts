@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
-import { PP_DEV_CONFIG_NAMES } from './constants.js';
+import { PP_DEV_CONFIG_FILE_ENV_VAR, PP_DEV_CONFIG_NAMES } from './constants.js';
 import { pathToFileURL } from 'url';
 import type { PPDevConfig } from './lib/pp-dev-config.js';
 
@@ -107,6 +107,29 @@ const moduleLocationPlugin: import('esbuild').Plugin = {
 };
 
 /**
+ * Whether Node reads a `.js` file at this path as ESM: the `type` of the nearest package.json above it
+ * (its package scope). That is the project's own for a config in the project, but not for one named
+ * with `--pp-config` in another package.
+ */
+function isInModulePackage(filePath: string): boolean {
+  let dir = path.dirname(path.resolve(filePath));
+
+  for (;;) {
+    if (existsSync(path.join(dir, 'package.json'))) {
+      return getPackageJson(dir).type === 'module';
+    }
+
+    const parent = path.dirname(dir);
+
+    if (parent === dir) {
+      return false;
+    }
+
+    dir = parent;
+  }
+}
+
+/**
  * Loads a JS or TS config file: bundles it (local imports included, packages left external) into a
  * temporary module with a unique name, and imports that.
  *
@@ -131,10 +154,7 @@ async function loadBundledConfig<T extends object>(filePath: string, projectRoot
   } else if (/\.c[jt]s$/.test(filePath)) {
     isESM = false;
   } else {
-    // Performance optimization: Use cached package.json
-    const pkg = getPackageJson(projectRoot);
-
-    isESM = !!pkg && pkg.type === 'module';
+    isESM = isInModulePackage(filePath);
   }
 
   const esbuild = await getEsbuild();
@@ -175,7 +195,9 @@ async function loadBundledConfig<T extends object>(filePath: string, projectRoot
   const fileBase = `pp-config.timestamp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const fileNameTmp = `${fileBase}.${isESM ? 'mjs' : 'cjs'}`;
-  const tempFilePath = path.resolve(projectRoot, fileNameTmp);
+  // Beside the config, not in the project root: a config named with `--pp-config` elsewhere imports
+  // the packages installed next to it.
+  const tempFilePath = path.resolve(path.dirname(filePath), fileNameTmp);
   const fileUrl = pathToFileURL(tempFilePath).toString();
 
   writeFileSync(tempFilePath, code);
@@ -268,6 +290,33 @@ export function getPkg(projectRoot = process.cwd()) {
   return getPackageJson(projectRoot);
 }
 
+/** The config file `--pp-config` / `PP_DEV_CONFIG` names, absolute; `undefined` when none is named. */
+export function getNamedConfigFile(env: Record<string, string | undefined> = process.env): string | undefined {
+  const file = env[PP_DEV_CONFIG_FILE_ENV_VAR]?.trim();
+
+  return file ? path.resolve(file) : undefined;
+}
+
+/** Loads the config file `--pp-config` names. It must be there: a typo must not start with no config. */
+async function loadNamedConfig(file: string, projectRoot: string): Promise<PPDevConfig> {
+  if (!existsSync(file)) {
+    throw new Error(`[pp-dev] The pp-dev config ${file} (--pp-config or ${PP_DEV_CONFIG_FILE_ENV_VAR}) does not exist`);
+  }
+
+  let config: PPDevConfig | null | undefined;
+
+  if (/\.[cm]?[jt]s$/i.test(file)) {
+    config = await loadBundledConfig<PPDevConfig>(file, projectRoot);
+  } else if (/\.json$/i.test(file)) {
+    config = await loadJSONConfig<PPDevConfig>(file);
+  } else {
+    throw new Error(`[pp-dev] The pp-dev config ${file} must be a .js, .cjs, .mjs, .ts, .cts, .mts or .json file`);
+  }
+
+  // A file that exports nothing (a half-written save) is a config to validate, as in the root.
+  return config ?? {};
+}
+
 export async function getConfig(projectRoot = process.cwd()): Promise<PPDevConfig> {
   return (await findConfig(projectRoot)).config;
 }
@@ -281,6 +330,13 @@ export async function getConfig(projectRoot = process.cwd()): Promise<PPDevConfi
  */
 export async function findConfig(projectRoot = process.cwd()): Promise<{ config: PPDevConfig; found: boolean }> {
   const root = path.resolve(projectRoot);
+  const namedFile = getNamedConfigFile();
+
+  // Named with `--pp-config`: that file, in place of the root's config and package.json's `pp-dev`.
+  if (namedFile) {
+    return { config: await loadNamedConfig(namedFile, root), found: true };
+  }
+
   const dirContent = getDirectoryContent(root);
   const configNames = PP_DEV_CONFIG_NAMES as never as string[];
   const hasConfigFile = configNames.some((name) => dirContent.includes(name));

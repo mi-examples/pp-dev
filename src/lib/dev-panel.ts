@@ -16,6 +16,8 @@ import type { DevPanelPosition } from '../plugin.js';
  */
 
 export interface DevPanelData {
+  /** The named MI environment (`envs`) in use; the panel names it. */
+  envName?: string;
   backendBaseURL?: string;
   templateLess: boolean;
   appId?: number;
@@ -64,6 +66,7 @@ export function renderDevPanelMarkup(data: DevPanelData): string {
   return template({
     PACKAGE_NAME,
     VERSION,
+    envName: data.envName ?? '',
     backendBaseURL: data.backendBaseURL,
     templateLess: data.templateLess,
     appId: data.appId,

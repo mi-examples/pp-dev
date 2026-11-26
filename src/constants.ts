@@ -56,6 +56,13 @@ export const PP_DEV_NEXT_BUILD_DIST_DIR_ENV_VAR = 'PP_DEV_NEXT_BUILD_DIST_DIR';
  */
 export const PP_DEV_PROJECT_ROOT_ENV_VAR = 'PP_DEV_PROJECT_ROOT';
 
+/**
+ * The pp-dev config file to load in place of a `pp-dev.config.*` in the project root (`--pp-config`
+ * sets it, as an absolute path): an environment variable, so the Next.js server process, the build a
+ * sync runs and `withPPDev()` in next.config load the same one.
+ */
+export const PP_DEV_CONFIG_FILE_ENV_VAR = 'PP_DEV_CONFIG';
+
 export const PP_DEV_CONFIG_NAMES = [
   '.pp-dev.config.js',
   '.pp-dev.config.cjs',

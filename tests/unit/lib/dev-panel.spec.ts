@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Only the panel template read is overridden; everything else (e.g. constants.ts
 // reading package.json) keeps the real implementation.
 const TEMPLATE =
-  '<div class="pp-dev-info pp-dev-info--{%= devPanelPosition %}" data-version="{%= VERSION %}" data-position="{%= devPanelPosition %}" data-auto-hide="{%= devPanelAutoHide %}" data-hidden="{%= devPanelHidden %}">{%= PACKAGE_NAME %}</div>';
+  '<div class="pp-dev-info pp-dev-info--{%= devPanelPosition %}" data-env="{%= envName %}" data-version="{%= VERSION %}" data-position="{%= devPanelPosition %}" data-auto-hide="{%= devPanelAutoHide %}" data-hidden="{%= devPanelHidden %}">{%= PACKAGE_NAME %}</div>';
 
 vi.mock('fs', async (importActual) => {
   const actual = await importActual<typeof import('fs')>();
@@ -55,6 +55,14 @@ describe('dev-panel', () => {
       expect(out).toContain('data-position="bottom-right"');
       expect(out).toContain('data-auto-hide="false"');
       expect(out).toContain('data-hidden="false"');
+      expect(out).toContain('data-env=""');
+    });
+
+    // PP-4840: the panel names the MI environment in use.
+    it('passes the environment name to the template', () => {
+      expect(injectDevPanel(baseHtml, '/p/my-app/', { templateLess: false, envName: 'staging' })).toContain(
+        'data-env="staging"',
+      );
     });
 
     it('passes explicit devPanel values through to the template', () => {

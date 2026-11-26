@@ -47,7 +47,7 @@ export function registerServeCommand(cli: CAC): void {
 
         try {
           // Clear config cache
-          const { clearConfigCache, getConfig } = await import('../../config.js');
+          const { clearConfigCache, getConfig, getNamedConfigFile } = await import('../../config.js');
 
           clearConfigCache();
 
@@ -162,6 +162,13 @@ export function registerServeCommand(cli: CAC): void {
 
           // Set up config watcher; a restart may bring new files to watch (another `--config`, a
           // helper the config now imports).
+          // A pp-dev config named with `--pp-config` is watched wherever it is.
+          const namedConfigFile = getNamedConfigFile();
+
+          if (namedConfigFile) {
+            viteConfigFiles.push(namedConfigFile);
+          }
+
           if (!configWatcher) {
             configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info, {
               mode,

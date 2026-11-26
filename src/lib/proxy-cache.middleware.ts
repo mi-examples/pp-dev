@@ -17,6 +17,8 @@ export interface CacheItem {
   content: Buffer;
   timestamp: number;
   size: number;
+  /** The MI environment it was cached from (see {@link useMiEnvironment}). */
+  environment?: string;
 }
 
 export interface ProxyCacheOpts {
@@ -27,6 +29,12 @@ export interface ProxyCacheOpts {
   maxItems?: number; // Maximum number of cache items
   /** Saved users; each one gets its own cache entries. @default the shared {@link userRegistry} */
   users?: UserRegistry;
+  /**
+   * The MI environment this server works with, as {@link useMiEnvironment} returned it. Only its
+   * entries are served: a restart's old server answers requests until it closes, after the new one
+   * dropped the cache, and what it caches then is the old environment's.
+   */
+  environment?: string;
 }
 
 declare module 'vite' {
@@ -201,6 +209,26 @@ export function invalidateProxyCache(reason: string): void {
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
 }
 
+/** The MI environment the cached responses came from (see {@link useMiEnvironment}). */
+let cachedEnvironment: string | undefined;
+
+/**
+ * Tells the cache which MI environment the dev server now works with (its name, MI's URL and the
+ * page's id), on every start. A restart of the Vite dev server runs in the same process, so what the
+ * previous environment cached, the page data included, would still be served: it is dropped.
+ */
+export function useMiEnvironment(environment: { name?: string; url: string; appId?: number }): string {
+  const identity = [environment.name ?? '', environment.url.replace(/\/+$/, ''), environment.appId ?? ''].join('\n');
+
+  if (cachedEnvironment !== undefined && cachedEnvironment !== identity) {
+    invalidateProxyCache(`the MI environment changed to ${environment.name ?? 'default'} (${environment.url})`);
+  }
+
+  cachedEnvironment = identity;
+
+  return identity;
+}
+
 // The original user's login on localhost (PP-4602) starting, turning into another MI user's or
 // ending drops what was cached for it, the page data included, whether or not the proxy cache is on:
 // an ended login noticed through a dev panel call sends no new session to the browser.
@@ -372,6 +400,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     maxSize = DEFAULT_MAX_SIZE,
     maxItems = DEFAULT_MAX_ITEMS,
     users = userRegistry,
+    environment,
   } = opts;
 
   const logger = createLogger();
@@ -421,7 +450,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
     // Check cache for existing item
     const cacheItem = cache.get(cacheKey);
 
-    if (cacheItem) {
+    if (cacheItem && cacheItem.environment === environment) {
       logger.info(
         `${colors.blue('Proxies request:')} ${colors.green(req.method)} ${url} -> ${colors.blue('Cache')} ${cacheKey}`,
       );
@@ -577,6 +606,7 @@ export function initProxyCache(opts: ProxyCacheOpts): NextHandleFunction {
             content: finalBuffer,
             timestamp: Date.now(),
             size: responseSize,
+            environment,
           };
 
           cache.put(cacheKey, cacheItem, ttl);

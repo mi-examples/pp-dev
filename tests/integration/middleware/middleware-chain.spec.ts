@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createMiddlewareChain, type MiddlewareChain } from '../../../src/lib/middleware-chain.js';
 import { createInternalServer } from '../../../src/lib/internal.middleware.js';
 import { runMiddlewareChain } from '../../../src/lib/dev-server-setup.js';
-import { invalidateProxyCache } from '../../../src/lib/proxy-cache.middleware.js';
+import { invalidateProxyCache, onProxyCacheInvalidate } from '../../../src/lib/proxy-cache.middleware.js';
 import { clearAPICache } from '../../../src/lib/load-pp-data.middleware.js';
 
 /**
@@ -195,6 +195,38 @@ describe('the middleware chain', () => {
         await close(essential);
       }
     });
+  });
+
+  // PP-4840: a dev server started in another MI environment (a Vite restart, in the same process)
+  // drops what the previous one cached; one started again in the same environment keeps it.
+  it('drops the cache when a chain is built for another MI environment', () => {
+    const dropped = vi.fn();
+    const environment = (envName?: string) =>
+      createMiddlewareChain({
+        base: BASE,
+        templateName: 'chain-app',
+        internalServer: createInternalServer(),
+        backendBaseURL: upstreamUrl,
+        envName,
+        mi: { appId: 1, templateLess: true, miHudLess: true, disableSSLValidation: false, v7Features: true },
+        inspector: { enabled: false, maxMemory: 1024, captureLimit: 1024 },
+        proxy: { cache: true, cacheTtl: 60_000 },
+        rewrite: () => ({ predicate: () => false, transform: (response) => response }),
+      });
+
+    environment('dev');
+
+    const unsubscribe = onProxyCacheInvalidate(dropped);
+
+    try {
+      environment('dev');
+      expect(dropped).not.toHaveBeenCalled();
+
+      environment('staging');
+      expect(dropped).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
   });
 
   describe('without a backend', () => {
