@@ -328,13 +328,14 @@ pp-dev build --changelog --env staging
   `<sync.backupsDir>/<name>/`, so `pp-dev build --changelog --env <name>` compares the build with
   that environment's latest backup; the default one's stay in `sync.backupsDir`. The users you add
   belong to the MI instance: two environments on one instance share them, saved ones included.
-- **Protected.** In an environment with `protected: true`, the two things that write to MI ask
-  first, naming the environment with its MI URL and page: **Sync** (before anything is read from MI
-  or backed up) and saving values in the **Variables Editor**. The question names the environment
-  the dev server works with now, not the one the tab was opened with: a save confirmed for one is
-  asked again after a restart into another. A named environment without a setting of its own takes
+- **Protected.** In an environment with `protected: true`, the writes to MI you start ask first,
+  naming the environment with its MI URL and page: **Sync** (before anything is read from MI or
+  backed up) and saving values in the **Variables Editor**. The question names the environment the
+  dev server works with now, not the one the tab was opened with: a save confirmed for one is asked
+  again after a restart into another. A named environment without a setting of its own takes
   `mi.protected`, so `protected: false` leaves a test instance unprotected under a protected default.
-  Saving the variables schema writes only `public/__template_variables.json` and doesn't ask.
+  Saving the variables schema writes only `public/__template_variables.json` and doesn't ask, nor
+  does the `[DEV PAGE. DO NOT DELETE]` page pp-dev creates once for a template with `mi.apiVersion: 6`.
 - **The dev panel** names the environment in use (none for `default`), next to Sync and next to
   you in the Users popover.
 - A login on `localhost` is one cookie for every instance (browsers keep cookies by host, not by
