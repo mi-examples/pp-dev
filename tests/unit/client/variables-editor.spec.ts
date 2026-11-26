@@ -700,6 +700,25 @@ describe('Variables Editor page', () => {
         dom.close();
       });
 
+      // The Enter that confirmed the diff before it must not confirm this one too.
+      it('is confirmed by a click only: the focus starts on Cancel and Enter does not confirm', async () => {
+        const fetch = vi.fn().mockResolvedValueOnce(valuesResponse).mockResolvedValueOnce(asked);
+        const { dom, confirmSave } = await openEditor('values', fetch);
+
+        enter('#content .ve-values-detail input', 'edited');
+        await confirmSave();
+
+        expect(document.activeElement).toBe(find('.ve-modal-cancel'));
+
+        find('.ve-modal-overlay').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await flush();
+
+        expect(document.querySelector('.ve-modal-overlay')).not.toBeNull();
+        expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+
+        dom.close();
+      });
+
       it('saves nothing and keeps the edits when the question is cancelled', async () => {
         const fetch = vi.fn().mockResolvedValueOnce(valuesResponse).mockResolvedValueOnce(asked);
         const { dom, confirmSave, asksToDiscard } = await openEditor('values', fetch);

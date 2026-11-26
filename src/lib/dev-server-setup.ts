@@ -80,8 +80,11 @@ export interface SyncAndUsersOptions {
   envName?: string;
   /** The page's id on that MI instance, for the confirmation of a protected environment. */
   appId?: number;
-  /** Sync and Variables Editor saves ask for a confirmation (`mi.protected`, `envs.<name>.protected`). */
-  envProtected?: boolean;
+  /**
+   * Sync and Variables Editor saves ask for a confirmation (`mi.protected`, `envs.<name>.protected`).
+   * Required, so a dev server that leaves it out doesn't build: that would switch the protection off.
+   */
+  envProtected: boolean;
 }
 
 /**

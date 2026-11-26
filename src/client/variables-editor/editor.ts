@@ -1158,6 +1158,7 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
         showConfirmModal(data.error || 'This MI environment is protected: save to it?', () => resolve(true), {
           okText: 'Save to ' + (data.environment || 'it'),
           onCancel: () => resolve(false),
+          deliberate: true,
         }),
       );
 

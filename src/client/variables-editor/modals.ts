@@ -158,7 +158,15 @@ export function showCustomValueModal(title: string, initialValue: string, onDone
 export function showConfirmModal(
   message: string,
   onConfirm: () => void,
-  options: { okText?: string; onCancel?: () => void } = {},
+  options: {
+    okText?: string;
+    onCancel?: () => void;
+    /**
+     * Confirmed by a click on OK only: the focus starts on Cancel and Enter doesn't confirm, so the
+     * Enter that closed the dialog before it (the diff) can't confirm this one too.
+     */
+    deliberate?: boolean;
+  } = {},
 ) {
   const overlay = openOverlay(
     '<div class="ve-modal">' +
@@ -174,7 +182,7 @@ export function showConfirmModal(
       '</div>',
   );
 
-  find(overlay, '.ve-modal-ok').focus();
+  find(overlay, options.deliberate ? '.ve-modal-cancel' : '.ve-modal-ok').focus();
 
   function close(confirmed: boolean) {
     unbindKeys();
@@ -198,7 +206,10 @@ export function showConfirmModal(
   const unbindKeys = bindModalKeys(overlay, (ev) => {
     if (ev.key === 'Enter' && !isButton(ev.target)) {
       ev.preventDefault();
-      close(true);
+
+      if (!options.deliberate) {
+        close(true);
+      }
     } else if (ev.key === 'Escape') {
       ev.preventDefault();
       close(false);

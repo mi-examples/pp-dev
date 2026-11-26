@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import express from 'express';
 import type { ViteDevServer } from 'vite';
-import type { ServerResponse } from 'node:http';
+import http, { type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createInternalServer } from '../../../src/lib/internal.middleware.js';
 import {
   DEFAULT_PROXY_CACHE_TTL_MS,
   endUnhandledInternalRequest,
@@ -151,6 +153,7 @@ describe('dev server setup', () => {
         persistUsers: false,
         projectRoot: process.cwd(),
         miUrl: 'https://mi.example.com',
+        envProtected: false,
       });
       const paths = (app.router.stack as Array<{ route?: { path: string } }>)
         .map((layer) => layer.route?.path)
@@ -163,6 +166,62 @@ describe('dev server setup', () => {
       // The token login too: it was the Vite plugin's alone, and the form pp-dev adds to MI's login
       // page had no route to post to under `pp-dev next`.
       expect(paths).toContain('/@api/login');
+    });
+
+    // PP-4840 phase 2: `envProtected` reaches both writes to MI, the sync and the values save.
+    it('makes a protected environment ask before a sync and a values save', async () => {
+      const handlers = new Map<string, (...args: any[]) => any>();
+      const server = {
+        ws: { on: vi.fn((event: string, handler: () => void) => handlers.set(event, handler)), send: vi.fn() },
+        config: { clientInjectionPlugin: { v7Features: false } },
+      } as unknown as ViteDevServer;
+      const app = createInternalServer();
+      const miAPI = { getAssets: vi.fn(), applyPageVariables: vi.fn() } as unknown as MiAPI;
+      const clientService = startSyncAndUsers({
+        server,
+        internalServer: app,
+        distService: { stopBuilds: vi.fn() } as unknown as DistService,
+        miAPI,
+        persistUsers: false,
+        projectRoot: process.cwd(),
+        miUrl: 'https://mi.example.com',
+        envName: 'staging',
+        appId: 42,
+        envProtected: true,
+      });
+      const httpServer = http.createServer(app);
+
+      await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+
+      try {
+        const { port } = httpServer.address() as AddressInfo;
+        const res = await fetch(`http://127.0.0.1:${port}/@api/variables/values`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tags: [{ name: 'a', value: '1' }] }),
+        });
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toMatchObject({ environment: 'staging' });
+        expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
+
+        const client = { send: vi.fn() };
+        const sync = handlers.get('template:sync')!({}, client);
+
+        await vi.waitFor(() =>
+          expect(client.send).toHaveBeenCalledWith(
+            'template:sync:action-required',
+            expect.objectContaining({ title: 'Protected MI environment', confirmText: 'Sync to staging' }),
+          ),
+        );
+        expect(miAPI.getAssets).not.toHaveBeenCalled();
+
+        clientService.dispose();
+        await sync;
+      } finally {
+        clientService.dispose();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+      }
     });
   });
 
