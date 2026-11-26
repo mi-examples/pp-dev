@@ -2,8 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getUserStorePath, keepTokenUsers, readStoredUsers, writeStoredUsers } from '../../../src/lib/user-store.js';
-import { UserRegistry } from '../../../src/lib/user-registry.js';
+import {
+  getUserStorePath,
+  keepTokenUsers,
+  readStoredUsers,
+  startKeepingUsers,
+  writeStoredUsers,
+} from '../../../src/lib/user-store.js';
+import { UserRegistry, userRegistry } from '../../../src/lib/user-registry.js';
 import { checkUserToken, type TokenCheck } from '../../../src/lib/mi-identity.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
@@ -316,5 +322,44 @@ describe('keepTokenUsers while MI is in maintenance', () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+// Review of #401: a dev server restarted without your own token (or a regular token login) went on
+// writing the users added through your login on localhost to disk.
+describe('startKeepingUsers without your own token', () => {
+  let home: string;
+  let projectRoot: string;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dev-users-'));
+    projectRoot = path.join(home, 'app');
+  });
+
+  afterEach(() => {
+    startKeepingUsers({ persist: false, miAPI: {} as MiAPI, projectRoot, miUrl: MI_URL, homeDir: home });
+    userRegistry.clear();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('stops keeping the users a start with a token kept', async () => {
+    const miAPI = {
+      personalAccessToken: 'DEV-PAT' as string | undefined,
+      get: vi.fn(async () => ({ data: { user: { user_id: 42, username: 'viewer' } } })),
+    };
+    const start = () =>
+      startKeepingUsers({ persist: true, miAPI: miAPI as unknown as MiAPI, projectRoot, miUrl: MI_URL, homeDir: home });
+    const file = getUserStorePath(projectRoot, MI_URL, home);
+
+    start();
+    userRegistry.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    await vi.waitFor(() => expect(readStoredUsers(file).map((user) => user.name)).toEqual(['viewer']));
+
+    // The same project and MI instance again, without the token.
+    miAPI.personalAccessToken = undefined;
+    start();
+    userRegistry.add({ name: 'admin', kind: 'token', token: 'admin-token' });
+
+    expect(readStoredUsers(file).map((user) => user.name)).toEqual(['viewer']);
   });
 });

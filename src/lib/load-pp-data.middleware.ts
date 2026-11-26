@@ -129,7 +129,8 @@ function isHtmlDocumentRequest(req: IncomingMessage): boolean {
 
 /**
  * The headers page data is loaded with. MiAPI keeps them for the dev panel's own MI calls (sync,
- * page variables), which always go as the original user, so a saved user's host doesn't pass its
+ * page variables), which always go as the original user (with no API token, MiAPI adds the MI
+ * session of your login on localhost, see original-session.ts), so a saved user's host doesn't pass its
  * credentials on: its MI session cookie, or a token the page sends (`Authorization`, or MI's
  * `Token`), which MiAPI would use instead of the original user's. Neither does localhost while a
  * saved user is the default: its page sends that user's tokens, though its cookies are still yours.
@@ -371,6 +372,7 @@ async function handlePageInfoOnly(
       next,
       logger,
       'Page info',
+      req,
     );
   }
 }
@@ -426,6 +428,7 @@ async function handleTemplateLoad(
       next,
       logger,
       'Page data',
+      req,
     );
   }
 }
@@ -441,10 +444,23 @@ function handleLoadError(
   next: NextFunction,
   logger: ReturnType<typeof createLogger>,
   operationType: string,
+  req: IncomingMessage,
 ): void {
   // Check if it's an authorization error
   if (isAuthError(error)) {
     logger.info(colors.red(`${operationType} loading failed. Not authorized`));
+
+    // On a saved user's host the page data still loads as you, the original user (see
+    // getPageDataHeaders): MI's home there logs in that user, not you, and sent the tab back here
+    // to fail again.
+    if (getUserNameFromHost(req.headers.host)) {
+      return next(
+        new Error(
+          'MI turned down your own login, which the page data loads with on every host. ' +
+            'Log in again on localhost (or check mi.token), then reload this tab.',
+        ),
+      );
+    }
 
     if (redirectOnAuthFailure) {
       const fullRedirectUrl = `${redirectUrl}`;

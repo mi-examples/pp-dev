@@ -8,6 +8,7 @@ import { ServerResponse } from 'http';
 import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helpers/cookie.helper.js';
 import { cutUrlParams } from './helpers/url.helper.js';
 import { RequestUser, UserRegistry, getUserNameFromHost, userRegistry } from './user-registry.js';
+import { originalSession } from './original-session.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -199,6 +200,11 @@ export function invalidateProxyCache(reason: string): void {
 
   createLogger().info(colors.blue(`Proxy cache cleared: ${reason}`));
 }
+
+// The original user's login on localhost (PP-4602) starting, turning into another MI user's or
+// ending drops what was cached for it, the page data included, whether or not the proxy cache is on:
+// an ended login noticed through a dev panel call sends no new session to the browser.
+originalSession.onChange(() => invalidateProxyCache('your MI login on localhost changed or ended'));
 
 /** Registries whose removed users already have their cache dropped. */
 const watchedRegistries = new WeakSet<UserRegistry>();

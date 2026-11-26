@@ -5,6 +5,7 @@ import { createInternalServer } from '../../../src/lib/internal.middleware.js';
 import { registerUserRoutes, USERS_API_PATH } from '../../../src/lib/user-routes.js';
 import { UserRegistry } from '../../../src/lib/user-registry.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
+import { OriginalSession } from '../../../src/lib/original-session.js';
 
 /** PP-4595: adding a saved user by API token through the internal API. */
 
@@ -43,6 +44,7 @@ describe('user routes', () => {
   let server: http.Server;
   let port: number;
   const users = new UserRegistry();
+  const original = new OriginalSession();
   const authInfo = vi.fn();
   const miAPI = {
     personalAccessToken: 'original-token' as string | undefined,
@@ -52,7 +54,7 @@ describe('user routes', () => {
   beforeAll(async () => {
     const app = createInternalServer();
 
-    registerUserRoutes(app, { miAPI: miAPI as unknown as MiAPI, users });
+    registerUserRoutes(app, { miAPI: miAPI as unknown as MiAPI, users, originalSession: original });
 
     server = http.createServer(app);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -65,6 +67,7 @@ describe('user routes', () => {
 
   beforeEach(() => {
     users.clear();
+    original.clear();
     authInfo.mockReset();
     authInfo.mockResolvedValue({ data: { user: { user_id: 42, username: 'viewer@example.com' } } });
     miAPI.personalAccessToken = 'original-token';
@@ -90,16 +93,21 @@ describe('user routes', () => {
 
     const listed = await call(port, 'GET', USERS_API_PATH);
 
-    expect(listed.body).toEqual({ available: true, users: [added.body.user], defaultUser: null });
+    expect(listed.body).toEqual({
+      available: true,
+      original: { kind: 'token' },
+      users: [added.body.user],
+      defaultUser: null,
+    });
     expect(JSON.stringify(listed.body)).not.toContain('viewer-token');
   });
 
-  it('needs the original user to have a token', async () => {
+  it('needs the original user: a token, or a login on localhost', async () => {
     miAPI.personalAccessToken = undefined;
 
     const res = await call(port, 'POST', USERS_API_PATH, { name: 'viewer', token: 'viewer-token' });
 
-    expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_TOKEN_REQUIRED' } });
+    expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_USER_REQUIRED' } });
     expect(authInfo).not.toHaveBeenCalled();
   });
 
@@ -210,18 +218,69 @@ describe('user routes', () => {
     expect(res).toMatchObject({ status: 400, body: { code: 'INVALID_KIND' } });
   });
 
-  it('needs the original token for a session user too', async () => {
+  it('needs the original user for a session user too', async () => {
     miAPI.personalAccessToken = undefined;
 
     const res = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
 
-    expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_TOKEN_REQUIRED' } });
+    expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_USER_REQUIRED' } });
   });
 
   it('says users are unavailable without the original token', async () => {
     miAPI.personalAccessToken = undefined;
 
-    expect((await call(port, 'GET', USERS_API_PATH)).body.available).toBe(false);
+    expect((await call(port, 'GET', USERS_API_PATH)).body).toMatchObject({
+      available: false,
+      original: { kind: 'session', state: 'none' },
+    });
+  });
+
+  describe('original user from a login on localhost (PP-4602)', () => {
+    /** A request of the main host that carries the MI session of a login. */
+    const mainHostRequest = (session: string) => ({
+      headers: { cookie: `metric_insights_session=${session}` },
+      method: 'GET',
+      url: '/home',
+    });
+
+    beforeEach(async () => {
+      miAPI.personalAccessToken = undefined;
+      original.useCheck(async (session) => (session === 'MAIN-SESSION' ? { id: 7, username: 'dev' } : undefined));
+      await original.observe(mainHostRequest('MAIN-SESSION'), { statusCode: 200, headers: {} });
+    });
+
+    it('adds users without a token while you are logged in on localhost', async () => {
+      const listed = await call(port, 'GET', USERS_API_PATH);
+
+      expect(listed.body).toMatchObject({
+        available: true,
+        original: { kind: 'session', state: 'active', miUser: { id: 7, username: 'dev' } },
+      });
+      expect(JSON.stringify(listed.body)).not.toContain('MAIN-SESSION');
+
+      expect((await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' })).status).toBe(201);
+      expect((await call(port, 'POST', USERS_API_PATH, { name: 'viewer', token: 'viewer-token' })).status).toBe(201);
+    });
+
+    it('stops adding users once your MI session on localhost ends, and says to log in again', async () => {
+      await original.observe(mainHostRequest('MAIN-SESSION'), { statusCode: 401, headers: {} });
+
+      expect((await call(port, 'GET', USERS_API_PATH)).body).toMatchObject({
+        available: false,
+        original: { kind: 'session', state: 'expired', miUser: { id: 7, username: 'dev' } },
+      });
+
+      const res = await call(port, 'POST', USERS_API_PATH, { name: 'qa', kind: 'session' });
+
+      expect(res).toMatchObject({ status: 409, body: { code: 'ORIGINAL_USER_REQUIRED' } });
+      expect(res.body.error).toContain('log in again on localhost');
+    });
+
+    it('goes by the token when there is one', async () => {
+      miAPI.personalAccessToken = 'original-token';
+
+      expect((await call(port, 'GET', USERS_API_PATH)).body.original).toEqual({ kind: 'token' });
+    });
   });
 
   describe('default user (PP-4597)', () => {

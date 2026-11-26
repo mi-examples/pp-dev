@@ -1,4 +1,4 @@
-import axios, { Axios } from 'axios';
+import axios, { Axios, type AxiosError } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
 import { getJSDOM } from './helpers/jsdom.helper.js';
@@ -14,6 +14,9 @@ import {
 import { isUnavailableJsonApiError } from '../api/unavailable-json-api.js';
 import { createLogger } from './logger.js';
 import { colors, getTokenErrorInfo, logTokenError } from './helpers/index.js';
+import { MI_SESSION_COOKIE, getRequestCookie } from './helpers/cookie.helper.js';
+import { originalSession } from './original-session.js';
+import { withSessionCookie, withoutSessionCookie } from './session-users.js';
 import { Logger } from 'vite';
 
 export type Headers = Record<string, string | undefined>;
@@ -31,6 +34,33 @@ export const TEMPLATE_PAGE_NAME = '[DEV PAGE. DO NOT DELETE]';
 
 // Performance optimization: Connection pool for axios instances
 const axiosInstanceCache = new Map<string, Axios>();
+
+const watchedAxiosInstances = new WeakSet<Axios>();
+
+/**
+ * Has the original user's MI session (PP-4602) checked when MI refuses a call sent with it (a 401 or
+ * 412): it may have ended while you worked on another host. Once per axios instance, which the
+ * MiAPIs of one MI share.
+ */
+function watchRefusedSessions(instance: Axios): void {
+  if (watchedAxiosInstances.has(instance)) {
+    return;
+  }
+
+  watchedAxiosInstances.add(instance);
+
+  instance.interceptors?.response?.use(undefined, (error: unknown) => {
+    const { response, config } = (error ?? {}) as AxiosError;
+
+    if (response?.status === 401 || response?.status === 412) {
+      const cookie = config?.headers?.get?.('cookie');
+
+      originalSession.recheck(typeof cookie === 'string' ? getRequestCookie(cookie, MI_SESSION_COOKIE) : undefined);
+    }
+
+    return Promise.reject(error);
+  });
+}
 
 export class MiAPI {
   #headers: Headers;
@@ -125,6 +155,8 @@ export class MiAPI {
       axiosInstanceCache.set(cacheKey, this.#axios);
     }
 
+    watchRefusedSessions(this.#axios);
+
     this.appId = appId;
     this.templateLess = templateLess;
 
@@ -161,13 +193,48 @@ export class MiAPI {
 
     Object.keys(obj).forEach((key) => obj[key] === undefined && delete obj[key]);
 
-    this.#headers = obj;
+    // Stored before the token is added: a token the caller sent stays, but the one added here must
+    // not outlive `personalAccessToken` (a regular token login clears it), or every later call
+    // would still go as its owner.
+    this.#headers = { ...obj };
 
     if (!obj.authorization && this.#personalAccessToken) {
       obj.authorization = `Bearer ${this.#personalAccessToken}`;
     }
 
-    return obj;
+    return this.#withOriginalSession(obj);
+  }
+
+  /**
+   * Without an API token, the original user is whoever is logged in on the main host (PP-4602): its
+   * MI session, which the proxy follows, goes in place of the one the headers carry (none from a
+   * saved user's host, see load-pp-data), so the dev panel works as you on any host. Added to a
+   * copy: the stored headers must not keep a session after it ends.
+   */
+  #withOriginalSession(headers: Headers): Headers {
+    if (headers.authorization || this.#personalAccessToken) {
+      return headers;
+    }
+
+    const session = originalSession.session;
+
+    if (session) {
+      return { ...headers, cookie: withSessionCookie(headers.cookie, session) };
+    }
+
+    // Once the login ended, headers kept from an earlier page load on localhost may still carry a
+    // session of it: that one must not stand in for a new login. A session of another host's own
+    // (an IP address, a custom domain) is left alone.
+    const carried = getRequestCookie(headers.cookie, MI_SESSION_COOKIE);
+
+    if (carried === undefined || !originalSession.hasLeft(carried)) {
+      return headers;
+    }
+
+    const { cookie: _cookie, ...rest } = headers;
+    const otherCookies = withoutSessionCookie(headers.cookie);
+
+    return otherCookies ? { ...rest, cookie: otherCookies } : rest;
   }
 
   /**

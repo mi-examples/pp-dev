@@ -10,7 +10,14 @@ import type { Socket } from 'node:net';
 import { tokenLoginFunction } from './helpers/login.helper';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { MiAPI } from './pp.middleware';
-import { SavedUser, UserRegistry, getUserNameFromHost, getUserOrigin, userRegistry } from './user-registry.js';
+import {
+  SavedUser,
+  UserRegistry,
+  getUserNameFromHost,
+  getUserOrigin,
+  isMainHost,
+  userRegistry,
+} from './user-registry.js';
 import {
   SessionUserTracker,
   withSessionCookie,
@@ -18,6 +25,7 @@ import {
   withoutSessionSetCookie,
 } from './session-users.js';
 import { createSessionCheck } from './mi-identity.js';
+import { OriginalSession, originalSession as sharedOriginalSession } from './original-session.js';
 import type { Connect } from 'vite';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -44,6 +52,12 @@ export interface ProxyOpts {
 
   /** Follows session users' logins and expiries. @default one that checks sessions with {@link miAPI} */
   sessionUsers?: SessionUserTracker;
+
+  /**
+   * Follows the main host's MI session: the original user's, when there is no API token (PP-4602).
+   * @default the shared one, checking sessions with {@link miAPI}
+   */
+  originalSession?: OriginalSession;
 }
 
 const hostOriginRegExp = /^(https?:\/\/)([^/]+)(\/.*)?$/i;
@@ -372,6 +386,11 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
   const logger = createLogger();
 
   const sessionUsers = opts.sessionUsers ?? new SessionUserTracker(users, createSessionCheck(miAPI));
+  const originalSession = opts.originalSession ?? sharedOriginalSession;
+
+  if (!opts.originalSession) {
+    originalSession.useCheck(createSessionCheck(miAPI));
+  }
 
   return createProxyMiddleware({
     /**
@@ -558,6 +577,33 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
         const loggedOutUser = getLoggedOutUser(req, users);
         const identity = requestIdentities.get(req);
 
+        // Without an API token, the main host's MI session is the original user's, which the dev
+        // panel works as on every host (PP-4602): followed through MI's answers to the main host.
+        // An IP address or a custom domain goes as the original user too, but has its own cookies.
+        // A request with credentials of its own (a page sending a bearer or MI `Token` header) is
+        // answered as their owner, with a new session each time: it says nothing about the login.
+        // A request sent with a session the login already left behind (answered late) keeps what MI
+        // hands out for it from the browser, which holds the newer one.
+        let originalLeftBehind = false;
+
+        if (
+          identity &&
+          !identity.user &&
+          !miAPI.personalAccessToken &&
+          isMainHost(req.headers.host) &&
+          !req.headers.authorization &&
+          !req.headers.token
+        ) {
+          // Decided before the tracker looks at the response, which may change the session.
+          originalLeftBehind = originalSession.isLeftBehindRequest(req);
+
+          if (LOGOUT_PATH_REGEXP.test(req.url ?? '') && !originalLeftBehind) {
+            originalSession.loggedOut();
+          }
+
+          originalSession.observe(req, serverRes);
+        }
+
         if (loggedOutUser) {
           serverRes.resume();
 
@@ -593,7 +639,7 @@ export function initProxy(opts: ProxyOpts): NextHandleFunction {
 
         const savedUser = identity?.user;
         // Whether the MI session MI hands out here may reach the browser.
-        let passSession = true;
+        let passSession = !originalLeftBehind;
 
         if (savedUser && users.get(savedUser.name) !== savedUser) {
           // Removed, or removed and added again, while the request was in flight: its session belongs

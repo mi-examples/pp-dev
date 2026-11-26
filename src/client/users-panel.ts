@@ -15,8 +15,15 @@ interface PublicUser {
   loginUrl?: string;
 }
 
+/** Who the dev panel works as: your API token, or your login on localhost (src/lib/original-session.ts). */
+type OriginalUser =
+  | { kind: 'token' }
+  | { kind: 'session'; state: 'none' | 'active' | 'expired'; miUser?: { id: number; username: string } };
+
 interface UsersResponse {
   available: boolean;
+  /** Missing from a dev server older than the panel. */
+  original?: OriginalUser;
   users: PublicUser[];
   defaultUser: string | null;
 }
@@ -35,6 +42,23 @@ const STATE_LABELS: Record<NonNullable<PublicUser['state']>, string> = {
   active: 'logged in',
   expired: 'session expired',
 };
+
+/** The line under "You": who the dev panel works as, and whether your login on localhost lasts. */
+export function getOriginalMeta(original: OriginalUser | undefined): string {
+  if (original?.kind !== 'session') {
+    return 'original user · the dev panel always works as you';
+  }
+
+  const who = original.miUser?.username ? ` (${original.miUser.username})` : '';
+
+  if (original.state === 'active') {
+    return `original user${who}, logged in on localhost · the dev panel always works as you`;
+  }
+
+  return original.state === 'expired'
+    ? `original user${who} · your MI session ended: log in again on localhost`
+    : 'original user · not logged in to MI on localhost';
+}
 
 /** The saved user this tab belongs to, from its host; `undefined` on the main host. */
 export function getTabUserName(hostname = window.location.hostname): string | undefined {
@@ -230,7 +254,7 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
           title="Make the main host (localhost) work as you" ${defaultUser ? '' : 'checked'} />
         <div class="pp-dev-info__users-who">
           <span class="pp-dev-info__users-name">You${currentUser ? '' : THIS_TAB_BADGE}</span>
-          <span class="pp-dev-info__users-meta">original user · the dev panel always works as you</span>
+          <span class="pp-dev-info__users-meta">${escapeHtml(getOriginalMeta(data.original))}</span>
         </div>
         ${
           // The main host works as you only while no other user is the default; then that user's
@@ -427,7 +451,10 @@ export function initUsersPanel($panel: HTMLElement, hooks?: UsersPanelHooks): vo
     if (!isOnLocalhost()) {
       reason = 'Users open on <name>.localhost hosts: open the dev server on localhost to use them.';
     } else if (!data.available) {
-      reason = 'Adding users needs your own API token: set mi.token or MI_ACCESS_TOKEN.';
+      reason =
+        data.original?.kind === 'session' && data.original.state === 'expired'
+          ? 'Your MI session on localhost ended: log in again on localhost to add users.'
+          : 'Adding users needs you logged in to MI on localhost, or your own API token (mi.token or MI_ACCESS_TOKEN).';
     }
 
     if ($form) {
