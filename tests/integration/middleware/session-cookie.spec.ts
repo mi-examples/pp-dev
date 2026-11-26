@@ -36,6 +36,13 @@ function startMi(label: string) {
     if (req.url?.startsWith('/login')) {
       logins += 1;
       res.setHeader('set-cookie', [`metric_insights_session=${label}-${logins}; Path=/; HttpOnly`, 'other=1; Path=/']);
+    } else if (req.url?.startsWith('/css/')) {
+      // A stylesheet MI answers with its session too, which the proxy cache keeps (seen on stg70).
+      res.setHeader('set-cookie', `metric_insights_session=${label}-CSS; Path=/; HttpOnly`);
+      res.setHeader('content-type', 'text/css');
+      res.end('body{}');
+
+      return;
     }
 
     res.setHeader('content-type', 'application/json');
@@ -108,7 +115,7 @@ describe('the MI session cookie per MI instance (PP-4840)', () => {
       backendBaseURL: url,
       sessionCookieName: getSessionCookieName(url, defaultUrl),
       mi: { appId: 1, templateLess: true, miHudLess: true, disableSSLValidation: false, v7Features: true },
-      inspector: { enabled: false, maxMemory: 1024 * 1024, captureLimit: 64 * 1024 },
+      inspector: { enabled: true, maxMemory: 1024 * 1024, captureLimit: 64 * 1024 },
       proxy: { cache: true, cacheTtl: 60_000 },
       rewrite: () => ({ predicate: () => false, transform: (response) => response }),
     });
@@ -197,6 +204,34 @@ describe('the MI session cookie per MI instance (PP-4840)', () => {
     expect(seen).toBe('metric_insights_session=B-SESSION');
     expect(browser.jar.get(nameB)).toBe('FROM-RENDERER');
     expect(browser.jar.get('metric_insights_session')).toBe('DEFAULT');
+  });
+
+  // Found in a live run: the inspector recorded a response ended in one call before end() sent its
+  // headers, so it showed MI's name where the browser got the renamed cookie.
+  it('shows in the Request Inspector the session cookie as the browser got it', async () => {
+    const browser = createBrowser();
+    const nameB = getSessionCookieName(urlB, urlA);
+    const port = await devServer(urlB, urlA);
+    const json = (path: string) =>
+      new Promise<any>((resolve, reject) => {
+        http
+          .get({ host: '127.0.0.1', port, path, headers: { host: `localhost:${port}` } }, (res) => {
+            const chunks: Buffer[] = [];
+
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => resolve(JSON.parse(Buffer.concat(chunks).toString())));
+          })
+          .on('error', reject);
+      });
+
+    const css = await browser.get(port, '/css/main.css');
+    const { requests } = await json('/@api/requests');
+    const record = await json(
+      `/@api/requests/${requests.find((item: { url: string }) => item.url === '/css/main.css').id}`,
+    );
+
+    expect(css.setCookie[0]).toMatch(new RegExp(`^${nameB}=`));
+    expect(record.responseHeaders['set-cookie'][0]).toMatch(new RegExp(`^${nameB}=<redacted>;`));
   });
 
   it('drops the cached responses on a login in a named environment, as in the default one', async () => {

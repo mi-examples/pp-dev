@@ -281,9 +281,14 @@ export function createRequestCaptureMiddleware(
         captureChunk(chunk, getWriteEncoding(args));
       }
 
+      // Recorded once end() sent the headers: the ones the browser got. A response ended in one call
+      // sends them in end(), and the session cookie of another MI instance than the default one is
+      // renamed only then (session-cookie.middleware.ts): recorded before, it showed MI's name.
+      const ended = (origEnd as (...args: unknown[]) => typeof res)(chunk, ...args);
+
       finalize();
 
-      return (origEnd as (...args: unknown[]) => typeof res)(chunk, ...args);
+      return ended;
     }) as typeof res.end;
 
     next();
