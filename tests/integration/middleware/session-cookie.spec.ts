@@ -149,7 +149,7 @@ describe('the MI session cookie per MI instance (PP-4840)', () => {
     const portA = await devServer(urlA, urlA);
     const portB = await devServer(urlB, urlA);
 
-    expect(nameB).toBe(`metric_insights_session__127_0_0_1_${new URL(urlB).port}`);
+    expect(nameB).toBe(`metric_insights_session__127.0.0.1_3a${new URL(urlB).port}`);
 
     // Logged in on A: the default instance keeps MI's name.
     await browser.get(portA, '/login');

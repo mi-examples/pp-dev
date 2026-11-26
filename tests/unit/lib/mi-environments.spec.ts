@@ -232,7 +232,7 @@ describe('MI environments', () => {
 
       process.env.MI_ENV = 'staging';
       expect(normalizePPDevConfig(config, 'my-app').sessionCookieName).toBe(
-        'metric_insights_session__staging_mi_example_com',
+        'metric_insights_session__staging.mi.example.com',
       );
     });
 

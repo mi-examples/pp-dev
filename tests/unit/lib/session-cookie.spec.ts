@@ -11,7 +11,7 @@ import { redactRequestHeaders, redactResponseHeaders } from '../../../src/lib/re
 
 /** PP-4840 phase 3: the MI session cookie per MI instance on the browser's side. */
 
-const NAMED = 'metric_insights_session__staging_example_com';
+const NAMED = 'metric_insights_session__staging.example.com';
 
 describe('getSessionCookieName', () => {
   it("keeps MI's name for the default instance, whatever the path or case of its URL", () => {
@@ -24,10 +24,27 @@ describe('getSessionCookieName', () => {
   it('names the session of another instance after its host, port included', () => {
     expect(getSessionCookieName('https://staging.example.com', 'https://mi.example.com')).toBe(NAMED);
     expect(getSessionCookieName('https://mi.example.com:8443', 'https://mi.example.com')).toBe(
-      'metric_insights_session__mi_example_com_8443',
+      'metric_insights_session__mi.example.com_3a8443',
     );
     // Without a default instance, every instance has a name of its own.
     expect(getSessionCookieName('https://staging.example.com', undefined)).toBe(NAMED);
+  });
+
+  // Review of #406: `_` for every character but letters and digits gave these one name, so a login on
+  // one replaced the other's and its session went to the other MI.
+  it('gives every host a name of its own', () => {
+    const names = [
+      'https://staging-mi.example.com',
+      'https://staging.mi.example.com',
+      'https://staging_mi.example.com',
+      'https://staging.mi.example.com:8443',
+      'https://staging.mi.example.com_3a8443',
+      'https://[::1]:8443',
+    ].map((url) => getSessionCookieName(url, 'https://mi.example.com'));
+
+    expect(new Set(names).size).toBe(names.length);
+    // Each one a cookie name: RFC 6265's token characters only.
+    names.forEach((name) => expect(name).toMatch(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/));
   });
 });
 

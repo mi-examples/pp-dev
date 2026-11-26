@@ -342,7 +342,7 @@ pp-dev build --changelog --env staging
   instance of a project under a name of its own on `localhost`: the project's default instance's
   (`mi.url`) as MI names it, `metric_insights_session`, so existing logins stay; another instance's
   as `metric_insights_session__<host>` (`staging.mi.example.com` →
-  `metric_insights_session__staging_mi_example_com`). Within a project, a login on one instance
+  `metric_insights_session__staging.mi.example.com`). Within a project, a login on one instance
   survives a switch to another and back, MI never gets another instance's session, two dev servers on
   different environments of it run side by side, and environments on one instance share the login.
   - The plain name is each project's **default** instance: two projects whose `mi.url` are different

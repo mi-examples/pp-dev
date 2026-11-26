@@ -23,7 +23,17 @@ export function getSessionCookieName(url: string | undefined, defaultUrl: string
     return MI_SESSION_COOKIE;
   }
 
-  return `${MI_SESSION_COOKIE}__${host.replace(/[^a-z0-9]/g, '_')}`;
+  return `${MI_SESSION_COOKIE}__${encodeHost(host)}`;
+}
+
+/**
+ * The host in a cookie name, one name per host: letters, digits, `.` and `-` are allowed there and
+ * stay; any other character (the port's `:`, `_`, IPv6 brackets) is `_` and its code in hex.
+ * `mi.example.com:8443` → `mi.example.com_3a8443`. Review of #406: `_` for every other character
+ * gave `staging-mi.example.com` and `staging.mi.example.com` one name, and so one session.
+ */
+function encodeHost(host: string): string {
+  return host.replace(/[^a-z0-9.-]/g, (ch) => `_${ch.charCodeAt(0).toString(16).padStart(2, '0')}`);
 }
 
 function getHost(url: string | undefined): string | undefined {
