@@ -714,7 +714,26 @@ describe('Variables Editor page', () => {
         await flush();
 
         expect(document.querySelector('.ve-modal-overlay')).not.toBeNull();
+
+        // Review of #405: Enter on a focused "Save to staging" pressed it, as the browser presses
+        // a focused button on Enter.
+        const ok = find<HTMLButtonElement>('.ve-modal-ok');
+        const onOk = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+
+        ok.focus();
+        ok.dispatchEvent(onOk);
+        await flush();
+
+        expect(onOk.defaultPrevented).toBe(true);
+        expect(document.querySelector('.ve-modal-overlay')).not.toBeNull();
         expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+
+        // Enter on Cancel is left to the button: it cancels.
+        const onCancel = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+
+        find('.ve-modal-cancel').dispatchEvent(onCancel);
+
+        expect(onCancel.defaultPrevented).toBe(false);
 
         dom.close();
       });

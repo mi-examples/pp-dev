@@ -162,8 +162,9 @@ export function showConfirmModal(
     okText?: string;
     onCancel?: () => void;
     /**
-     * Confirmed by a click on OK only: the focus starts on Cancel and Enter doesn't confirm, so the
-     * Enter that closed the dialog before it (the diff) can't confirm this one too.
+     * Not confirmed by Enter: the focus starts on Cancel, and Enter neither confirms from elsewhere
+     * nor presses a focused OK, so the Enter that closed the dialog before it (the diff) can't
+     * confirm this one too. A click, or Space on OK, confirms; Enter on Cancel still cancels.
      */
     deliberate?: boolean;
   } = {},
@@ -203,8 +204,13 @@ export function showConfirmModal(
     }
   });
 
+  const $ok = find(overlay, '.ve-modal-ok');
+
   const unbindKeys = bindModalKeys(overlay, (ev) => {
-    if (ev.key === 'Enter' && !isButton(ev.target)) {
+    if (ev.key === 'Enter' && options.deliberate && ev.target === $ok) {
+      // The browser would press the focused button on Enter.
+      ev.preventDefault();
+    } else if (ev.key === 'Enter' && !isButton(ev.target)) {
       ev.preventDefault();
 
       if (!options.deliberate) {
