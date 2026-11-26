@@ -466,6 +466,7 @@ export function registerNextCommand(cli: CAC): void {
             internalServer,
             backendBaseURL,
             envName: _normalized.envName,
+            sessionCookieName: _normalized.sessionCookieName,
             mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
             inspector: {
               enabled: inspectorEnabled !== false,

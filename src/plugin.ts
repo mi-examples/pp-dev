@@ -18,6 +18,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     templateName,
     envName,
     envProtected,
+    sessionCookieName,
     templateLess,
     backendBaseURL,
     miHudLess,
@@ -103,6 +104,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
         internalServer,
         backendBaseURL,
         envName,
+        sessionCookieName,
         mi: { appId, templateLess, miHudLess, disableSSLValidation, v7Features, personalAccessToken },
         inspector: {
           enabled: inspectorEnabled !== false,

@@ -18,6 +18,7 @@ import { createRequestCaptureMiddleware } from './request-capture.middleware.js'
 import { registerInspectorRoutes, INSPECTOR_PATH } from './request-inspector.js';
 import { RequestStore } from './request-store.js';
 import { createUserHostGuard } from './user-registry.js';
+import { createSessionCookieMiddleware } from './session-cookie.middleware.js';
 import { createDevPanelAssetMiddleware } from './dev-panel.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
@@ -49,6 +50,8 @@ export interface MiddlewareChainOptions {
   backendBaseURL?: string;
   /** The named MI environment (`envs`) `backendBaseURL` is of; `undefined` for the top-level one. */
   envName?: string;
+  /** The browser's name of the MI session cookie (see `session-cookie.middleware.ts`). @default MI's own */
+  sessionCookieName?: string;
   mi: {
     appId?: number;
     templateLess: boolean;
@@ -104,6 +107,12 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
   const essential: ChainMiddleware[] = [];
 
   if (backendBaseURL) {
+    // First: everything after it, pp-dev's routes included, sees the session under MI's name.
+    const sessionCookie = asChain(createSessionCookieMiddleware(options.sessionCookieName));
+
+    main.push(sessionCookie);
+    essential.push(sessionCookie);
+
     const userHostGuard = asChain(createUserHostGuard());
 
     main.push(userHostGuard);

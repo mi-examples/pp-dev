@@ -338,8 +338,13 @@ pp-dev build --changelog --env staging
   does the `[DEV PAGE. DO NOT DELETE]` page pp-dev creates once for a template with `mi.apiVersion: 6`.
 - **The dev panel** names the environment in use (none for `default`), next to Sync and next to
   you in the Users popover.
-- A login on `localhost` is one cookie for every instance (browsers keep cookies by host, not by
-  port): after a switch to another instance, log in again there.
+- **Logins.** Browsers keep cookies by host, not by port, so the proxy keeps the MI session of each
+  instance under a name of its own on `localhost`: the default instance's (`mi.url`) as MI names it,
+  `metric_insights_session`, so existing logins stay; another instance's as
+  `metric_insights_session__<host>` (`staging.mi.example.com` → `metric_insights_session__staging_mi_example_com`).
+  MI only ever gets its own session. A login on one instance survives a switch to another and back,
+  two dev servers on different instances run side by side, and environments on one instance share
+  the login. Two dev servers on the **same** instance (two projects, say) still share it.
 
 ### Validation
 

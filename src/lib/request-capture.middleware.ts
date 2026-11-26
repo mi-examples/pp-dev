@@ -8,9 +8,11 @@ const DEFAULT_CAPTURE_LIMIT = 10 * 1024 * 1024;
 const REDACTED = '<redacted>';
 
 // The MI session cookie's value, in a `Cookie` header (`a=1; metric_insights_session=…`) or at the
-// start of a `Set-Cookie` header.
-const SESSION_COOKIE_IN_COOKIE = new RegExp(`(^|;\\s*)(${MI_SESSION_COOKIE}=)[^;]*`, 'gi');
-const SESSION_COOKIE_IN_SET_COOKIE = new RegExp(`^(\\s*${MI_SESSION_COOKIE}=)[^;]*`, 'i');
+// start of a `Set-Cookie` header; also the browser's name of another instance's
+// (`metric_insights_session__<host>`, PP-4840).
+const SESSION_COOKIE_NAME = `${MI_SESSION_COOKIE}(?:__[A-Za-z0-9_]+)?`;
+const SESSION_COOKIE_IN_COOKIE = new RegExp(`(^|;\\s*)(${SESSION_COOKIE_NAME}\\s*=)[^;]*`, 'gi');
+const SESSION_COOKIE_IN_SET_COOKIE = new RegExp(`^(\\s*${SESSION_COOKIE_NAME}\\s*=)[^;]*`, 'i');
 
 /**
  * Copies of the captured headers without credentials: an `Authorization` value, MI's regular

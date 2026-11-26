@@ -8,6 +8,7 @@
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
 import { envVariableSuffix } from '../shared/mi-environments.js';
+import { getSessionCookieName } from './session-cookie.middleware.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
 
@@ -205,6 +206,11 @@ export interface NormalizedVitePPDevOptions {
   envName?: string;
   /** Sync and Variables Editor saves ask for a confirmation (`mi.protected`, `envs.<name>.protected`). */
   envProtected: boolean;
+  /**
+   * The browser's name of the MI session cookie: MI's own for the default instance (`mi.url`),
+   * `metric_insights_session__<host>` for another one, so each instance keeps its login on localhost.
+   */
+  sessionCookieName: string;
   backendBaseURL?: string;
   appId?: number;
   templateLess: boolean;
@@ -611,11 +617,16 @@ export function normalizePPDevConfig(
 
   const environment = resolveMiEnvironment(config);
   const backupsDir = sync.backupsDir ?? 'backups';
+  // The default instance's URL: its session cookie keeps MI's name, so existing logins stay.
+  const defaultUrl = environment.name
+    ? resolveMiEnvironment(config, { ...process.env, MI_ENV: DEFAULT_ENV_NAME }).url
+    : environment.url;
 
   return {
     templateName: resolvedName,
     envName: environment.name,
     envProtected: environment.protected ?? false,
+    sessionCookieName: getSessionCookieName(environment.url, defaultUrl),
     backendBaseURL: environment.url,
     appId: environment.appId,
     templateLess,
