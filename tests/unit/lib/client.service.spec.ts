@@ -523,6 +523,7 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
       stopped: false,
     } as unknown as DistService;
     const miAPI = {
+      personalAccessToken: 'DEV-PAT' as string | undefined,
       getAssets: vi.fn().mockResolvedValue(Buffer.from('current')),
       updateAssets: vi.fn().mockResolvedValue({ status: 'OK' }),
       validateCredentials: vi.fn().mockResolvedValue({ isValid: true }),
@@ -819,6 +820,29 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
       await sync();
 
       expect(responses).toEqual([{ error: 'Personal access token expired', code: 'PAT_EXPIRED', refresh: true }]);
+    });
+
+    // PP-4602: without a token the sync goes as your login on localhost, whichever tab started it.
+    // Review of #401: reloading the tab doesn't log in on localhost, and took the message away at once.
+    it('says to log in again on localhost, without reloading the tab, when your login there expired', async () => {
+      const { sync, responses, miAPI } = setup({});
+
+      miAPI.personalAccessToken = undefined;
+      vi.mocked(miAPI.updateAssets).mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 412'), {
+          isAxiosError: true,
+          response: { status: 412, data: { message: 'Session expired' } },
+        }),
+      );
+      await sync();
+
+      expect(responses).toEqual([
+        {
+          error: 'Your MI session on localhost ended: log in again on localhost, then sync again.',
+          code: 'SESSION_EXPIRED',
+          refresh: false,
+        },
+      ]);
     });
 
     it('reports MI gone down during the upload as a connection error', async () => {

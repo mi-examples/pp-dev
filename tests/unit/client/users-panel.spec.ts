@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getTabUserName, initUsersPanel } from '../../../src/client/users-panel.js';
+import { getOriginalMeta, getTabUserName, initUsersPanel } from '../../../src/client/users-panel.js';
 
 /** PP-4597: the dev panel's "Users" popover. */
 
@@ -565,5 +565,31 @@ describe('initUsersPanel', () => {
 
     expect($panel.querySelector<HTMLElement>('.pp-dev-info__users-add')!.hidden).toBe(true);
     expect($panel.querySelector('.pp-dev-info__users-unavailable')!.textContent).toContain('API token');
+  });
+});
+
+describe('getOriginalMeta (PP-4602)', () => {
+  it('says the dev panel works as you with a token', () => {
+    expect(getOriginalMeta({ kind: 'token' })).toBe('original user · the dev panel always works as you');
+    // A dev server older than the panel sends no original.
+    expect(getOriginalMeta(undefined)).toBe('original user · the dev panel always works as you');
+  });
+
+  it('names your login on localhost while it lasts', () => {
+    expect(getOriginalMeta({ kind: 'session', state: 'active', miUser: { id: 7, username: 'dev' } })).toBe(
+      'original user (dev), logged in on localhost · the dev panel always works as you',
+    );
+  });
+
+  it('asks to log in again on localhost once the session ended', () => {
+    expect(getOriginalMeta({ kind: 'session', state: 'expired', miUser: { id: 7, username: 'dev' } })).toBe(
+      'original user (dev) · your MI session ended: log in again on localhost',
+    );
+  });
+
+  it('says nobody is logged in on localhost yet', () => {
+    expect(getOriginalMeta({ kind: 'session', state: 'none' })).toBe(
+      'original user · not logged in to MI on localhost',
+    );
   });
 });

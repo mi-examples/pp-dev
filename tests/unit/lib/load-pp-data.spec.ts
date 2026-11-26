@@ -270,6 +270,33 @@ describe('load-pp-data middleware — MI errors that are not about authorization
     expect(next).not.toHaveBeenCalled();
   });
 
+  // PP-4602: the page data loads as you (your token, or your login on localhost) on every host. On a
+  // saved user's host MI's home logs in that user, not you, and sent the tab back here to fail again.
+  it("tells a saved user's tab to log in again on localhost instead of sending it to MI's home", async () => {
+    userRegistry.add({ name: 'qa', kind: 'session' });
+
+    try {
+      const middleware = initLoadPPData(
+        /^\/$/,
+        makeMi(() => Promise.reject(httpError(401))),
+        { templateLess: true },
+      );
+      const res = makeRes();
+      const next = vi.fn();
+      const req = {
+        url: '/',
+        headers: { host: 'qa.localhost:3000', accept: 'text/html', 'sec-fetch-dest': 'document' },
+      };
+
+      await middleware(req as never, res as unknown as ServerResponse, next);
+
+      expect(res.headers.location).toBeUndefined();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('localhost') }));
+    } finally {
+      userRegistry.remove('qa');
+    }
+  });
+
   it.each([
     ['a 500 with an HTML error page', httpError(500, '<!DOCTYPE html><html><body>Internal Server Error</body></html>')],
     ['a 502', httpError(502)],

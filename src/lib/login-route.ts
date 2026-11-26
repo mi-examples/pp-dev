@@ -5,8 +5,9 @@ import { getTokenErrorInfo } from './helpers/token.helper.js';
 import { isSecureRequest, rewriteSetCookieHeader } from './helpers/cookie.helper.js';
 import { redirect } from './helpers/url.helper.js';
 import { invalidateProxyCache } from './proxy-cache.middleware.js';
-import { getUserNameFromHost } from './user-registry.js';
+import { getUserNameFromHost, isMainHost } from './user-registry.js';
 import { startKeepingUsers } from './user-store.js';
+import { originalSession } from './original-session.js';
 
 /** Where the dev panel's token login form posts (see `helpers/login.helper.ts`). */
 export const LOGIN_API_PATH = '/@api/login';
@@ -153,6 +154,9 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
 
           if (typeof response.data?.user?.user_id === 'number') {
             miAPI.personalAccessToken = token;
+            // The token is the original user now: a session of a login on localhost kept from
+            // before isn't followed any more and must not come back if the token goes.
+            originalSession.clear();
 
             logger.info(`Personal access token validated successfully for user ${response.data.user.user_id}`);
 
@@ -198,6 +202,15 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
               rewriteSetCookieHeader(response.headers['set-cookie'], isSecureRequest(req)) ?? '',
             );
 
+            // Without a personal token, the session this login gives localhost is the original
+            // user's (PP-4602); it doesn't go through the proxy, so it is looked at here.
+            if (isMainHost(req.headers.host)) {
+              void originalSession.observe(req, {
+                statusCode: 200,
+                headers: { 'set-cookie': response.headers['set-cookie'] },
+              });
+            }
+
             return response;
           }
 
@@ -212,6 +225,9 @@ export function registerLoginRoute(app: Application, opts: LoginRouteOptions): v
       }
 
       invalidateProxyCache('logged in with a token');
+
+      // No personal token any more: the users stop being kept (see startKeepingUsers).
+      startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl });
 
       redirect(res, '/', 302);
     } else {

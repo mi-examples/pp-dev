@@ -20,6 +20,7 @@ import type { MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { writeFileAtomicSync } from './helpers/atomic-file.helper.js';
+import { originalSession } from './original-session.js';
 
 const STORE_VERSION = 1;
 
@@ -230,13 +231,22 @@ export async function keepTokenUsers(
  * MI instance, which drops the users of another one (a restart with another `mi.url`), and keeps its
  * token users when `users.persist` is on.
  */
-export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projectRoot: string; miUrl: string }): void {
+export function startKeepingUsers(opts: {
+  persist: boolean;
+  miAPI: MiAPI;
+  projectRoot: string;
+  miUrl: string;
+  /** Where the store lives; tests point it elsewhere. @default the user's home directory */
+  homeDir?: string;
+}): void {
   const context = `${path.resolve(opts.projectRoot)}\n${opts.miUrl.replace(/\/+$/, '')}`;
 
   if (userRegistry.context !== context) {
     // Detach the old file first: dropping the old instance's users must not empty its store.
     stopKeeping(userRegistry);
     userRegistry.useContext(context);
+    // Your MI session on localhost belongs to the old instance too.
+    originalSession.clear();
   }
 
   if (!opts.persist) {
@@ -245,10 +255,15 @@ export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projec
     return;
   }
 
-  // Users can only be added with your own token, so without one there is nothing to restore.
+  // Keeping users needs your own token. Without one (a restart without it, or a regular token login)
+  // users added through your login on localhost stay in memory: a keeping started earlier stops.
   if (!opts.miAPI.personalAccessToken) {
+    stopKeeping(userRegistry);
     createLogger().warn(
-      colors.yellow('users.persist is on, but users need your own API token (mi.token or MI_ACCESS_TOKEN).'),
+      colors.yellow(
+        'users.persist is on, but keeping users needs your own API token (mi.token or MI_ACCESS_TOKEN). ' +
+          'Without it, users last as long as the dev server.',
+      ),
     );
 
     return;
@@ -258,6 +273,7 @@ export function startKeepingUsers(opts: { persist: boolean; miAPI: MiAPI; projec
     projectRoot: opts.projectRoot,
     miUrl: opts.miUrl,
     checkToken: (token) => checkUserToken(opts.miAPI, token),
+    homeDir: opts.homeDir,
   }).catch((error) => {
     createLogger().warn(colors.yellow(`Could not restore the saved users: ${String(error)}`));
   });
