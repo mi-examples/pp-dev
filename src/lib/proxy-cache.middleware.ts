@@ -9,6 +9,7 @@ import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helper
 import { cutUrlParams } from './helpers/url.helper.js';
 import { RequestUser, UserRegistry, getUserNameFromHost, userRegistry } from './user-registry.js';
 import { originalSession } from './original-session.js';
+import { authProvider } from './auth.provider.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
 
@@ -222,6 +223,9 @@ export function useMiEnvironment(environment: { name?: string; url: string; appI
 
   if (cachedEnvironment !== undefined && cachedEnvironment !== identity) {
     invalidateProxyCache(`the MI environment changed to ${environment.name ?? 'default'} (${environment.url})`);
+    // The page login was the previous environment's: without this, the `/home` MI sends to after a
+    // login went to MI's home instead of the page.
+    authProvider.reset();
   }
 
   cachedEnvironment = identity;

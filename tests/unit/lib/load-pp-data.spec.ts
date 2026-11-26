@@ -3,7 +3,7 @@ import type { ServerResponse } from 'node:http';
 import { initLoadPPData, clearAPICache } from '../../../src/lib/load-pp-data.middleware.js';
 import { authProvider } from '../../../src/lib/auth.provider.js';
 import { userRegistry } from '../../../src/lib/user-registry.js';
-import { cache as proxyCache } from '../../../src/lib/proxy-cache.middleware.js';
+import { cache as proxyCache, useMiEnvironment } from '../../../src/lib/proxy-cache.middleware.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
 /**
@@ -91,6 +91,58 @@ describe('load-pp-data middleware — /home after login', () => {
     expect(mi.getPageTemplate).toHaveBeenCalledTimes(2);
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/');
+    expect(authProvider.getState().isRedirected).toBe(true);
+  });
+
+  // Review of #402 (PP-4840): the page login survived a switch to another MI environment, so the
+  // `/home` MI sends to after logging in there went on to MI's home instead of the page.
+  it('redirects /home to the page again after a switch to another MI environment', async () => {
+    useMiEnvironment({ url: 'https://dev.example.com', appId: 1 });
+
+    const dev = initLoadPPData(
+      /^\/$/,
+      makeMi(() => Promise.resolve({})),
+      { templateLess: true },
+    );
+
+    await dev(makeReq('/home'), makeRes() as unknown as ServerResponse, vi.fn());
+
+    // Logged in: a later /home is MI's own.
+    const passed = vi.fn();
+
+    await dev(makeReq('/home'), makeRes() as unknown as ServerResponse, passed);
+    expect(passed).toHaveBeenCalledTimes(1);
+
+    // A restart with another environment, then the login there.
+    useMiEnvironment({ name: 'staging', url: 'https://staging.example.com', appId: 2 });
+
+    const staging = initLoadPPData(
+      /^\/$/,
+      makeMi(() => Promise.resolve({})),
+      { templateLess: true },
+    );
+    const res = makeRes();
+    const next = vi.fn();
+
+    await staging(makeReq('/home'), res as unknown as ServerResponse, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/');
+  });
+
+  it('keeps the page login on a restart with the same MI environment', async () => {
+    useMiEnvironment({ url: 'https://dev.example.com', appId: 1 });
+
+    const middleware = initLoadPPData(
+      /^\/$/,
+      makeMi(() => Promise.resolve({})),
+      { templateLess: true },
+    );
+
+    await middleware(makeReq('/home'), makeRes() as unknown as ServerResponse, vi.fn());
+    useMiEnvironment({ url: 'https://dev.example.com/', appId: 1 });
+
     expect(authProvider.getState().isRedirected).toBe(true);
   });
 });
