@@ -7,7 +7,7 @@ import {
   getSessionCookieName,
   toMiCookieHeader,
 } from '../../../src/lib/session-cookie.middleware.js';
-import { redactRequestHeaders } from '../../../src/lib/request-capture.middleware.js';
+import { redactRequestHeaders, redactResponseHeaders } from '../../../src/lib/request-capture.middleware.js';
 
 /** PP-4840 phase 3: the MI session cookie per MI instance on the browser's side. */
 
@@ -118,12 +118,14 @@ describe('createSessionCookieMiddleware', () => {
   });
 
   it("leaves the default instance's cookie as MI names it", async () => {
+    let cookie: string | undefined;
     const res = await serve('metric_insights_session', (req, response) => {
-      expect(req.headers.cookie).toBe('metric_insights_session=DEFAULT');
+      cookie = req.headers.cookie;
       response.setHeader('set-cookie', 'metric_insights_session=NEW');
       response.end();
     });
 
+    expect(cookie).toBe('metric_insights_session=DEFAULT');
     expect(res.headers['set-cookie']).toEqual(['metric_insights_session=NEW']);
   });
 });
@@ -133,5 +135,12 @@ describe('the Request Inspector', () => {
     expect(redactRequestHeaders({ cookie: `a=1; metric_insights_session=X; ${NAMED}=Y` }).cookie).toBe(
       `a=1; metric_insights_session=<redacted>; ${NAMED}=<redacted>`,
     );
+  });
+
+  it('redacts a renamed session cookie in a Set-Cookie', () => {
+    expect(redactResponseHeaders({ 'set-cookie': [`${NAMED}=Y; Path=/`, 'other=1'] })['set-cookie']).toEqual([
+      `${NAMED}=<redacted>; Path=/`,
+      'other=1',
+    ]);
   });
 });

@@ -339,12 +339,16 @@ pp-dev build --changelog --env staging
 - **The dev panel** names the environment in use (none for `default`), next to Sync and next to
   you in the Users popover.
 - **Logins.** Browsers keep cookies by host, not by port, so the proxy keeps the MI session of each
-  instance under a name of its own on `localhost`: the default instance's (`mi.url`) as MI names it,
-  `metric_insights_session`, so existing logins stay; another instance's as
-  `metric_insights_session__<host>` (`staging.mi.example.com` → `metric_insights_session__staging_mi_example_com`).
-  MI only ever gets its own session. A login on one instance survives a switch to another and back,
-  two dev servers on different instances run side by side, and environments on one instance share
-  the login. Two dev servers on the **same** instance (two projects, say) still share it.
+  instance of a project under a name of its own on `localhost`: the project's default instance's
+  (`mi.url`) as MI names it, `metric_insights_session`, so existing logins stay; another instance's
+  as `metric_insights_session__<host>` (`staging.mi.example.com` →
+  `metric_insights_session__staging_mi_example_com`). Within a project, a login on one instance
+  survives a switch to another and back, MI never gets another instance's session, two dev servers on
+  different environments of it run side by side, and environments on one instance share the login.
+  - The plain name is each project's **default** instance: two projects whose `mi.url` are different
+    instances (or a change of `mi.url`) still share it, as before.
+  - A login made on another instance than the default one before this version is under the plain
+    name: log in there once more.
 
 ### Validation
 

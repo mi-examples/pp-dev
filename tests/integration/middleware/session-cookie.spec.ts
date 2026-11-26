@@ -92,7 +92,15 @@ describe('the MI session cookie per MI instance (PP-4840)', () => {
   const devServers: http.Server[] = [];
 
   /** A dev server for the instance at `url`, with `defaultUrl` the default environment's. */
-  async function devServer(url: string, defaultUrl: string) {
+  async function devServer(
+    url: string,
+    defaultUrl: string,
+    which: 'main' | 'essential' = 'main',
+    render: http.RequestListener = (_req, res) => {
+      res.statusCode = 404;
+      res.end();
+    },
+  ) {
     const chain = createMiddlewareChain({
       base: BASE,
       templateName: 'cookie-app',
@@ -104,12 +112,7 @@ describe('the MI session cookie per MI instance (PP-4840)', () => {
       proxy: { cache: true, cacheTtl: 60_000 },
       rewrite: () => ({ predicate: () => false, transform: (response) => response }),
     });
-    const server = http.createServer((req, res) =>
-      runMiddlewareChain(chain.main, req, res, () => {
-        res.statusCode = 404;
-        res.end();
-      }),
-    );
+    const server = http.createServer((req, res) => runMiddlewareChain(chain[which], req, res, () => render(req, res)));
 
     devServers.push(server);
 
@@ -174,6 +177,26 @@ describe('the MI session cookie per MI instance (PP-4840)', () => {
     await browser.get(port2, '/data/whoami');
 
     expect(b.received.at(-1)).toMatch(/^metric_insights_session=B-\d+; other=1$/);
+  });
+
+  // `pp-dev next` runs its internal routes through the essential chain only.
+  it('renames the session on the essential chain too', async () => {
+    const browser = createBrowser();
+    const nameB = getSessionCookieName(urlB, urlA);
+    let seen: string | undefined;
+    const port = await devServer(urlB, urlA, 'essential', (req, res) => {
+      seen = req.headers.cookie;
+      res.setHeader('set-cookie', 'metric_insights_session=FROM-RENDERER');
+      res.end();
+    });
+
+    browser.jar.set('metric_insights_session', 'DEFAULT');
+    browser.jar.set(nameB, 'B-SESSION');
+    await browser.get(port, '/_next/static/x.js');
+
+    expect(seen).toBe('metric_insights_session=B-SESSION');
+    expect(browser.jar.get(nameB)).toBe('FROM-RENDERER');
+    expect(browser.jar.get('metric_insights_session')).toBe('DEFAULT');
   });
 
   it('drops the cached responses on a login in a named environment, as in the default one', async () => {
