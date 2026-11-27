@@ -9,6 +9,7 @@ import { MI_SESSION_COOKIE, getRequestCookie, getSetCookieValue } from './helper
 import { cutUrlParams } from './helpers/url.helper.js';
 import { RequestUser, UserRegistry, getUserNameFromHost, userRegistry } from './user-registry.js';
 import { originalSession } from './original-session.js';
+import { getMiSetCookie } from './session-cookie.middleware.js';
 import { authProvider } from './auth.provider.js';
 
 type NextHandleFunction = Connect.NextHandleFunction;
@@ -293,7 +294,9 @@ function getIdentityChange(req: Connect.IncomingMessage, res: ServerResponse, us
     return changed ? 'personal access token changed' : undefined;
   }
 
-  const newSession = getSetCookieValue(res.getHeader('set-cookie'), MI_SESSION_COOKIE);
+  // Under MI's name: this runs once the response finished, after a session cookie of another
+  // instance than the default one went to the browser renamed.
+  const newSession = getSetCookieValue(getMiSetCookie(res), MI_SESSION_COOKIE);
 
   return newSession !== undefined && newSession !== getRequestCookie(req.headers.cookie, MI_SESSION_COOKIE)
     ? 'MI session changed'

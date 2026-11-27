@@ -218,6 +218,24 @@ describe('MI environments', () => {
   });
 
   describe('normalizePPDevConfig', () => {
+    // PP-4840 phase 3: the browser keeps a session per MI instance; the default one's keeps MI's name.
+    it("names the session cookie after the environment's MI instance", () => {
+      const config: PPDevConfig = {
+        ...CONFIG,
+        envs: { ...CONFIG.envs, 'other-page': { url: 'https://dev.mi.example.com/', appId: 8 } },
+      };
+
+      expect(normalizePPDevConfig(config, 'my-app').sessionCookieName).toBe('metric_insights_session');
+
+      process.env.MI_ENV = 'other-page';
+      expect(normalizePPDevConfig(config, 'my-app').sessionCookieName).toBe('metric_insights_session');
+
+      process.env.MI_ENV = 'staging';
+      expect(normalizePPDevConfig(config, 'my-app').sessionCookieName).toBe(
+        'metric_insights_session__staging.mi.example.com',
+      );
+    });
+
     it('leaves the top-level settings as they were', () => {
       const n = normalizePPDevConfig(CONFIG, 'my-app');
 
