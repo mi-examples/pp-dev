@@ -8,10 +8,16 @@ import {
   isNextServerProcess,
   loadPPDevConfigAfresh,
   reportNextServerReady,
+  requestEnvSwitchFromSupervisor,
   superviseNextServer,
   type NextServerProcess,
 } from '../../../src/cli/next-supervisor.js';
-import { SUPERVISOR_READY_MESSAGE, SUPERVISOR_SHUTDOWN_MESSAGE } from '../../../src/lib/process-handlers.js';
+import {
+  SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+  SUPERVISOR_ENV_SWITCH_MESSAGE,
+  SUPERVISOR_READY_MESSAGE,
+  SUPERVISOR_SHUTDOWN_MESSAGE,
+} from '../../../src/lib/process-handlers.js';
 import type { ConfigWatcher } from '../../../src/cli/config-watcher.js';
 
 /**
@@ -518,5 +524,107 @@ describe("the supervisor's config check", () => {
     );
 
     await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/sync\.buildTimeoutMs/);
+  });
+});
+
+// PP-4840 phase 4: the dev panel's switch to another MI environment, under `pp-dev next`.
+describe('superviseNextServer — switching the MI environment', () => {
+  afterEach(() => {
+    delete process.env.PP_DEV_SWITCHED_ENV;
+  });
+
+  const ask = (server: FakeServer, name: string) =>
+    server.emit('message', { type: SUPERVISOR_ENV_SWITCH_MESSAGE, name });
+
+  it('starts a server process with the choice, after checking the config with it', async () => {
+    let checkedWith: string | undefined;
+    const { servers, output } = setup({
+      checkConfig: async () => {
+        checkedWith = process.env.PP_DEV_SWITCHED_ENV;
+      },
+    });
+
+    servers[0].ready();
+    ask(servers[0], 'stg70');
+    await flush();
+
+    expect(checkedWith).toBe('stg70');
+    expect(servers[0].send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a switch to the MI environment stg70' },
+      expect.any(Function),
+    );
+
+    servers[0].exit(0);
+    await flush();
+
+    // forkNextServer passes this process's environment: the new server works with the choice.
+    expect(servers).toHaveLength(2);
+    expect(process.env.PP_DEV_SWITCHED_ENV).toBe('stg70');
+    expect(output()).toContain('Switching to the MI environment stg70');
+  });
+
+  it('keeps the running server and tells it why when the config refuses the choice', async () => {
+    const { servers } = setup({
+      checkConfig: async () => {
+        if (process.env.PP_DEV_SWITCHED_ENV === 'nourl') {
+          throw new Error('MI environment "nourl" has no URL');
+        }
+      },
+    });
+
+    servers[0].ready();
+    ask(servers[0], 'nourl');
+    await flush();
+
+    expect(servers[0].send).toHaveBeenCalledWith(
+      {
+        type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+        name: 'nourl',
+        error: expect.stringContaining('has no URL'),
+      },
+      expect.any(Function),
+    );
+    expect(servers[0].send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: SUPERVISOR_SHUTDOWN_MESSAGE }),
+      expect.any(Function),
+    );
+    expect(servers).toHaveLength(1);
+    expect(process.env.PP_DEV_SWITCHED_ENV).toBeUndefined();
+  });
+
+  it('takes the choice back when its server does not start', async () => {
+    process.env.PP_DEV_SWITCHED_ENV = 'before';
+
+    const { servers } = setup();
+
+    servers[0].ready();
+    ask(servers[0], 'stg70');
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].exit(1);
+    await flush();
+
+    expect(process.env.PP_DEV_SWITCHED_ENV).toBe('before');
+  });
+
+  it('asks the supervisor from the server process, and resolves with its refusal', async () => {
+    const proc = Object.assign(new EventEmitter(), { send: vi.fn() });
+    const result = requestEnvSwitchFromSupervisor('stg70', proc as never);
+
+    expect(proc.send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_ENV_SWITCH_MESSAGE, name: 'stg70' },
+      expect.any(Function),
+    );
+
+    proc.emit('message', { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name: 'stg70', error: 'no URL' });
+
+    await expect(result).resolves.toEqual({ ok: false, error: 'no URL' });
+  });
+
+  it('has nobody to ask without a supervisor', async () => {
+    await expect(requestEnvSwitchFromSupervisor('stg70', new EventEmitter() as never)).resolves.toMatchObject({
+      ok: false,
+    });
   });
 });

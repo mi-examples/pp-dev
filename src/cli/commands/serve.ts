@@ -2,6 +2,8 @@ import * as path from 'path';
 import { performance } from 'node:perf_hooks';
 import { type ServerOptions } from 'vite';
 import { VERSION } from '../../constants.js';
+import { PP_DEV_SWITCHED_ENV_VAR } from '../../shared/mi-environments.js';
+import { setEnvSwitchHandler } from '../../lib/env-switch.js';
 import { bindShortcuts } from '../../shortcuts.js';
 import { mergeConfig, type ViteDevServer } from 'vite';
 import { createLogger } from '../../lib/logger.js';
@@ -41,8 +43,10 @@ export function registerServeCommand(cli: CAC): void {
        * checked, before the running one is stopped: a config that can't be loaded (half-written, a
        * typo in `app.id`, a broken `.env` line) leaves the running server, with its session, as it
        * is, instead of ending the process with it.
+       *
+       * Resolves to why a restart failed, `undefined` once the server listens.
        */
-      const startServer = async ({ restart = false } = {}) => {
+      const startServer = async ({ restart = false } = {}): Promise<string | undefined> => {
         let nextServer: ViteDevServer | null = null;
 
         try {
@@ -170,7 +174,11 @@ export function registerServeCommand(cli: CAC): void {
           }
 
           if (!configWatcher) {
-            configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info, {
+            const restartOnChange = async () => {
+              await startServer({ restart: true });
+            };
+
+            configWatcher = createConfigWatcher(projectRoot, restartOnChange, logger.info, {
               mode,
               files: viteConfigFiles,
             });
@@ -185,7 +193,7 @@ export function registerServeCommand(cli: CAC): void {
             stopProfiler(logger.info);
             process.exit(1);
 
-            return;
+            return e?.message ?? String(e);
           }
 
           // Created but never listened: let go of what it opened.
@@ -201,8 +209,35 @@ export function registerServeCommand(cli: CAC): void {
                 : '⚠️  No dev server is running; it starts again on the next config change',
             ),
           );
+
+          return e?.message ?? String(e);
         }
+
+        return undefined;
       };
+
+      // The dev panel's switch to another MI environment (PP-4840 phase 4): a restart with the choice
+      // over `--env`, `MI_ENV` and `defaultEnv`, kept until pp-dev stops. One the restart refuses is
+      // taken back, so the next config change restarts in the environment the server keeps.
+      setEnvSwitchHandler(async (name) => {
+        const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
+
+        process.env[PP_DEV_SWITCHED_ENV_VAR] = name;
+
+        const error = await startServer({ restart: true });
+
+        if (error === undefined) {
+          return { ok: true };
+        }
+
+        if (previous === undefined) {
+          delete process.env[PP_DEV_SWITCHED_ENV_VAR];
+        } else {
+          process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
+        }
+
+        return { ok: false, error };
+      });
 
       registerProcessHandlers({
         logger,

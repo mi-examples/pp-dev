@@ -160,6 +160,8 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
   let schemaRows: SchemaTag[] = []; // working copy of tags, edited in place
   const invalidAdditionalOptionsRows = new WeakSet<SchemaTag>();
   let valueRows: ValueRow[] = []; // working copy of {name, value}
+  /** The MI environment `valueRows` were loaded in (PP-4840): sent with a save. */
+  let valuesEnvironment: string | undefined;
   let selectedValueIndex = 0;
   let importReviewCandidates: ImportCandidate[] = []; // last-fetched import-plan's "importable" list, for applyImportPlan()
   let importReviewPageName = ''; // source page name, for the post-apply banner
@@ -362,6 +364,8 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
     if (!edited) {
       valueRows = freshRows;
+      // The rows' environment: rows edited while this load ran stay of the one they were loaded from.
+      valuesEnvironment = data.environment;
     }
 
     jsonBaseline.values = snapshotValuesJson(freshRows);
@@ -2022,7 +2026,11 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
 
   async function commitValuesSave(tags: ValueRow[], afterText: string) {
     const saveEditSeq = editSeq;
-    const data = await putSave<ValuesSaveResponse>('/@api/variables/values', { tags });
+    // With the environment the values were loaded in: the server refuses them in another one.
+    const data = await putSave<ValuesSaveResponse>('/@api/variables/values', {
+      tags,
+      ...(valuesEnvironment !== undefined ? { environment: valuesEnvironment } : {}),
+    });
 
     if (!data) {
       return;

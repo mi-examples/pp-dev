@@ -338,6 +338,13 @@ pp-dev build --changelog --env staging
   does the `[DEV PAGE. DO NOT DELETE]` page pp-dev creates once for a template with `mi.apiVersion: 6`.
 - **The dev panel** names the environment in use (none for `default`), next to Sync and next to
   you in the Users popover.
+- **Switching from the dev panel.** With more than one environment in the config, the panel's
+  environment is a list (one without a URL can't be chosen). A choice, once confirmed, restarts the
+  dev server in it, as a config change does, and every tab of the server reloads once it is up. The
+  choice lasts until pp-dev stops and wins over `--env`, `MI_ENV` and `defaultEnv`; no file is
+  written, so the next start goes by them again. There is no switch while a sync runs, and a config
+  the restart refuses keeps the running server, which the panel says. A Variables Editor tab left
+  open across a switch can't save: the values it holds are the other environment's, so reload it.
 - **Logins.** Browsers keep cookies by host, not by port, so the proxy keeps the MI session of each
   instance of a project under a name of its own on `localhost`: the project's default instance's
   (`mi.url`) as MI names it, `metric_insights_session`, so existing logins stay; another instance's

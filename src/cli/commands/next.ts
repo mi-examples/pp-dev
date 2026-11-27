@@ -35,7 +35,13 @@ import { INSPECTOR_PATH } from '../../lib/request-inspector.js';
 import { loadPPDevEnv } from '../../lib/env.js';
 import { NEXT_IGNORED_FLAGS, resolveNextListenAddress } from '../../lib/cli-options.js';
 import type { CAC } from 'cac';
-import { isNextServerProcess, reportNextServerReady, superviseNextServer } from '../next-supervisor.js';
+import {
+  isNextServerProcess,
+  reportNextServerReady,
+  requestEnvSwitchFromSupervisor,
+  superviseNextServer,
+} from '../next-supervisor.js';
+import { setEnvSwitchHandler } from '../../lib/env-switch.js';
 import {
   type NextCommandCLIOptions,
   type NextBundlerChoice,
@@ -594,6 +600,7 @@ export function registerNextCommand(cli: CAC): void {
               envName: _normalized.envName,
               appId: _normalized.appId,
               envProtected: _normalized.envProtected,
+              environments: _normalized.environments,
             });
 
             // Route HTTP upgrades: pp-dev WS to our server, everything else (Next.js HMR)
@@ -662,6 +669,9 @@ export function registerNextCommand(cli: CAC): void {
 
             // The supervisor starts the config watcher once the first server is up.
             reportNextServerReady();
+            // A switch from the dev panel (PP-4840 phase 4) is the supervisor's to do: it starts a
+            // server process in the chosen environment, and this one ends.
+            setEnvSwitchHandler(requestEnvSwitchFromSupervisor);
           }
         } catch (error: any) {
           if (error?.code === 'EADDRINUSE') {

@@ -13,6 +13,8 @@ import { registerUserRoutes } from './user-routes.js';
 import { registerLoginRoute } from './login-route.js';
 import { startKeepingUsers } from './user-store.js';
 import type { ProtectedEnvironment } from './protected-environment.js';
+import { registerEnvironmentRoute } from './environment-route.js';
+import { DEFAULT_ENV_NAME, type EnvironmentChoice } from './pp-dev-config.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 
@@ -85,6 +87,8 @@ export interface SyncAndUsersOptions {
    * Required, so a dev server that leaves it out doesn't build: that would switch the protection off.
    */
   envProtected: boolean;
+  /** The environments the dev panel offers to switch to (PP-4840 phase 4). */
+  environments: EnvironmentChoice[];
 }
 
 /**
@@ -97,10 +101,22 @@ export function startSyncAndUsers(opts: SyncAndUsersOptions): ClientService {
   const protectedEnvironment: ProtectedEnvironment | undefined = opts.envProtected
     ? { name: envName, url: miUrl, appId: opts.appId }
     : undefined;
-  const clientService = new ClientService(opts.server, { distService, miAPI, protectedEnvironment });
+  const current = envName ?? DEFAULT_ENV_NAME;
+  const clientService = new ClientService(opts.server, {
+    distService,
+    miAPI,
+    protectedEnvironment,
+    environments: { current, choices: opts.environments },
+  });
 
   registerLoginRoute(opts.internalServer, { miAPI, persistUsers, projectRoot, miUrl, envName });
-  registerVariablesEditorRoutes(opts.internalServer, { distService, miAPI, protectedEnvironment });
+  registerEnvironmentRoute(opts.internalServer, { current, environments: opts.environments });
+  registerVariablesEditorRoutes(opts.internalServer, {
+    distService,
+    miAPI,
+    protectedEnvironment,
+    environment: { name: envName, url: miUrl, appId: opts.appId },
+  });
   registerUserRoutes(opts.internalServer, { miAPI, envName });
   startKeepingUsers({ persist: persistUsers, miAPI, projectRoot, miUrl, envName });
 

@@ -2,11 +2,15 @@ import { fork, type ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
 import { PP_DEV_CONFIG_FILE_ENV_VAR } from '../constants.js';
+import { PP_DEV_SWITCHED_ENV_VAR } from '../shared/mi-environments.js';
 import {
+  SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+  SUPERVISOR_ENV_SWITCH_MESSAGE,
   SUPERVISOR_READY_MESSAGE,
   SUPERVISOR_SHUTDOWN_MESSAGE,
   type SupervisorMessage,
 } from '../lib/process-handlers.js';
+import type { EnvSwitchResult } from '../lib/env-switch.js';
 import {
   createConfigWatcher,
   envFilesForMode,
@@ -51,6 +55,28 @@ export function reportNextServerReady(proc: NodeJS.Process = process): void {
   const send = () => proc.send!({ type: SUPERVISOR_READY_MESSAGE } satisfies SupervisorMessage, () => {});
 
   proc.stdout.write('', send);
+}
+
+/**
+ * The server process's way to switch MI environments (PP-4840 phase 4): the supervisor starts a server
+ * process in `name` and this one ends, or answers why it didn't. Without a supervisor there is none.
+ */
+export function requestEnvSwitchFromSupervisor(name: string, proc: NodeJS.Process = process): Promise<EnvSwitchResult> {
+  if (typeof proc.send !== 'function') {
+    return Promise.resolve({ ok: false, error: 'This dev server has no supervisor to restart it.' });
+  }
+
+  return new Promise<EnvSwitchResult>((resolve) => {
+    const onMessage = (message: SupervisorMessage) => {
+      if (message?.type === SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE && message.name === name) {
+        proc.off('message', onMessage);
+        resolve({ ok: false, error: message.error });
+      }
+    };
+
+    proc.on('message', onMessage);
+    proc.send!({ type: SUPERVISOR_ENV_SWITCH_MESSAGE, name } satisfies SupervisorMessage, () => {});
+  });
 }
 
 /** What the supervisor needs of a server process; `ChildProcess` as started by {@link forkNextServer}. */
@@ -224,6 +250,12 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
       ready = false;
 
       proc.on('message', (message: SupervisorMessage) => {
+        if (message?.type === SUPERVISOR_ENV_SWITCH_MESSAGE && server === proc && typeof message.name === 'string') {
+          void switchEnvironment(message.name, proc);
+
+          return;
+        }
+
         if (message?.type !== SUPERVISOR_READY_MESSAGE || server !== proc) {
           return;
         }
@@ -315,6 +347,54 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
       if (!shuttingDown) {
         // Until the new server listens (or fails): a change meanwhile restarts once more after it.
         await startServer();
+      }
+    };
+
+    /**
+     * The dev panel's switch to MI environment `name` (PP-4840 phase 4): a server process started with
+     * the choice over `--env`, `MI_ENV` and `defaultEnv` (it gets this process's environment), kept
+     * until pp-dev stops. A config the check refuses keeps the running server, which is told why; a
+     * choice whose server didn't start is taken back, for the next config change to restart without it.
+     */
+    const switchEnvironment = async (name: string, requester: NextServerProcess) => {
+      if (shuttingDown) {
+        return;
+      }
+
+      const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
+      const takeBack = () => {
+        if (previous === undefined) {
+          delete process.env[PP_DEV_SWITCHED_ENV_VAR];
+        } else {
+          process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
+        }
+      };
+
+      process.env[PP_DEV_SWITCHED_ENV_VAR] = name;
+
+      try {
+        await checkConfig();
+      } catch (error) {
+        takeBack();
+        requester.send(
+          { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name, error: describeError(error) } satisfies SupervisorMessage,
+          () => {},
+        );
+
+        return;
+      }
+
+      logger.info(colors.blue(`🧭 Switching to the MI environment ${name}`));
+      await stopServer(`a switch to the MI environment ${name}`);
+
+      if (shuttingDown) {
+        return;
+      }
+
+      await startServer();
+
+      if (!ready) {
+        takeBack();
       }
     };
 

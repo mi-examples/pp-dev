@@ -435,6 +435,38 @@ $pp-dev-dark-colors: (
       font-weight: 600;
     }
 
+    // The default environment's name isn't shown; the switcher shows the section (PP-4840).
+    &__env-section--none {
+      display: none !important;
+    }
+
+    // The MI environment switcher (PP-4840): the name, as a list.
+    &__env-select {
+      max-width: 160px;
+      padding: 1px 4px;
+      border: 1px solid var(--pp-dev-info-color-line);
+      border-radius: 3px;
+      background: transparent;
+      font: inherit;
+      font-weight: 600;
+      color: var(--pp-dev-info-color-warning);
+      cursor: pointer;
+
+      &:focus {
+        outline: none;
+        border-color: var(--pp-dev-info-color-primary);
+      }
+
+      &:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+
+      option {
+        color: initial;
+      }
+    }
+
     &__link {
       color: var(--pp-dev-info-color-primary);
       text-decoration: none;

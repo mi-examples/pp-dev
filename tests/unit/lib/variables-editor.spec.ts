@@ -364,6 +364,71 @@ describe('registerVariablesEditorRoutes', () => {
   });
 
   describe('PUT /@api/variables/values', () => {
+    // PP-4840 phase 4: after a switch from the dev panel, an editor tab left open still holds the old
+    // environment's values; saved, they would replace the new one's.
+    describe('values loaded in another MI environment', () => {
+      const tags = [{ name: 'a', value: '1' }];
+      const staging = { name: 'staging', url: 'https://mi.staging.example.com/', appId: 42 };
+
+      function setup() {
+        const miAPI = {
+          applyPageVariables: vi.fn().mockResolvedValue(undefined),
+          reloadPageVariables: vi.fn().mockResolvedValue(null),
+          getLivePageVariables: vi.fn().mockResolvedValue([]),
+          localPageVariables: null,
+        } as unknown as MiAPI;
+        const distService = {
+          readPublicTemplateVariablesFile: vi.fn().mockResolvedValue(Buffer.from('{"tags":[]}')),
+        } as unknown as DistService;
+        const app = register({ miAPI, distService, environment: staging });
+        const call = async (method: 'GET' | 'PUT', body?: unknown) => {
+          const res = makeRes();
+
+          await app.handlers.get(`${method} /@api/variables/values`)!({ body }, res);
+
+          return res;
+        };
+
+        return { app, miAPI, distService, call };
+      }
+
+      it('loads the values with their environment, and saves them with it', async () => {
+        const { miAPI, call } = setup();
+        const loaded = await call('GET');
+
+        expect(loaded.body.environment).toBe('staging https://mi.staging.example.com 42');
+        expect((await call('PUT', { tags, environment: loaded.body.environment })).statusCode).toBe(200);
+        expect(miAPI.applyPageVariables).toHaveBeenCalledWith(tags);
+      });
+
+      it('refuses them after a switch to another environment, without saving', async () => {
+        const { app, miAPI, distService, call } = setup();
+        const loaded = await call('GET');
+
+        registerVariablesEditorRoutes(app, {
+          miAPI,
+          distService,
+          environment: { name: 'stg70', url: 'https://stg70.example.com', appId: 7 },
+        });
+
+        const res = await call('PUT', { tags, environment: loaded.body.environment });
+
+        expect(res.statusCode).toBe(409);
+        expect(res.body).toEqual({
+          code: 'ENVIRONMENT_CHANGED',
+          error: expect.stringContaining('now works with the MI environment stg70 (https://stg70.example.com, app 7)'),
+        });
+        expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
+      });
+
+      it('refuses a save that says nothing of its environment (a tab opened before this version)', async () => {
+        const { miAPI, call } = setup();
+
+        expect((await call('PUT', { tags })).statusCode).toBe(409);
+        expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
+      });
+    });
+
     // PP-4840 phase 2: a save to a protected environment is confirmed for the one the server works
     // with now.
     describe('in a protected MI environment', () => {

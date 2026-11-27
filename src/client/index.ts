@@ -10,6 +10,7 @@ import { initUsersPanel } from './users-panel.js';
 import { initTheme } from './theme.js';
 import { createPopupElement, startAutoDismiss, type InfoPopupOptions } from './popup.js';
 import { initSyncButton, type ConfirmModalOptions } from './sync-button.js';
+import { initEnvSwitcher } from './env-switcher.js';
 import { initReloadVariables } from './reload-variables.js';
 
 // Applied unconditionally (even if the panel itself is hidden) — this is what makes the
@@ -327,4 +328,10 @@ if (hot) {
   }
 
   startReloadVariablesFlow = initReloadVariables(hot, { infoPopup });
+
+  const $envSection = document.querySelector<HTMLElement>('.pp-dev-info__env-section');
+
+  if ($envSection) {
+    void initEnvSwitcher(hot, $envSection, { infoPopup, confirmModal });
+  }
 }

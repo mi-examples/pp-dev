@@ -61,6 +61,8 @@ export interface ValuesState {
   combined?: ValueRow[];
   /** What the local pages show; `null` before they loaded the page data. */
   local?: PageValue[] | null;
+  /** The MI environment the values are of, sent back with a save (PP-4840). */
+  environment?: string;
 }
 
 /** A value in the JSON mode and file: a list-type value as a native JSON array. */

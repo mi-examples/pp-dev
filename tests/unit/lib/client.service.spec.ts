@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ViteDevServer, WebSocketClient } from 'vite';
 import { ClientService } from '../../../src/lib/client.service.js';
+import { setEnvSwitchHandler } from '../../../src/lib/env-switch.js';
 import type { BackupAnalysis, DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
@@ -922,6 +923,100 @@ describe('ClientService — sync dialogs, cancel and build errors', () => {
           code: 'CONNECTION_ERROR',
         },
       ]);
+    });
+  });
+});
+
+// PP-4840 phase 4: the dev panel asks to restart the dev server in another MI environment.
+describe('ClientService — env:switch', () => {
+  const choices = [
+    { name: 'default', hasUrl: true, protected: false },
+    { name: 'stg70', hasUrl: true, protected: true },
+    { name: 'nourl', hasUrl: false, protected: false },
+  ];
+
+  function setup(switchTo: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>) {
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const broadcast = vi.fn();
+    const server = {
+      ws: {
+        on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
+        send: broadcast,
+      },
+      config: { clientInjectionPlugin: { v7Features: false } },
+    } as unknown as ViteDevServer;
+    const client = { send: vi.fn() } as unknown as WebSocketClient & { send: ReturnType<typeof vi.fn> };
+    const handler = vi.fn(switchTo);
+
+    setEnvSwitchHandler(handler);
+    new ClientService(server, { environments: { current: 'default', choices } });
+
+    return { handlers, broadcast, client, handler };
+  }
+
+  afterEach(() => setEnvSwitchHandler(undefined));
+
+  it('tells every tab, then asks the command to restart in the environment', async () => {
+    const { handlers, broadcast, client, handler } = setup(async () => ({ ok: true }));
+
+    await handlers.get('env:switch')!({ name: 'stg70' }, client);
+
+    expect(broadcast).toHaveBeenCalledWith('env:switching', { name: 'stg70' });
+    expect(handler).toHaveBeenCalledWith('stg70');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('tells every tab when the restart failed and the server stays', async () => {
+    const { handlers, broadcast, client } = setup(async () => ({ ok: false, error: 'bad config' }));
+
+    await handlers.get('env:switch')!({ name: 'stg70' }, client);
+
+    expect(broadcast).toHaveBeenLastCalledWith('env:switch:failed', { name: 'stg70', error: 'bad config' });
+  });
+
+  it.each([
+    [{ name: 'gone' }, 'There is no MI environment "gone"'],
+    [{ name: 42 }, 'There is no MI environment 42'],
+    [{ name: 'nourl' }, 'has no URL'],
+    [{ name: 'default' }, 'already works with default'],
+  ])('refuses %j without restarting', async (data, error) => {
+    const { handlers, broadcast, client, handler } = setup(async () => ({ ok: true }));
+
+    await handlers.get('env:switch')!(data, client);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(client.send).toHaveBeenCalledWith(
+      'env:switch:failed',
+      expect.objectContaining({ error: expect.stringContaining(error) }),
+    );
+  });
+
+  it('refuses a sync while a switch runs: the restart would end it', async () => {
+    let finishSwitch!: (result: { ok: false; error: string }) => void;
+    const { handlers, client } = setup(() => new Promise((resolve) => (finishSwitch = resolve)));
+    const switching = handlers.get('env:switch')!({ name: 'stg70' }, client);
+    const syncClient = { send: vi.fn() } as unknown as WebSocketClient & { send: ReturnType<typeof vi.fn> };
+
+    await handlers.get('template:sync')!({}, syncClient);
+
+    expect(syncClient.send).toHaveBeenCalledWith('template:sync:response', {
+      error: expect.stringContaining('switching to the MI environment stg70'),
+    });
+
+    finishSwitch({ ok: false, error: 'x' });
+    await switching;
+  });
+
+  it('cannot switch when the command registered no way to restart', async () => {
+    const { handlers, broadcast, client } = setup(async () => ({ ok: true }));
+
+    setEnvSwitchHandler(undefined);
+    await handlers.get('env:switch')!({ name: 'stg70' }, client);
+
+    expect(broadcast).toHaveBeenLastCalledWith('env:switch:failed', {
+      name: 'stg70',
+      error: expect.stringContaining('cannot switch environments'),
     });
   });
 });
