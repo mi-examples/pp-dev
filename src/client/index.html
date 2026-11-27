@@ -50,34 +50,109 @@
 
     {% if (backendBaseURL) { %}
     <div class="pp-dev-info__section pp-dev-info__env-section{%= envName ? '' : ' pp-dev-info__env-section--none' %}">
-      <span class="pp-dev-info__item">
+      <span class="pp-dev-info__item" title="MI environment">
+        <svg
+          class="pp-dev-info__icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m12 2 10 5-10 5L2 7z"></path>
+          <path d="m2 17 10 5 10-5"></path>
+          <path d="m2 12 10 5 10-5"></path>
+        </svg>
         <span class="pp-dev-info__label">Environment:</span>
         <span class="pp-dev-info__value warning pp-dev-info__env">{%= envName %}</span>
       </span>
     </div>
     {% } %} {% if (backendBaseURL) { %}
     <div class="pp-dev-info__section">
-      <span class="pp-dev-info__item">
+      <span class="pp-dev-info__item" title="Backend URL: !!{%= backendBaseURL %}">
         <span class="pp-dev-info__label">Backend URL:</span>
-        <a href="!!{%= backendBaseURL %}" target="_blank" class="pp-dev-info__link">!!{%= backendBaseURL %}</a>
+        <a href="!!{%= backendBaseURL %}" target="_blank" class="pp-dev-info__link" aria-label="Backend URL">
+          <svg
+            class="pp-dev-info__icon primary"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M2 12h20"></path>
+            <path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"></path>
+          </svg>
+          <span class="pp-dev-info__full">!!{%= backendBaseURL %}</span>
+        </a>
       </span>
     </div>
     {% } %}
 
     <div class="pp-dev-info__section">
-      <span class="pp-dev-info__item">
+      {% if (templateLess || !backendBaseURL || Number.isNaN(+appId)) { %}
+      <span class="pp-dev-info__item" title="Template mode: Disabled">
+        <svg
+          class="pp-dev-info__icon danger"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+          <path d="m9 9 6 6"></path>
+          <path d="m15 9-6 6"></path>
+        </svg>
         <span class="pp-dev-info__label">Template mode:</span>
-        {% if (templateLess || !backendBaseURL || Number.isNaN(+appId)) { %}
-        <span class="pp-dev-info__value danger">Disabled</span>
-        {% } else { %}
-        <span class="pp-dev-info__value success">Enabled</span>
-        {% } %}
+        <span class="pp-dev-info__value danger pp-dev-info__full">Disabled</span>
       </span>
+      {% } else { %}
+      <span class="pp-dev-info__item" title="Template mode: Enabled">
+        <svg
+          class="pp-dev-info__icon success"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+          <path d="m9 12 2 2 4-4"></path>
+        </svg>
+        <span class="pp-dev-info__label">Template mode:</span>
+        <span class="pp-dev-info__value success pp-dev-info__full">Enabled</span>
+      </span>
+      {% } %}
     </div>
 
     {% if (backendBaseURL && !Number.isNaN(+appId)) { %}
     <div class="pp-dev-info__section">
-      <span class="pp-dev-info__item">
+      <span class="pp-dev-info__item" title="App ID: {%= appId %}">
+        <svg
+          class="pp-dev-info__icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 9h16"></path>
+          <path d="M4 15h16"></path>
+          <path d="M10 3 8 21"></path>
+          <path d="m16 3-2 18"></path>
+        </svg>
         <span class="pp-dev-info__label">App ID:</span>
         <a href="!!{%= backendBaseURL %}/admin/page/edit/id/{%= appId %}" target="_blank" class="pp-dev-info__link"
           >{%= appId %}</a

@@ -6,6 +6,7 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from './storage.js';
 import { createPanelStateController, type PanelStateController } from './panel-state.js';
 import { initDrag, initAutoHide } from './panel-position.js';
 import { initPanelSettings } from './panel-settings.js';
+import { initPanelFit } from './panel-fit.js';
 import { initUsersPanel } from './users-panel.js';
 import { initTheme } from './theme.js';
 import { createPopupElement, startAutoDismiss, type InfoPopupOptions } from './popup.js';
@@ -264,6 +265,8 @@ if ($infoPanel) {
   });
 
   initUsersPanel($infoPanel, { onOpenChange: (open) => autoHide.keepPeeked(open) });
+  // Within the screen: icons in place of labels when narrow, then a sideways scroll.
+  initPanelFit($infoPanel);
 
   panelController.onChange((state) => {
     if (!state.autoHide) {

@@ -685,6 +685,10 @@ The panel can be anchored to any of the four screen corners (default: bottom-rig
 
 The minimize arrow, the panel's shadow, rounded corner and slide direction all mirror automatically for left/top placements. Sync notification popups stack from the screen edge opposite the panel so they never cover it.
 
+### Narrow screens
+
+The panel is never wider than the screen. When its items don't fit (a narrow window, a long backend URL, the [environment list](#envs--several-mi-environments)), the labels and long values make way for icons, whose tooltips name them: the environment, the backend URL (a globe linking to it), the template mode (green or red) and the App ID. What still doesn't fit scrolls sideways, with the mouse wheel too; the Sync, Users and settings buttons stay in view. A wider window brings the labels back.
+
 ### Auto-hide
 
 Toggle **Auto-hide** in the settings popover (or set `devPanel.autoHide: true`). The panel slides behind the nearest screen edge leaving a 4px accent strip; hovering the strip for ~300 ms slides it out, and it hides again ~500 ms after the pointer leaves. Keyboard focus inside the panel keeps it revealed. While auto-hide is active the minimize arrow acts as a **pin** button that returns the panel to normal mode.
