@@ -37,6 +37,14 @@ export const PP_DEV_SWITCHED_ENV_VAR = 'PP_DEV_SWITCHED_ENV';
  */
 export const PP_DEV_ENV_SWITCH_FAILURE_VAR = 'PP_DEV_ENV_SWITCH_FAILURE';
 
+/**
+ * The MI environment a switch from the dev panel goes to while it waits (behind a restart on a config
+ * change) or runs: a dev server started meanwhile takes no sync the switch would end, nor another
+ * switch. `pp-dev next`'s supervisor gives it to a server process it starts while a switch waits.
+ * pp-dev's own.
+ */
+export const PP_DEV_ENV_SWITCH_PENDING_VAR = 'PP_DEV_ENV_SWITCH_PENDING';
+
 /** The name the top-level `mi` and `app` settings go by in `--env`, `MI_ENV` and `defaultEnv`. */
 export const DEFAULT_ENV_NAME = 'default';
 

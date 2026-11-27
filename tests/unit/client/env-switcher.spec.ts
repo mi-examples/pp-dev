@@ -285,6 +285,16 @@ describe('the MI environment switcher', () => {
 
     expect(second.deps.reload).not.toHaveBeenCalled();
     expect(document.querySelector<HTMLSelectElement>('.pp-dev-info__env-select')!.value).toBe('default');
+
+    // Nor any start after that while they don't agree: the mark was taken away on the second one,
+    // and every other start reloaded.
+    for (let start = 0; start < 3; start++) {
+      expect((await setup({ pageEnv: 'stg70' })).deps.reload).not.toHaveBeenCalled();
+    }
+
+    // Once they agree, the mark goes: a later mismatch reloads again.
+    await setup();
+    expect((await setup({ pageEnv: 'stg70' })).deps.reload).toHaveBeenCalledTimes(1);
   });
 
   // A config change restarts the server in the same environment: the list kept the old choices.
@@ -318,5 +328,21 @@ describe('the MI environment switcher', () => {
     await vi.waitFor(() => expect(document.querySelector('.pp-dev-info__env-select')).toBeNull());
     expect(document.querySelector('.pp-dev-info__env')).not.toBeNull();
     expect($section.classList.contains('pp-dev-info__env-section--none')).toBe(true);
+  });
+
+  // Sent while disconnected, the request waited for a reconnect with the list disabled, and
+  // restarted the server whenever that came.
+  it('sends no switch while disconnected, and keeps the choice it had', async () => {
+    const { hot, deps, emit, choose } = await setup();
+
+    emit('vite:ws:disconnect', {});
+    await choose('stg70');
+
+    const $select = document.querySelector<HTMLSelectElement>('.pp-dev-info__env-select')!;
+
+    expect(hot.send).not.toHaveBeenCalled();
+    expect($select.value).toBe('default');
+    expect($select.disabled).toBe(false);
+    expect(deps.infoPopup).toHaveBeenCalledWith(expect.objectContaining({ title: 'No connection' }));
   });
 });

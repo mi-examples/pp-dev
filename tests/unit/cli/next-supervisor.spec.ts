@@ -537,6 +537,7 @@ describe('superviseNextServer — switching the MI environment', () => {
   afterEach(() => {
     delete process.env.PP_DEV_SWITCHED_ENV;
     delete process.env.PP_DEV_ENV_SWITCH_FAILURE;
+    delete process.env.PP_DEV_ENV_SWITCH_PENDING;
   });
 
   const ask = (server: FakeServer, name: string) =>
@@ -672,6 +673,15 @@ describe('superviseNextServer — switching the MI environment', () => {
       { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a switch to the MI environment stg70' },
       expect.any(Function),
     );
+    // The restart's server process came while the switch waited: it took no sync the switch ends.
+    expect(servers[1].env?.PP_DEV_ENV_SWITCH_PENDING).toBe('stg70');
+
+    servers[1].exit(0);
+    await flush();
+
+    // The switch's own takes them.
+    expect(servers[2].env?.PP_DEV_ENV_SWITCH_PENDING).toBeUndefined();
+    expect(process.env.PP_DEV_ENV_SWITCH_PENDING).toBeUndefined();
   });
 
   // The server that asked was stopped by the restart the switch waited for: the refusal went to its

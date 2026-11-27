@@ -33,7 +33,7 @@ function describeChoice(choice: EnvironmentResponse['environments'][number]): st
 }
 
 export async function initEnvSwitcher(
-  hot: Pick<ViteHotContext, 'on' | 'send'>,
+  hot: Pick<ViteHotContext, 'on' | 'send'> & { isConnected?: () => boolean },
   $section: HTMLElement,
   deps: EnvSwitcherDeps,
 ): Promise<void> {
@@ -51,6 +51,8 @@ export async function initEnvSwitcher(
   let $select: HTMLSelectElement | undefined;
   /** The choices the list shows, to tell when a restart brought others; `''` with no list. */
   let shown = '';
+  /** Between `vite:ws:disconnect` and the next `vite:ws:connect`. */
+  let disconnected = false;
 
   /**
    * A page served in one environment by a server that works with another now (a switch it missed)
@@ -186,6 +188,19 @@ export async function initEnvSwitcher(
         return;
       }
 
+      // Sent now, the request would wait for a reconnect with the list disabled, and restart the
+      // server whenever that happens. Say so instead, as the Sync button does.
+      if (disconnected || hot.isConnected?.() === false) {
+        $list.value = current;
+        deps.infoPopup({
+          title: 'No connection',
+          content: 'The dev server is not connected. Check that it is running, then choose again.',
+          type: 'warning',
+        });
+
+        return;
+      }
+
       $list.disabled = true;
       failureShown = undefined;
       hot.send('env:switch', { name } satisfies EnvSwitchPayload);
@@ -244,8 +259,6 @@ export async function initEnvSwitcher(
   // Asked again once the tab is back (its connection, or the tab itself): a tab whose connection was
   // down during a switch was never told, and would show the old environment, a Sync from it going to
   // the new one; one whose first ask failed (the server restarting) gets its list.
-  let disconnected = false;
-
   const recheck = async () => {
     if (waiting !== undefined) {
       return;
@@ -321,10 +334,13 @@ export async function initEnvSwitcher(
       return;
     }
 
-    try {
-      window.sessionStorage.removeItem(MISMATCH_RELOAD_KEY);
-    } catch {
-      // Nothing kept.
+    // Only once the two agree: a mark taken away while they don't let every other start reload.
+    if (serverEnv === pageEnv) {
+      try {
+        window.sessionStorage.removeItem(MISMATCH_RELOAD_KEY);
+      } catch {
+        // Nothing kept.
+      }
     }
 
     current = serverEnv;

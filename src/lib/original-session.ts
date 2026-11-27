@@ -28,6 +28,17 @@ const MAX_SUPERSEDED = 20;
  */
 export type OriginalSessionState = 'none' | 'active' | 'expired';
 
+/** What {@link OriginalSession.saveState} keeps. */
+export interface SavedOriginalSession {
+  state: OriginalSessionState;
+  session: string | undefined;
+  miUser: MiUser | undefined;
+  check: SessionCheck | undefined;
+  guest: string | undefined;
+  unverified: { session: string; replaced?: string; retryAt: number } | undefined;
+  superseded: string[];
+}
+
 export class OriginalSession {
   #state: OriginalSessionState = 'none';
 
@@ -107,6 +118,36 @@ export class OriginalSession {
   /** The MI session the dev panel's calls go with, while it lasts. */
   get session(): string | undefined {
     return this.#state === 'active' ? this.#session : undefined;
+  }
+
+  /**
+   * The login and how it is checked, for {@link restoreState}: a dev server restart for another MI
+   * instance forgets it before it can still fail, and the server that stays keeps its login.
+   */
+  saveState(): SavedOriginalSession {
+    return {
+      state: this.#state,
+      session: this.#session,
+      miUser: this.#miUser,
+      check: this.#check,
+      guest: this.#guest,
+      unverified: this.#unverified,
+      superseded: [...this.#superseded],
+    };
+  }
+
+  /** Puts back what {@link saveState} took; a check under way now can't change it. */
+  restoreState(saved: SavedOriginalSession): void {
+    this.#generation += 1;
+    this.#checking = undefined;
+    this.#state = saved.state;
+    this.#session = saved.session;
+    this.#miUser = saved.miUser;
+    this.#check = saved.check;
+    this.#guest = saved.guest;
+    this.#unverified = saved.unverified;
+    this.#superseded.clear();
+    saved.superseded.forEach((session) => this.#superseded.add(session));
   }
 
   /** Forgets the session: the dev server switched to another MI instance, whose sessions differ. */

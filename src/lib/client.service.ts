@@ -9,7 +9,7 @@ import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import { type ProtectedEnvironment, describeEnvironment } from './protected-environment.js';
 import { DEFAULT_ENV_NAME, type EnvironmentChoice } from './pp-dev-config.js';
-import { requestEnvSwitch, setEnvSwitchFailure } from './env-switch.js';
+import { getPendingEnvSwitch, requestEnvSwitch, setEnvSwitchFailure, setPendingEnvSwitch } from './env-switch.js';
 import {
   type EnvSwitchFailedPayload,
   type EnvSwitchPayload,
@@ -215,8 +215,11 @@ export class ClientService {
       return;
     }
 
-    if (this.switching) {
-      refuse(`A switch to ${this.switching} is under way.`);
+    // Also one asked of the server before a restart this one came from, still waiting.
+    const pending = this.switching ?? getPendingEnvSwitch();
+
+    if (pending) {
+      refuse(`A switch to ${pending} is under way.`);
 
       return;
     }
@@ -248,6 +251,8 @@ export class ClientService {
       colors.red(`❌ The switch to ${name} failed${current ? `, the dev server keeps ${current}` : ''}: ${error}`),
     );
     setEnvSwitchFailure({ name, error });
+    // Over: a server started while it waited takes syncs again.
+    setPendingEnvSwitch(undefined);
     this.server.ws.send('env:switch:failed', { name, error } satisfies EnvSwitchFailedPayload);
   }
 
@@ -303,10 +308,13 @@ export class ClientService {
    * upload to MI while the first is still running.
    */
   async onTemplateSync(data: unknown, client: WebSocketClient) {
-    // The restart would end it, the backup half-saved or the upload half-sent.
-    if (this.switching) {
+    // The restart would end it, the backup half-saved or the upload half-sent. Also a switch asked of
+    // the server before a restart this one came from, still waiting to run.
+    const switching = this.switching ?? getPendingEnvSwitch();
+
+    if (switching) {
       this.sendSyncResponse(client, {
-        error: `The dev server is switching to the MI environment ${this.switching}: sync once it has restarted.`,
+        error: `The dev server is switching to the MI environment ${switching}: sync once it has restarted.`,
       });
 
       return;

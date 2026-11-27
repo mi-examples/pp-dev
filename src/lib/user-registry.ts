@@ -94,6 +94,14 @@ export function getUserOrigin(req: IncomingMessage, name?: string): string {
   return `${isSecureRequest(req) ? 'https' : 'http'}://${name ? `${name}.` : ''}localhost${port ? `:${port}` : ''}`;
 }
 
+/** What {@link UserRegistry.saveState} keeps. */
+export interface UserRegistryState {
+  context: string | undefined;
+  users: SavedUser[];
+  defaultUserName: string | undefined;
+  renamed: [string, string][];
+}
+
 export class UserRegistry {
   readonly #users = new Map<string, SavedUser>();
 
@@ -127,6 +135,38 @@ export class UserRegistry {
     }
 
     this.#context = context;
+  }
+
+  /**
+   * The users and their context, for {@link restoreState}: a dev server restart sets the users up
+   * for its MI instance before it can still fail, and the server that stays must not keep them.
+   */
+  saveState(): UserRegistryState {
+    return {
+      context: this.#context,
+      users: [...this.#users.values()],
+      defaultUserName: this.#defaultUserName,
+      renamed: [...this.#renamed],
+    };
+  }
+
+  /** Puts back what {@link saveState} took; the users of now are removed, as on a context change. */
+  restoreState(state: UserRegistryState): void {
+    this.clear();
+
+    for (const user of state.users) {
+      this.#users.set(user.name, user);
+    }
+
+    this.#defaultUserName = state.defaultUserName;
+    this.#renamed.clear();
+
+    for (const [from, to] of state.renamed) {
+      this.#renamed.set(from, to);
+    }
+
+    this.#context = state.context;
+    this.#notifyChange();
   }
 
   /** The context set by {@link useContext}. */

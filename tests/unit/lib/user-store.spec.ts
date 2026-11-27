@@ -6,6 +6,8 @@ import {
   getUserStorePath,
   keepTokenUsers,
   readStoredUsers,
+  restoreUsersState,
+  saveUsersState,
   startKeepingUsers,
   writeStoredUsers,
 } from '../../../src/lib/user-store.js';
@@ -362,6 +364,37 @@ describe('startKeepingUsers without your own token', () => {
     userRegistry.add({ name: 'admin', kind: 'token', token: 'admin-token' });
 
     expect(readStoredUsers(file).map((user) => user.name)).toEqual(['viewer']);
+  });
+
+  // PP-4840: a `pp-dev` restart for another MI instance that failed while the old server stays.
+  it("keeps the old instance's users in its file again, and writes none to the other's", async () => {
+    const miAPI = {
+      personalAccessToken: 'DEV-PAT',
+      get: vi.fn(async () => ({ data: { user: { user_id: 42, username: 'viewer' } } })),
+    } as unknown as MiAPI;
+    const OTHER_URL = 'https://stg70.example.com';
+    const file = getUserStorePath(projectRoot, MI_URL, home);
+    const otherFile = getUserStorePath(projectRoot, OTHER_URL, home);
+
+    startKeepingUsers({ persist: true, miAPI, projectRoot, miUrl: MI_URL, homeDir: home });
+    userRegistry.add({ name: 'viewer', kind: 'token', token: 'viewer-token' });
+    await vi.waitFor(() => expect(readStoredUsers(file).map((user) => user.name)).toEqual(['viewer']));
+
+    const saved = saveUsersState();
+
+    // The new server's setup.
+    startKeepingUsers({ persist: true, miAPI, projectRoot, miUrl: OTHER_URL, homeDir: home });
+    userRegistry.add({ name: 'target', kind: 'token', token: 'target-token' });
+    await vi.waitFor(() => expect(readStoredUsers(otherFile).map((user) => user.name)).toEqual(['target']));
+
+    restoreUsersState(saved);
+    expect(userRegistry.list().map((user) => user.name)).toEqual(['viewer']);
+
+    userRegistry.add({ name: 'admin', kind: 'token', token: 'admin-token' });
+
+    await vi.waitFor(() => expect(readStoredUsers(file).map((user) => user.name)).toEqual(['viewer', 'admin']));
+    // The other instance's file keeps its user: the restore removed it from the registry, not there.
+    expect(readStoredUsers(otherFile).map((user) => user.name)).toEqual(['target']);
   });
 
   // PP-4840: a named environment never falls back to mi.token / MI_ACCESS_TOKEN.

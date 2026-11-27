@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
 import { PP_DEV_CONFIG_FILE_ENV_VAR } from '../constants.js';
 import { PP_DEV_SWITCHED_ENV_VAR } from '../shared/mi-environments.js';
-import { setEnvSwitchFailure } from '../lib/env-switch.js';
+import { setEnvSwitchFailure, setPendingEnvSwitch } from '../lib/env-switch.js';
 import {
   SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
   SUPERVISOR_ENV_SWITCH_MESSAGE,
@@ -391,10 +391,17 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
      * start (a config only `next.config` has, which the check can't see) is taken back and a server
      * starts again in the environment it had.
      */
-    const switchEnvironment = (name: string, requester: NextServerProcess) =>
-      oneAtATime(() => switchEnvironmentNow(name, requester));
+    // While it waits (behind a restart on a config change), a server process started meanwhile gets
+    // it marked pending, and takes no sync the switch would end; the switch's own doesn't.
+    const switchEnvironment = (name: string, requester: NextServerProcess) => {
+      setPendingEnvSwitch(name);
+
+      return oneAtATime(() => switchEnvironmentNow(name, requester));
+    };
 
     const switchEnvironmentNow = async (name: string, requester: NextServerProcess) => {
+      setPendingEnvSwitch(undefined);
+
       if (shuttingDown) {
         return;
       }

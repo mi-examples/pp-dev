@@ -4,6 +4,7 @@ import { type ServerOptions } from 'vite';
 import { VERSION } from '../../constants.js';
 import { PP_DEV_SWITCHED_ENV_VAR } from '../../shared/mi-environments.js';
 import { setEnvSwitchFailure, setEnvSwitchHandler } from '../../lib/env-switch.js';
+import { saveDevServerState } from '../../lib/dev-server-state.js';
 import { bindShortcuts } from '../../shortcuts.js';
 import { mergeConfig, type ViteDevServer } from 'vite';
 import { createLogger } from '../../lib/logger.js';
@@ -59,6 +60,10 @@ export function registerServeCommand(cli: CAC): void {
        */
       const startServer = async ({ restart = false } = {}): Promise<string | undefined> => {
         let nextServer: ViteDevServer | null = null;
+        // Setting the new server up changes the users, the login and the proxy cache's environment
+        // for its MI instance: put back if it fails, for the server that stays (or the one started
+        // again in the environment it had).
+        const restoreState = restart ? saveDevServerState() : undefined;
 
         try {
           // Clear config cache
@@ -211,6 +216,8 @@ export function registerServeCommand(cli: CAC): void {
           if (nextServer && nextServer !== server) {
             await nextServer.close().catch(() => undefined);
           }
+
+          restoreState?.();
 
           logger.error(colors.red(`❌ Failed to restart dev server:\n${e.stack}`), { error: e });
           logger.warn(

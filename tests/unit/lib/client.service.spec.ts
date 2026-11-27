@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ViteDevServer, WebSocketClient } from 'vite';
 import { ClientService } from '../../../src/lib/client.service.js';
-import { getEnvSwitchFailure, setEnvSwitchFailure, setEnvSwitchHandler } from '../../../src/lib/env-switch.js';
+import {
+  getEnvSwitchFailure,
+  getPendingEnvSwitch,
+  setEnvSwitchFailure,
+  setEnvSwitchHandler,
+  setPendingEnvSwitch,
+} from '../../../src/lib/env-switch.js';
 import type { BackupAnalysis, DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
@@ -958,6 +964,7 @@ describe('ClientService — env:switch', () => {
   afterEach(() => {
     setEnvSwitchHandler(undefined);
     setEnvSwitchFailure(undefined);
+    setPendingEnvSwitch(undefined);
   });
 
   it('tells every tab, then asks the command to restart in the environment', async () => {
@@ -1041,6 +1048,44 @@ describe('ClientService — env:switch', () => {
 
     finishSwitch({ ok: false, error: 'x' });
     await switching;
+  });
+
+  // A switch asked of the server before a config change restarted it waits behind that restart: the
+  // new server took a sync, which the switch then ended.
+  it('refuses a sync and a switch while one asked of the server before it still waits', async () => {
+    const { handlers, client, handler } = setup(async () => ({ ok: true }));
+    const syncClient = { send: vi.fn() } as unknown as WebSocketClient & { send: ReturnType<typeof vi.fn> };
+
+    setPendingEnvSwitch('stg70');
+    await handlers.get('template:sync')!({}, syncClient);
+    await handlers.get('env:switch')!({ name: 'stg70' }, client);
+
+    expect(syncClient.send).toHaveBeenCalledWith('template:sync:response', {
+      error: expect.stringContaining('switching to the MI environment stg70'),
+    });
+    expect(client.send).toHaveBeenCalledWith(
+      'env:switch:failed',
+      expect.objectContaining({ error: 'A switch to stg70 is under way.' }),
+    );
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('marks a switch pending until it is over, and a refusal reported to it ends the mark', async () => {
+    let pendingMeanwhile: string | undefined;
+    const { handlers, client, service } = setup(async () => {
+      pendingMeanwhile = getPendingEnvSwitch();
+
+      return { ok: false, error: 'x' };
+    });
+
+    await handlers.get('env:switch')!({ name: 'stg70' }, client);
+
+    expect(pendingMeanwhile).toBe('stg70');
+    expect(getPendingEnvSwitch()).toBeUndefined();
+
+    setPendingEnvSwitch('stg70');
+    service.reportEnvSwitchFailure('stg70', 'refused after a restart');
+    expect(getPendingEnvSwitch()).toBeUndefined();
   });
 
   it('cannot switch when the command registered no way to restart', async () => {

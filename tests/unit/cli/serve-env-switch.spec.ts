@@ -59,7 +59,11 @@ vi.mock('../../../src/shortcuts.js', () => ({ bindShortcuts: vi.fn() }));
 vi.mock('../../../src/cli/profiler.js', () => ({ stopProfiler: vi.fn(), profilerShortcuts: () => [] }));
 
 const { registerServeCommand } = await import('../../../src/cli/commands/serve.js');
-const { getEnvSwitchFailure, requestEnvSwitch, setEnvSwitchHandler } = await import('../../../src/lib/env-switch.js');
+const { getEnvSwitchFailure, getPendingEnvSwitch, requestEnvSwitch, setEnvSwitchHandler } =
+  await import('../../../src/lib/env-switch.js');
+const { createConfigWatcher } = await import('../../../src/cli/config-watcher.js');
+const { userRegistry } = await import('../../../src/lib/user-registry.js');
+const { originalSession } = await import('../../../src/lib/original-session.js');
 
 /** Runs the serve command's action as the CLI would, and waits for its first server. */
 async function serve() {
@@ -85,6 +89,8 @@ describe('pp-dev — switching the MI environment', () => {
     setEnvSwitchHandler(undefined);
     delete process.env.PP_DEV_SWITCHED_ENV;
     delete process.env.PP_DEV_ENV_SWITCH_FAILURE;
+    delete process.env.PP_DEV_ENV_SWITCH_PENDING;
+    userRegistry.clear();
   });
 
   it('restarts in the choice, and keeps it', async () => {
@@ -137,5 +143,83 @@ describe('pp-dev — switching the MI environment', () => {
     expect(vite.servers).toHaveLength(1);
     expect(vite.servers[0].close).not.toHaveBeenCalled();
     expect(getEnvSwitchFailure()).toBeUndefined();
+  });
+
+  // A config change restarted the server while the switch waited behind it: the new server took a
+  // sync, which the switch then ended.
+  it('marks the switch pending while it waits behind a restart, and until it is over', async () => {
+    await serve();
+
+    const restartOnChange = vi.mocked(createConfigWatcher).mock.calls.at(-1)![1] as () => Promise<void>;
+    let listened!: () => void;
+    let pendingInSwitch: string | undefined;
+
+    vite.next.push((server) => server.listen.mockReturnValue(new Promise<void>((resolve) => (listened = resolve))));
+    vite.next.push(() => {
+      pendingInSwitch = getPendingEnvSwitch();
+    });
+
+    const restarting = restartOnChange();
+
+    await vi.waitFor(() => expect(listened).toBeDefined());
+
+    const switching = requestEnvSwitch('stg70');
+
+    // The restart's server is up while the switch waits: no sync for it.
+    listened();
+    await restarting;
+    expect(getPendingEnvSwitch()).toBe('stg70');
+
+    await expect(switching).resolves.toEqual({ ok: true });
+    expect(pendingInSwitch).toBe('stg70');
+    expect(getPendingEnvSwitch()).toBeUndefined();
+  });
+
+  // Setting the new server up ties the users to its MI instance, and forgets the login, before it can
+  // still fail: the server that stayed kept the new instance's users, whose tokens went to the old.
+  describe("the old server's users after a failed switch", () => {
+    /** What the new server's setup does for another MI instance (startKeepingUsers). */
+    const setUpForTarget = () => {
+      userRegistry.useContext('stg70 instance');
+      userRegistry.add({ name: 'target', kind: 'token', token: 'stg70-token' });
+      originalSession.clear();
+    };
+
+    const usersBefore = () => {
+      userRegistry.useContext('mi instance');
+      userRegistry.add({ name: 'alice', kind: 'token', token: 'mi-token' });
+    };
+
+    it('are put back when the new server fails before the running one stops', async () => {
+      await serve();
+      usersBefore();
+
+      vite.next.push(() => {
+        setUpForTarget();
+        throw new Error('a plugin failed');
+      });
+
+      await expect(requestEnvSwitch('stg70')).resolves.toMatchObject({ ok: false, error: 'a plugin failed' });
+
+      expect(vite.servers[0].close).not.toHaveBeenCalled();
+      expect(userRegistry.context).toBe('mi instance');
+      expect(userRegistry.list().map((user) => user.name)).toEqual(['alice']);
+    });
+
+    it('are put back for the server started again when the new one fails to listen', async () => {
+      await serve();
+      usersBefore();
+
+      vite.next.push((server) => {
+        setUpForTarget();
+        server.listen.mockRejectedValue(new Error('listen EADDRINUSE'));
+      });
+
+      await requestEnvSwitch('stg70');
+
+      expect(vite.servers).toHaveLength(3);
+      expect(userRegistry.context).toBe('mi instance');
+      expect(userRegistry.list().map((user) => user.name)).toEqual(['alice']);
+    });
   });
 });
