@@ -9,7 +9,7 @@ import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import { type ProtectedEnvironment, describeEnvironment } from './protected-environment.js';
 import { DEFAULT_ENV_NAME, type EnvironmentChoice } from './pp-dev-config.js';
-import { requestEnvSwitch } from './env-switch.js';
+import { requestEnvSwitch, setEnvSwitchFailure } from './env-switch.js';
 import {
   type EnvSwitchFailedPayload,
   type EnvSwitchPayload,
@@ -222,6 +222,7 @@ export class ClientService {
     }
 
     this.switching = name;
+    setEnvSwitchFailure(undefined);
     this.logger.info(colors.blue(`🧭 Switching to the MI environment ${name}, as the dev panel asked`));
     this.server.ws.send('env:switching', { name } satisfies EnvSwitchPayload);
 
@@ -233,6 +234,9 @@ export class ClientService {
       this.logger.error(
         colors.red(`❌ The switch to ${name} failed, the dev server keeps ${environments.current}: ${result.error}`),
       );
+      // Also for the tabs that ask the server (`GET /@api/environment`): the one answering them may
+      // have been started again after the failed restart, without this WebSocket.
+      setEnvSwitchFailure({ name, error: result.error });
       this.server.ws.send('env:switch:failed', { name, error: result.error } satisfies EnvSwitchFailedPayload);
     }
   }

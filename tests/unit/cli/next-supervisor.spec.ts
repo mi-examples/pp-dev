@@ -19,6 +19,7 @@ import {
   SUPERVISOR_SHUTDOWN_MESSAGE,
 } from '../../../src/lib/process-handlers.js';
 import type { ConfigWatcher } from '../../../src/cli/config-watcher.js';
+import { getEnvSwitchFailure } from '../../../src/lib/env-switch.js';
 
 /**
  * Regression tests for the `pp-dev next` supervisor.
@@ -38,6 +39,8 @@ type FakeServer = EventEmitter &
     signalCode: NodeJS.Signals | null;
     exit(code: number | null, signal?: NodeJS.Signals | null): void;
     ready(): void;
+    /** The environment it was started with (forkNextServer passes this process's). */
+    env?: Record<string, string | undefined>;
   };
 
 function fakeServer(): FakeServer {
@@ -89,6 +92,7 @@ function setup(overrides: { checkConfig?: () => Promise<void>; mode?: string } =
     startServerProcess: () => {
       const server = fakeServer();
 
+      server.env = { ...process.env };
       servers.push(server);
 
       return server;
@@ -531,6 +535,7 @@ describe("the supervisor's config check", () => {
 describe('superviseNextServer — switching the MI environment', () => {
   afterEach(() => {
     delete process.env.PP_DEV_SWITCHED_ENV;
+    delete process.env.PP_DEV_ENV_SWITCH_FAILURE;
   });
 
   const ask = (server: FakeServer, name: string) =>
@@ -613,6 +618,30 @@ describe('superviseNextServer — switching the MI environment', () => {
     expect(startedWith).toBe('before');
     expect(servers).toHaveLength(3);
     expect(output()).toContain('did not start in the MI environment stg70: starting it again as it was');
+  });
+
+  // The process that told the tabs of the switch is gone, and the one started again had no word of
+  // it: the tabs waited for stg70 until their timeout.
+  it('starts the server again with why the switch failed, for the tabs that wait for it', async () => {
+    const { servers } = setup();
+
+    servers[0].ready();
+    ask(servers[0], 'stg70');
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].exit(1);
+    await flush();
+    servers[2].ready();
+    await flush();
+
+    expect(getEnvSwitchFailure(servers[1].env)).toBeUndefined();
+    expect(getEnvSwitchFailure(servers[2].env)).toEqual({
+      name: 'stg70',
+      error: expect.stringContaining('did not start in stg70'),
+    });
+    // Not the processes started after it.
+    expect(getEnvSwitchFailure()).toBeUndefined();
   });
 
   it('switches after a restart that runs, not alongside it', async () => {

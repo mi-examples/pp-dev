@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
 import { PP_DEV_CONFIG_FILE_ENV_VAR } from '../constants.js';
 import { PP_DEV_SWITCHED_ENV_VAR } from '../shared/mi-environments.js';
+import { setEnvSwitchFailure } from '../lib/env-switch.js';
 import {
   SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
   SUPERVISOR_ENV_SWITCH_MESSAGE,
@@ -416,7 +417,11 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         logger.warn(
           colors.yellow(`⚠️  The dev server did not start in the MI environment ${name}: starting it again as it was`),
         );
+        // The process that told the tabs of the switch is gone: the one started again tells the tabs
+        // that wait for it (`GET /@api/environment`). Its own, not the processes started after it.
+        setEnvSwitchFailure({ name, error: `The dev server did not start in ${name}: see its terminal.` });
         await startServer();
+        setEnvSwitchFailure(undefined);
       }
     };
 

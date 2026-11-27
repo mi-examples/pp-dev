@@ -691,6 +691,59 @@ describe('Variables Editor page', () => {
       dom.close();
     });
 
+    // A refresh that ended while the Save diff was open brought the new environment's name, and the
+    // tags in the diff, loaded in the old one, went with it past the server's check.
+    it('saves the tags of the diff with the environment they were loaded in, whatever a refresh brought since', async () => {
+      let refreshed!: (response: FetchResponse) => void;
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            schema: null,
+            live: [],
+            combined: [{ name: 'title', value: 'initial' }],
+            environment: 'default https://mi.example.com 7',
+          }),
+        })
+        .mockImplementationOnce(() => new Promise<FetchResponse>((resolve) => (refreshed = resolve)))
+        .mockResolvedValue({ ok: true, json: async () => ({ ok: true, warnings: [] }) });
+      const { dom } = await openEditor('values', fetch);
+      const document = dom.window.document;
+
+      enter('#content .ve-values-detail input', 'edited');
+      // Refresh, its discard confirmed: the edited rows stay on screen until the load ends.
+      click('[data-action="refresh"]');
+      click('.ve-modal-ok');
+      await flush();
+
+      click('#save-btn');
+      expect(document.querySelector('.ve-modal-ok')).not.toBeNull();
+
+      refreshed({
+        ok: true,
+        json: async () => ({
+          schema: null,
+          live: [],
+          combined: [{ name: 'title', value: 'stg70 value' }],
+          environment: 'stg70 https://stg70 1',
+        }),
+      });
+      await flush();
+
+      click('.ve-modal-ok');
+      await flush();
+
+      const put = fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+
+      expect(JSON.parse(put![1].body)).toEqual({
+        tags: [{ name: 'title', value: 'edited' }],
+        environment: 'default https://mi.example.com 7',
+      });
+
+      dom.close();
+    });
+
     // PP-4840 phase 2: the server asks for a save to a protected environment, naming it.
     describe('in a protected MI environment', () => {
       const asked: FetchResponse = {

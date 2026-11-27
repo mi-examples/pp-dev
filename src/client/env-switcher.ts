@@ -7,6 +7,7 @@ import type { ViteHotContext } from 'vite/types/hot.js';
 import type { InfoPopupOptions } from './popup.js';
 import type { ConfirmModalOptions } from './sync-button.js';
 import type { EnvSwitchFailedPayload, EnvSwitchPayload, EnvironmentResponse } from '../shared/ws-messages.js';
+import { DEFAULT_ENV_NAME } from '../shared/mi-environments.js';
 
 export const ENVIRONMENT_API = '/@api/environment';
 
@@ -36,113 +37,140 @@ export async function initEnvSwitcher(
   const reload = deps.reload ?? (() => window.location.reload());
   const get = deps.fetch ?? ((input, init) => window.fetch(input, init));
 
-  let data: EnvironmentResponse;
+  /**
+   * The environment this tab knows the server in: the server's first answer, until then the page's
+   * (its name in the panel; none for the default one).
+   */
+  let current = $section.querySelector('.pp-dev-info__env')?.textContent?.trim() || DEFAULT_ENV_NAME;
+  let $select: HTMLSelectElement | undefined;
 
-  try {
-    const response = await get(ENVIRONMENT_API, { cache: 'no-store' });
+  const ask = async (): Promise<EnvironmentResponse | undefined> => {
+    try {
+      const response = await get(ENVIRONMENT_API, { cache: 'no-store' });
 
-    if (!response.ok) {
-      return;
+      return response.ok ? ((await response.json()) as EnvironmentResponse) : undefined;
+    } catch {
+      // Restarting, or a dev server older than the panel.
+      return undefined;
     }
+  };
 
-    data = (await response.json()) as EnvironmentResponse;
-  } catch {
-    // A dev server older than the panel: the name stays as the markup shows it.
-    return;
-  }
-
-  // One environment, or a server that can't restart in another (plain `vite` with the plugin).
-  if (!Array.isArray(data.environments) || data.environments.length < 2 || data.canSwitch === false) {
-    return;
-  }
-
-  const $value = $section.querySelector<HTMLElement>('.pp-dev-info__env');
-  const $select = document.createElement('select');
-
-  $select.className = 'pp-dev-info__env-select';
-  $select.title = 'MI environment: a choice restarts the dev server in it';
-  $select.setAttribute('aria-label', 'MI environment');
-
-  for (const choice of data.environments) {
-    const $option = document.createElement('option');
-
-    $option.value = choice.name;
-    $option.textContent = describeChoice(choice);
-    $option.disabled = !choice.hasUrl;
-    $option.selected = choice.name === data.current;
-    $select.append($option);
-  }
-
-  $value?.replaceWith($select);
-  $section.classList.remove('pp-dev-info__env-section--none');
-
+  // One switch waited for at a time. A run is over once another starts or the wait stops: an answer
+  // it was still awaiting then is dropped, not acted on.
+  let waiting: string | undefined;
+  let run = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A failure this tab showed for the switch, from the server's answer before its message came. */
+  let failureShown: string | undefined;
 
-  const stopPolling = () => {
+  const stopWaiting = () => {
+    run++;
+    waiting = undefined;
     clearTimeout(pollTimer);
     pollTimer = undefined;
   };
 
   const reset = () => {
-    stopPolling();
-    $select.value = data.current;
-    $select.disabled = false;
+    stopWaiting();
+
+    if ($select) {
+      $select.value = current;
+      $select.disabled = false;
+    }
   };
 
-  // A tab whose connection was down during a switch was never told: it would show the old
-  // environment, and a Sync from it would go to the new one. Asked again once it is back (the
-  // connection, or the tab itself), it reloads when the server works with another one now.
-  let disconnected = false;
+  const showFailure = (error: string) => {
+    reset();
+    deps.infoPopup({
+      title: 'Environment switch failed',
+      content: `The dev server stays in ${current}: ${error}`,
+      type: 'danger',
+    });
+  };
 
-  const recheck = async () => {
-    if (pollTimer !== undefined) {
+  /** The list in place of the name: with more than one environment, where the server can restart. */
+  const build = (data: EnvironmentResponse) => {
+    if ($select || !Array.isArray(data.environments) || data.environments.length < 2 || data.canSwitch === false) {
       return;
     }
 
-    try {
-      const response = await get(ENVIRONMENT_API, { cache: 'no-store' });
+    const $list = document.createElement('select');
 
-      if (response.ok && ((await response.json()) as EnvironmentResponse).current !== data.current) {
-        reload();
+    $list.className = 'pp-dev-info__env-select';
+    $list.title = 'MI environment: a choice restarts the dev server in it';
+    $list.setAttribute('aria-label', 'MI environment');
+
+    for (const choice of data.environments) {
+      const $option = document.createElement('option');
+
+      $option.value = choice.name;
+      $option.textContent = describeChoice(choice);
+      $option.disabled = !choice.hasUrl;
+      $option.selected = choice.name === current;
+      $list.append($option);
+    }
+
+    $list.disabled = waiting !== undefined;
+    $section.querySelector('.pp-dev-info__env')?.replaceWith($list);
+    $section.classList.remove('pp-dev-info__env-section--none');
+    $select = $list;
+
+    $list.addEventListener('change', async () => {
+      const name = $list.value;
+
+      if (name === current) {
+        return;
       }
-    } catch {
-      // Not back yet: the next reconnect asks again.
-    }
-  };
 
-  hot.on('vite:ws:disconnect', () => {
-    disconnected = true;
-  });
-  hot.on('vite:ws:connect', () => {
-    if (disconnected) {
-      disconnected = false;
-      void recheck();
-    }
-  });
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      void recheck();
-    }
-  });
+      const confirmed = await deps.confirmModal({
+        title: 'Switch MI environment',
+        content: `Restart the dev server in ${name}? Every tab of it reloads; the choice lasts until pp-dev stops.`,
+        confirmText: `Switch to ${name}`,
+        cancelText: 'Cancel',
+      });
+
+      if (!confirmed) {
+        $list.value = current;
+
+        return;
+      }
+
+      $list.disabled = true;
+      failureShown = undefined;
+      hot.send('env:switch', { name } satisfies EnvSwitchPayload);
+    });
+  };
 
   /** Reloads once the dev server answers with `name`: the restarted one. */
   const waitFor = (name: string) => {
+    stopWaiting();
+
+    const thisRun = run;
     const startedAt = Date.now();
 
-    stopPolling();
+    waiting = name;
 
     const poll = async () => {
-      try {
-        const response = await get(ENVIRONMENT_API, { cache: 'no-store' });
+      const data = await ask();
 
-        if (response.ok && ((await response.json()) as EnvironmentResponse).current === name) {
-          stopPolling();
-          reload();
+      if (thisRun !== run) {
+        return;
+      }
 
-          return;
-        }
-      } catch {
-        // The server is restarting.
+      if (data?.current === name) {
+        stopWaiting();
+        reload();
+
+        return;
+      }
+
+      // A server started again in the old environment after the restart failed: the one that would
+      // have told this tab is gone.
+      if (data?.failedSwitch?.name === name) {
+        failureShown = name;
+        showFailure(data.failedSwitch.error);
+
+        return;
       }
 
       if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
@@ -162,34 +190,55 @@ export async function initEnvSwitcher(
     pollTimer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
   };
 
-  $select.addEventListener('change', async () => {
-    const name = $select.value;
+  // Asked again once the tab is back (its connection, or the tab itself): a tab whose connection was
+  // down during a switch was never told, and would show the old environment, a Sync from it going to
+  // the new one; one whose first ask failed (the server restarting) gets its list.
+  let disconnected = false;
 
-    if (name === data.current) {
+  const recheck = async () => {
+    if (waiting !== undefined) {
       return;
     }
 
-    const confirmed = await deps.confirmModal({
-      title: 'Switch MI environment',
-      content: `Restart the dev server in ${name}? Every tab of it reloads; the choice lasts until pp-dev stops.`,
-      confirmText: `Switch to ${name}`,
-      cancelText: 'Cancel',
-    });
+    const data = await ask();
 
-    if (!confirmed) {
-      $select.value = data.current;
+    if (!data || waiting !== undefined) {
+      return;
+    }
+
+    if ((data.current || DEFAULT_ENV_NAME) !== current) {
+      reload();
 
       return;
     }
 
-    $select.disabled = true;
-    hot.send('env:switch', { name } satisfies EnvSwitchPayload);
+    build(data);
+  };
+
+  hot.on('vite:ws:disconnect', () => {
+    disconnected = true;
+  });
+  hot.on('vite:ws:connect', () => {
+    if (disconnected) {
+      disconnected = false;
+      void recheck();
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void recheck();
+    }
   });
 
   // Every tab: the restart begins.
   hot.on('env:switching', (payload: EnvSwitchPayload) => {
-    $select.value = payload.name;
-    $select.disabled = true;
+    failureShown = undefined;
+
+    if ($select) {
+      $select.value = payload.name;
+      $select.disabled = true;
+    }
+
     deps.infoPopup({
       title: 'Environment switch',
       content: `The dev server restarts in ${payload.name}; this tab reloads once it is up.`,
@@ -200,11 +249,21 @@ export async function initEnvSwitcher(
 
   // Refused, or the restart failed: the running server stays.
   hot.on('env:switch:failed', (payload: EnvSwitchFailedPayload) => {
-    reset();
-    deps.infoPopup({
-      title: 'Environment switch failed',
-      content: `The dev server stays in ${data.current}: ${payload.error}`,
-      type: 'danger',
-    });
+    if (failureShown !== undefined && failureShown === payload.name) {
+      failureShown = undefined;
+
+      return;
+    }
+
+    showFailure(payload.error);
   });
+
+  // The first answer: the list, in the environment the server says. Without one (the server
+  // restarting), the handlers above ask again.
+  const data = await ask();
+
+  if (data) {
+    current = data.current || current;
+    build(data);
+  }
 }

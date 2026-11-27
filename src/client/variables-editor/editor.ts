@@ -2021,15 +2021,20 @@ export function startVariablesEditor({ templateLess }: { templateLess: boolean }
       return;
     }
 
-    showJsonDiffModal(beforeText, afterText, () => commitSave(() => commitValuesSave(tags, afterText)));
+    // The environment the tags were loaded in, taken with them: a refresh while the diff is open
+    // brings the rows of the environment the server works with now, and with them its name, which
+    // would have let these tags through the server's check.
+    const environment = valuesEnvironment;
+
+    showJsonDiffModal(beforeText, afterText, () => commitSave(() => commitValuesSave(tags, afterText, environment)));
   }
 
-  async function commitValuesSave(tags: ValueRow[], afterText: string) {
+  async function commitValuesSave(tags: ValueRow[], afterText: string, environment: string | undefined) {
     const saveEditSeq = editSeq;
     // With the environment the values were loaded in: the server refuses them in another one.
     const data = await putSave<ValuesSaveResponse>('/@api/variables/values', {
       tags,
-      ...(valuesEnvironment !== undefined ? { environment: valuesEnvironment } : {}),
+      ...(environment !== undefined ? { environment } : {}),
     });
 
     if (!data) {

@@ -7,7 +7,7 @@
  */
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
-import { PP_DEV_SWITCHED_ENV_VAR, envVariableSuffix } from '../shared/mi-environments.js';
+import { DEFAULT_ENV_NAME, PP_DEV_SWITCHED_ENV_VAR, envVariableSuffix } from '../shared/mi-environments.js';
 import { getSessionCookieName } from './session-cookie.middleware.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
@@ -250,8 +250,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 // ─── MI environments ──────────────────────────────────────────────────────────
 
-/** The name the top-level `mi` and `app` settings go by in `--env`, `MI_ENV` and `defaultEnv`. */
-export const DEFAULT_ENV_NAME = 'default';
+export { DEFAULT_ENV_NAME };
 
 /** Also a folder name (`backups/<name>`): no path separators, no dots. */
 const ENV_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;

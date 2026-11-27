@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ViteDevServer, WebSocketClient } from 'vite';
 import { ClientService } from '../../../src/lib/client.service.js';
-import { setEnvSwitchHandler } from '../../../src/lib/env-switch.js';
+import { getEnvSwitchFailure, setEnvSwitchFailure, setEnvSwitchHandler } from '../../../src/lib/env-switch.js';
 import type { BackupAnalysis, DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 
@@ -954,7 +954,10 @@ describe('ClientService — env:switch', () => {
     return { handlers, broadcast, client, handler };
   }
 
-  afterEach(() => setEnvSwitchHandler(undefined));
+  afterEach(() => {
+    setEnvSwitchHandler(undefined);
+    setEnvSwitchFailure(undefined);
+  });
 
   it('tells every tab, then asks the command to restart in the environment', async () => {
     const { handlers, broadcast, client, handler } = setup(async () => ({ ok: true }));
@@ -972,6 +975,23 @@ describe('ClientService — env:switch', () => {
     await handlers.get('env:switch')!({ name: 'stg70' }, client);
 
     expect(broadcast).toHaveBeenLastCalledWith('env:switch:failed', { name: 'stg70', error: 'bad config' });
+    // And for the tabs that ask the server: one started again after the failed restart has no
+    // WebSocket of the switch.
+    expect(getEnvSwitchFailure()).toEqual({ name: 'stg70', error: 'bad config' });
+  });
+
+  it('clears the failure of an earlier switch as one starts', async () => {
+    let failureMeanwhile: unknown = 'not asked';
+    const { handlers, client } = setup(async () => {
+      failureMeanwhile = getEnvSwitchFailure();
+
+      return { ok: true };
+    });
+
+    setEnvSwitchFailure({ name: 'stg70', error: 'it did not start' });
+    await handlers.get('env:switch')!({ name: 'stg70' }, client);
+
+    expect(failureMeanwhile).toBeUndefined();
   });
 
   it.each([

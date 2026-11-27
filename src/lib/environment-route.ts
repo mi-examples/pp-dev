@@ -6,7 +6,7 @@
 import type { Application } from 'express';
 import type { EnvironmentChoice } from './pp-dev-config.js';
 import type { EnvironmentResponse } from '../shared/ws-messages.js';
-import { canSwitchEnvironments } from './env-switch.js';
+import { canSwitchEnvironments, getEnvSwitchFailure } from './env-switch.js';
 
 export const ENVIRONMENT_API_PATH = '/@api/environment';
 
@@ -37,6 +37,7 @@ export function registerEnvironmentRoute(app: Application, deps: EnvironmentRout
       current: state.deps.current,
       environments: state.deps.environments,
       canSwitch: canSwitchEnvironments(),
+      failedSwitch: getEnvSwitchFailure(),
     } satisfies EnvironmentResponse);
   });
 }

@@ -52,6 +52,11 @@ export interface EnvironmentResponse {
   environments: { name: string; hasUrl: boolean; protected: boolean }[];
   /** Whether the server can restart in another one (not under plain `vite` with the plugin). */
   canSwitch?: boolean;
+  /**
+   * Why the last switch failed, when this server was started again in the environment it had after
+   * it: the tabs waiting for the switch were not told over the WebSocket.
+   */
+  failedSwitch?: { name: string; error: string };
 }
 
 /** `template:sync:response`: how a sync ended. */

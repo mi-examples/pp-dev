@@ -19,6 +19,7 @@ import { ClientService } from '../../../src/lib/client.service.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 import { createLogger } from '../../../src/lib/logger.js';
+import { setEnvSwitchFailure } from '../../../src/lib/env-switch.js';
 
 /** A response as the chain sees it: what was answered, and whether the headers are out. */
 function makeRes() {
@@ -225,6 +226,17 @@ describe('dev server setup', () => {
           // No command registered a way to restart here.
           canSwitch: false,
         });
+
+        // A server started again after a failed switch says why, for the tabs that wait for it.
+        setEnvSwitchFailure({ name: 'default', error: 'it did not start' });
+
+        try {
+          const afterFailure = await fetch(`http://127.0.0.1:${port}/@api/environment`).then((r) => r.json());
+
+          expect(afterFailure.failedSwitch).toEqual({ name: 'default', error: 'it did not start' });
+        } finally {
+          setEnvSwitchFailure(undefined);
+        }
         expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
 
         const client = { send: vi.fn() };

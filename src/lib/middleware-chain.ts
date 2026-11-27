@@ -18,6 +18,7 @@ import { createRequestCaptureMiddleware } from './request-capture.middleware.js'
 import { registerInspectorRoutes, INSPECTOR_PATH } from './request-inspector.js';
 import { RequestStore } from './request-store.js';
 import { createUserHostGuard } from './user-registry.js';
+import { ENVIRONMENT_API_PATH } from './environment-route.js';
 import { createSessionCookieMiddleware } from './session-cookie.middleware.js';
 import { createDevPanelAssetMiddleware } from './dev-panel.js';
 import { createLogger } from './logger.js';
@@ -113,7 +114,18 @@ export function createMiddlewareChain(options: MiddlewareChainOptions): Middlewa
     main.push(sessionCookie);
     essential.push(sessionCookie);
 
-    const userHostGuard = asChain(createUserHostGuard());
+    // But for the MI environment the server works with: after a switch to another MI instance, a tab
+    // on the host of a user that instance doesn't have asks it to learn the switch and reload.
+    const guard = createUserHostGuard();
+    const userHostGuard = asChain((req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
+      if ((req.url ?? '').split('?')[0] === ENVIRONMENT_API_PATH) {
+        next();
+
+        return;
+      }
+
+      guard(req, res, next);
+    });
 
     main.push(userHostGuard);
     essential.push(userHostGuard);

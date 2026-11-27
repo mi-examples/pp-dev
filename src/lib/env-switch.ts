@@ -7,6 +7,7 @@
  * starts a new server process. The command registers how; the dev server asks through here. On
  * `globalThis`, since the plugin can be loaded from another copy of this module (CJS and ESM).
  */
+import { PP_DEV_ENV_SWITCH_FAILURE_VAR } from '../shared/mi-environments.js';
 
 export type EnvSwitchResult = { ok: true } | { ok: false; error: string };
 
@@ -38,5 +39,47 @@ export async function requestEnvSwitch(name: string): Promise<EnvSwitchResult> {
     return await handler(name);
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export interface EnvSwitchFailure {
+  name: string;
+  error: string;
+}
+
+/**
+ * Records why a switch failed, for the tabs that wait for it (`GET /@api/environment`); `undefined`
+ * clears it, as a switch starts. In the environment, so a server process started again after it gets
+ * it (`pp-dev next`).
+ */
+export function setEnvSwitchFailure(
+  failure: EnvSwitchFailure | undefined,
+  env: Record<string, string | undefined> = process.env,
+): void {
+  if (failure) {
+    env[PP_DEV_ENV_SWITCH_FAILURE_VAR] = JSON.stringify({ name: failure.name, error: failure.error });
+  } else {
+    delete env[PP_DEV_ENV_SWITCH_FAILURE_VAR];
+  }
+}
+
+/** Why the last switch failed, if this server was started again after it. */
+export function getEnvSwitchFailure(
+  env: Record<string, string | undefined> = process.env,
+): EnvSwitchFailure | undefined {
+  const raw = env[PP_DEV_ENV_SWITCH_FAILURE_VAR];
+
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const value = JSON.parse(raw) as Partial<EnvSwitchFailure>;
+
+    return typeof value.name === 'string' && typeof value.error === 'string'
+      ? { name: value.name, error: value.error }
+      : undefined;
+  } catch {
+    return undefined;
   }
 }

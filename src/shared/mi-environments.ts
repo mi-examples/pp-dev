@@ -30,6 +30,17 @@ export const ENVIRONMENT_CHANGED_CODE = 'ENVIRONMENT_CHANGED';
 export const PP_DEV_SWITCHED_ENV_VAR = 'PP_DEV_SWITCHED_ENV';
 
 /**
+ * Why the last switch from the dev panel failed, `{"name","error"}` as JSON, when the server running
+ * now was started again in the environment it had: the one that told the tabs is gone with the failed
+ * restart (`pp-dev next` starts a new server process, `pp-dev` a new Vite server), so the tabs waiting
+ * for the switch learn it from `GET /@api/environment`. Cleared when a switch starts. pp-dev's own.
+ */
+export const PP_DEV_ENV_SWITCH_FAILURE_VAR = 'PP_DEV_ENV_SWITCH_FAILURE';
+
+/** The name the top-level `mi` and `app` settings go by in `--env`, `MI_ENV` and `defaultEnv`. */
+export const DEFAULT_ENV_NAME = 'default';
+
+/**
  * Where the API token of an environment is set, for messages: `mi.token or MI_ACCESS_TOKEN` for the
  * top-level settings, the environment's own for a named one (it never falls back to those).
  */

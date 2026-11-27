@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { type ServerOptions } from 'vite';
 import { VERSION } from '../../constants.js';
 import { PP_DEV_SWITCHED_ENV_VAR } from '../../shared/mi-environments.js';
-import { setEnvSwitchHandler } from '../../lib/env-switch.js';
+import { setEnvSwitchFailure, setEnvSwitchHandler } from '../../lib/env-switch.js';
 import { bindShortcuts } from '../../shortcuts.js';
 import { mergeConfig, type ViteDevServer } from 'vite';
 import { createLogger } from '../../lib/logger.js';
@@ -229,7 +229,10 @@ export function registerServeCommand(cli: CAC): void {
 
       // The dev panel's switch to another MI environment (PP-4840 phase 4): a restart with the choice
       // over `--env`, `MI_ENV` and `defaultEnv`, kept until pp-dev stops. One the restart refuses is
-      // taken back, so the next config change restarts in the environment the server keeps.
+      // taken back, so the next config change restarts in the environment the server keeps. One whose
+      // new server failed to listen had stopped the running one already: a server starts again in the
+      // environment it had, and its tabs learn why from it (they were told over the stopped one's
+      // WebSocket, if at all).
       setEnvSwitchHandler((name) =>
         oneRestartAtATime(async () => {
           const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
@@ -246,6 +249,16 @@ export function registerServeCommand(cli: CAC): void {
             delete process.env[PP_DEV_SWITCHED_ENV_VAR];
           } else {
             process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
+          }
+
+          if (!server) {
+            setEnvSwitchFailure({ name, error });
+            logger.warn(
+              colors.yellow(
+                `⚠️  The dev server did not start in the MI environment ${name}: starting it again as it was`,
+              ),
+            );
+            await startServer({ restart: true });
           }
 
           return { ok: false, error } as const;

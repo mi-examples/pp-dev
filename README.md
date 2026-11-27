@@ -343,8 +343,11 @@ pp-dev build --changelog --env staging
   dev server in it, as a config change does, and every tab of the server reloads once it is up. The
   choice lasts until pp-dev stops and wins over `--env`, `MI_ENV` and `defaultEnv`; no file is
   written, so the next start goes by them again. There is no switch while a sync runs, and a config
-  the restart refuses keeps the running server, which the panel says. A Variables Editor tab left
-  open across a switch can't save: the values it holds are the other environment's, so reload it.
+  the restart refuses keeps the running server, which the panel says (a server that didn't start
+  in the choice is started again in the environment it had). A Variables Editor tab left open
+  across a switch can't save: the values it holds are the other environment's, so reload it. The
+  panel comes with an MI backend: a page whose default environment has no URL (`mi.url`) has no
+  panel to switch from, so start it in a named one with `--env`.
 - **Logins.** Browsers keep cookies by host, not by port, so the proxy keeps the MI session of each
   instance of a project under a name of its own on `localhost`: the project's default instance's
   (`mi.url`) as MI names it, `metric_insights_session`, so existing logins stay; another instance's

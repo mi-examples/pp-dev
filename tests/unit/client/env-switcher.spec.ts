@@ -21,11 +21,23 @@ const ENVIRONMENTS = {
 
 const json = (body: unknown) => ({ ok: true, json: async () => body }) as Response;
 
-async function setup({ environments = ENVIRONMENTS, confirmed = true } = {}) {
+async function setup({
+  environments = ENVIRONMENTS,
+  confirmed = true,
+  firstAnswer,
+  pageEnv = '',
+}: {
+  environments?: typeof ENVIRONMENTS;
+  confirmed?: boolean;
+  /** The first ask's answer in place of `environments` (a rejection: the server restarting). */
+  firstAnswer?: () => Promise<Response>;
+  /** The environment's name in the page's markup; none for the default one. */
+  pageEnv?: string;
+} = {}) {
   document.body.innerHTML = `
     <div class="pp-dev-info__section pp-dev-info__env-section pp-dev-info__env-section--none">
       <span class="pp-dev-info__label">Environment:</span>
-      <span class="pp-dev-info__value pp-dev-info__env"></span>
+      <span class="pp-dev-info__value pp-dev-info__env">${pageEnv}</span>
     </div>`;
 
   const handlers = new Map<string, Handler[]>();
@@ -34,6 +46,10 @@ async function setup({ environments = ENVIRONMENTS, confirmed = true } = {}) {
     send: vi.fn(),
   };
   const fetch = vi.fn(async () => json(environments));
+
+  if (firstAnswer) {
+    fetch.mockImplementationOnce(firstAnswer);
+  }
   const deps = {
     infoPopup: vi.fn(),
     confirmModal: vi.fn().mockResolvedValue(confirmed),
@@ -169,6 +185,89 @@ describe('the MI environment switcher', () => {
 
     await vi.waitFor(() => expect(fetch.mock.calls.length).toBe(calls + 1));
     await Promise.resolve();
+    expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  // The first ask during a restart failed, and nothing asked again: no list for good, and the old
+  // environment shown after the server came back in another.
+  it('gets its list once the server is back when its first ask failed', async () => {
+    const { emit } = await setup({ firstAnswer: () => Promise.reject(new TypeError('Failed to fetch')) });
+
+    expect(document.querySelector('.pp-dev-info__env-select')).toBeNull();
+
+    emit('vite:ws:disconnect', {});
+    emit('vite:ws:connect', {});
+
+    await vi.waitFor(() => expect(document.querySelector('.pp-dev-info__env-select')).not.toBeNull());
+    expect(document.querySelector<HTMLSelectElement>('.pp-dev-info__env-select')!.value).toBe('default');
+  });
+
+  it('reloads when its first ask failed and the server came back in another environment', async () => {
+    const { fetch, deps } = await setup({
+      pageEnv: 'stg70',
+      firstAnswer: () => Promise.reject(new TypeError('Failed to fetch')),
+    });
+
+    fetch.mockResolvedValueOnce(json({ ...ENVIRONMENTS, current: 'default' }));
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await vi.waitFor(() => expect(deps.reload).toHaveBeenCalledTimes(1));
+  });
+
+  // A failure while a poll awaited its answer: the poll went on after it, and could time out later.
+  it('drops a poll that was awaiting its answer when the switch failed', async () => {
+    vi.useFakeTimers();
+
+    const { fetch, deps, emit } = await setup();
+    let answer!: (response: Response) => void;
+
+    fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => (answer = resolve)));
+    emit('env:switching', { name: 'stg70' });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    emit('env:switch:failed', { name: 'stg70', error: 'the config refused it' });
+    answer(json({ ...ENVIRONMENTS, current: 'default' }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const calls = fetch.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(200_000);
+    expect(fetch.mock.calls.length).toBe(calls);
+    expect(deps.infoPopup).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Environment switch', type: 'danger' }),
+    );
+  });
+
+  // The server started again in the old environment after the restart failed: the one that would
+  // have told the tab is gone, and the tab waited until its timeout.
+  it('shows the failure the server started again tells, once, and stops waiting', async () => {
+    vi.useFakeTimers();
+
+    const { fetch, deps, emit } = await setup();
+    const $select = document.querySelector<HTMLSelectElement>('.pp-dev-info__env-select')!;
+
+    emit('env:switching', { name: 'stg70' });
+    fetch.mockResolvedValueOnce(
+      json({ ...ENVIRONMENTS, current: 'default', failedSwitch: { name: 'stg70', error: 'it did not start' } }),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect($select.value).toBe('default');
+    expect($select.disabled).toBe(false);
+    expect(deps.infoPopup).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'danger', content: expect.stringContaining('it did not start') }),
+    );
+
+    // The same failure over the WebSocket afterwards (`pp-dev` kept the server): not twice.
+    const popups = deps.infoPopup.mock.calls.length;
+
+    emit('env:switch:failed', { name: 'stg70', error: 'it did not start' });
+    expect(deps.infoPopup.mock.calls.length).toBe(popups);
+
+    const calls = fetch.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetch.mock.calls.length).toBe(calls);
     expect(deps.reload).not.toHaveBeenCalled();
   });
 });
