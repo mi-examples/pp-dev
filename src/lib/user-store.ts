@@ -249,16 +249,33 @@ export function saveUsersState(): UsersState {
   return { registry: userRegistry.saveState(), session: originalSession.saveState(), keeping: keepingWith };
 }
 
-/** Puts back what {@link saveUsersState} took, and keeps the users in its file again. */
+/**
+ * Puts back what a failed setup changed since {@link saveUsersState}, and only that: the users and the
+ * login when it tied the registry to another MI instance, which dropped them; else how the users are
+ * kept (`users.persist`, the token) and how the login is checked. Changes the running server took
+ * meanwhile (a user removed, another default user) stay.
+ */
 export function restoreUsersState(state: UsersState): void {
-  // First: the users of now must not be written to, or removed from, the other instance's file.
-  stopKeeping(userRegistry);
-  keepingWith = undefined;
-  userRegistry.restoreState(state.registry);
-  originalSession.restoreState(state.session);
+  if (userRegistry.context !== state.registry.context) {
+    // First: the users of now must not be written to, or removed from, the other instance's file.
+    stopKeeping(userRegistry);
+    keepingWith = undefined;
+    userRegistry.restoreState(state.registry);
+    originalSession.restoreState(state.session);
+  } else if (state.session.check) {
+    // The new server's own MiAPI checked the login.
+    originalSession.useCheck(state.session.check);
+  }
+
+  if (keepingWith === state.keeping) {
+    return;
+  }
 
   if (state.keeping) {
     startKeepingUsers(state.keeping);
+  } else {
+    stopKeeping(userRegistry);
+    keepingWith = undefined;
   }
 }
 

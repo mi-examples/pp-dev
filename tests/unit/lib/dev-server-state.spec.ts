@@ -37,7 +37,8 @@ describe('saveDevServerState', () => {
     expect(userRegistry.renamedTo('bob')).toBe('robert');
   });
 
-  it('puts back the login on the main host', () => {
+  it('puts back the login on the main host when the setup was for another instance', () => {
+    userRegistry.useContext('mi instance');
     originalSession.restoreState({
       ...originalSession.saveState(),
       state: 'active',
@@ -46,6 +47,8 @@ describe('saveDevServerState', () => {
 
     const restore = saveDevServerState();
 
+    // What startKeepingUsers does for another instance.
+    userRegistry.useContext('stg70 instance');
     originalSession.clear();
     expect(originalSession.session).toBeUndefined();
 
@@ -53,6 +56,23 @@ describe('saveDevServerState', () => {
 
     expect(originalSession.state).toBe('active');
     expect(originalSession.session).toBe('mi-session');
+  });
+
+  // The setup kept the MI instance (or never ran): the running server's changes meanwhile were undone,
+  // a user removed brought back with its kept token, another default user dropped.
+  it("leaves the running server's changes when the setup kept the instance", () => {
+    userRegistry.useContext('mi instance');
+    userRegistry.add({ name: 'alice', kind: 'token', token: 'mi-token' });
+    userRegistry.add({ name: 'bob', kind: 'token', token: 'mi-token-2' });
+
+    const restore = saveDevServerState();
+
+    userRegistry.remove('alice');
+    userRegistry.setDefaultUser('bob');
+    restore();
+
+    expect(userRegistry.list().map((user) => user.name)).toEqual(['bob']);
+    expect(userRegistry.defaultUser?.name).toBe('bob');
   });
 
   it("puts back the proxy cache's environment, dropping what was cached since", () => {

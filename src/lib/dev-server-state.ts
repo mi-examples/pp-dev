@@ -7,7 +7,10 @@
 import { saveUsersState, restoreUsersState } from './user-store.js';
 import { getMiEnvironment, restoreMiEnvironment } from './proxy-cache.middleware.js';
 
-/** Takes the state as it is; the function returned puts it back. */
+/**
+ * Takes the state as it is; the function returned puts back what changed since (the proxy cache's
+ * environment, and see {@link restoreUsersState}).
+ */
 export function saveDevServerState(): () => void {
   const users = saveUsersState();
   const environment = getMiEnvironment();

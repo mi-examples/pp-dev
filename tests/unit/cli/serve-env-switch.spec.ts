@@ -206,6 +206,24 @@ describe('pp-dev — switching the MI environment', () => {
       expect(userRegistry.list().map((user) => user.name)).toEqual(['alice']);
     });
 
+    // The running server took the change while the config loaded: putting the users back undid it.
+    it('keep what the running server changed when the config is refused', async () => {
+      await serve();
+      usersBefore();
+
+      const { loadCommandViteConfig } = await import('../../../src/cli/vite-config.js');
+
+      vi.mocked(loadCommandViteConfig).mockImplementationOnce(async () => {
+        userRegistry.remove('alice');
+        throw new Error('MI environment "stg70" has no URL');
+      });
+
+      await expect(requestEnvSwitch('stg70')).resolves.toMatchObject({ ok: false });
+
+      expect(userRegistry.context).toBe('mi instance');
+      expect(userRegistry.list()).toEqual([]);
+    });
+
     it('are put back for the server started again when the new one fails to listen', async () => {
       await serve();
       usersBefore();

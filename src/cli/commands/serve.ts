@@ -60,10 +60,7 @@ export function registerServeCommand(cli: CAC): void {
        */
       const startServer = async ({ restart = false } = {}): Promise<string | undefined> => {
         let nextServer: ViteDevServer | null = null;
-        // Setting the new server up changes the users, the login and the proxy cache's environment
-        // for its MI instance: put back if it fails, for the server that stays (or the one started
-        // again in the environment it had).
-        const restoreState = restart ? saveDevServerState() : undefined;
+        let restoreState: (() => void) | undefined;
 
         try {
           // Clear config cache
@@ -102,6 +99,13 @@ export function registerServeCommand(cli: CAC): void {
           // changes, as the `.env` files', restart through the config watcher below with a config
           // loaded afresh: Vite's own restart on them reused this start's, so they are kept from it
           // (`configFile: false`; its `.env` files kept from its watcher, and only those).
+          //
+          // Setting the new server up changes the users, the login and the proxy cache's environment
+          // for its MI instance: put back what it changed if it fails, for the server that stays (or
+          // the one started again in the environment it had). Taken right before, not as the restart
+          // starts: the running server takes user changes while the config loads, and a config
+          // refused must leave them be.
+          restoreState = restart ? saveDevServerState() : undefined;
           nextServer = await createServer(
             mergeConfig(
               config,
