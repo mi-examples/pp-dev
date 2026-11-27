@@ -189,7 +189,7 @@ describe('MI environments', () => {
 
     it('refuses a name the config has not, as MI_ENV does', () => {
       expect(() => resolveMiEnvironment(CONFIG, { PP_DEV_SWITCHED_ENV: 'gone' })).toThrow(
-        'Unknown MI environment "gone"',
+        'Unknown MI environment "gone" (chosen in the dev panel)',
       );
     });
 

@@ -143,4 +143,32 @@ describe('the MI environment switcher', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(fetch.mock.calls.length).toBe(calls);
   });
+  it('offers no list where the server cannot restart (plain vite with the plugin)', async () => {
+    await setup({ environments: { ...ENVIRONMENTS, canSwitch: false } as typeof ENVIRONMENTS });
+
+    expect(document.querySelector('.pp-dev-info__env-select')).toBeNull();
+  });
+
+  // A tab whose connection was down during a switch was never told of it.
+  it('reloads after a reconnect when the server works with another environment now', async () => {
+    const { fetch, deps, emit } = await setup();
+
+    emit('vite:ws:disconnect', {});
+    fetch.mockResolvedValueOnce(json({ ...ENVIRONMENTS, current: 'stg70' }));
+    emit('vite:ws:connect', {});
+
+    await vi.waitFor(() => expect(deps.reload).toHaveBeenCalledTimes(1));
+  });
+
+  it('stays after a reconnect to the same environment', async () => {
+    const { fetch, deps, emit } = await setup();
+    const calls = fetch.mock.calls.length;
+
+    emit('vite:ws:disconnect', {});
+    emit('vite:ws:connect', {});
+
+    await vi.waitFor(() => expect(fetch.mock.calls.length).toBe(calls + 1));
+    await Promise.resolve();
+    expect(deps.reload).not.toHaveBeenCalled();
+  });
 });

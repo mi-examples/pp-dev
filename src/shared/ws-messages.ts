@@ -50,6 +50,8 @@ export interface EnvSwitchFailedPayload {
 export interface EnvironmentResponse {
   current: string;
   environments: { name: string; hasUrl: boolean; protected: boolean }[];
+  /** Whether the server can restart in another one (not under plain `vite` with the plugin). */
+  canSwitch?: boolean;
 }
 
 /** `template:sync:response`: how a sync ended. */

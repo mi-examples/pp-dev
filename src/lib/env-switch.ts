@@ -21,6 +21,11 @@ export function setEnvSwitchHandler(handler: EnvSwitchHandler | undefined): void
   (globalThis as WithHandler)[HANDLER_KEY] = handler;
 }
 
+/** Whether the command can restart in another environment: not under plain `vite` with the plugin. */
+export function canSwitchEnvironments(): boolean {
+  return typeof (globalThis as WithHandler)[HANDLER_KEY] === 'function';
+}
+
 /** Restarts the dev server in `name`. Resolves once a restart failed; on success this server goes. */
 export async function requestEnvSwitch(name: string): Promise<EnvSwitchResult> {
   const handler = (globalThis as WithHandler)[HANDLER_KEY];

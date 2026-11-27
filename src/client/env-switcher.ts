@@ -51,7 +51,8 @@ export async function initEnvSwitcher(
     return;
   }
 
-  if (!Array.isArray(data.environments) || data.environments.length < 2) {
+  // One environment, or a server that can't restart in another (plain `vite` with the plugin).
+  if (!Array.isArray(data.environments) || data.environments.length < 2 || data.canSwitch === false) {
     return;
   }
 
@@ -87,6 +88,42 @@ export async function initEnvSwitcher(
     $select.value = data.current;
     $select.disabled = false;
   };
+
+  // A tab whose connection was down during a switch was never told: it would show the old
+  // environment, and a Sync from it would go to the new one. Asked again once it is back (the
+  // connection, or the tab itself), it reloads when the server works with another one now.
+  let disconnected = false;
+
+  const recheck = async () => {
+    if (pollTimer !== undefined) {
+      return;
+    }
+
+    try {
+      const response = await get(ENVIRONMENT_API, { cache: 'no-store' });
+
+      if (response.ok && ((await response.json()) as EnvironmentResponse).current !== data.current) {
+        reload();
+      }
+    } catch {
+      // Not back yet: the next reconnect asks again.
+    }
+  };
+
+  hot.on('vite:ws:disconnect', () => {
+    disconnected = true;
+  });
+  hot.on('vite:ws:connect', () => {
+    if (disconnected) {
+      disconnected = false;
+      void recheck();
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void recheck();
+    }
+  });
 
   /** Reloads once the dev server answers with `name`: the restarted one. */
   const waitFor = (name: string) => {

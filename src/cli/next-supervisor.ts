@@ -327,7 +327,20 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
       return settled;
     };
 
-    const restart = async () => {
+    // Restarts on a config change and the dev panel's environment switches, one after another: two at
+    // once would start two server processes, one of them untracked, and it would outlive a shutdown.
+    let restarts: Promise<unknown> = Promise.resolve();
+    const oneAtATime = (run: () => Promise<void>): Promise<void> => {
+      const next = restarts.then(run, run);
+
+      restarts = next.catch(() => undefined);
+
+      return next;
+    };
+
+    const restart = () => oneAtATime(restartNow);
+
+    const restartNow = async () => {
       if (shuttingDown) {
         return;
       }
@@ -353,10 +366,15 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
     /**
      * The dev panel's switch to MI environment `name` (PP-4840 phase 4): a server process started with
      * the choice over `--env`, `MI_ENV` and `defaultEnv` (it gets this process's environment), kept
-     * until pp-dev stops. A config the check refuses keeps the running server, which is told why; a
-     * choice whose server didn't start is taken back, for the next config change to restart without it.
+     * until pp-dev stops. A config the check refuses keeps the running server, which is told why. The
+     * running server is stopped before the new one starts (one port), so a choice whose server didn't
+     * start (a config only `next.config` has, which the check can't see) is taken back and a server
+     * starts again in the environment it had.
      */
-    const switchEnvironment = async (name: string, requester: NextServerProcess) => {
+    const switchEnvironment = (name: string, requester: NextServerProcess) =>
+      oneAtATime(() => switchEnvironmentNow(name, requester));
+
+    const switchEnvironmentNow = async (name: string, requester: NextServerProcess) => {
       if (shuttingDown) {
         return;
       }
@@ -393,8 +411,12 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
 
       await startServer();
 
-      if (!ready) {
+      if (!ready && !shuttingDown) {
         takeBack();
+        logger.warn(
+          colors.yellow(`⚠️  The dev server did not start in the MI environment ${name}: starting it again as it was`),
+        );
+        await startServer();
       }
     };
 

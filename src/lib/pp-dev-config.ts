@@ -337,7 +337,9 @@ export function resolveMiEnvironment(
   const name = getSelectedEnvName(env) || config.defaultEnv || DEFAULT_ENV_NAME;
 
   if (!isDefined(name)) {
-    throw new Error(`[pp-dev] Unknown MI environment "${name}" (--env or MI_ENV). Defined: ${defined}`);
+    const from = env[PP_DEV_SWITCHED_ENV_VAR]?.trim() ? 'chosen in the dev panel' : '--env or MI_ENV';
+
+    throw new Error(`[pp-dev] Unknown MI environment "${name}" (${from}). Defined: ${defined}`);
   }
 
   if (name === DEFAULT_ENV_NAME) {

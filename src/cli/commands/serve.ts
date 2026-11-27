@@ -38,6 +38,17 @@ export function registerServeCommand(cli: CAC): void {
       const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
       const logger = createLogger(options.logLevel);
 
+      // Restarts on a config change and the dev panel's environment switches, one after another: two
+      // at once would start two servers on one port, the second closing the first's work.
+      let restarts: Promise<unknown> = Promise.resolve();
+      const oneRestartAtATime = <T>(restart: () => Promise<T>): Promise<T> => {
+        const run = restarts.then(restart, restart);
+
+        restarts = run.catch(() => undefined);
+
+        return run;
+      };
+
       /**
        * Starts the dev server. On a restart the new server is created, its config loaded and
        * checked, before the running one is stopped: a config that can't be loaded (half-written, a
@@ -175,7 +186,7 @@ export function registerServeCommand(cli: CAC): void {
 
           if (!configWatcher) {
             const restartOnChange = async () => {
-              await startServer({ restart: true });
+              await oneRestartAtATime(() => startServer({ restart: true }));
             };
 
             configWatcher = createConfigWatcher(projectRoot, restartOnChange, logger.info, {
@@ -219,25 +230,27 @@ export function registerServeCommand(cli: CAC): void {
       // The dev panel's switch to another MI environment (PP-4840 phase 4): a restart with the choice
       // over `--env`, `MI_ENV` and `defaultEnv`, kept until pp-dev stops. One the restart refuses is
       // taken back, so the next config change restarts in the environment the server keeps.
-      setEnvSwitchHandler(async (name) => {
-        const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
+      setEnvSwitchHandler((name) =>
+        oneRestartAtATime(async () => {
+          const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
 
-        process.env[PP_DEV_SWITCHED_ENV_VAR] = name;
+          process.env[PP_DEV_SWITCHED_ENV_VAR] = name;
 
-        const error = await startServer({ restart: true });
+          const error = await startServer({ restart: true });
 
-        if (error === undefined) {
-          return { ok: true };
-        }
+          if (error === undefined) {
+            return { ok: true } as const;
+          }
 
-        if (previous === undefined) {
-          delete process.env[PP_DEV_SWITCHED_ENV_VAR];
-        } else {
-          process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
-        }
+          if (previous === undefined) {
+            delete process.env[PP_DEV_SWITCHED_ENV_VAR];
+          } else {
+            process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
+          }
 
-        return { ok: false, error };
-      });
+          return { ok: false, error } as const;
+        }),
+      );
 
       registerProcessHandlers({
         logger,

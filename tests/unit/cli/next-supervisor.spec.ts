@@ -592,10 +592,13 @@ describe('superviseNextServer — switching the MI environment', () => {
     expect(process.env.PP_DEV_SWITCHED_ENV).toBeUndefined();
   });
 
-  it('takes the choice back when its server does not start', async () => {
+  // The running server is stopped before the new one starts: without a second start, a failed one
+  // left no server at all.
+  it('takes the choice back and starts the server again as it was when the new one does not start', async () => {
     process.env.PP_DEV_SWITCHED_ENV = 'before';
 
-    const { servers } = setup();
+    const { servers, output } = setup();
+    let startedWith: string | undefined;
 
     servers[0].ready();
     ask(servers[0], 'stg70');
@@ -605,7 +608,40 @@ describe('superviseNextServer — switching the MI environment', () => {
     servers[1].exit(1);
     await flush();
 
-    expect(process.env.PP_DEV_SWITCHED_ENV).toBe('before');
+    startedWith = process.env.PP_DEV_SWITCHED_ENV;
+
+    expect(startedWith).toBe('before');
+    expect(servers).toHaveLength(3);
+    expect(output()).toContain('did not start in the MI environment stg70: starting it again as it was');
+  });
+
+  it('switches after a restart that runs, not alongside it', async () => {
+    const { servers, restart } = setup();
+
+    servers[0].ready();
+
+    const restarting = restart();
+
+    await flush();
+    ask(servers[0], 'stg70');
+    await flush();
+
+    // Only the restart's stop so far.
+    expect(servers[0].send).toHaveBeenCalledTimes(1);
+
+    servers[0].exit(0);
+    await flush();
+    servers[1].ready();
+    await restarting;
+    await flush();
+
+    // The switch was asked by a server process that has gone since: the one the restart started is
+    // what it stops now.
+    expect(servers).toHaveLength(2);
+    expect(servers[1].send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a switch to the MI environment stg70' },
+      expect.any(Function),
+    );
   });
 
   it('asks the supervisor from the server process, and resolves with its refusal', async () => {

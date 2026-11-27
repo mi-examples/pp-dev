@@ -222,6 +222,8 @@ describe('dev server setup', () => {
             { name: 'default', hasUrl: true, protected: false },
             { name: 'staging', hasUrl: true, protected: true },
           ],
+          // No command registered a way to restart here.
+          canSwitch: false,
         });
         expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
 
