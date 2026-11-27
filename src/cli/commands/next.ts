@@ -38,6 +38,7 @@ import type { CAC } from 'cac';
 import {
   isNextServerProcess,
   reportNextServerReady,
+  onUnrequestedEnvSwitchFailure,
   requestEnvSwitchFromSupervisor,
   superviseNextServer,
 } from '../next-supervisor.js';
@@ -672,6 +673,8 @@ export function registerNextCommand(cli: CAC): void {
             // A switch from the dev panel (PP-4840 phase 4) is the supervisor's to do: it starts a
             // server process in the chosen environment, and this one ends.
             setEnvSwitchHandler(requestEnvSwitchFromSupervisor);
+            // One a server process before this one asked, refused once a restart had stopped it.
+            onUnrequestedEnvSwitchFailure(({ name, error }) => clientService?.reportEnvSwitchFailure(name, error));
           }
         } catch (error: any) {
           if (error?.code === 'EADDRINUSE') {

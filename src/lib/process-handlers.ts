@@ -16,7 +16,16 @@ export type SupervisorMessage =
   | { type: typeof SUPERVISOR_READY_MESSAGE }
   | { type: typeof SUPERVISOR_SHUTDOWN_MESSAGE; reason: string }
   | { type: typeof SUPERVISOR_ENV_SWITCH_MESSAGE; name: string }
-  | { type: typeof SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE; name: string; error: string };
+  | {
+      type: typeof SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE;
+      name: string;
+      error: string;
+      /**
+       * To a server process that didn't ask: the one that did was stopped by a restart the switch
+       * waited for, and its tabs are this one's now.
+       */
+      unrequested?: boolean;
+    };
 
 function isShutdownMessage(message: unknown): message is Extract<SupervisorMessage, { reason: string }> {
   return (

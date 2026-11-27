@@ -7,6 +7,7 @@ import {
   NEXT_SERVER_PROCESS_ENV,
   isNextServerProcess,
   loadPPDevConfigAfresh,
+  onUnrequestedEnvSwitchFailure,
   reportNextServerReady,
   requestEnvSwitchFromSupervisor,
   superviseNextServer,
@@ -671,6 +672,68 @@ describe('superviseNextServer — switching the MI environment', () => {
       { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a switch to the MI environment stg70' },
       expect.any(Function),
     );
+  });
+
+  // The server that asked was stopped by the restart the switch waited for: the refusal went to its
+  // closed channel, and the tabs, the new server's now, waited until their timeout.
+  it('tells the running server of a switch refused after a restart stopped the one that asked', async () => {
+    const { servers, restart } = setup({
+      checkConfig: async () => {
+        if (process.env.PP_DEV_SWITCHED_ENV === 'nourl') {
+          throw new Error('MI environment "nourl" has no URL');
+        }
+      },
+    });
+
+    servers[0].ready();
+
+    const restarting = restart();
+
+    await flush();
+    ask(servers[0], 'nourl');
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].ready();
+    await restarting;
+    await flush();
+
+    const refusal = {
+      type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+      name: 'nourl',
+      error: expect.stringContaining('has no URL'),
+    };
+
+    expect(servers[0].send).toHaveBeenCalledWith(refusal, expect.any(Function));
+    expect(servers[1].send).toHaveBeenCalledWith({ ...refusal, unrequested: true }, expect.any(Function));
+    expect(servers).toHaveLength(2);
+  });
+
+  it('hands a server process the refusals of switches it did not ask for, and only those', async () => {
+    const proc = Object.assign(new EventEmitter(), { send: vi.fn() });
+    const unrequested = vi.fn();
+    const stop = onUnrequestedEnvSwitchFailure(unrequested, proc as never);
+    const result = requestEnvSwitchFromSupervisor('nourl', proc as never);
+    let settled = false;
+
+    void result.then(() => (settled = true));
+
+    proc.emit('message', {
+      type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+      name: 'nourl',
+      error: 'no URL',
+      unrequested: true,
+    });
+    await flush();
+
+    expect(unrequested).toHaveBeenCalledWith({ name: 'nourl', error: 'no URL' });
+    expect(settled).toBe(false);
+
+    proc.emit('message', { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name: 'nourl', error: 'no URL' });
+
+    await expect(result).resolves.toEqual({ ok: false, error: 'no URL' });
+    expect(unrequested).toHaveBeenCalledTimes(1);
+    stop();
   });
 
   it('asks the supervisor from the server process, and resolves with its refusal', async () => {

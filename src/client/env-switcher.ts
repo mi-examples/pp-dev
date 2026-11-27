@@ -15,6 +15,9 @@ export const ENVIRONMENT_API = '/@api/environment';
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
 
+/** The reload a page made for an environment the server answered in, once: see `reloadOnce`. */
+export const MISMATCH_RELOAD_KEY = 'pp-dev:env-mismatch-reload';
+
 export interface EnvSwitcherDeps {
   infoPopup: (opts: InfoPopupOptions) => unknown;
   confirmModal: (opts: ConfirmModalOptions) => Promise<boolean>;
@@ -41,8 +44,37 @@ export async function initEnvSwitcher(
    * The environment this tab knows the server in: the server's first answer, until then the page's
    * (its name in the panel; none for the default one).
    */
-  let current = $section.querySelector('.pp-dev-info__env')?.textContent?.trim() || DEFAULT_ENV_NAME;
+  const $name = $section.querySelector<HTMLElement>('.pp-dev-info__env');
+  const pageEnv = $name?.textContent?.trim() || DEFAULT_ENV_NAME;
+  const hiddenWithoutList = $section.classList.contains('pp-dev-info__env-section--none');
+  let current = pageEnv;
   let $select: HTMLSelectElement | undefined;
+  /** The choices the list shows, to tell when a restart brought others; `''` with no list. */
+  let shown = '';
+
+  /**
+   * A page served in one environment by a server that works with another now (a switch it missed)
+   * reloads: a Sync from it would go to the other one. Once per pair, should the page's name and the
+   * server's ever not agree for good.
+   */
+  const reloadOnce = (from: string, to: string): boolean => {
+    const mark = `${from} > ${to}`;
+
+    try {
+      if (window.sessionStorage.getItem(MISMATCH_RELOAD_KEY) === mark) {
+        return false;
+      }
+
+      window.sessionStorage.setItem(MISMATCH_RELOAD_KEY, mark);
+    } catch {
+      // No storage: no way to tell a second reload from the first.
+      return false;
+    }
+
+    reload();
+
+    return true;
+  };
 
   const ask = async (): Promise<EnvironmentResponse | undefined> => {
     try {
@@ -88,9 +120,28 @@ export async function initEnvSwitcher(
     });
   };
 
-  /** The list in place of the name: with more than one environment, where the server can restart. */
+  /**
+   * The list in place of the name: with more than one environment, where the server can restart.
+   * Made again when a restart (a config change) brings other choices, and the name back without any.
+   */
   const build = (data: EnvironmentResponse) => {
-    if ($select || !Array.isArray(data.environments) || data.environments.length < 2 || data.canSwitch === false) {
+    const offers = Array.isArray(data.environments) && data.environments.length > 1 && data.canSwitch !== false;
+    const choices = offers ? JSON.stringify(data.environments) : '';
+
+    if (choices === shown) {
+      return;
+    }
+
+    shown = choices;
+
+    if (!offers) {
+      if ($select && $name) {
+        $select.replaceWith($name);
+        $section.classList.toggle('pp-dev-info__env-section--none', hiddenWithoutList);
+      }
+
+      $select = undefined;
+
       return;
     }
 
@@ -111,7 +162,7 @@ export async function initEnvSwitcher(
     }
 
     $list.disabled = waiting !== undefined;
-    $section.querySelector('.pp-dev-info__env')?.replaceWith($list);
+    ($select ?? $name)?.replaceWith($list);
     $section.classList.remove('pp-dev-info__env-section--none');
     $select = $list;
 
@@ -206,12 +257,13 @@ export async function initEnvSwitcher(
       return;
     }
 
-    if ((data.current || DEFAULT_ENV_NAME) !== current) {
-      reload();
+    const serverEnv = data.current || DEFAULT_ENV_NAME;
 
+    if (serverEnv !== current && reloadOnce(current, serverEnv)) {
       return;
     }
 
+    current = serverEnv;
     build(data);
   };
 
@@ -263,7 +315,19 @@ export async function initEnvSwitcher(
   const data = await ask();
 
   if (data) {
-    current = data.current || current;
+    const serverEnv = data.current || DEFAULT_ENV_NAME;
+
+    if (serverEnv !== pageEnv && reloadOnce(pageEnv, serverEnv)) {
+      return;
+    }
+
+    try {
+      window.sessionStorage.removeItem(MISMATCH_RELOAD_KEY);
+    } catch {
+      // Nothing kept.
+    }
+
+    current = serverEnv;
     build(data);
   }
 }

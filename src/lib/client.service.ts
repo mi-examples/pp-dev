@@ -231,14 +231,24 @@ export class ClientService {
     this.switching = null;
 
     if (!result.ok) {
-      this.logger.error(
-        colors.red(`❌ The switch to ${name} failed, the dev server keeps ${environments.current}: ${result.error}`),
-      );
-      // Also for the tabs that ask the server (`GET /@api/environment`): the one answering them may
-      // have been started again after the failed restart, without this WebSocket.
-      setEnvSwitchFailure({ name, error: result.error });
-      this.server.ws.send('env:switch:failed', { name, error: result.error } satisfies EnvSwitchFailedPayload);
+      this.reportEnvSwitchFailure(name, result.error);
     }
+  }
+
+  /**
+   * A switch failed and this server stays: every tab is told, and the tabs that ask the server
+   * (`GET /@api/environment`) too, since the one answering them may have been started again after
+   * the failed restart, without this WebSocket. Also for a switch another server process asked for
+   * (`pp-dev next`: one a restart stopped while the switch waited).
+   */
+  reportEnvSwitchFailure(name: string, error: string): void {
+    const current = this.opts.environments?.current;
+
+    this.logger.error(
+      colors.red(`❌ The switch to ${name} failed${current ? `, the dev server keeps ${current}` : ''}: ${error}`),
+    );
+    setEnvSwitchFailure({ name, error });
+    this.server.ws.send('env:switch:failed', { name, error } satisfies EnvSwitchFailedPayload);
   }
 
   onInfoDataRequest(_data: unknown, client: WebSocketClient) {

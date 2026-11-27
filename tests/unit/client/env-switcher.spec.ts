@@ -76,6 +76,7 @@ async function setup({
 describe('the MI environment switcher', () => {
   afterEach(() => {
     vi.useRealTimers();
+    window.sessionStorage.clear();
   });
 
   it('lists the environments in place of the name, those without a URL not to be chosen', async () => {
@@ -269,5 +270,53 @@ describe('the MI environment switcher', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(fetch.mock.calls.length).toBe(calls);
     expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  // The page was served before a switch it missed, the first answer after it: the tab took the new
+  // environment as its own, and a Sync from the old page went to it.
+  it('reloads a page served in another environment than the server answers in, once', async () => {
+    const first = await setup({ pageEnv: 'stg70' });
+
+    expect(first.deps.reload).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.pp-dev-info__env-select')).toBeNull();
+
+    // Should the page's name and the server's not agree for good: no second reload, the list.
+    const second = await setup({ pageEnv: 'stg70' });
+
+    expect(second.deps.reload).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLSelectElement>('.pp-dev-info__env-select')!.value).toBe('default');
+  });
+
+  // A config change restarts the server in the same environment: the list kept the old choices.
+  it('makes the list again when the server comes back with other choices, and the name without any', async () => {
+    const { fetch, emit, $section } = await setup();
+    const options = () =>
+      [...document.querySelectorAll<HTMLOptionElement>('.pp-dev-info__env-select option')].map((o) => o.textContent);
+
+    emit('vite:ws:disconnect', {});
+    fetch.mockResolvedValueOnce(
+      json({
+        current: 'default',
+        environments: [
+          { name: 'default', hasUrl: true, protected: false },
+          { name: 'stg70', hasUrl: false, protected: false },
+          { name: 'prod', hasUrl: true, protected: true },
+        ],
+      }),
+    );
+    emit('vite:ws:connect', {});
+
+    await vi.waitFor(() => expect(options()).toEqual(['default', 'stg70 (no URL)', 'prod (protected)']));
+    expect(document.querySelectorAll('.pp-dev-info__env-select')).toHaveLength(1);
+
+    emit('vite:ws:disconnect', {});
+    fetch.mockResolvedValueOnce(
+      json({ current: 'default', environments: [{ name: 'default', hasUrl: true, protected: false }] }),
+    );
+    emit('vite:ws:connect', {});
+
+    await vi.waitFor(() => expect(document.querySelector('.pp-dev-info__env-select')).toBeNull());
+    expect(document.querySelector('.pp-dev-info__env')).not.toBeNull();
+    expect($section.classList.contains('pp-dev-info__env-section--none')).toBe(true);
   });
 });

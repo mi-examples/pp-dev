@@ -69,7 +69,7 @@ export function requestEnvSwitchFromSupervisor(name: string, proc: NodeJS.Proces
 
   return new Promise<EnvSwitchResult>((resolve) => {
     const onMessage = (message: SupervisorMessage) => {
-      if (message?.type === SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE && message.name === name) {
+      if (message?.type === SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE && message.name === name && !message.unrequested) {
         proc.off('message', onMessage);
         resolve({ ok: false, error: message.error });
       }
@@ -78,6 +78,25 @@ export function requestEnvSwitchFromSupervisor(name: string, proc: NodeJS.Proces
     proc.on('message', onMessage);
     proc.send!({ type: SUPERVISOR_ENV_SWITCH_MESSAGE, name } satisfies SupervisorMessage, () => {});
   });
+}
+
+/**
+ * In a server process: a switch another one asked for failed. It was asked before a restart stopped
+ * that one, and the supervisor refused it after: the tabs waiting for it are this server's now.
+ */
+export function onUnrequestedEnvSwitchFailure(
+  handler: (failure: { name: string; error: string }) => void,
+  proc: Pick<NodeJS.Process, 'on' | 'off'> = process,
+): () => void {
+  const onMessage = (message: SupervisorMessage) => {
+    if (message?.type === SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE && message.unrequested) {
+      handler({ name: message.name, error: message.error });
+    }
+  };
+
+  proc.on('message', onMessage);
+
+  return () => proc.off('message', onMessage);
 }
 
 /** What the supervisor needs of a server process; `ChildProcess` as started by {@link forkNextServer}. */
@@ -395,10 +414,16 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
         await checkConfig();
       } catch (error) {
         takeBack();
-        requester.send(
-          { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name, error: describeError(error) } satisfies SupervisorMessage,
-          () => {},
-        );
+
+        const failed = { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name, error: describeError(error) } as const;
+
+        requester.send(failed satisfies SupervisorMessage, () => {});
+
+        // Asked before a restart it waited for: the server that asked is gone, its tabs are the
+        // running one's now.
+        if (server && server !== requester) {
+          server.send({ ...failed, unrequested: true } satisfies SupervisorMessage, () => {});
+        }
 
         return;
       }

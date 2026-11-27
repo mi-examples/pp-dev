@@ -949,9 +949,10 @@ describe('ClientService — env:switch', () => {
     const handler = vi.fn(switchTo);
 
     setEnvSwitchHandler(handler);
-    new ClientService(server, { environments: { current: 'default', choices } });
 
-    return { handlers, broadcast, client, handler };
+    const service = new ClientService(server, { environments: { current: 'default', choices } });
+
+    return { handlers, broadcast, client, handler, service };
   }
 
   afterEach(() => {
@@ -978,6 +979,20 @@ describe('ClientService — env:switch', () => {
     // And for the tabs that ask the server: one started again after the failed restart has no
     // WebSocket of the switch.
     expect(getEnvSwitchFailure()).toEqual({ name: 'stg70', error: 'bad config' });
+  });
+
+  // `pp-dev next`: a switch another server process asked for, refused once a restart had stopped
+  // that one; its tabs are this server's now.
+  it('tells every tab, and those that ask, of a switch another server process asked for', () => {
+    const { broadcast, service } = setup(async () => ({ ok: true }));
+
+    service.reportEnvSwitchFailure('nourl', 'MI environment "nourl" has no URL');
+
+    expect(broadcast).toHaveBeenCalledWith('env:switch:failed', {
+      name: 'nourl',
+      error: 'MI environment "nourl" has no URL',
+    });
+    expect(getEnvSwitchFailure()).toEqual({ name: 'nourl', error: 'MI environment "nourl" has no URL' });
   });
 
   it('clears the failure of an earlier switch as one starts', async () => {
