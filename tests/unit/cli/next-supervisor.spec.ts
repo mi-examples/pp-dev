@@ -7,12 +7,20 @@ import {
   NEXT_SERVER_PROCESS_ENV,
   isNextServerProcess,
   loadPPDevConfigAfresh,
+  onUnrequestedEnvSwitchFailure,
   reportNextServerReady,
+  requestEnvSwitchFromSupervisor,
   superviseNextServer,
   type NextServerProcess,
 } from '../../../src/cli/next-supervisor.js';
-import { SUPERVISOR_READY_MESSAGE, SUPERVISOR_SHUTDOWN_MESSAGE } from '../../../src/lib/process-handlers.js';
+import {
+  SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+  SUPERVISOR_ENV_SWITCH_MESSAGE,
+  SUPERVISOR_READY_MESSAGE,
+  SUPERVISOR_SHUTDOWN_MESSAGE,
+} from '../../../src/lib/process-handlers.js';
 import type { ConfigWatcher } from '../../../src/cli/config-watcher.js';
+import { getEnvSwitchFailure } from '../../../src/lib/env-switch.js';
 
 /**
  * Regression tests for the `pp-dev next` supervisor.
@@ -32,6 +40,8 @@ type FakeServer = EventEmitter &
     signalCode: NodeJS.Signals | null;
     exit(code: number | null, signal?: NodeJS.Signals | null): void;
     ready(): void;
+    /** The environment it was started with (forkNextServer passes this process's). */
+    env?: Record<string, string | undefined>;
   };
 
 function fakeServer(): FakeServer {
@@ -83,6 +93,7 @@ function setup(overrides: { checkConfig?: () => Promise<void>; mode?: string } =
     startServerProcess: () => {
       const server = fakeServer();
 
+      server.env = { ...process.env };
       servers.push(server);
 
       return server;
@@ -518,5 +529,240 @@ describe("the supervisor's config check", () => {
     );
 
     await expect(loadPPDevConfigAfresh(root, 'development')).rejects.toThrow(/sync\.buildTimeoutMs/);
+  });
+});
+
+// PP-4840 phase 4: the dev panel's switch to another MI environment, under `pp-dev next`.
+describe('superviseNextServer — switching the MI environment', () => {
+  afterEach(() => {
+    delete process.env.PP_DEV_SWITCHED_ENV;
+    delete process.env.PP_DEV_ENV_SWITCH_FAILURE;
+    delete process.env.PP_DEV_ENV_SWITCH_PENDING;
+  });
+
+  const ask = (server: FakeServer, name: string) =>
+    server.emit('message', { type: SUPERVISOR_ENV_SWITCH_MESSAGE, name });
+
+  it('starts a server process with the choice, after checking the config with it', async () => {
+    let checkedWith: string | undefined;
+    const { servers, output } = setup({
+      checkConfig: async () => {
+        checkedWith = process.env.PP_DEV_SWITCHED_ENV;
+      },
+    });
+
+    servers[0].ready();
+    ask(servers[0], 'stg70');
+    await flush();
+
+    expect(checkedWith).toBe('stg70');
+    expect(servers[0].send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a switch to the MI environment stg70' },
+      expect.any(Function),
+    );
+
+    servers[0].exit(0);
+    await flush();
+
+    // forkNextServer passes this process's environment: the new server works with the choice.
+    expect(servers).toHaveLength(2);
+    expect(process.env.PP_DEV_SWITCHED_ENV).toBe('stg70');
+    expect(output()).toContain('Switching to the MI environment stg70');
+  });
+
+  it('keeps the running server and tells it why when the config refuses the choice', async () => {
+    const { servers } = setup({
+      checkConfig: async () => {
+        if (process.env.PP_DEV_SWITCHED_ENV === 'nourl') {
+          throw new Error('MI environment "nourl" has no URL');
+        }
+      },
+    });
+
+    servers[0].ready();
+    ask(servers[0], 'nourl');
+    await flush();
+
+    expect(servers[0].send).toHaveBeenCalledWith(
+      {
+        type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+        name: 'nourl',
+        error: expect.stringContaining('has no URL'),
+      },
+      expect.any(Function),
+    );
+    expect(servers[0].send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: SUPERVISOR_SHUTDOWN_MESSAGE }),
+      expect.any(Function),
+    );
+    expect(servers).toHaveLength(1);
+    expect(process.env.PP_DEV_SWITCHED_ENV).toBeUndefined();
+  });
+
+  // The running server is stopped before the new one starts: without a second start, a failed one
+  // left no server at all.
+  it('takes the choice back and starts the server again as it was when the new one does not start', async () => {
+    process.env.PP_DEV_SWITCHED_ENV = 'before';
+
+    const { servers, output } = setup();
+    let startedWith: string | undefined;
+
+    servers[0].ready();
+    ask(servers[0], 'stg70');
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].exit(1);
+    await flush();
+
+    startedWith = process.env.PP_DEV_SWITCHED_ENV;
+
+    expect(startedWith).toBe('before');
+    expect(servers).toHaveLength(3);
+    expect(output()).toContain('did not start in the MI environment stg70: starting it again as it was');
+  });
+
+  // The process that told the tabs of the switch is gone, and the one started again had no word of
+  // it: the tabs waited for stg70 until their timeout.
+  it('starts the server again with why the switch failed, for the tabs that wait for it', async () => {
+    const { servers } = setup();
+
+    servers[0].ready();
+    ask(servers[0], 'stg70');
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].exit(1);
+    await flush();
+    servers[2].ready();
+    await flush();
+
+    expect(getEnvSwitchFailure(servers[1].env)).toBeUndefined();
+    expect(getEnvSwitchFailure(servers[2].env)).toEqual({
+      name: 'stg70',
+      error: expect.stringContaining('did not start in stg70'),
+    });
+    // Not the processes started after it.
+    expect(getEnvSwitchFailure()).toBeUndefined();
+  });
+
+  it('switches after a restart that runs, not alongside it', async () => {
+    const { servers, restart } = setup();
+
+    servers[0].ready();
+
+    const restarting = restart();
+
+    await flush();
+    ask(servers[0], 'stg70');
+    await flush();
+
+    // Only the restart's stop so far.
+    expect(servers[0].send).toHaveBeenCalledTimes(1);
+
+    servers[0].exit(0);
+    await flush();
+    servers[1].ready();
+    await restarting;
+    await flush();
+
+    // The switch was asked by a server process that has gone since: the one the restart started is
+    // what it stops now.
+    expect(servers).toHaveLength(2);
+    expect(servers[1].send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_SHUTDOWN_MESSAGE, reason: 'a switch to the MI environment stg70' },
+      expect.any(Function),
+    );
+    // The restart's server process came while the switch waited: it took no sync the switch ends.
+    expect(servers[1].env?.PP_DEV_ENV_SWITCH_PENDING).toBe('stg70');
+
+    servers[1].exit(0);
+    await flush();
+
+    // The switch's own takes them.
+    expect(servers[2].env?.PP_DEV_ENV_SWITCH_PENDING).toBeUndefined();
+    expect(process.env.PP_DEV_ENV_SWITCH_PENDING).toBeUndefined();
+  });
+
+  // The server that asked was stopped by the restart the switch waited for: the refusal went to its
+  // closed channel, and the tabs, the new server's now, waited until their timeout.
+  it('tells the running server of a switch refused after a restart stopped the one that asked', async () => {
+    const { servers, restart } = setup({
+      checkConfig: async () => {
+        if (process.env.PP_DEV_SWITCHED_ENV === 'nourl') {
+          throw new Error('MI environment "nourl" has no URL');
+        }
+      },
+    });
+
+    servers[0].ready();
+
+    const restarting = restart();
+
+    await flush();
+    ask(servers[0], 'nourl');
+    await flush();
+    servers[0].exit(0);
+    await flush();
+    servers[1].ready();
+    await restarting;
+    await flush();
+
+    const refusal = {
+      type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+      name: 'nourl',
+      error: expect.stringContaining('has no URL'),
+    };
+
+    expect(servers[0].send).toHaveBeenCalledWith(refusal, expect.any(Function));
+    expect(servers[1].send).toHaveBeenCalledWith({ ...refusal, unrequested: true }, expect.any(Function));
+    expect(servers).toHaveLength(2);
+  });
+
+  it('hands a server process the refusals of switches it did not ask for, and only those', async () => {
+    const proc = Object.assign(new EventEmitter(), { send: vi.fn() });
+    const unrequested = vi.fn();
+    const stop = onUnrequestedEnvSwitchFailure(unrequested, proc as never);
+    const result = requestEnvSwitchFromSupervisor('nourl', proc as never);
+    let settled = false;
+
+    void result.then(() => (settled = true));
+
+    proc.emit('message', {
+      type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+      name: 'nourl',
+      error: 'no URL',
+      unrequested: true,
+    });
+    await flush();
+
+    expect(unrequested).toHaveBeenCalledWith({ name: 'nourl', error: 'no URL' });
+    expect(settled).toBe(false);
+
+    proc.emit('message', { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name: 'nourl', error: 'no URL' });
+
+    await expect(result).resolves.toEqual({ ok: false, error: 'no URL' });
+    expect(unrequested).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('asks the supervisor from the server process, and resolves with its refusal', async () => {
+    const proc = Object.assign(new EventEmitter(), { send: vi.fn() });
+    const result = requestEnvSwitchFromSupervisor('stg70', proc as never);
+
+    expect(proc.send).toHaveBeenCalledWith(
+      { type: SUPERVISOR_ENV_SWITCH_MESSAGE, name: 'stg70' },
+      expect.any(Function),
+    );
+
+    proc.emit('message', { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name: 'stg70', error: 'no URL' });
+
+    await expect(result).resolves.toEqual({ ok: false, error: 'no URL' });
+  });
+
+  it('has nobody to ask without a supervisor', async () => {
+    await expect(requestEnvSwitchFromSupervisor('stg70', new EventEmitter() as never)).resolves.toMatchObject({
+      ok: false,
+    });
   });
 });

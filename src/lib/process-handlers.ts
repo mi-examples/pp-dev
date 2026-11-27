@@ -7,8 +7,25 @@ export const SUPERVISOR_READY_MESSAGE = 'pp-dev:ready';
 /** From the supervisor to the server process: shut down (a signal it received, or a config change). */
 export const SUPERVISOR_SHUTDOWN_MESSAGE = 'pp-dev:shutdown';
 
+/** From the server process to the supervisor: the dev panel asked to switch to MI environment `name`. */
+export const SUPERVISOR_ENV_SWITCH_MESSAGE = 'pp-dev:env-switch';
+/** From the supervisor to the server process: the switch to `name` was refused, the server stays. */
+export const SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE = 'pp-dev:env-switch-failed';
+
 export type SupervisorMessage =
-  { type: typeof SUPERVISOR_READY_MESSAGE } | { type: typeof SUPERVISOR_SHUTDOWN_MESSAGE; reason: string };
+  | { type: typeof SUPERVISOR_READY_MESSAGE }
+  | { type: typeof SUPERVISOR_SHUTDOWN_MESSAGE; reason: string }
+  | { type: typeof SUPERVISOR_ENV_SWITCH_MESSAGE; name: string }
+  | {
+      type: typeof SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE;
+      name: string;
+      error: string;
+      /**
+       * To a server process that didn't ask: the one that did was stopped by a restart the switch
+       * waited for, and its tabs are this one's now.
+       */
+      unrequested?: boolean;
+    };
 
 function isShutdownMessage(message: unknown): message is Extract<SupervisorMessage, { reason: string }> {
   return (

@@ -19,6 +19,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
     envName,
     envProtected,
     sessionCookieName,
+    environments,
     templateLess,
     backendBaseURL,
     miHudLess,
@@ -160,6 +161,7 @@ function vitePPDev(options: NormalizedVitePPDevOptions): Plugin {
           envName,
           appId,
           envProtected,
+          environments,
         });
 
         clientServices.set(server.environments.client, clientService);

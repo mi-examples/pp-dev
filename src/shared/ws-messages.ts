@@ -31,6 +31,34 @@ export interface SyncActionResponsePayload {
   approved: boolean;
 }
 
+/**
+ * Switching the MI environment from the dev panel (PP-4840 phase 4):
+ * - `env:switch` (panel → server): restart in `name`;
+ * - `env:switching` (server → every tab): the restart begins, reload once the server works with `name`;
+ * - `env:switch:failed` (server → every tab): it didn't happen, the running server stays.
+ */
+export interface EnvSwitchPayload {
+  name: string;
+}
+
+export interface EnvSwitchFailedPayload {
+  name: string;
+  error: string;
+}
+
+/** `GET /@api/environment`: the environment the dev server works with, and what the panel offers. */
+export interface EnvironmentResponse {
+  current: string;
+  environments: { name: string; hasUrl: boolean; protected: boolean }[];
+  /** Whether the server can restart in another one (not under plain `vite` with the plugin). */
+  canSwitch?: boolean;
+  /**
+   * Why the last switch failed, when this server was started again in the environment it had after
+   * it: the tabs waiting for the switch were not told over the WebSocket.
+   */
+  failedSwitch?: { name: string; error: string };
+}
+
 /** `template:sync:response`: how a sync ended. */
 export type TemplateSyncResponsePayload =
   | { syncedAt: string; backupFilename: string }

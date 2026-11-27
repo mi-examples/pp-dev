@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import ejs from 'ejs';
 import {
   envVariableSuffix,
+  listEnvironmentChoices,
   normalizePPDevConfig,
   resolveMiEnvironment,
   validatePPDevConfig,
@@ -167,6 +168,57 @@ describe('MI environments', () => {
   it('names where the token of an environment is set', () => {
     expect(describeTokenSettings()).toBe('mi.token or MI_ACCESS_TOKEN');
     expect(describeTokenSettings('staging-eu')).toBe('envs.staging-eu.token or MI_ACCESS_TOKEN_STAGING_EU');
+  });
+
+  // PP-4840 phase 4: the environment chosen in the dev panel, kept in PP_DEV_SWITCHED_ENV.
+  describe('the dev panel switch', () => {
+    afterEach(() => {
+      delete process.env.PP_DEV_SWITCHED_ENV;
+    });
+
+    it('wins over MI_ENV (and so --env) and defaultEnv', () => {
+      const config: PPDevConfig = { ...CONFIG, defaultEnv: 'customer-eu' };
+
+      expect(resolveMiEnvironment(config, { PP_DEV_SWITCHED_ENV: 'staging', MI_ENV: 'customer-eu' }).name).toBe(
+        'staging',
+      );
+      expect(resolveMiEnvironment(config, { PP_DEV_SWITCHED_ENV: 'default', MI_ENV: 'staging' }).name).toBe(undefined);
+      // Nothing chosen: as before.
+      expect(resolveMiEnvironment(config, { MI_ENV: 'staging' }).name).toBe('staging');
+    });
+
+    it('refuses a name the config has not, as MI_ENV does', () => {
+      expect(() => resolveMiEnvironment(CONFIG, { PP_DEV_SWITCHED_ENV: 'gone' })).toThrow(
+        'Unknown MI environment "gone" (chosen in the dev panel)',
+      );
+    });
+
+    it("keeps the default instance's session cookie name the default one's", () => {
+      process.env.PP_DEV_SWITCHED_ENV = 'staging';
+
+      const n = normalizePPDevConfig(CONFIG, 'my-app');
+
+      expect(n.envName).toBe('staging');
+      expect(n.sessionCookieName).toBe('metric_insights_session__staging.mi.example.com');
+    });
+
+    it('lists the environments the panel offers, default first, with their URL and protection', () => {
+      const config: PPDevConfig = {
+        mi: { url: 'https://dev', protected: true },
+        app: { id: 7 },
+        envs: { staging: { url: 'https://s', protected: false }, eu: {} },
+      };
+
+      expect(listEnvironmentChoices(config, { MI_BACKEND_URL_EU: 'https://eu' })).toEqual([
+        { name: 'default', hasUrl: true, protected: true },
+        { name: 'staging', hasUrl: true, protected: false },
+        { name: 'eu', hasUrl: true, protected: true },
+      ]);
+      expect(listEnvironmentChoices({ envs: { eu: {} } }, {})).toEqual([
+        { name: 'default', hasUrl: false, protected: false },
+        { name: 'eu', hasUrl: false, protected: false },
+      ]);
+    });
   });
 
   // PP-4840 phase 2: Sync and Variables Editor saves ask for a confirmation in a protected environment.
@@ -534,8 +586,10 @@ describe('MI environments', () => {
       expect(render('staging')).toMatch(/Environment:<\/span>\s*<span class="[^"]*pp-dev-info__env">staging<\/span>/);
     });
 
+    // The section is there, hidden: the switcher (phase 4) shows it when the config has more than one.
     it('shows no environment for the top-level settings', () => {
-      expect(render('')).not.toContain('Environment:');
+      expect(render('')).toMatch(/<div class="[^"]*pp-dev-info__env-section pp-dev-info__env-section--none">/);
+      expect(render('staging')).not.toContain('pp-dev-info__env-section--none');
     });
   });
 });

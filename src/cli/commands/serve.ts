@@ -2,6 +2,9 @@ import * as path from 'path';
 import { performance } from 'node:perf_hooks';
 import { type ServerOptions } from 'vite';
 import { VERSION } from '../../constants.js';
+import { PP_DEV_SWITCHED_ENV_VAR } from '../../shared/mi-environments.js';
+import { setEnvSwitchFailure, setEnvSwitchHandler } from '../../lib/env-switch.js';
+import { saveDevServerState } from '../../lib/dev-server-state.js';
 import { bindShortcuts } from '../../shortcuts.js';
 import { mergeConfig, type ViteDevServer } from 'vite';
 import { createLogger } from '../../lib/logger.js';
@@ -36,14 +39,28 @@ export function registerServeCommand(cli: CAC): void {
       const projectRoot = root ? path.resolve(process.cwd(), root) : process.cwd();
       const logger = createLogger(options.logLevel);
 
+      // Restarts on a config change and the dev panel's environment switches, one after another: two
+      // at once would start two servers on one port, the second closing the first's work.
+      let restarts: Promise<unknown> = Promise.resolve();
+      const oneRestartAtATime = <T>(restart: () => Promise<T>): Promise<T> => {
+        const run = restarts.then(restart, restart);
+
+        restarts = run.catch(() => undefined);
+
+        return run;
+      };
+
       /**
        * Starts the dev server. On a restart the new server is created, its config loaded and
        * checked, before the running one is stopped: a config that can't be loaded (half-written, a
        * typo in `app.id`, a broken `.env` line) leaves the running server, with its session, as it
        * is, instead of ending the process with it.
+       *
+       * Resolves to why a restart failed, `undefined` once the server listens.
        */
-      const startServer = async ({ restart = false } = {}) => {
+      const startServer = async ({ restart = false } = {}): Promise<string | undefined> => {
         let nextServer: ViteDevServer | null = null;
+        let restoreState: (() => void) | undefined;
 
         try {
           // Clear config cache
@@ -82,6 +99,13 @@ export function registerServeCommand(cli: CAC): void {
           // changes, as the `.env` files', restart through the config watcher below with a config
           // loaded afresh: Vite's own restart on them reused this start's, so they are kept from it
           // (`configFile: false`; its `.env` files kept from its watcher, and only those).
+          //
+          // Setting the new server up changes the users, the login and the proxy cache's environment
+          // for its MI instance: put back what it changed if it fails, for the server that stays (or
+          // the one started again in the environment it had). Taken right before, not as the restart
+          // starts: the running server takes user changes while the config loads, and a config
+          // refused must leave them be.
+          restoreState = restart ? saveDevServerState() : undefined;
           nextServer = await createServer(
             mergeConfig(
               config,
@@ -170,7 +194,11 @@ export function registerServeCommand(cli: CAC): void {
           }
 
           if (!configWatcher) {
-            configWatcher = createConfigWatcher(projectRoot, () => startServer({ restart: true }), logger.info, {
+            const restartOnChange = async () => {
+              await oneRestartAtATime(() => startServer({ restart: true }));
+            };
+
+            configWatcher = createConfigWatcher(projectRoot, restartOnChange, logger.info, {
               mode,
               files: viteConfigFiles,
             });
@@ -185,13 +213,15 @@ export function registerServeCommand(cli: CAC): void {
             stopProfiler(logger.info);
             process.exit(1);
 
-            return;
+            return e?.message ?? String(e);
           }
 
           // Created but never listened: let go of what it opened.
           if (nextServer && nextServer !== server) {
             await nextServer.close().catch(() => undefined);
           }
+
+          restoreState?.();
 
           logger.error(colors.red(`❌ Failed to restart dev server:\n${e.stack}`), { error: e });
           logger.warn(
@@ -201,8 +231,50 @@ export function registerServeCommand(cli: CAC): void {
                 : '⚠️  No dev server is running; it starts again on the next config change',
             ),
           );
+
+          return e?.message ?? String(e);
         }
+
+        return undefined;
       };
+
+      // The dev panel's switch to another MI environment (PP-4840 phase 4): a restart with the choice
+      // over `--env`, `MI_ENV` and `defaultEnv`, kept until pp-dev stops. One the restart refuses is
+      // taken back, so the next config change restarts in the environment the server keeps. One whose
+      // new server failed to listen had stopped the running one already: a server starts again in the
+      // environment it had, and its tabs learn why from it (they were told over the stopped one's
+      // WebSocket, if at all).
+      setEnvSwitchHandler((name) =>
+        oneRestartAtATime(async () => {
+          const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
+
+          process.env[PP_DEV_SWITCHED_ENV_VAR] = name;
+
+          const error = await startServer({ restart: true });
+
+          if (error === undefined) {
+            return { ok: true } as const;
+          }
+
+          if (previous === undefined) {
+            delete process.env[PP_DEV_SWITCHED_ENV_VAR];
+          } else {
+            process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
+          }
+
+          if (!server) {
+            setEnvSwitchFailure({ name, error });
+            logger.warn(
+              colors.yellow(
+                `⚠️  The dev server did not start in the MI environment ${name}: starting it again as it was`,
+              ),
+            );
+            await startServer({ restart: true });
+          }
+
+          return { ok: false, error } as const;
+        }),
+      );
 
       registerProcessHandlers({
         logger,

@@ -334,6 +334,8 @@ $pp-dev-dark-colors: (
     z-index: 100000;
     white-space: nowrap;
     width: fit-content;
+    // Never wider than the screen: what doesn't fit goes to icons, then scrolls (`__content`).
+    max-width: 100vw;
     height: $pp-dev-height;
     text-align: center;
     padding: 2px;
@@ -377,6 +379,47 @@ $pp-dev-dark-colors: (
       display: flex;
       align-items: center;
       gap: 0px;
+      // Wider than the screen even with icons (see the compact mode below): it scrolls sideways, the
+      // buttons after it stay. No scrollbar in the panel's height; the wheel and touchpads scroll it.
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
+
+    // An item's icon: shown in its label's place in the compact mode.
+    &__icon {
+      display: none;
+      flex: none;
+      width: 14px;
+      height: 14px;
+      color: var(--pp-dev-info-color-secondary);
+    }
+
+    // Narrower than its content (a narrow screen, a long backend URL): the labels and long values
+    // make way for icons, which name them in their tooltips (`pp-dev-info--compact`, set by the panel).
+    &--compact {
+      .pp-dev-info__label,
+      .pp-dev-info__full {
+        display: none;
+      }
+
+      .pp-dev-info__icon {
+        display: inline-block;
+      }
+
+      .pp-dev-info__item {
+        gap: 4px;
+      }
+
+      .pp-dev-info__section {
+        padding: 0 6px;
+      }
     }
 
     &__section {
@@ -433,6 +476,38 @@ $pp-dev-dark-colors: (
 
     &__value {
       font-weight: 600;
+    }
+
+    // The default environment's name isn't shown; the switcher shows the section (PP-4840).
+    &__env-section--none {
+      display: none !important;
+    }
+
+    // The MI environment switcher (PP-4840): the name, as a list.
+    &__env-select {
+      max-width: 160px;
+      padding: 1px 4px;
+      border: 1px solid var(--pp-dev-info-color-line);
+      border-radius: 3px;
+      background: transparent;
+      font: inherit;
+      font-weight: 600;
+      color: var(--pp-dev-info-color-warning);
+      cursor: pointer;
+
+      &:focus {
+        outline: none;
+        border-color: var(--pp-dev-info-color-primary);
+      }
+
+      &:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+
+      option {
+        color: initial;
+      }
     }
 
     &__link {

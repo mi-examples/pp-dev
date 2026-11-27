@@ -14,13 +14,13 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { UserRegistry, getUserNameError, userRegistry } from './user-registry.js';
+import { UserRegistry, getUserNameError, userRegistry, type UserRegistryState } from './user-registry.js';
 import { checkUserToken, type TokenCheck } from './mi-identity.js';
 import type { MiAPI } from './pp.middleware.js';
 import { createLogger } from './logger.js';
 import { colors } from './helpers/color.helper.js';
 import { writeFileAtomicSync } from './helpers/atomic-file.helper.js';
-import { originalSession } from './original-session.js';
+import { originalSession, type SavedOriginalSession } from './original-session.js';
 import { describeTokenSettings } from '../shared/mi-environments.js';
 
 const STORE_VERSION = 1;
@@ -227,6 +227,58 @@ export async function keepTokenUsers(
   }
 }
 
+type KeepingOptions = Parameters<typeof startKeepingUsers>[0];
+
+/** How the running dev server set the registry up: for {@link restoreUsersState}. */
+let keepingWith: KeepingOptions | undefined;
+
+/** The users, the login on the main host, and how they are kept: see {@link saveUsersState}. */
+export interface UsersState {
+  registry: UserRegistryState;
+  session: SavedOriginalSession;
+  keeping: KeepingOptions | undefined;
+}
+
+/**
+ * What a dev server restart in the same process (`pp-dev`) changes as it sets up, before it can
+ * still fail: another MI instance drops the users and the login of this one. Put back with
+ * {@link restoreUsersState} when the server that stays is the old one: the new instance's users would
+ * send their tokens to the old instance, and the old one's would be gone.
+ */
+export function saveUsersState(): UsersState {
+  return { registry: userRegistry.saveState(), session: originalSession.saveState(), keeping: keepingWith };
+}
+
+/**
+ * Puts back what a failed setup changed since {@link saveUsersState}, and only that: the users and the
+ * login when it tied the registry to another MI instance, which dropped them; else how the users are
+ * kept (`users.persist`, the token) and how the login is checked. Changes the running server took
+ * meanwhile (a user removed, another default user) stay.
+ */
+export function restoreUsersState(state: UsersState): void {
+  if (userRegistry.context !== state.registry.context) {
+    // First: the users of now must not be written to, or removed from, the other instance's file.
+    stopKeeping(userRegistry);
+    keepingWith = undefined;
+    userRegistry.restoreState(state.registry);
+    originalSession.restoreState(state.session);
+  } else if (state.session.check) {
+    // The new server's own MiAPI checked the login.
+    originalSession.useCheck(state.session.check);
+  }
+
+  if (keepingWith === state.keeping) {
+    return;
+  }
+
+  if (state.keeping) {
+    startKeepingUsers(state.keeping);
+  } else {
+    stopKeeping(userRegistry);
+    keepingWith = undefined;
+  }
+}
+
 /**
  * Sets the shared registry up for a dev server start (Vite and Next.js): ties it to this project and
  * MI instance, which drops the users of another one (a restart with another `mi.url`), and keeps its
@@ -243,6 +295,8 @@ export function startKeepingUsers(opts: {
   homeDir?: string;
 }): void {
   const context = `${path.resolve(opts.projectRoot)}\n${opts.miUrl.replace(/\/+$/, '')}`;
+
+  keepingWith = opts;
 
   if (userRegistry.context !== context) {
     // Detach the old file first: dropping the old instance's users must not empty its store.

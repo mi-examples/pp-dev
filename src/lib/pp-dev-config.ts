@@ -7,7 +7,7 @@
  */
 import type { ViteImageOptimizer } from 'vite-plugin-image-optimizer';
 import { createDefaultZipFileName, normalizeRelativeOutputPath } from './output-path.js';
-import { envVariableSuffix } from '../shared/mi-environments.js';
+import { DEFAULT_ENV_NAME, PP_DEV_SWITCHED_ENV_VAR, envVariableSuffix } from '../shared/mi-environments.js';
 import { getSessionCookieName } from './session-cookie.middleware.js';
 
 // ─── Public config types ──────────────────────────────────────────────────────
@@ -211,6 +211,8 @@ export interface NormalizedVitePPDevOptions {
    * `metric_insights_session__<host>` for another one, so each instance keeps its login on localhost.
    */
   sessionCookieName: string;
+  /** The environments the dev panel offers to switch to, `default` first. */
+  environments: EnvironmentChoice[];
   backendBaseURL?: string;
   appId?: number;
   templateLess: boolean;
@@ -248,8 +250,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 // ─── MI environments ──────────────────────────────────────────────────────────
 
-/** The name the top-level `mi` and `app` settings go by in `--env`, `MI_ENV` and `defaultEnv`. */
-export const DEFAULT_ENV_NAME = 'default';
+export { DEFAULT_ENV_NAME };
 
 /** Also a folder name (`backups/<name>`): no path separators, no dots. */
 const ENV_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -332,11 +333,12 @@ export function resolveMiEnvironment(
     );
   }
 
-  const fromVariable = env.MI_ENV?.trim();
-  const name = fromVariable || config.defaultEnv || DEFAULT_ENV_NAME;
+  const name = getSelectedEnvName(env) || config.defaultEnv || DEFAULT_ENV_NAME;
 
   if (!isDefined(name)) {
-    throw new Error(`[pp-dev] Unknown MI environment "${name}" (--env or MI_ENV). Defined: ${defined}`);
+    const from = env[PP_DEV_SWITCHED_ENV_VAR]?.trim() ? 'chosen in the dev panel' : '--env or MI_ENV';
+
+    throw new Error(`[pp-dev] Unknown MI environment "${name}" (${from}). Defined: ${defined}`);
   }
 
   if (name === DEFAULT_ENV_NAME) {
@@ -399,9 +401,46 @@ function joinBackupsDir(backupsDir: string, name: string): string {
  * may leave it to another source.
  */
 function definesSelectedEnv(config: PPDevConfig, env: Record<string, string | undefined> = process.env): boolean {
-  const name = env.MI_ENV?.trim() || config.defaultEnv || DEFAULT_ENV_NAME;
+  const name = getSelectedEnvName(env) || config.defaultEnv || DEFAULT_ENV_NAME;
 
   return name === DEFAULT_ENV_NAME || Object.prototype.hasOwnProperty.call(config.envs ?? {}, name);
+}
+
+/** An environment the dev panel offers to switch to (PP-4840 phase 4). */
+export interface EnvironmentChoice {
+  name: string;
+  /** Without a URL it can't be chosen: the restart would refuse it. */
+  hasUrl: boolean;
+  protected: boolean;
+}
+
+/** The environments of a config, `default` first: what the panel offers. */
+export function listEnvironmentChoices(
+  config: PPDevConfig,
+  env: Record<string, string | undefined> = process.env,
+): EnvironmentChoice[] {
+  const choices: EnvironmentChoice[] = [
+    {
+      name: DEFAULT_ENV_NAME,
+      hasUrl: Boolean(config.mi?.url ?? env.MI_BACKEND_URL),
+      protected: config.mi?.protected === true,
+    },
+  ];
+
+  for (const [name, entry] of Object.entries(config.envs ?? {})) {
+    choices.push({
+      name,
+      hasUrl: Boolean(entry?.url || env[`MI_BACKEND_URL_${envVariableSuffix(name)}`]),
+      protected: (entry?.protected ?? config.mi?.protected) === true,
+    });
+  }
+
+  return choices;
+}
+
+/** The environment named in the environment variables: the dev panel's choice, else `MI_ENV`. */
+function getSelectedEnvName(env: Record<string, string | undefined>): string | undefined {
+  return env[PP_DEV_SWITCHED_ENV_VAR]?.trim() || env.MI_ENV?.trim() || undefined;
 }
 
 export interface ValidateOptions {
@@ -619,7 +658,8 @@ export function normalizePPDevConfig(
   const backupsDir = sync.backupsDir ?? 'backups';
   // The default instance's URL: its session cookie keeps MI's name, so existing logins stay.
   const defaultUrl = environment.name
-    ? resolveMiEnvironment(config, { ...process.env, MI_ENV: DEFAULT_ENV_NAME }).url
+    ? resolveMiEnvironment(config, { ...process.env, MI_ENV: DEFAULT_ENV_NAME, [PP_DEV_SWITCHED_ENV_VAR]: undefined })
+        .url
     : environment.url;
 
   return {
@@ -627,6 +667,7 @@ export function normalizePPDevConfig(
     envName: environment.name,
     envProtected: environment.protected ?? false,
     sessionCookieName: getSessionCookieName(environment.url, defaultUrl),
+    environments: listEnvironmentChoices(config),
     backendBaseURL: environment.url,
     appId: environment.appId,
     templateLess,

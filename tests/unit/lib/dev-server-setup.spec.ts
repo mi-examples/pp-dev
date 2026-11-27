@@ -19,6 +19,7 @@ import { ClientService } from '../../../src/lib/client.service.js';
 import type { DistService } from '../../../src/lib/dist.service.js';
 import type { MiAPI } from '../../../src/lib/pp.middleware.js';
 import { createLogger } from '../../../src/lib/logger.js';
+import { setEnvSwitchFailure } from '../../../src/lib/env-switch.js';
 
 /** A response as the chain sees it: what was answered, and whether the headers are out. */
 function makeRes() {
@@ -154,6 +155,7 @@ describe('dev server setup', () => {
         projectRoot: process.cwd(),
         miUrl: 'https://mi.example.com',
         envProtected: false,
+        environments: [{ name: 'default', hasUrl: true, protected: false }],
       });
       const paths = (app.router.stack as Array<{ route?: { path: string } }>)
         .map((layer) => layer.route?.path)
@@ -188,6 +190,10 @@ describe('dev server setup', () => {
         envName: 'staging',
         appId: 42,
         envProtected: true,
+        environments: [
+          { name: 'default', hasUrl: true, protected: false },
+          { name: 'staging', hasUrl: true, protected: true },
+        ],
       });
       const httpServer = http.createServer(app);
 
@@ -198,11 +204,39 @@ describe('dev server setup', () => {
         const res = await fetch(`http://127.0.0.1:${port}/@api/variables/values`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ tags: [{ name: 'a', value: '1' }] }),
+          // Loaded in this environment (PP-4840 phase 4: a save of another one's values is refused).
+          body: JSON.stringify({
+            tags: [{ name: 'a', value: '1' }],
+            environment: 'staging https://mi.example.com 42',
+          }),
         });
 
         expect(res.status).toBe(409);
-        expect(await res.json()).toMatchObject({ environment: 'staging' });
+        expect(await res.json()).toMatchObject({ code: 'PROTECTED_ENVIRONMENT', environment: 'staging' });
+
+        // What the panel's switcher offers.
+        const environment = await fetch(`http://127.0.0.1:${port}/@api/environment`).then((r) => r.json());
+
+        expect(environment).toEqual({
+          current: 'staging',
+          environments: [
+            { name: 'default', hasUrl: true, protected: false },
+            { name: 'staging', hasUrl: true, protected: true },
+          ],
+          // No command registered a way to restart here.
+          canSwitch: false,
+        });
+
+        // A server started again after a failed switch says why, for the tabs that wait for it.
+        setEnvSwitchFailure({ name: 'default', error: 'it did not start' });
+
+        try {
+          const afterFailure = await fetch(`http://127.0.0.1:${port}/@api/environment`).then((r) => r.json());
+
+          expect(afterFailure.failedSwitch).toEqual({ name: 'default', error: 'it did not start' });
+        } finally {
+          setEnvSwitchFailure(undefined);
+        }
         expect(miAPI.applyPageVariables).not.toHaveBeenCalled();
 
         const client = { send: vi.fn() };

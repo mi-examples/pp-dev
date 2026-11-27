@@ -2,11 +2,16 @@ import { fork, type ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import { colors } from '../lib/helpers/color.helper.js';
 import { PP_DEV_CONFIG_FILE_ENV_VAR } from '../constants.js';
+import { PP_DEV_SWITCHED_ENV_VAR } from '../shared/mi-environments.js';
+import { setEnvSwitchFailure, setPendingEnvSwitch } from '../lib/env-switch.js';
 import {
+  SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE,
+  SUPERVISOR_ENV_SWITCH_MESSAGE,
   SUPERVISOR_READY_MESSAGE,
   SUPERVISOR_SHUTDOWN_MESSAGE,
   type SupervisorMessage,
 } from '../lib/process-handlers.js';
+import type { EnvSwitchResult } from '../lib/env-switch.js';
 import {
   createConfigWatcher,
   envFilesForMode,
@@ -51,6 +56,47 @@ export function reportNextServerReady(proc: NodeJS.Process = process): void {
   const send = () => proc.send!({ type: SUPERVISOR_READY_MESSAGE } satisfies SupervisorMessage, () => {});
 
   proc.stdout.write('', send);
+}
+
+/**
+ * The server process's way to switch MI environments (PP-4840 phase 4): the supervisor starts a server
+ * process in `name` and this one ends, or answers why it didn't. Without a supervisor there is none.
+ */
+export function requestEnvSwitchFromSupervisor(name: string, proc: NodeJS.Process = process): Promise<EnvSwitchResult> {
+  if (typeof proc.send !== 'function') {
+    return Promise.resolve({ ok: false, error: 'This dev server has no supervisor to restart it.' });
+  }
+
+  return new Promise<EnvSwitchResult>((resolve) => {
+    const onMessage = (message: SupervisorMessage) => {
+      if (message?.type === SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE && message.name === name && !message.unrequested) {
+        proc.off('message', onMessage);
+        resolve({ ok: false, error: message.error });
+      }
+    };
+
+    proc.on('message', onMessage);
+    proc.send!({ type: SUPERVISOR_ENV_SWITCH_MESSAGE, name } satisfies SupervisorMessage, () => {});
+  });
+}
+
+/**
+ * In a server process: a switch another one asked for failed. It was asked before a restart stopped
+ * that one, and the supervisor refused it after: the tabs waiting for it are this server's now.
+ */
+export function onUnrequestedEnvSwitchFailure(
+  handler: (failure: { name: string; error: string }) => void,
+  proc: Pick<NodeJS.Process, 'on' | 'off'> = process,
+): () => void {
+  const onMessage = (message: SupervisorMessage) => {
+    if (message?.type === SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE && message.unrequested) {
+      handler({ name: message.name, error: message.error });
+    }
+  };
+
+  proc.on('message', onMessage);
+
+  return () => proc.off('message', onMessage);
 }
 
 /** What the supervisor needs of a server process; `ChildProcess` as started by {@link forkNextServer}. */
@@ -224,6 +270,12 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
       ready = false;
 
       proc.on('message', (message: SupervisorMessage) => {
+        if (message?.type === SUPERVISOR_ENV_SWITCH_MESSAGE && server === proc && typeof message.name === 'string') {
+          void switchEnvironment(message.name, proc);
+
+          return;
+        }
+
         if (message?.type !== SUPERVISOR_READY_MESSAGE || server !== proc) {
           return;
         }
@@ -295,7 +347,20 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
       return settled;
     };
 
-    const restart = async () => {
+    // Restarts on a config change and the dev panel's environment switches, one after another: two at
+    // once would start two server processes, one of them untracked, and it would outlive a shutdown.
+    let restarts: Promise<unknown> = Promise.resolve();
+    const oneAtATime = (run: () => Promise<void>): Promise<void> => {
+      const next = restarts.then(run, run);
+
+      restarts = next.catch(() => undefined);
+
+      return next;
+    };
+
+    const restart = () => oneAtATime(restartNow);
+
+    const restartNow = async () => {
       if (shuttingDown) {
         return;
       }
@@ -315,6 +380,80 @@ export function superviseNextServer(options: NextSupervisorOptions): Promise<voi
       if (!shuttingDown) {
         // Until the new server listens (or fails): a change meanwhile restarts once more after it.
         await startServer();
+      }
+    };
+
+    /**
+     * The dev panel's switch to MI environment `name` (PP-4840 phase 4): a server process started with
+     * the choice over `--env`, `MI_ENV` and `defaultEnv` (it gets this process's environment), kept
+     * until pp-dev stops. A config the check refuses keeps the running server, which is told why. The
+     * running server is stopped before the new one starts (one port), so a choice whose server didn't
+     * start (a config only `next.config` has, which the check can't see) is taken back and a server
+     * starts again in the environment it had.
+     */
+    // While it waits (behind a restart on a config change), a server process started meanwhile gets
+    // it marked pending, and takes no sync the switch would end; the switch's own doesn't.
+    const switchEnvironment = (name: string, requester: NextServerProcess) => {
+      setPendingEnvSwitch(name);
+
+      return oneAtATime(() => switchEnvironmentNow(name, requester));
+    };
+
+    const switchEnvironmentNow = async (name: string, requester: NextServerProcess) => {
+      setPendingEnvSwitch(undefined);
+
+      if (shuttingDown) {
+        return;
+      }
+
+      const previous = process.env[PP_DEV_SWITCHED_ENV_VAR];
+      const takeBack = () => {
+        if (previous === undefined) {
+          delete process.env[PP_DEV_SWITCHED_ENV_VAR];
+        } else {
+          process.env[PP_DEV_SWITCHED_ENV_VAR] = previous;
+        }
+      };
+
+      process.env[PP_DEV_SWITCHED_ENV_VAR] = name;
+
+      try {
+        await checkConfig();
+      } catch (error) {
+        takeBack();
+
+        const failed = { type: SUPERVISOR_ENV_SWITCH_FAILED_MESSAGE, name, error: describeError(error) } as const;
+
+        requester.send(failed satisfies SupervisorMessage, () => {});
+
+        // Asked before a restart it waited for: the server that asked is gone, its tabs are the
+        // running one's now.
+        if (server && server !== requester) {
+          server.send({ ...failed, unrequested: true } satisfies SupervisorMessage, () => {});
+        }
+
+        return;
+      }
+
+      logger.info(colors.blue(`🧭 Switching to the MI environment ${name}`));
+      await stopServer(`a switch to the MI environment ${name}`);
+
+      if (shuttingDown) {
+        return;
+      }
+
+      await startServer();
+
+      if (!ready && !shuttingDown) {
+        takeBack();
+        logger.warn(
+          colors.yellow(`⚠️  The dev server did not start in the MI environment ${name}: starting it again as it was`),
+        );
+        // The process that told the tabs of the switch is gone: the one started again tells the tabs
+        // that wait for it (`GET /@api/environment`). Its own, not the processes started after it.
+        setEnvSwitchFailure({ name, error: `The dev server did not start in ${name}: see its terminal.` });
+        await startServer();
+        setEnvSwitchFailure(undefined);
       }
     };
 

@@ -234,6 +234,23 @@ export function useMiEnvironment(environment: { name?: string; url: string; appI
   return identity;
 }
 
+/** The MI environment the proxy cache holds responses of, as {@link useMiEnvironment} set it. */
+export function getMiEnvironment(): string | undefined {
+  return cachedEnvironment;
+}
+
+/**
+ * Puts back the environment a failed dev server restart replaced (`pp-dev`): what was cached since
+ * is dropped, as on any change, or a later switch to that environment would serve this one's.
+ */
+export function restoreMiEnvironment(identity: string | undefined): void {
+  if (cachedEnvironment !== identity) {
+    invalidateProxyCache('the dev server stays in its MI environment');
+  }
+
+  cachedEnvironment = identity;
+}
+
 // The original user's login on localhost (PP-4602) starting, turning into another MI user's or
 // ending drops what was cached for it, the page data included, whether or not the proxy cache is on:
 // an ended login noticed through a dev panel call sends no new session to the browser.

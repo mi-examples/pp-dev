@@ -8,8 +8,11 @@ import { Logger, ViteDevServer, WebSocketClient } from 'vite';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import { type ProtectedEnvironment, describeEnvironment } from './protected-environment.js';
-import { DEFAULT_ENV_NAME } from './pp-dev-config.js';
+import { DEFAULT_ENV_NAME, type EnvironmentChoice } from './pp-dev-config.js';
+import { getPendingEnvSwitch, requestEnvSwitch, setEnvSwitchFailure, setPendingEnvSwitch } from './env-switch.js';
 import {
+  type EnvSwitchFailedPayload,
+  type EnvSwitchPayload,
   SYNC_IN_PROGRESS_CODE,
   type SyncActionRequiredPayload,
   type SyncActionResponsePayload,
@@ -52,6 +55,8 @@ export interface ClientServiceOptions {
   syncActionTimeoutMs?: number;
   /** Set when the environment is `protected`: a sync asks for a confirmation that names it. */
   protectedEnvironment?: ProtectedEnvironment;
+  /** The environment in use and the ones the panel may switch to (PP-4840 phase 4). */
+  environments?: { current: string; choices: EnvironmentChoice[] };
 }
 
 export class ClientService {
@@ -77,6 +82,7 @@ export class ClientService {
     this.eventMap.set('template:sync', this.onTemplateSync.bind(this));
     this.eventMap.set('template:sync:action-response', this.onTemplateSyncActionResponse.bind(this));
     this.eventMap.set('page-variables:reload', this.onPageVariablesReload.bind(this));
+    this.eventMap.set('env:switch', this.onEnvSwitch.bind(this));
 
     this.logger = createLogger();
 
@@ -162,6 +168,94 @@ export class ClientService {
     client.send('template:sync:response', payload);
   }
 
+  /** A switch asked for and not yet failed: one at a time. */
+  private switching: string | null = null;
+
+  /**
+   * The panel asks to restart the dev server in another MI environment (PP-4840 phase 4). Only a
+   * name of the server's own config is taken, with a URL; not while a sync runs, which the restart
+   * would end. Every tab is told first, and told again if the restart failed and this server stays.
+   */
+  async onEnvSwitch(data: unknown, client: WebSocketClient) {
+    const name = (data as Partial<EnvSwitchPayload> | undefined)?.name;
+    const { environments } = this.opts;
+    const refuse = (error: string) => {
+      client.send('env:switch:failed', { name: String(name), error } satisfies EnvSwitchFailedPayload);
+    };
+
+    if (!environments) {
+      refuse('This dev server cannot switch environments.');
+
+      return;
+    }
+
+    const choice = environments.choices.find((entry) => entry.name === name);
+
+    if (typeof name !== 'string' || !choice) {
+      refuse(`There is no MI environment ${JSON.stringify(name)} in the config.`);
+
+      return;
+    }
+
+    if (!choice.hasUrl) {
+      refuse(`The MI environment ${name} has no URL: set envs.${name}.url or its MI_BACKEND_URL_ variable.`);
+
+      return;
+    }
+
+    if (name === environments.current) {
+      refuse(`The dev server already works with ${name}.`);
+
+      return;
+    }
+
+    if (this.syncInFlight) {
+      refuse('A template sync is running: switch once it has finished.');
+
+      return;
+    }
+
+    // Also one asked of the server before a restart this one came from, still waiting.
+    const pending = this.switching ?? getPendingEnvSwitch();
+
+    if (pending) {
+      refuse(`A switch to ${pending} is under way.`);
+
+      return;
+    }
+
+    this.switching = name;
+    setEnvSwitchFailure(undefined);
+    this.logger.info(colors.blue(`🧭 Switching to the MI environment ${name}, as the dev panel asked`));
+    this.server.ws.send('env:switching', { name } satisfies EnvSwitchPayload);
+
+    const result = await requestEnvSwitch(name);
+
+    this.switching = null;
+
+    if (!result.ok) {
+      this.reportEnvSwitchFailure(name, result.error);
+    }
+  }
+
+  /**
+   * A switch failed and this server stays: every tab is told, and the tabs that ask the server
+   * (`GET /@api/environment`) too, since the one answering them may have been started again after
+   * the failed restart, without this WebSocket. Also for a switch another server process asked for
+   * (`pp-dev next`: one a restart stopped while the switch waited).
+   */
+  reportEnvSwitchFailure(name: string, error: string): void {
+    const current = this.opts.environments?.current;
+
+    this.logger.error(
+      colors.red(`❌ The switch to ${name} failed${current ? `, the dev server keeps ${current}` : ''}: ${error}`),
+    );
+    setEnvSwitchFailure({ name, error });
+    // Over: a server started while it waited takes syncs again.
+    setPendingEnvSwitch(undefined);
+    this.server.ws.send('env:switch:failed', { name, error } satisfies EnvSwitchFailedPayload);
+  }
+
   onInfoDataRequest(_data: unknown, client: WebSocketClient) {
     client.send('info-data:response', {});
   }
@@ -214,6 +308,18 @@ export class ClientService {
    * upload to MI while the first is still running.
    */
   async onTemplateSync(data: unknown, client: WebSocketClient) {
+    // The restart would end it, the backup half-saved or the upload half-sent. Also a switch asked of
+    // the server before a restart this one came from, still waiting to run.
+    const switching = this.switching ?? getPendingEnvSwitch();
+
+    if (switching) {
+      this.sendSyncResponse(client, {
+        error: `The dev server is switching to the MI environment ${switching}: sync once it has restarted.`,
+      });
+
+      return;
+    }
+
     if (this.syncInFlight) {
       this.logger.warn(colors.yellow('Template sync requested while another one is running; ignored'));
 

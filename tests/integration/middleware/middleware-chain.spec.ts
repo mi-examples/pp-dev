@@ -3,6 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createMiddlewareChain, type MiddlewareChain } from '../../../src/lib/middleware-chain.js';
 import { createInternalServer } from '../../../src/lib/internal.middleware.js';
+import { registerEnvironmentRoute } from '../../../src/lib/environment-route.js';
 import { runMiddlewareChain } from '../../../src/lib/dev-server-setup.js';
 import { invalidateProxyCache, onProxyCacheInvalidate } from '../../../src/lib/proxy-cache.middleware.js';
 import { clearAPICache } from '../../../src/lib/load-pp-data.middleware.js';
@@ -87,11 +88,11 @@ describe('the middleware chain', () => {
     clearAPICache();
   });
 
-  function build(backend: boolean, inspector = true, base = BASE) {
+  function build(backend: boolean, inspector = true, base = BASE, internalServer = createInternalServer()) {
     return createMiddlewareChain({
       base,
       templateName: 'chain-app',
-      internalServer: createInternalServer(),
+      internalServer,
       backendBaseURL: backend ? upstreamUrl : undefined,
       mi: { appId: 1, templateLess: true, miHudLess: true, disableSSLValidation: false, v7Features: true },
       inspector: { enabled: inspector, maxMemory: 1024 * 1024, captureLimit: 64 * 1024 },
@@ -110,7 +111,13 @@ describe('the middleware chain', () => {
     let port: number;
 
     beforeAll(async () => {
-      chain = build(true);
+      const internalServer = createInternalServer();
+
+      registerEnvironmentRoute(internalServer, {
+        current: 'stg70',
+        environments: [{ name: 'stg70', hasUrl: true, protected: false }],
+      });
+      chain = build(true, true, BASE, internalServer);
       server = serveChain(chain);
       port = await listen(server);
     });
@@ -168,6 +175,18 @@ describe('the middleware chain', () => {
       expect(res.status).toBe(404);
       expect(res.body).toContain('no user named "nobody"');
       expect(upstreamHits).toEqual([]);
+    });
+
+    // After a switch to another MI instance, a tab on the host of a user it doesn't have got a 404
+    // here, and waited for the switch until its timeout.
+    it('tells a user host with no saved user the MI environment, and nothing else', async () => {
+      const res = await get(port, '/@api/environment', { host: `nobody.localhost:${port}` });
+      const other = await get(port, '/@api/requests', { host: `nobody.localhost:${port}` });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ current: 'stg70' });
+      expect(other.status).toBe(404);
+      expect(other.body).toContain('no user named "nobody"');
     });
 
     it('captures what went through for the inspector', async () => {

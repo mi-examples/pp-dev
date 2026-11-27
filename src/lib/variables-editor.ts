@@ -4,7 +4,7 @@ import { MiAPI } from './pp.middleware.js';
 import { serveClientPage } from './client-page.js';
 import { type ProtectedEnvironment, describeEnvironment, getEnvironmentConfirmation } from './protected-environment.js';
 import { DEFAULT_ENV_NAME } from './pp-dev-config.js';
-import { PROTECTED_ENVIRONMENT_CODE } from '../shared/mi-environments.js';
+import { ENVIRONMENT_CHANGED_CODE, PROTECTED_ENVIRONMENT_CODE } from '../shared/mi-environments.js';
 import {
   buildPageVariablesExport,
   isTemplateVariableTagType,
@@ -27,6 +27,12 @@ interface VariablesEditorDeps {
   miAPI: MiAPI;
   /** Set when the environment is `protected`: saving values to MI asks for a confirmation. */
   protectedEnvironment?: ProtectedEnvironment;
+  /**
+   * The MI environment the dev server works with (PP-4840 phase 4). The values are loaded with it, and
+   * a save of values loaded in another one is refused: after a switch, a tab left open would replace
+   * the new environment's values with the old one's.
+   */
+  environment?: ProtectedEnvironment;
 }
 
 interface VariablesEditorRouteState {
@@ -254,15 +260,22 @@ export function registerVariablesEditorRoutes(app: Application, deps: VariablesE
 
   // ── API: read live values (+ schema, + the combined "what to show" view) ───
   app.get('/@api/variables/values', async (_req, res) => {
-    const { distService, miAPI } = current.deps;
+    const { distService, miAPI, environment } = current.deps;
 
     try {
       const schema = await readSchema(distService);
       const live = await miAPI.getLivePageVariables();
       const combined = buildPageVariablesExport(schema, live);
 
-      // What the local pages show, so the editor can offer to bring them up to date with MI.
-      res.json({ schema, live, combined, local: miAPI.localPageVariables ?? null });
+      // What the local pages show, so the editor can offer to bring them up to date with MI. And the
+      // environment they are of, which the editor sends back with a save.
+      res.json({
+        schema,
+        live,
+        combined,
+        local: miAPI.localPageVariables ?? null,
+        ...(environment ? { environment: getEnvironmentConfirmation(environment) } : {}),
+      });
     } catch (error) {
       res.status(502).json({
         error: 'Failed to fetch live page variables.',
@@ -287,6 +300,22 @@ export function registerVariablesEditorRoutes(app: Application, deps: VariablesE
 
     if (duplicate !== undefined) {
       res.status(400).json({ error: `Variable "${duplicate}" is listed more than once.` });
+
+      return;
+    }
+
+    // Values loaded in another environment than the one the server works with now (a switch from the
+    // dev panel, a config change): saved, they would replace this one's values with the other's.
+    const { environment } = current.deps;
+
+    if (
+      environment &&
+      (req.body as { environment?: unknown }).environment !== getEnvironmentConfirmation(environment)
+    ) {
+      res.status(409).json({
+        code: ENVIRONMENT_CHANGED_CODE,
+        error: `The dev server now works with the MI environment ${describeEnvironment(environment)}, not the one these values were loaded from: reload the editor, then make the changes again.`,
+      });
 
       return;
     }

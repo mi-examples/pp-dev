@@ -338,6 +338,16 @@ pp-dev build --changelog --env staging
   does the `[DEV PAGE. DO NOT DELETE]` page pp-dev creates once for a template with `mi.apiVersion: 6`.
 - **The dev panel** names the environment in use (none for `default`), next to Sync and next to
   you in the Users popover.
+- **Switching from the dev panel.** With more than one environment in the config, the panel's
+  environment is a list (one without a URL can't be chosen). A choice, once confirmed, restarts the
+  dev server in it, as a config change does, and every tab of the server reloads once it is up. The
+  choice lasts until pp-dev stops and wins over `--env`, `MI_ENV` and `defaultEnv`; no file is
+  written, so the next start goes by them again. There is no switch while a sync runs, and a config
+  the restart refuses keeps the running server, which the panel says (a server that didn't start
+  in the choice is started again in the environment it had). A Variables Editor tab left open
+  across a switch can't save: the values it holds are the other environment's, so reload it. The
+  panel comes with an MI backend: a page whose default environment has no URL (`mi.url`) has no
+  panel to switch from, so start it in a named one with `--env`.
 - **Logins.** Browsers keep cookies by host, not by port, so the proxy keeps the MI session of each
   instance of a project under a name of its own on `localhost`: the project's default instance's
   (`mi.url`) as MI names it, `metric_insights_session`, so existing logins stay; another instance's
@@ -677,6 +687,10 @@ The panel can be anchored to any of the four screen corners (default: bottom-rig
 - **Config default** — set `devPanel.position` in `pp-dev.config` (see below).
 
 The minimize arrow, the panel's shadow, rounded corner and slide direction all mirror automatically for left/top placements. Sync notification popups stack from the screen edge opposite the panel so they never cover it.
+
+### Narrow screens
+
+The panel is never wider than the screen. When its items don't fit (a narrow window, a long backend URL, the [environment list](#envs--several-mi-environments)), the labels and long values make way for icons, whose tooltips name them: the environment, the backend URL (a globe linking to it), the template mode (green or red) and the App ID. What still doesn't fit scrolls sideways, with the mouse wheel too; the Sync, Users and settings buttons stay in view. A wider window brings the labels back.
 
 ### Auto-hide
 
